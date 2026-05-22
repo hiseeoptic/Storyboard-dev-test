@@ -1,8 +1,3 @@
 export { generateStoryboardBreakdown } from "./ai-engine";
-export { generateSceneImage, runImagePipeline } from "./image-pipeline";
-export {
-  checkCredits,
-  deductCredits,
-  checkProjectLimits,
-  checkSceneLimits,
-} from "./credits";
+export { generateSceneImage } from "./image-pipeline";
+export { checkCredits, deductCredits } from "./credits";

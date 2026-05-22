@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
-import { createAdminClient } from "@/lib/supabase/server";
+import { prisma } from "@/lib/db/prisma";
 import { PLAN_LIMITS } from "@/types";
 import type { Plan } from "@/types";
 
@@ -26,8 +26,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  const supabase = await createAdminClient();
-
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -35,14 +33,16 @@ export async function POST(request: NextRequest) {
       const plan = session.metadata?.plan as Plan | undefined;
 
       if (userId && plan) {
-        await supabase
-          .from("users")
-          .update({
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
             plan,
-            stripe_customer_id: session.customer as string,
-            credits_remaining: PLAN_LIMITS[plan].credits_per_month,
-          })
-          .eq("id", userId);
+            stripeCustomerId: session.customer as string,
+            creditsRemaining: PLAN_LIMITS[plan].credits_per_month === -1
+              ? 999999
+              : PLAN_LIMITS[plan].credits_per_month,
+          },
+        });
       }
       break;
     }
@@ -51,13 +51,13 @@ export async function POST(request: NextRequest) {
       const subscription = event.data.object as Stripe.Subscription;
       const customerId = subscription.customer as string;
 
-      await supabase
-        .from("users")
-        .update({
+      await prisma.user.updateMany({
+        where: { stripeCustomerId: customerId },
+        data: {
           plan: "free",
-          credits_remaining: PLAN_LIMITS.free.credits_per_month,
-        })
-        .eq("stripe_customer_id", customerId);
+          creditsRemaining: PLAN_LIMITS.free.credits_per_month,
+        },
+      });
       break;
     }
 
@@ -65,19 +65,18 @@ export async function POST(request: NextRequest) {
       const invoice = event.data.object as Stripe.Invoice;
       const customerId = invoice.customer as string;
 
-      const { data: user } = await supabase
-        .from("users")
-        .select("plan")
-        .eq("stripe_customer_id", customerId)
-        .single();
+      const user = await prisma.user.findUnique({
+        where: { stripeCustomerId: customerId },
+        select: { plan: true },
+      });
 
       if (user) {
         const limits = PLAN_LIMITS[user.plan as Plan];
         if (limits.credits_per_month !== -1) {
-          await supabase
-            .from("users")
-            .update({ credits_remaining: limits.credits_per_month })
-            .eq("stripe_customer_id", customerId);
+          await prisma.user.updateMany({
+            where: { stripeCustomerId: customerId },
+            data: { creditsRemaining: limits.credits_per_month },
+          });
         }
       }
       break;

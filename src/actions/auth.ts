@@ -1,36 +1,39 @@
 "use server";
 
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { signIn, signOut } from "@/lib/auth/config";
+import { prisma } from "@/lib/db/prisma";
+import bcrypt from "bcryptjs";
 import type { ActionResult } from "@/types";
 
-export async function signIn(
+export async function loginWithCredentials(
   formData: FormData
 ): Promise<ActionResult<{ redirect: string }>> {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
-  const redirectTo = (formData.get("redirect") as string) ?? "/dashboard";
+  const redirectTo = (formData.get("redirect") as string) || "/dashboard";
 
   if (!email || !password) {
     return { success: false, error: "Email and password are required" };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-
-  if (error) {
-    return { success: false, error: error.message, code: error.code };
+  try {
+    await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
+    return { success: true, data: { redirect: redirectTo } };
+  } catch {
+    return { success: false, error: "Invalid email or password" };
   }
-
-  return { success: true, data: { redirect: redirectTo } };
 }
 
-export async function signUp(
+export async function registerUser(
   formData: FormData
 ): Promise<ActionResult<{ message: string }>> {
+  const name = formData.get("fullName") as string;
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
-  const fullName = formData.get("fullName") as string;
 
   if (!email || !password) {
     return { success: false, error: "Email and password are required" };
@@ -40,125 +43,60 @@ export async function signUp(
     return { success: false, error: "Password must be at least 8 characters" };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { full_name: fullName },
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/callback`,
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    return { success: false, error: "An account with this email already exists" };
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 12);
+
+  await prisma.user.create({
+    data: {
+      name,
+      email,
+      hashedPassword,
     },
   });
 
-  if (error) {
-    return { success: false, error: error.message, code: error.code };
-  }
-
-  return {
-    success: true,
-    data: { message: "Check your email to confirm your account" },
-  };
+  return { success: true, data: { message: "Account created! You can now sign in." } };
 }
 
-export async function signOut(): Promise<void> {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
-  redirect("/login");
+export async function loginWithOAuth(provider: "google" | "github") {
+  await signIn(provider, { redirectTo: "/dashboard" });
 }
 
-export async function forgotPassword(
-  formData: FormData
-): Promise<ActionResult<{ message: string }>> {
-  const email = formData.get("email") as string;
-
-  if (!email) {
-    return { success: false, error: "Email is required" };
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/reset-password`,
-  });
-
-  if (error) {
-    return { success: false, error: error.message };
-  }
-
-  return {
-    success: true,
-    data: { message: "Password reset email sent. Check your inbox." },
-  };
+export async function logout() {
+  await signOut({ redirectTo: "/login" });
 }
 
-export async function resetPassword(
-  formData: FormData
-): Promise<ActionResult<{ message: string }>> {
-  const password = formData.get("password") as string;
-  const confirmPassword = formData.get("confirmPassword") as string;
-
-  if (!password || !confirmPassword) {
-    return { success: false, error: "Both password fields are required" };
-  }
-
-  if (password !== confirmPassword) {
-    return { success: false, error: "Passwords do not match" };
-  }
-
-  if (password.length < 8) {
-    return { success: false, error: "Password must be at least 8 characters" };
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase.auth.updateUser({ password });
-
-  if (error) {
-    return { success: false, error: error.message };
-  }
-
-  return { success: true, data: { message: "Password updated successfully" } };
-}
-
-export async function signInWithOAuth(
-  provider: "google" | "github",
-  redirectTo?: string
-): Promise<ActionResult<{ url: string }>> {
-  const supabase = await createClient();
-
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/callback?redirect=${redirectTo ?? "/dashboard"}`,
+export async function getUserProfile(userId: string) {
+  return prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+      plan: true,
+      creditsRemaining: true,
+      stripeCustomerId: true,
     },
   });
+}
 
-  if (error) {
-    return { success: false, error: error.message };
+export async function updateUserName(
+  name: string
+): Promise<ActionResult<{ name: string }>> {
+  const { auth } = await import("@/lib/auth/config");
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { success: false, error: "Unauthorized" };
   }
 
-  return { success: true, data: { url: data.url } };
-}
+  await prisma.user.update({
+    where: { id: session.user.id },
+    data: { name },
+  });
 
-export async function getSession() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user;
-}
-
-export async function getUserProfile() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return null;
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("*")
-    .eq("id", user.id)
-    .single();
-
-  return profile;
+  return { success: true, data: { name } };
 }

@@ -1,31 +1,29 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { auth } from "@/lib/auth/config";
+import { prisma } from "@/lib/db/prisma";
 import { createCheckoutSession, createPortalSession } from "@/lib/stripe";
 import type { ActionResult, Plan } from "@/types";
 
 export async function createCheckout(
   plan: Exclude<Plan, "free">
 ): Promise<ActionResult<{ url: string }>> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await auth();
+  if (!session?.user?.id || !session.user.email) {
+    return { success: false, error: "Unauthorized" };
+  }
 
-  if (!user) return { success: false, error: "Unauthorized" };
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("stripe_customer_id")
-    .eq("id", user.id)
-    .single();
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { stripeCustomerId: true },
+  });
 
   try {
     const url = await createCheckoutSession(
-      user.id,
-      user.email!,
+      session.user.id,
+      session.user.email,
       plan,
-      profile?.stripe_customer_id ?? undefined
+      user?.stripeCustomerId ?? undefined
     );
     return { success: true, data: { url } };
   } catch (err) {
@@ -37,25 +35,22 @@ export async function createCheckout(
 }
 
 export async function manageBilling(): Promise<ActionResult<{ url: string }>> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { success: false, error: "Unauthorized" };
+  }
 
-  if (!user) return { success: false, error: "Unauthorized" };
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { stripeCustomerId: true },
+  });
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("stripe_customer_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.stripe_customer_id) {
+  if (!user?.stripeCustomerId) {
     return { success: false, error: "No billing account found" };
   }
 
   try {
-    const url = await createPortalSession(profile.stripe_customer_id);
+    const url = await createPortalSession(user.stripeCustomerId);
     return { success: true, data: { url } };
   } catch (err) {
     return {

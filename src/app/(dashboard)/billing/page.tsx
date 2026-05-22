@@ -1,19 +1,24 @@
 import { redirect } from "next/navigation";
-import { getSession, getUserProfile } from "@/actions/auth";
+import { auth } from "@/lib/auth/config";
+import { prisma } from "@/lib/db/prisma";
 import { BillingClient } from "./billing-client";
 import type { Plan } from "@/types";
 
 export const metadata = { title: "Billing - StoryboardAI" };
 
 export default async function BillingPage() {
-  const user = await getSession();
-  if (!user) redirect("/login");
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
 
-  const profile = await getUserProfile();
-  const currentPlan = (profile?.plan ?? "free") as Plan;
-  const credits = profile?.credits_remaining ?? 0;
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { plan: true, creditsRemaining: true },
+  });
 
   return (
-    <BillingClient currentPlan={currentPlan} creditsRemaining={credits} />
+    <BillingClient
+      currentPlan={(user?.plan ?? "free") as Plan}
+      creditsRemaining={user?.creditsRemaining ?? 0}
+    />
   );
 }

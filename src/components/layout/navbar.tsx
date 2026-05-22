@@ -2,26 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Film,
-  LayoutDashboard,
-  FolderOpen,
-  Settings,
-  CreditCard,
-  LogOut,
-  Menu,
-  X,
-} from "lucide-react";
+import { Film, Sparkles, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { signOut } from "@/actions/auth";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/projects", label: "Projects", icon: FolderOpen },
-  { href: "/billing", label: "Billing", icon: CreditCard },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/generate", label: "Generate", icon: Sparkles },
 ];
 
 export function Navbar() {
@@ -33,7 +20,7 @@ export function Navbar() {
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         <div className="flex items-center gap-6">
           <Link
-            href="/dashboard"
+            href="/generate"
             className="flex items-center gap-2 font-bold"
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
@@ -62,32 +49,18 @@ export function Navbar() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <form action={signOut}>
-            <Button
-              type="submit"
-              variant="ghost"
-              size="sm"
-              className="hidden gap-2 md:flex"
-            >
-              <LogOut className="h-4 w-4" />
-              Sign Out
-            </Button>
-          </form>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={() => setMobileOpen(!mobileOpen)}
-          >
-            {mobileOpen ? (
-              <X className="h-5 w-5" />
-            ) : (
-              <Menu className="h-5 w-5" />
-            )}
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          onClick={() => setMobileOpen(!mobileOpen)}
+        >
+          {mobileOpen ? (
+            <X className="h-5 w-5" />
+          ) : (
+            <Menu className="h-5 w-5" />
+          )}
+        </Button>
       </div>
 
       {mobileOpen && (
@@ -109,16 +82,6 @@ export function Navbar() {
                 </Button>
               </Link>
             ))}
-            <form action={signOut}>
-              <Button
-                type="submit"
-                variant="ghost"
-                className="w-full justify-start gap-3 text-destructive"
-              >
-                <LogOut className="h-4 w-4" />
-                Sign Out
-              </Button>
-            </form>
           </div>
         </div>
       )}
