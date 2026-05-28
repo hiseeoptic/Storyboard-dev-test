@@ -151,6 +151,9 @@ export interface StoryboardGenerationInput {
   scene_count: number;
   reference_images?: string[];
   character_descriptions?: CharacterDescription[];
+  character_images?: ImageReference[];
+  product_images?: ImageReference[];
+  background_images?: ImageReference[];
   tone?: string;
   setting?: string;
   custom_instructions?: string;
@@ -161,6 +164,12 @@ export interface CharacterDescription {
   appearance: string;
   personality: string;
   role: string;
+}
+
+export interface ImageReference {
+  name: string;
+  description?: string;
+  images: string[]; // base64 encoded images
 }
 
 export interface SceneBreakdown {

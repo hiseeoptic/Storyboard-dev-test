@@ -11,6 +11,9 @@ import {
   CheckCircle2,
   XCircle,
   RotateCw,
+  Users,
+  Package,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,12 +27,15 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploader";
 import { generateFullStoryboard, type StoryboardResult } from "@/actions";
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
-  CharacterDescription,
+  ImageReference,
 } from "@/types";
+
+// ─── Options ─────────────────────────────────────────────────────────────────
 
 const STYLE_OPTIONS: { value: StoryboardStyle; label: string }[] = [
   { value: "cinematic", label: "Cinematic" },
@@ -62,53 +68,152 @@ const SCENE_OPTIONS = [
   { value: "12", label: "12 scenes" },
 ];
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface CharacterEntry {
+  name: string;
+  role: string;
+  appearance: string;
+  images: UploadedImage[];
+}
+
+interface ProductEntry {
+  name: string;
+  description: string;
+  images: UploadedImage[];
+}
+
+interface BackgroundEntry {
+  name: string;
+  description: string;
+  images: UploadedImage[];
+}
+
 type Phase = "input" | "generating" | "result";
+
+const STEPS = ["Story", "Characters", "Products", "Background", "Style"];
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function GenerateClient() {
   const [phase, setPhase] = useState<Phase>("input");
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [progressPercent, setProgressPercent] = useState(0);
+  const [progressMessage, setProgressMessage] = useState("");
   const [result, setResult] = useState<StoryboardResult | null>(null);
 
+  // Step 1: Story
   const [storyIdea, setStoryIdea] = useState("");
   const [genre, setGenre] = useState("drama");
-  const [style, setStyle] = useState<StoryboardStyle>("cinematic");
-  const [sceneCount, setSceneCount] = useState(6);
   const [setting, setSetting] = useState("");
   const [tone, setTone] = useState("");
-  const [characters, setCharacters] = useState<CharacterDescription[]>([]);
+
+  // Step 2: Characters
+  const [characters, setCharacters] = useState<CharacterEntry[]>([]);
   const [charName, setCharName] = useState("");
-  const [charAppearance, setCharAppearance] = useState("");
   const [charRole, setCharRole] = useState("");
+  const [charAppearance, setCharAppearance] = useState("");
+  const [charImages, setCharImages] = useState<UploadedImage[]>([]);
+
+  // Step 3: Products
+  const [products, setProducts] = useState<ProductEntry[]>([]);
+  const [prodName, setProdName] = useState("");
+  const [prodDesc, setProdDesc] = useState("");
+  const [prodImages, setProdImages] = useState<UploadedImage[]>([]);
+
+  // Step 4: Backgrounds
+  const [backgrounds, setBackgrounds] = useState<BackgroundEntry[]>([]);
+  const [bgName, setBgName] = useState("");
+  const [bgDesc, setBgDesc] = useState("");
+  const [bgImages, setBgImages] = useState<UploadedImage[]>([]);
+
+  // Step 5: Style
+  const [style, setStyle] = useState<StoryboardStyle>("cinematic");
+  const [sceneCount, setSceneCount] = useState(6);
+
+  // ─── Helpers ─────────────────────────────────────────────────────
 
   const addCharacter = () => {
     if (!charName.trim()) return;
     setCharacters((prev) => [
       ...prev,
-      { name: charName, appearance: charAppearance, personality: "", role: charRole },
+      { name: charName, role: charRole, appearance: charAppearance, images: charImages },
     ]);
     setCharName("");
-    setCharAppearance("");
     setCharRole("");
+    setCharAppearance("");
+    setCharImages([]);
   };
+
+  const addProduct = () => {
+    if (!prodName.trim()) return;
+    setProducts((prev) => [
+      ...prev,
+      { name: prodName, description: prodDesc, images: prodImages },
+    ]);
+    setProdName("");
+    setProdDesc("");
+    setProdImages([]);
+  };
+
+  const addBackground = () => {
+    if (!bgName.trim()) return;
+    setBackgrounds((prev) => [
+      ...prev,
+      { name: bgName, description: bgDesc, images: bgImages },
+    ]);
+    setBgName("");
+    setBgDesc("");
+    setBgImages([]);
+  };
+
+  // ─── Generate ────────────────────────────────────────────────────
 
   const handleGenerate = async () => {
     setPhase("generating");
     setError(null);
-    setProgressPercent(10);
+    setProgressPercent(5);
+    setProgressMessage("Preparing...");
+
+    // Build image references
+    const characterImages: ImageReference[] = characters
+      .filter((c) => c.images.length > 0)
+      .map((c) => ({ name: c.name, images: c.images.map((i) => i.base64) }));
+
+    const productImages: ImageReference[] = products
+      .filter((p) => p.images.length > 0)
+      .map((p) => ({ name: p.name, description: p.description, images: p.images.map((i) => i.base64) }));
+
+    const backgroundImages: ImageReference[] = backgrounds
+      .filter((b) => b.images.length > 0)
+      .map((b) => ({ name: b.name, description: b.description, images: b.images.map((i) => i.base64) }));
+
+    const hasUploads = characterImages.length > 0 || productImages.length > 0 || backgroundImages.length > 0;
+
+    if (hasUploads) {
+      setProgressPercent(10);
+      setProgressMessage("Analyzing uploaded images...");
+    }
 
     const input: StoryboardGenerationInput = {
       story_idea: storyIdea,
       genre: genre as StoryboardGenerationInput["genre"],
       style,
       scene_count: sceneCount,
-      character_descriptions: characters.length > 0 ? characters : undefined,
+      character_descriptions: characters.length > 0
+        ? characters.map((c) => ({ name: c.name, appearance: c.appearance, personality: "", role: c.role }))
+        : undefined,
+      character_images: characterImages.length > 0 ? characterImages : undefined,
+      product_images: productImages.length > 0 ? productImages : undefined,
+      background_images: backgroundImages.length > 0 ? backgroundImages : undefined,
       setting: setting || undefined,
       tone: tone || undefined,
     };
 
     setProgressPercent(20);
+    setProgressMessage("AI is creating scene breakdowns and generating images...");
+
     const res = await generateFullStoryboard(input);
     setProgressPercent(100);
 
@@ -121,6 +226,8 @@ export function GenerateClient() {
     setResult(res.data);
     setPhase("result");
   };
+
+  // ─── Downloads ───────────────────────────────────────────────────
 
   const downloadPdf = async () => {
     if (!result) return;
@@ -162,20 +269,20 @@ export function GenerateClient() {
   };
 
   // ─── Generating Phase ──────────────────────────────────────────────
+
   if (phase === "generating") {
     return (
       <div className="mx-auto max-w-lg py-20 text-center">
         <Loader2 className="mx-auto mb-6 h-12 w-12 animate-spin text-primary" />
         <h2 className="mb-2 text-xl font-bold">Generating your storyboard...</h2>
-        <p className="mb-6 text-sm text-muted-foreground">
-          AI is creating scene breakdowns and generating images. This may take 1-2 minutes.
-        </p>
+        <p className="mb-6 text-sm text-muted-foreground">{progressMessage}</p>
         <Progress value={progressPercent} showLabel className="mx-auto max-w-xs" />
       </div>
     );
   }
 
   // ─── Result Phase ──────────────────────────────────────────────────
+
   if (phase === "result" && result) {
     const successCount = result.scenes.filter((s) => s.image_url).length;
     const failCount = result.scenes.filter((s) => s.generation_error).length;
@@ -201,23 +308,13 @@ export function GenerateClient() {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={downloadPdf} className="gap-2">
-              <FileText className="h-4 w-4" />
-              PDF
+              <FileText className="h-4 w-4" /> PDF
             </Button>
             <Button variant="outline" onClick={downloadZip} className="gap-2">
-              <FolderArchive className="h-4 w-4" />
-              ZIP Images
+              <FolderArchive className="h-4 w-4" /> ZIP
             </Button>
-            <Button
-              onClick={() => {
-                setPhase("input");
-                setResult(null);
-                setStep(0);
-              }}
-              className="gap-2"
-            >
-              <RotateCw className="h-4 w-4" />
-              New Storyboard
+            <Button onClick={() => { setPhase("input"); setResult(null); setStep(0); }} className="gap-2">
+              <RotateCw className="h-4 w-4" /> New
             </Button>
           </div>
         </div>
@@ -232,33 +329,37 @@ export function GenerateClient() {
   }
 
   // ─── Input Phase (Wizard) ──────────────────────────────────────────
-  const steps = ["Story", "Style", "Characters"];
+
+  const canNext =
+    step === 0 ? storyIdea.trim().length > 0 : true;
 
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-6 text-center">
         <h1 className="text-3xl font-bold">Create Storyboard</h1>
         <p className="mt-1 text-muted-foreground">
-          Describe your story and AI will generate a complete storyboard with images
+          Describe your story, upload references, and AI generates a complete storyboard
         </p>
       </div>
 
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">{steps[step]}</CardTitle>
+            <CardTitle className="text-lg">{STEPS[step]}</CardTitle>
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              {steps.map((s, i) => (
+              {STEPS.map((s, i) => (
                 <span key={s} className="flex items-center gap-1">
                   <span className={i <= step ? "font-bold text-primary" : ""}>{i + 1}</span>
-                  {i < steps.length - 1 && <ChevronRight className="h-3 w-3" />}
+                  {i < STEPS.length - 1 && <ChevronRight className="h-3 w-3" />}
                 </span>
               ))}
             </div>
           </div>
-          <Progress value={((step + 1) / steps.length) * 100} />
+          <Progress value={((step + 1) / STEPS.length) * 100} />
         </CardHeader>
+
         <CardContent className="space-y-4">
+          {/* ── Step 1: Story ─────────────────────────────────────── */}
           {step === 0 && (
             <>
               <div className="space-y-2">
@@ -288,7 +389,164 @@ export function GenerateClient() {
             </>
           )}
 
+          {/* ── Step 2: Characters ────────────────────────────────── */}
           {step === 1 && (
+            <>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Users className="h-4 w-4" />
+                <span>Upload character photos from different angles for visual consistency.</span>
+              </div>
+
+              {characters.length > 0 && (
+                <div className="space-y-2">
+                  {characters.map((c, i) => (
+                    <div key={i} className="flex items-start justify-between rounded-lg border p-3">
+                      <div className="flex gap-3">
+                        {c.images.length > 0 && (
+                          <div className="flex gap-1">
+                            {c.images.map((img) => (
+                              <img key={img.id} src={img.preview} alt="" className="h-12 w-12 rounded object-cover" />
+                            ))}
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium">{c.name}</p>
+                          <p className="text-xs text-muted-foreground">{c.role}{c.appearance ? ` — ${c.appearance}` : ""}</p>
+                          <p className="text-xs text-muted-foreground">{c.images.length} photo(s)</p>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => setCharacters((p) => p.filter((_, j) => j !== i))}>
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-3 rounded-lg border border-dashed p-4">
+                <div className="grid grid-cols-2 gap-2">
+                  <Input value={charName} onChange={(e) => setCharName(e.target.value)} placeholder="Character name" />
+                  <Input value={charRole} onChange={(e) => setCharRole(e.target.value)} placeholder="Role (e.g. Main hero)" />
+                </div>
+                <Input value={charAppearance} onChange={(e) => setCharAppearance(e.target.value)} placeholder="Appearance description (optional if uploading photos)" />
+                <ImageUploader
+                  images={charImages}
+                  onChange={setCharImages}
+                  maxImages={3}
+                  label="Character Photos"
+                  hint="Upload 2-3 photos from different angles"
+                />
+                <Button variant="outline" size="sm" onClick={addCharacter} disabled={!charName.trim()}>
+                  Add Character
+                </Button>
+              </div>
+            </>
+          )}
+
+          {/* ── Step 3: Products ──────────────────────────────────── */}
+          {step === 2 && (
+            <>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Package className="h-4 w-4" />
+                <span>Upload product photos to include in your storyboard scenes.</span>
+              </div>
+
+              {products.length > 0 && (
+                <div className="space-y-2">
+                  {products.map((p, i) => (
+                    <div key={i} className="flex items-start justify-between rounded-lg border p-3">
+                      <div className="flex gap-3">
+                        {p.images.length > 0 && (
+                          <div className="flex gap-1">
+                            {p.images.map((img) => (
+                              <img key={img.id} src={img.preview} alt="" className="h-12 w-12 rounded object-cover" />
+                            ))}
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium">{p.name}</p>
+                          <p className="text-xs text-muted-foreground">{p.description || "No description"}</p>
+                          <p className="text-xs text-muted-foreground">{p.images.length} photo(s)</p>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => setProducts((prev) => prev.filter((_, j) => j !== i))}>
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-3 rounded-lg border border-dashed p-4">
+                <Input value={prodName} onChange={(e) => setProdName(e.target.value)} placeholder="Product name" />
+                <Input value={prodDesc} onChange={(e) => setProdDesc(e.target.value)} placeholder="Product description (optional)" />
+                <ImageUploader
+                  images={prodImages}
+                  onChange={setProdImages}
+                  maxImages={3}
+                  label="Product Photos"
+                  hint="Upload 2-3 product photos from different angles"
+                />
+                <Button variant="outline" size="sm" onClick={addProduct} disabled={!prodName.trim()}>
+                  Add Product
+                </Button>
+              </div>
+            </>
+          )}
+
+          {/* ── Step 4: Background ───────────────────────────────── */}
+          {step === 3 && (
+            <>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <MapPin className="h-4 w-4" />
+                <span>Upload reference photos of locations where the story takes place.</span>
+              </div>
+
+              {backgrounds.length > 0 && (
+                <div className="space-y-2">
+                  {backgrounds.map((b, i) => (
+                    <div key={i} className="flex items-start justify-between rounded-lg border p-3">
+                      <div className="flex gap-3">
+                        {b.images.length > 0 && (
+                          <div className="flex gap-1">
+                            {b.images.map((img) => (
+                              <img key={img.id} src={img.preview} alt="" className="h-12 w-12 rounded object-cover" />
+                            ))}
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium">{b.name}</p>
+                          <p className="text-xs text-muted-foreground">{b.description || "No description"}</p>
+                          <p className="text-xs text-muted-foreground">{b.images.length} photo(s)</p>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => setBackgrounds((prev) => prev.filter((_, j) => j !== i))}>
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-3 rounded-lg border border-dashed p-4">
+                <Input value={bgName} onChange={(e) => setBgName(e.target.value)} placeholder="Location name (e.g. Coffee shop, City street)" />
+                <Input value={bgDesc} onChange={(e) => setBgDesc(e.target.value)} placeholder="Description (optional)" />
+                <ImageUploader
+                  images={bgImages}
+                  onChange={setBgImages}
+                  maxImages={3}
+                  label="Background Photos"
+                  hint="Upload 2-3 reference photos of the location"
+                />
+                <Button variant="outline" size="sm" onClick={addBackground} disabled={!bgName.trim()}>
+                  Add Background
+                </Button>
+              </div>
+            </>
+          )}
+
+          {/* ── Step 5: Style & Generate ─────────────────────────── */}
+          {step === 4 && (
             <>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Visual Style *</label>
@@ -298,55 +556,39 @@ export function GenerateClient() {
                 <label className="text-sm font-medium">Number of Scenes</label>
                 <Select value={String(sceneCount)} onChange={(e) => setSceneCount(Number(e.target.value))} options={SCENE_OPTIONS} />
               </div>
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
-                <strong>{sceneCount} scenes</strong> will be generated with AI images.
+
+              {/* Summary */}
+              <div className="rounded-lg border bg-muted/50 p-4 text-sm space-y-1">
+                <p className="font-medium">Summary</p>
+                <p className="text-muted-foreground">
+                  <strong>{sceneCount}</strong> scenes · <strong>{style}</strong> style
+                  {characters.length > 0 && <> · {characters.length} character(s)</>}
+                  {products.length > 0 && <> · {products.length} product(s)</>}
+                  {backgrounds.length > 0 && <> · {backgrounds.length} location(s)</>}
+                </p>
+                {(characters.some((c) => c.images.length > 0) ||
+                  products.some((p) => p.images.length > 0) ||
+                  backgrounds.some((b) => b.images.length > 0)) && (
+                  <p className="text-xs text-muted-foreground">
+                    📷 Reference images will be analyzed by AI for visual consistency
+                  </p>
+                )}
               </div>
             </>
           )}
 
-          {step === 2 && (
-            <>
-              <p className="text-sm text-muted-foreground">
-                Optional: describe characters for visual consistency across scenes.
-              </p>
-              {characters.length > 0 && (
-                <div className="space-y-2">
-                  {characters.map((c, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-lg border p-3">
-                      <div>
-                        <p className="font-medium">{c.name}</p>
-                        <p className="text-xs text-muted-foreground">{c.role} — {c.appearance}</p>
-                      </div>
-                      <Button variant="ghost" size="sm" onClick={() => setCharacters((p) => p.filter((_, j) => j !== i))}>
-                        Remove
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="space-y-2 rounded-lg border border-dashed p-4">
-                <div className="grid grid-cols-2 gap-2">
-                  <Input value={charName} onChange={(e) => setCharName(e.target.value)} placeholder="Name" />
-                  <Input value={charRole} onChange={(e) => setCharRole(e.target.value)} placeholder="Role" />
-                </div>
-                <Input value={charAppearance} onChange={(e) => setCharAppearance(e.target.value)} placeholder="Appearance description" />
-                <Button variant="outline" size="sm" onClick={addCharacter} disabled={!charName.trim()}>
-                  Add Character
-                </Button>
-              </div>
-            </>
-          )}
-
+          {/* ── Error ────────────────────────────────────────────── */}
           {error && (
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
           )}
 
+          {/* ── Navigation ───────────────────────────────────────── */}
           <div className="flex justify-between pt-2">
             <Button variant="outline" onClick={() => setStep((s) => s - 1)} disabled={step === 0} className="gap-1">
               <ChevronLeft className="h-4 w-4" /> Back
             </Button>
-            {step < steps.length - 1 ? (
-              <Button onClick={() => setStep((s) => s + 1)} disabled={step === 0 && !storyIdea.trim()} className="gap-1">
+            {step < STEPS.length - 1 ? (
+              <Button onClick={() => setStep((s) => s + 1)} disabled={!canNext} className="gap-1">
                 Next <ChevronRight className="h-4 w-4" />
               </Button>
             ) : (
@@ -361,6 +603,8 @@ export function GenerateClient() {
     </div>
   );
 }
+
+// ─── Scene Result Card ───────────────────────────────────────────────────────
 
 function SceneResultCard({ scene }: { scene: StoryboardResult["scenes"][number] }) {
   return (

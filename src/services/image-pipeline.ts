@@ -15,6 +15,8 @@ export async function generateSceneImage(params: {
   style: StoryboardStyle;
   plan: Plan;
   characterDescriptions?: Record<string, string>;
+  productDescriptions?: Record<string, string>;
+  backgroundDescription?: string;
   customStylePrompt?: string;
 }): Promise<{ url: string }> {
   const openai = getOpenAIClient();
@@ -25,8 +27,26 @@ export async function generateSceneImage(params: {
     params.characterDescriptions ?? {}
   );
 
+  // Build product context for the prompt
+  let productPrefix = "";
+  if (params.productDescriptions && Object.keys(params.productDescriptions).length > 0) {
+    const productEntries = Object.entries(params.productDescriptions)
+      .map(([name, desc]) => `${name}: ${desc}`)
+      .join("; ");
+    productPrefix = `Products in scene — ${productEntries}. `;
+  }
+
+  // Build background context for the prompt
+  let backgroundPrefix = "";
+  if (params.backgroundDescription) {
+    backgroundPrefix = `Setting reference — ${params.backgroundDescription}. `;
+  }
+
+  const enhancedVisualPrompt =
+    characterPrefix + productPrefix + backgroundPrefix + params.scene.visual_prompt;
+
   const prompt = buildImagePrompt({
-    visual_prompt: characterPrefix + params.scene.visual_prompt,
+    visual_prompt: enhancedVisualPrompt,
     style: params.style,
     camera_angle: params.scene.camera_angle,
     shot_type: params.scene.shot_type,

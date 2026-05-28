@@ -2,6 +2,7 @@
 
 import { generateStoryboardBreakdown } from "@/services/ai-engine";
 import { generateSceneImage } from "@/services/image-pipeline";
+import { analyzeReferenceImages } from "@/services/image-analyzer";
 import type {
   ActionResult,
   StoryboardGenerationInput,
@@ -34,10 +35,65 @@ export interface StoryboardResult {
 export async function generateFullStoryboard(
   input: StoryboardGenerationInput
 ): Promise<ActionResult<StoryboardResult>> {
-  // ─── Step 1: AI scene breakdown ────────────────────────────────────
+  // ─── Step 1: Analyze uploaded reference images ─────────────────────
+  let analyzedCharacters: Record<string, string> = {};
+  let analyzedProducts: Record<string, string> = {};
+  let analyzedBackground = "";
+
+  const hasImages =
+    (input.character_images && input.character_images.length > 0) ||
+    (input.product_images && input.product_images.length > 0) ||
+    (input.background_images && input.background_images.length > 0);
+
+  if (hasImages) {
+    try {
+      const analysis = await analyzeReferenceImages({
+        characters: input.character_images,
+        products: input.product_images,
+        backgrounds: input.background_images,
+      });
+      analyzedCharacters = analysis.characterDescriptions;
+      analyzedProducts = analysis.productDescriptions;
+      analyzedBackground = analysis.backgroundDescription;
+    } catch (err) {
+      console.error("[Storyboard] Image analysis failed, continuing without:", err);
+    }
+  }
+
+  // Merge text-based character descriptions with analyzed ones
+  const mergedCharacterDescriptions: Record<string, string> = { ...analyzedCharacters };
+  if (input.character_descriptions) {
+    for (const char of input.character_descriptions) {
+      const existing = mergedCharacterDescriptions[char.name];
+      mergedCharacterDescriptions[char.name] = existing
+        ? `${existing}. Additional: ${char.appearance}`
+        : char.appearance;
+    }
+  }
+
+  // Enhance the input with analyzed descriptions for scene breakdown
+  const enhancedInput = { ...input };
+  if (analyzedBackground && !enhancedInput.setting) {
+    enhancedInput.setting = analyzedBackground;
+  } else if (analyzedBackground && enhancedInput.setting) {
+    enhancedInput.setting = `${enhancedInput.setting}. Visual reference: ${analyzedBackground}`;
+  }
+
+  // Add product context to custom instructions
+  const productNames = Object.keys(analyzedProducts);
+  if (productNames.length > 0) {
+    const productContext = productNames
+      .map((name) => `Product "${name}": ${analyzedProducts[name]}`)
+      .join(". ");
+    enhancedInput.custom_instructions = enhancedInput.custom_instructions
+      ? `${enhancedInput.custom_instructions}. Products to feature: ${productContext}`
+      : `Products to feature in scenes: ${productContext}`;
+  }
+
+  // ─── Step 2: AI scene breakdown ────────────────────────────────────
   let breakdown: StoryboardGenerationOutput;
   try {
-    breakdown = await generateStoryboardBreakdown(input);
+    breakdown = await generateStoryboardBreakdown(enhancedInput);
   } catch (err) {
     return {
       success: false,
@@ -45,14 +101,7 @@ export async function generateFullStoryboard(
     };
   }
 
-  // ─── Step 2: Generate images for each scene ────────────────────────
-  const characterDescriptions: Record<string, string> = {};
-  if (input.character_descriptions) {
-    for (const char of input.character_descriptions) {
-      characterDescriptions[char.name] = char.appearance;
-    }
-  }
-
+  // ─── Step 3: Generate images for each scene ────────────────────────
   const scenes: GeneratedScene[] = [];
 
   for (const sceneBreakdown of breakdown.scenes) {
@@ -64,7 +113,9 @@ export async function generateFullStoryboard(
         scene: sceneBreakdown,
         style: input.style,
         plan: "pro",
-        characterDescriptions,
+        characterDescriptions: mergedCharacterDescriptions,
+        productDescriptions: analyzedProducts,
+        backgroundDescription: analyzedBackground,
       });
       imageUrl = result.url;
     } catch (err) {
@@ -93,9 +144,6 @@ export async function generateFullStoryboard(
 
   return {
     success: true,
-    data: {
-      breakdown,
-      scenes,
-    },
+    data: { breakdown, scenes },
   };
 }
