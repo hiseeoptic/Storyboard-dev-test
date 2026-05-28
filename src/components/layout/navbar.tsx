@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/generate", label: "Generate", icon: Sparkles },
+  { href: "/generate", label: "Storyboard", icon: Sparkles },
 ];
 
 export function Navbar() {
