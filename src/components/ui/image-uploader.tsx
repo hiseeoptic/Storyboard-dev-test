@@ -2,7 +2,6 @@
 
 import { useCallback, useRef, useState } from "react";
 import { ImagePlus, X, Upload } from "lucide-react";
-import { Button } from "./button";
 import { cn } from "@/lib/utils/cn";
 
 export interface UploadedImage {
