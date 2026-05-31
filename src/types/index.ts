@@ -92,6 +92,23 @@ export interface ImageReference {
   images: string[]; // base64 encoded images
 }
 
+// ─── Character Lock ─────────────────────────────────────────────────────────
+
+export interface CharacterLock {
+  name: string;
+  gender_age: string;
+  build: string;
+  skin_tone: string;
+  hair: string;
+  eyes: string;
+  costume: string;
+  signature_features: string;
+  default_expression: string;
+  render_style: string;
+}
+
+// ─── Scene Breakdown ────────────────────────────────────────────────────────
+
 export interface SceneBreakdown {
   scene_number: number;
   title: string;
@@ -99,6 +116,8 @@ export interface SceneBreakdown {
   visual_prompt: string;
   dialogue: string | null;
   action_notes: string | null;
+  camera_code: string;
+  camera_movement: string;
   camera_angle: CameraAngle;
   shot_type: ShotType;
   mood: string;
@@ -113,6 +132,9 @@ export interface SceneBreakdown {
 export interface StoryboardGenerationOutput {
   title: string;
   synopsis: string;
+  total_duration_seconds: number;
+  mood_tags: string[];
+  character_locks: CharacterLock[];
   scenes: SceneBreakdown[];
   timeline: TimelineEntry[];
   style_guide: StyleGuide;

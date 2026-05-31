@@ -1,35 +1,24 @@
 "use server";
 
 import { generateStoryboardBreakdown } from "@/services/ai-engine";
-import { generateSceneImage } from "@/services/image-pipeline";
+import {
+  generateCharacterRefSheet,
+  generateStoryboardPoster,
+} from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
+import { buildVideoPromptText } from "@/prompts";
 import type {
   ActionResult,
   StoryboardGenerationInput,
   StoryboardGenerationOutput,
+  CharacterLock,
 } from "@/types";
-
-interface GeneratedScene {
-  scene_number: number;
-  title: string;
-  description: string;
-  visual_prompt: string;
-  dialogue: string | null;
-  camera_angle: string;
-  shot_type: string;
-  mood: string;
-  lighting: string;
-  location: string;
-  characters: string[];
-  duration_seconds: number;
-  transition: string;
-  image_url: string | null;
-  generation_error: string | null;
-}
 
 export interface StoryboardResult {
   breakdown: StoryboardGenerationOutput;
-  scenes: GeneratedScene[];
+  characterRefSheetUrl: string | null;
+  storyboardPosterUrl: string | null;
+  videoPrompt: string;
 }
 
 export async function generateFullStoryboard(
@@ -61,25 +50,25 @@ export async function generateFullStoryboard(
   }
 
   // Merge text-based character descriptions with analyzed ones
-  const mergedCharacterDescriptions: Record<string, string> = { ...analyzedCharacters };
   if (input.character_descriptions) {
     for (const char of input.character_descriptions) {
-      const existing = mergedCharacterDescriptions[char.name];
-      mergedCharacterDescriptions[char.name] = existing
-        ? `${existing}. Additional: ${char.appearance}`
-        : char.appearance;
+      const existing = analyzedCharacters[char.name];
+      if (existing) {
+        analyzedCharacters[char.name] = `${existing}. Additional: ${char.appearance}`;
+      } else if (char.appearance) {
+        analyzedCharacters[char.name] = char.appearance;
+      }
     }
   }
 
-  // Enhance the input with analyzed descriptions for scene breakdown
+  // Enhance input with analyzed descriptions
   const enhancedInput = { ...input };
-  if (analyzedBackground && !enhancedInput.setting) {
-    enhancedInput.setting = analyzedBackground;
-  } else if (analyzedBackground && enhancedInput.setting) {
-    enhancedInput.setting = `${enhancedInput.setting}. Visual reference: ${analyzedBackground}`;
+  if (analyzedBackground) {
+    enhancedInput.setting = enhancedInput.setting
+      ? `${enhancedInput.setting}. Visual reference: ${analyzedBackground}`
+      : analyzedBackground;
   }
 
-  // Add product context to custom instructions
   const productNames = Object.keys(analyzedProducts);
   if (productNames.length > 0) {
     const productContext = productNames
@@ -90,7 +79,7 @@ export async function generateFullStoryboard(
       : `Products to feature in scenes: ${productContext}`;
   }
 
-  // ─── Step 2: AI scene breakdown ────────────────────────────────────
+  // ─── Step 2: AI scene breakdown + character locks ──────────────────
   let breakdown: StoryboardGenerationOutput;
   try {
     breakdown = await generateStoryboardBreakdown(enhancedInput);
@@ -101,49 +90,92 @@ export async function generateFullStoryboard(
     };
   }
 
-  // ─── Step 3: Generate images for each scene ────────────────────────
-  const scenes: GeneratedScene[] = [];
-
-  for (const sceneBreakdown of breakdown.scenes) {
-    let imageUrl: string | null = null;
-    let generationError: string | null = null;
-
-    try {
-      const result = await generateSceneImage({
-        scene: sceneBreakdown,
-        style: input.style,
-        plan: "pro",
-        characterDescriptions: mergedCharacterDescriptions,
-        productDescriptions: analyzedProducts,
-        backgroundDescription: analyzedBackground,
-      });
-      imageUrl = result.url;
-    } catch (err) {
-      generationError =
-        err instanceof Error ? err.message : "Image generation failed";
+  // Merge analyzed character descriptions into character_locks
+  for (const lock of breakdown.character_locks) {
+    const analyzed = analyzedCharacters[lock.name];
+    if (analyzed) {
+      lock.signature_features = lock.signature_features
+        ? `${lock.signature_features}. From reference: ${analyzed}`
+        : analyzed;
     }
-
-    scenes.push({
-      scene_number: sceneBreakdown.scene_number,
-      title: sceneBreakdown.title,
-      description: sceneBreakdown.description,
-      visual_prompt: sceneBreakdown.visual_prompt,
-      dialogue: sceneBreakdown.dialogue,
-      camera_angle: sceneBreakdown.camera_angle,
-      shot_type: sceneBreakdown.shot_type,
-      mood: sceneBreakdown.mood,
-      lighting: sceneBreakdown.lighting,
-      location: sceneBreakdown.location,
-      characters: sceneBreakdown.characters,
-      duration_seconds: sceneBreakdown.duration_seconds,
-      transition: sceneBreakdown.transition,
-      image_url: imageUrl,
-      generation_error: generationError,
-    });
   }
+
+  // ─── Step 3: Generate Character Reference Sheet ────────────────────
+  let characterRefSheetUrl: string | null = null;
+
+  if (breakdown.character_locks.length > 0) {
+    const mainCharacter = breakdown.character_locks[0] as CharacterLock;
+    try {
+      const result = await generateCharacterRefSheet({
+        characterLock: mainCharacter,
+        colorPalette: breakdown.style_guide.color_palette,
+      });
+      characterRefSheetUrl = result.url;
+    } catch (err) {
+      console.error("[Storyboard] Character ref sheet generation failed:", err);
+    }
+  }
+
+  // ─── Step 4: Generate Storyboard Poster ────────────────────────────
+  let storyboardPosterUrl: string | null = null;
+
+  // Build character description string for poster consistency
+  const charDescForPoster = breakdown.character_locks
+    .map(
+      (c) =>
+        `${c.name}: ${c.gender_age}, ${c.build}, skin ${c.skin_tone}, hair ${c.hair}, eyes ${c.eyes}, wearing ${c.costume}. ${c.signature_features}`
+    )
+    .join(". ");
+
+  try {
+    const result = await generateStoryboardPoster({
+      title: breakdown.title,
+      totalDuration: breakdown.total_duration_seconds,
+      sceneCount: breakdown.scenes.length,
+      moodTags: breakdown.mood_tags,
+      scenes: breakdown.scenes.map((s) => ({
+        scene_number: s.scene_number,
+        title: s.title,
+        description: s.description,
+        camera_code: s.camera_code || "[EYE]",
+        dialogue: s.dialogue,
+        characters: s.characters,
+      })),
+      characterDescription: charDescForPoster || "No specific character",
+      style: input.style,
+      colorPalette: breakdown.style_guide.color_palette,
+    });
+    storyboardPosterUrl = result.url;
+  } catch (err) {
+    console.error("[Storyboard] Storyboard poster generation failed:", err);
+  }
+
+  // ─── Step 5: Generate Video Prompt Text ────────────────────────────
+  const videoPrompt = buildVideoPromptText({
+    title: breakdown.title,
+    characterDescription: charDescForPoster || "No specific character",
+    setting: input.setting || breakdown.scenes[0]?.location || "Unspecified",
+    style: input.style,
+    colorPalette: breakdown.style_guide.color_palette,
+    scenes: breakdown.scenes.map((s) => ({
+      scene_number: s.scene_number,
+      title: s.title,
+      camera_code: s.camera_code || "[EYE]",
+      camera_movement: s.camera_movement || "static",
+      action_notes: s.action_notes || s.description,
+      dialogue: s.dialogue,
+      mood: s.mood,
+      duration_seconds: s.duration_seconds,
+    })),
+  });
 
   return {
     success: true,
-    data: { breakdown, scenes },
+    data: {
+      breakdown,
+      characterRefSheetUrl,
+      storyboardPosterUrl,
+      videoPrompt,
+    },
   };
 }

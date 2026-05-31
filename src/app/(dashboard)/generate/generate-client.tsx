@@ -4,17 +4,18 @@ import { useState } from "react";
 import {
   Sparkles,
   Loader2,
-  FileText,
-  FolderArchive,
   ChevronRight,
   ChevronLeft,
-  CheckCircle2,
-  XCircle,
   RotateCw,
   Users,
   Package,
   MapPin,
   Globe,
+  Copy,
+  Check,
+  Download,
+  Film,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -235,6 +236,7 @@ export function GenerateClient() {
   const [progressPercent, setProgressPercent] = useState(0);
   const [progressMessage, setProgressMessage] = useState("");
   const [result, setResult] = useState<StoryboardResult | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const L = (key: keyof typeof t) => {
     const val = t[key];
@@ -371,43 +373,19 @@ export function GenerateClient() {
 
   // ─── Downloads ───────────────────────────────────────────────────
 
-  const downloadPdf = async () => {
-    if (!result) return;
-    const res = await fetch("/api/export/pdf", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: result.breakdown.title,
-        synopsis: result.breakdown.synopsis,
-        scenes: result.scenes,
-      }),
-    });
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
+  const downloadImage = (url: string, filename: string) => {
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
+    a.download = filename;
+    a.target = "_blank";
     a.click();
-    URL.revokeObjectURL(url);
   };
 
-  const downloadZip = async () => {
+  const copyVideoPrompt = () => {
     if (!result) return;
-    const res = await fetch("/api/export/zip", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: result.breakdown.title,
-        scenes: result.scenes,
-      }),
-    });
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}_images.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
+    navigator.clipboard.writeText(result.videoPrompt);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   // ─── Language Toggle Button ──────────────────────────────────────
@@ -440,47 +418,127 @@ export function GenerateClient() {
   // ─── Result Phase ──────────────────────────────────────────────────
 
   if (phase === "result" && result) {
-    const successCount = result.scenes.filter((s) => s.image_url).length;
-    const failCount = result.scenes.filter((s) => s.generation_error).length;
-
     return (
-      <div className="space-y-6">
+      <div className="space-y-8">
+        {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">{result.breakdown.title}</h1>
             <p className="mt-1 text-sm text-muted-foreground">{result.breakdown.synopsis}</p>
-            <div className="mt-2 flex items-center gap-2">
-              <Badge variant="secondary">
-                <CheckCircle2 className="mr-1 h-3 w-3" />
-                {successCount} {L("generated")}
-              </Badge>
-              {failCount > 0 && (
-                <Badge variant="destructive">
-                  <XCircle className="mr-1 h-3 w-3" />
-                  {failCount} {L("failed")}
-                </Badge>
-              )}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">{result.breakdown.scenes.length} {L("scenes")}</Badge>
+              <Badge variant="secondary">{result.breakdown.total_duration_seconds}s</Badge>
+              {result.breakdown.mood_tags.map((tag) => (
+                <Badge key={tag} variant="outline">{tag}</Badge>
+              ))}
             </div>
           </div>
           <div className="flex gap-2">
             <LangToggle />
-            <Button variant="outline" onClick={downloadPdf} className="gap-2">
-              <FileText className="h-4 w-4" /> PDF
-            </Button>
-            <Button variant="outline" onClick={downloadZip} className="gap-2">
-              <FolderArchive className="h-4 w-4" /> ZIP
-            </Button>
             <Button onClick={() => { setPhase("input"); setResult(null); setStep(0); }} className="gap-2">
               <RotateCw className="h-4 w-4" /> {L("newStoryboard")}
             </Button>
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {result.scenes.map((scene) => (
-            <SceneResultCard key={scene.scene_number} scene={scene} lang={lang} />
-          ))}
-        </div>
+        {/* Character Reference Sheet */}
+        {result.characterRefSheetUrl && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Users className="h-5 w-5" />
+                  {lang === "vi" ? "Bảng Tham Chiếu Nhân Vật" : "Character Reference Sheet"}
+                </CardTitle>
+                <Button variant="outline" size="sm" onClick={() => downloadImage(result.characterRefSheetUrl!, `character-ref-${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.png`)} className="gap-1.5">
+                  <Download className="h-3.5 w-3.5" />
+                  {lang === "vi" ? "Tải ảnh" : "Download"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-hidden rounded-lg border">
+                <img src={result.characterRefSheetUrl} alt="Character Reference Sheet" className="w-full" />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Storyboard Poster */}
+        {result.storyboardPosterUrl && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <ImageIcon className="h-5 w-5" />
+                  {lang === "vi" ? "Poster Storyboard" : "Storyboard Poster"}
+                </CardTitle>
+                <Button variant="outline" size="sm" onClick={() => downloadImage(result.storyboardPosterUrl!, `storyboard-${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.png`)} className="gap-1.5">
+                  <Download className="h-3.5 w-3.5" />
+                  {lang === "vi" ? "Tải ảnh" : "Download"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-hidden rounded-lg border">
+                <img src={result.storyboardPosterUrl} alt="Storyboard Poster" className="w-full" />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Video Prompt */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Film className="h-5 w-5" />
+                {lang === "vi" ? "Video Prompt cho Flowveo / Seedance / Kling" : "Video Prompt for Flowveo / Seedance / Kling"}
+              </CardTitle>
+              <Button variant="outline" size="sm" onClick={copyVideoPrompt} className="gap-1.5">
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? (lang === "vi" ? "Đã copy" : "Copied") : "Copy"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-muted p-4 text-xs font-mono">
+              {result.videoPrompt}
+            </pre>
+          </CardContent>
+        </Card>
+
+        {/* Scene Details */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">
+              {lang === "vi" ? "Chi tiết từng cảnh" : "Scene Details"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {result.breakdown.scenes.map((scene) => (
+                <div key={scene.scene_number} className="flex gap-3 rounded-lg border p-3">
+                  <Badge variant="secondary" className="h-6 w-6 shrink-0 items-center justify-center p-0 text-xs">
+                    {scene.scene_number}
+                  </Badge>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{scene.title}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{scene.description}</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <Badge variant="outline" className="text-[10px]">{scene.camera_code}</Badge>
+                      <Badge variant="outline" className="text-[10px]">{scene.shot_type}</Badge>
+                      <Badge variant="outline" className="text-[10px]">{scene.duration_seconds}s</Badge>
+                      {scene.dialogue && (
+                        <span className="text-[10px] italic text-muted-foreground">&ldquo;{scene.dialogue}&rdquo;</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -761,33 +819,3 @@ export function GenerateClient() {
   );
 }
 
-// ─── Scene Result Card ──────────────────────────────────────────────────────
-
-function SceneResultCard({ scene, lang }: { scene: StoryboardResult["scenes"][number]; lang: Lang }) {
-  return (
-    <Card className="overflow-hidden">
-      <div className="relative aspect-video bg-muted">
-        {scene.image_url ? (
-          <img src={scene.image_url} alt={scene.title} className="h-full w-full object-cover" />
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-1">
-            <XCircle className="h-6 w-6 text-destructive" />
-            <span className="text-xs text-destructive">{lang === "vi" ? "Thất bại" : "Failed"}</span>
-          </div>
-        )}
-        <Badge variant="secondary" className="absolute left-2 top-2 text-xs">
-          #{scene.scene_number}
-        </Badge>
-      </div>
-      <CardContent className="p-3">
-        <p className="text-sm font-medium">{scene.title}</p>
-        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{scene.description}</p>
-        {scene.dialogue && (
-          <p className="mt-1 line-clamp-1 text-xs italic text-muted-foreground">
-            &ldquo;{scene.dialogue}&rdquo;
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}

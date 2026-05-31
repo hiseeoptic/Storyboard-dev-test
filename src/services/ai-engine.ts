@@ -6,7 +6,6 @@ import {
 import type {
   StoryboardGenerationInput,
   StoryboardGenerationOutput,
-  SceneBreakdown,
 } from "@/types";
 
 const MAX_RETRIES = 3;
@@ -14,19 +13,6 @@ const RETRY_DELAY_MS = 1000;
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function validateSceneBreakdown(scene: unknown): scene is SceneBreakdown {
-  if (typeof scene !== "object" || scene === null) return false;
-  const s = scene as Record<string, unknown>;
-  return (
-    typeof s.scene_number === "number" &&
-    typeof s.title === "string" &&
-    typeof s.description === "string" &&
-    typeof s.visual_prompt === "string" &&
-    typeof s.camera_angle === "string" &&
-    typeof s.shot_type === "string"
-  );
 }
 
 function validateOutput(data: unknown): data is StoryboardGenerationOutput {
@@ -37,8 +23,7 @@ function validateOutput(data: unknown): data is StoryboardGenerationOutput {
     typeof d.synopsis === "string" &&
     Array.isArray(d.scenes) &&
     d.scenes.length > 0 &&
-    d.scenes.every(validateSceneBreakdown) &&
-    Array.isArray(d.timeline) &&
+    Array.isArray(d.character_locks) &&
     typeof d.style_guide === "object" &&
     d.style_guide !== null
   );
@@ -92,6 +77,7 @@ export async function generateStoryboardBreakdown(
         throw new Error("Response does not match expected schema");
       }
 
+      // Ensure scene count matches
       if (parsed.scenes.length !== input.scene_count) {
         parsed.scenes = parsed.scenes.slice(0, input.scene_count);
         parsed.scenes.forEach((scene, i) => {
@@ -99,6 +85,7 @@ export async function generateStoryboardBreakdown(
         });
       }
 
+      // Rebuild timeline
       let runningTime = 0;
       parsed.timeline = parsed.scenes.map((scene) => {
         const entry = {
@@ -110,6 +97,31 @@ export async function generateStoryboardBreakdown(
         runningTime += scene.duration_seconds;
         return entry;
       });
+
+      // Ensure total_duration_seconds
+      if (!parsed.total_duration_seconds) {
+        parsed.total_duration_seconds = runningTime;
+      }
+
+      // Ensure mood_tags
+      if (!parsed.mood_tags || parsed.mood_tags.length === 0) {
+        parsed.mood_tags = ["dramatic"];
+      }
+
+      // Ensure character_locks have defaults
+      if (!parsed.character_locks) {
+        parsed.character_locks = [];
+      }
+
+      // Backfill camera_code if missing
+      for (const scene of parsed.scenes) {
+        if (!scene.camera_code) {
+          scene.camera_code = "[EYE]";
+        }
+        if (!scene.camera_movement) {
+          scene.camera_movement = "static";
+        }
+      }
 
       return parsed;
     } catch (err) {
