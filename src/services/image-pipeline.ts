@@ -24,7 +24,6 @@ async function generateImage(prompt: string): Promise<string> {
         n: 1,
         size: "1792x1024",
         quality: "hd",
-        style: "natural",
       });
 
       const url = response.data?.[0]?.url;
