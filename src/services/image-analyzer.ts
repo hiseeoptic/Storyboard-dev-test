@@ -19,7 +19,7 @@ export async function analyzeReferenceImages(params: {
   const productDescriptions: Record<string, string> = {};
   let backgroundDescription = "";
 
-  // ─── Analyze character images ──────────────────────────────────────
+  // ─── Analyze character images (HIGH detail for accuracy) ──────────
   if (params.characters && params.characters.length > 0) {
     for (const character of params.characters) {
       if (character.images.length === 0) continue;
@@ -28,7 +28,7 @@ export async function analyzeReferenceImages(params: {
         type: "image_url" as const,
         image_url: {
           url: `data:image/jpeg;base64,${base64}`,
-          detail: "low" as const,
+          detail: "high" as const,
         },
       }));
 
@@ -41,13 +41,27 @@ export async function analyzeReferenceImages(params: {
               content: [
                 {
                   type: "text",
-                  text: `Analyze these reference photos of a character named "${character.name}". Provide a concise visual description (max 100 words) focusing on: physical appearance (age, build, skin tone, hair color/style, facial features), clothing style, and any distinctive features. This will be used to generate consistent AI images of this character. Be specific about colors and details.`,
+                  text: `You are a character design specialist. Analyze these reference photos of "${character.name}" and provide a DETAILED visual description for AI image generation consistency.
+
+Describe in this exact order (be extremely specific about colors, shapes, proportions):
+1. GENDER & AGE: exact gender and estimated age range
+2. BUILD: body type (slim/medium/athletic/stocky/heavyset), estimated height
+3. FACE SHAPE: round/oval/square/heart/angular
+4. SKIN TONE: exact skin color description (e.g. "warm olive", "fair porcelain", "deep brown")
+5. HAIR: exact color, length, texture, style (e.g. "jet black wavy hair, shoulder length, side-parted")
+6. EYES: color, shape, size (e.g. "large dark brown almond-shaped eyes")
+7. NOSE & LIPS: shape descriptions
+8. COSTUME/CLOTHING: complete outfit description with colors and patterns
+9. ACCESSORIES: glasses, jewelry, hat, watch, etc.
+10. SIGNATURE FEATURES: any distinctive marks, tattoos, scars, dimples, freckles
+
+Write as a continuous paragraph, NOT bullet points. Use precise color names. This description will be restated word-for-word in every image generation prompt to ensure the character looks identical across all scenes.`,
                 },
                 ...imageContent,
               ],
             },
           ],
-          max_tokens: 200,
+          max_tokens: 500,
         });
 
         const desc = response.choices[0]?.message?.content?.trim();
@@ -69,7 +83,7 @@ export async function analyzeReferenceImages(params: {
         type: "image_url" as const,
         image_url: {
           url: `data:image/jpeg;base64,${base64}`,
-          detail: "low" as const,
+          detail: "high" as const,
         },
       }));
 
@@ -82,13 +96,13 @@ export async function analyzeReferenceImages(params: {
               content: [
                 {
                   type: "text",
-                  text: `Analyze these product photos of "${product.name}"${product.description ? ` (${product.description})` : ""}. Provide a concise visual description (max 80 words) focusing on: shape, size, color, material, brand elements, packaging. This will be used to include this product accurately in AI-generated storyboard scenes. Be specific.`,
+                  text: `Analyze these product photos of "${product.name}"${product.description ? ` (${product.description})` : ""}. Provide a detailed visual description (150 words max) focusing on: exact shape, dimensions, colors (use precise color names), material/texture, brand elements, logo placement, packaging details, label text if visible. This will be used to include this product accurately and consistently in AI-generated storyboard scenes. Be very specific about visual details.`,
                 },
                 ...imageContent,
               ],
             },
           ],
-          max_tokens: 150,
+          max_tokens: 300,
         });
 
         const desc = response.choices[0]?.message?.content?.trim();

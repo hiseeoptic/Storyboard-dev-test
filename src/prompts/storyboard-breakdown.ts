@@ -118,40 +118,38 @@ export function buildCharacterRefSheetPrompt(params: {
   colorPalette?: string[];
 }): string {
   const c = params.characterLock;
-  const propsBlock = params.props && params.props.length > 0
-    ? `Props zone at bottom-left showing: ${params.props.join(", ")}, each item rendered individually with clean background.`
-    : "";
 
-  const colorBlock = params.colorPalette && params.colorPalette.length > 0
-    ? `Color palette strip at bottom-right showing ${params.colorPalette.length} circular swatches: ${params.colorPalette.join(", ")}.`
-    : "";
+  const colorSwatches =
+    params.colorPalette && params.colorPalette.length > 0
+      ? params.colorPalette.slice(0, 6).join(", ")
+      : "#F5E6D3, #8B4513, #2D5016, #FFFFFF, #1A1A1A, #D4A574";
 
-  return `Create a single horizontal CHARACTER REFERENCE SHEET poster (16:9 ratio) on warm cream/white paper background with thin black border.
+  // Keep prompt concise but highly specific to match example layouts
+  return `Professional CHARACTER REFERENCE SHEET, single horizontal 16:9 image, clean cream/off-white paper background.
 
-CHARACTER: ${c.name}
-- ${c.gender_age}, ${c.build} build
-- Skin: ${c.skin_tone}
-- Hair: ${c.hair}
-- Eyes: ${c.eyes}
-- Costume: ${c.costume}
-- Signature features: ${c.signature_features}
-- Default expression: ${c.default_expression}
-- Render style: ${c.render_style}
+CHARACTER — ${c.name}: ${c.gender_age}, ${c.build} build, ${c.skin_tone} skin, ${c.hair} hair, ${c.eyes} eyes. Wearing ${c.costume}. ${c.signature_features}. Style: ${c.render_style}.
 
-LAYOUT — All zones visible in one image:
+EXACT LAYOUT (all in one image):
 
-TOP-LEFT: Title "CHARACTER REFERENCE SHEET" in bold sans-serif. Character name large below. Brief description text.
+■ TOP-LEFT CORNER: Bold header text "CHARACTER REFERENCE SHEET". Below it: character name "${c.name}" in large decorative font. Below that: 2-line character bio text.
 
-LEFT ZONE — HERO POSE: Large character portrait (about 40% of width), full body, slight 3/4 angle, ${c.default_expression} expression, holding or interacting with relevant prop.
+■ LEFT ZONE (30% width): Single large FULL BODY illustration of the character in a dynamic hero pose, showing personality through body language and ${c.default_expression} expression. Full body visible head to toe.
 
-CENTER — TURNAROUND: 3-4 orthographic full-body views labeled "FRONT", "3/4 VIEW", "SIDE", "BACK". Same pose, neutral expression, evenly lit, no perspective distortion.
+■ CENTER ZONE: Section labeled "TURNAROUND" — exactly 4 full-body orthographic views of the SAME character side by side: FRONT view, 3/4 VIEW, SIDE view, BACK view. All same scale, neutral pose, same outfit, evenly lit on white background. Small labels below each view.
 
-TOP-RIGHT — EXPRESSIONS: 6 head-and-shoulder expression studies in a 3x2 grid, each labeled. Show range: happy, worried, surprised, determined, sad, proud. Same hair, same costume neckline visible.
+■ TOP-RIGHT ZONE: Section labeled "EXPRESSIONS" — exactly 6 head-and-shoulder portraits in a 3×2 grid showing different emotions. Each labeled: HAPPY, WORRIED, SURPRISED, DETERMINED, SAD, PROUD. Same hair, same costume neckline visible in each.
 
-${propsBlock}
-${colorBlock}
+■ BOTTOM-LEFT: Section labeled "PROPS" — 4-6 individual object illustrations relevant to the character's story (tools, accessories, items they use), each rendered separately on white background.
 
-STYLE: Clean infographic layout, ${c.render_style} render quality, professional character sheet design. No real photographs. Consistent character across all zones. Thin divider lines between sections. Labels in bold sans-serif font.`;
+■ BOTTOM-RIGHT: Section labeled "COLOR PALETTE" — row of 6 circular color swatches: ${colorSwatches}.
+
+CRITICAL RULES:
+- The character must look IDENTICAL in every zone (turnaround, expressions, hero pose)
+- Clean infographic layout with thin dividing lines between sections
+- All text labels in bold sans-serif font
+- Professional character design sheet quality
+- NO photographs — this is ${c.render_style} style illustration
+- Single cohesive image, not separate images`;
 }
 
 // ─── Step 3: Storyboard Poster Image Prompt ─────────────────────────────────
@@ -173,44 +171,58 @@ export function buildStoryboardPosterPrompt(params: {
   style: string;
   colorPalette?: string[];
 }): string {
-  const panelDescriptions = params.scenes
+  // Limit scene descriptions to keep under DALL-E's 4000 char limit
+  const maxScenes = Math.min(params.scenes.length, 12);
+  const truncatedScenes = params.scenes.slice(0, maxScenes);
+
+  const cols = maxScenes <= 6 ? 3 : 4;
+  const rows = Math.ceil(maxScenes / cols);
+
+  // Build compact panel descriptions (max ~60 chars each)
+  const panelLines = truncatedScenes
     .map((s) => {
-      const dialogueLine = s.dialogue ? ` Dialogue: "${s.dialogue}"` : "";
-      return `Panel ${s.scene_number} — "${s.title}" ${s.camera_code}: ${s.description}${dialogueLine}`;
+      const shortDesc = s.description.length > 50
+        ? s.description.slice(0, 50) + "..."
+        : s.description;
+      return `[${s.scene_number}] "${s.title}": ${shortDesc}`;
     })
     .join("\n");
 
-  const cols = params.sceneCount <= 6 ? 3 : 4;
-  const rows = Math.ceil(params.sceneCount / cols);
+  // Truncate character description to save prompt space
+  const charDesc =
+    params.characterDescription.length > 300
+      ? params.characterDescription.slice(0, 300) + "..."
+      : params.characterDescription;
 
-  const colorBlock = params.colorPalette && params.colorPalette.length > 0
-    ? `Color palette: ${params.colorPalette.join(", ")}.`
-    : "";
+  const moodLine = params.moodTags.slice(0, 4).join(" • ");
 
-  return `Create a single 16:9 horizontal STORYBOARD POSTER infographic on white/cream paper background.
+  return `Professional STORYBOARD poster, single horizontal 16:9 image, clean white/cream paper background.
 
-CHARACTER (restate in every panel): ${params.characterDescription}
+CHARACTER (must look identical in EVERY panel): ${charDesc}
 
-HEADER ZONE:
-- Large bold title: "STORYBOARD" on the left
-- Subtitle: "TIÊU ĐỀ: ${params.title}"
-- Right side: Total ${params.totalDuration}s · ${params.sceneCount} shots · ${params.moodTags.join(" · ")}
+EXACT LAYOUT:
 
-PANEL GRID: ${cols} columns × ${rows} rows of equally-sized panels, thin black borders:
-${panelDescriptions}
+■ HEADER BAR (top): Large bold title "STORYBOARD" on left. Subtitle "TIÊU ĐỀ: ${params.title}" centered. Right side metadata: "${params.totalDuration}s • ${maxScenes} SHOTS • ${moodLine}".
 
-Each panel contains:
-- Large number badge (top-left corner)
-- The scene illustration matching the description above
-- Below each panel: 1-line italic caption summarizing the action/dialogue
+■ PANEL GRID: ${cols} columns × ${rows} rows of equally-sized rectangular panels with thin black borders. Each panel contains:
+  - NUMBERED BADGE: Bold number (1, 2, 3...) in colored square, top-left corner of each panel
+  - SCENE ILLUSTRATION: The main ${params.style}-style artwork showing the action described
+  - CAPTION: 1-line italic text below each panel describing the action
 
-CHARACTER CONSISTENCY: The same character appearance must be maintained across ALL panels — same hair, skin, costume, features.
+PANEL CONTENTS:
+${panelLines}
 
-STYLE: ${params.style} render quality. Clean infographic design. ${colorBlock}
+■ FOOTER BAR (bottom): Decorative divider line, then a thematic tagline or director's note in italic, centered.
 
-FOOTER: Decorative line with a motivational tagline or director's note related to the story theme.
-
-IMPORTANT: This must be ONE single image containing ALL panels arranged in a grid. Not individual images.`;
+CRITICAL RULES:
+- This is ONE single image containing ALL ${maxScenes} panels in a grid layout
+- The same character must be recognizable across ALL panels (same hair, skin, costume, features)
+- Each panel is a distinct scene with different composition, camera angle, and action
+- ${params.style} visual style throughout
+- Clean professional storyboard design — like a film production document
+- NO photographs — this is ${params.style} style illustration
+- Panel numbers are clearly visible as colored badges
+- Brief text captions below each panel summarize the action`;
 }
 
 // ─── Step 4: Video Prompt for Flowveo / Seedance / Kling ────────────────────

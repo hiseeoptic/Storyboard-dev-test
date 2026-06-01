@@ -16,6 +16,7 @@ import {
   Download,
   Film,
   Image as ImageIcon,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -128,10 +129,18 @@ const t = {
   // Generating
   generating: { vi: "Đang tạo storyboard...", en: "Generating your storyboard..." },
   preparing: { vi: "Đang chuẩn bị...", en: "Preparing..." },
-  analyzingImages: { vi: "Đang phân tích ảnh tham chiếu...", en: "Analyzing uploaded images..." },
+  analyzingImages: { vi: "Bước 1/5 — Đang phân tích ảnh tham chiếu...", en: "Step 1/5 — Analyzing reference images..." },
   creatingScenes: {
-    vi: "AI đang tạo kịch bản và hình ảnh cho từng cảnh...",
-    en: "AI is creating scene breakdowns and generating images...",
+    vi: "Bước 2/5 — AI đang tạo kịch bản, nhân vật, phân cảnh...",
+    en: "Step 2/5 — AI creating script, characters, scene breakdown...",
+  },
+  generatingCharSheet: {
+    vi: "Bước 3-4/5 — Đang tạo Character Reference Sheet + Storyboard Poster...",
+    en: "Step 3-4/5 — Generating Character Reference Sheet + Storyboard Poster...",
+  },
+  generatingDone: {
+    vi: "Bước 5/5 — Hoàn tất, đang tạo Video Prompt...",
+    en: "Step 5/5 — Finalizing, creating Video Prompt...",
   },
 
   // Results
@@ -358,17 +367,43 @@ export function GenerateClient() {
     setProgressPercent(20);
     setProgressMessage(L("creatingScenes"));
 
-    const res = await generateFullStoryboard(input);
-    setProgressPercent(100);
+    // Simulate progress during long generation
+    const progressTimer = setInterval(() => {
+      setProgressPercent((prev) => {
+        if (prev < 40) return prev + 2;
+        if (prev < 60) {
+          setProgressMessage(L("generatingCharSheet"));
+          return prev + 1;
+        }
+        if (prev < 85) return prev + 0.5;
+        return prev;
+      });
+    }, 2000);
 
-    if (!res.success) {
-      setError(res.error);
+    try {
+      const res = await generateFullStoryboard(input);
+      clearInterval(progressTimer);
+
+      setProgressPercent(95);
+      setProgressMessage(L("generatingDone"));
+
+      if (!res.success) {
+        setError(res.error);
+        setPhase("input");
+        return;
+      }
+
+      // Brief delay for visual completion
+      await new Promise((r) => setTimeout(r, 500));
+      setProgressPercent(100);
+
+      setResult(res.data);
+      setPhase("result");
+    } catch (err) {
+      clearInterval(progressTimer);
+      setError(err instanceof Error ? err.message : "An unexpected error occurred");
       setPhase("input");
-      return;
     }
-
-    setResult(res.data);
-    setPhase("result");
   };
 
   // ─── Downloads ───────────────────────────────────────────────────
@@ -418,6 +453,10 @@ export function GenerateClient() {
   // ─── Result Phase ──────────────────────────────────────────────────
 
   if (phase === "result" && result) {
+    const hasCharSheet = !!result.characterRefSheetUrl;
+    const hasPoster = !!result.storyboardPosterUrl;
+    const hasWarnings = result.warnings && result.warnings.length > 0;
+
     return (
       <div className="space-y-8">
         {/* Header */}
@@ -441,8 +480,27 @@ export function GenerateClient() {
           </div>
         </div>
 
+        {/* Warnings */}
+        {hasWarnings && (
+          <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-4 dark:border-yellow-600 dark:bg-yellow-950">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600" />
+              <div className="text-sm">
+                <p className="font-medium text-yellow-800 dark:text-yellow-200">
+                  {lang === "vi" ? "Cảnh báo trong quá trình tạo:" : "Warnings during generation:"}
+                </p>
+                <ul className="mt-1 list-disc pl-4 text-yellow-700 dark:text-yellow-300">
+                  {result.warnings.map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Character Reference Sheet */}
-        {result.characterRefSheetUrl && (
+        {hasCharSheet ? (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -458,14 +516,31 @@ export function GenerateClient() {
             </CardHeader>
             <CardContent>
               <div className="overflow-hidden rounded-lg border">
-                <img src={result.characterRefSheetUrl} alt="Character Reference Sheet" className="w-full" />
+                <img src={result.characterRefSheetUrl!} alt="Character Reference Sheet" className="w-full" />
               </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {lang === "vi"
+                  ? "Bao gồm: Full Body, Turnaround (4 góc), Expressions (6 biểu cảm), Props, Color Palette"
+                  : "Includes: Full Body, Turnaround (4 angles), Expressions (6 emotions), Props, Color Palette"}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+              <Users className="mb-2 h-8 w-8 text-muted-foreground/50" />
+              <p className="text-sm font-medium text-muted-foreground">
+                {lang === "vi" ? "Character Reference Sheet không tạo được" : "Character Reference Sheet could not be generated"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {lang === "vi" ? "Vui lòng thử lại hoặc kiểm tra kết nối API" : "Please try again or check API connection"}
+              </p>
             </CardContent>
           </Card>
         )}
 
         {/* Storyboard Poster */}
-        {result.storyboardPosterUrl && (
+        {hasPoster ? (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -481,8 +556,25 @@ export function GenerateClient() {
             </CardHeader>
             <CardContent>
               <div className="overflow-hidden rounded-lg border">
-                <img src={result.storyboardPosterUrl} alt="Storyboard Poster" className="w-full" />
+                <img src={result.storyboardPosterUrl!} alt="Storyboard Poster" className="w-full" />
               </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {lang === "vi"
+                  ? `Poster ${result.breakdown.scenes.length} cảnh — sẵn sàng để đưa vào Flowveo / Seedance / Kling`
+                  : `${result.breakdown.scenes.length}-panel poster — ready for Flowveo / Seedance / Kling`}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+              <ImageIcon className="mb-2 h-8 w-8 text-muted-foreground/50" />
+              <p className="text-sm font-medium text-muted-foreground">
+                {lang === "vi" ? "Storyboard Poster không tạo được" : "Storyboard Poster could not be generated"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {lang === "vi" ? "Vui lòng thử lại hoặc kiểm tra kết nối API" : "Please try again or check API connection"}
+              </p>
             </CardContent>
           </Card>
         )}

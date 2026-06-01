@@ -19,11 +19,15 @@ export interface StoryboardResult {
   characterRefSheetUrl: string | null;
   storyboardPosterUrl: string | null;
   videoPrompt: string;
+  /** Non-fatal errors/warnings encountered during generation */
+  warnings: string[];
 }
 
 export async function generateFullStoryboard(
   input: StoryboardGenerationInput
 ): Promise<ActionResult<StoryboardResult>> {
+  const warnings: string[] = [];
+
   // ─── Step 1: Analyze uploaded reference images ─────────────────────
   let analyzedCharacters: Record<string, string> = {};
   let analyzedProducts: Record<string, string> = {};
@@ -45,7 +49,9 @@ export async function generateFullStoryboard(
       analyzedProducts = analysis.productDescriptions;
       analyzedBackground = analysis.backgroundDescription;
     } catch (err) {
-      console.error("[Storyboard] Image analysis failed, continuing without:", err);
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      warnings.push(`Image analysis failed: ${msg}`);
+      console.error("[Storyboard] Image analysis failed:", err);
     }
   }
 
@@ -100,23 +106,8 @@ export async function generateFullStoryboard(
     }
   }
 
-  // ─── Step 3: Generate Character Reference Sheet ────────────────────
+  // ─── Step 3 & 4: Generate images in parallel ──────────────────────
   let characterRefSheetUrl: string | null = null;
-
-  if (breakdown.character_locks.length > 0) {
-    const mainCharacter = breakdown.character_locks[0] as CharacterLock;
-    try {
-      const result = await generateCharacterRefSheet({
-        characterLock: mainCharacter,
-        colorPalette: breakdown.style_guide.color_palette,
-      });
-      characterRefSheetUrl = result.url;
-    } catch (err) {
-      console.error("[Storyboard] Character ref sheet generation failed:", err);
-    }
-  }
-
-  // ─── Step 4: Generate Storyboard Poster ────────────────────────────
   let storyboardPosterUrl: string | null = null;
 
   // Build character description string for poster consistency
@@ -127,8 +118,18 @@ export async function generateFullStoryboard(
     )
     .join(". ");
 
-  try {
-    const result = await generateStoryboardPoster({
+  // Run both image generations in parallel for speed
+  const [charRefResult, posterResult] = await Promise.allSettled([
+    // Character Reference Sheet
+    breakdown.character_locks.length > 0
+      ? generateCharacterRefSheet({
+          characterLock: breakdown.character_locks[0] as CharacterLock,
+          colorPalette: breakdown.style_guide.color_palette,
+        })
+      : Promise.resolve(null),
+
+    // Storyboard Poster
+    generateStoryboardPoster({
       title: breakdown.title,
       totalDuration: breakdown.total_duration_seconds,
       sceneCount: breakdown.scenes.length,
@@ -144,10 +145,23 @@ export async function generateFullStoryboard(
       characterDescription: charDescForPoster || "No specific character",
       style: input.style,
       colorPalette: breakdown.style_guide.color_palette,
-    });
-    storyboardPosterUrl = result.url;
-  } catch (err) {
-    console.error("[Storyboard] Storyboard poster generation failed:", err);
+    }),
+  ]);
+
+  if (charRefResult.status === "fulfilled" && charRefResult.value) {
+    characterRefSheetUrl = charRefResult.value.url;
+  } else if (charRefResult.status === "rejected") {
+    const msg = charRefResult.reason instanceof Error ? charRefResult.reason.message : "Unknown error";
+    warnings.push(`Character Reference Sheet: ${msg}`);
+    console.error("[Storyboard] Character ref sheet failed:", charRefResult.reason);
+  }
+
+  if (posterResult.status === "fulfilled" && posterResult.value) {
+    storyboardPosterUrl = posterResult.value.url;
+  } else if (posterResult.status === "rejected") {
+    const msg = posterResult.reason instanceof Error ? posterResult.reason.message : "Unknown error";
+    warnings.push(`Storyboard Poster: ${msg}`);
+    console.error("[Storyboard] Storyboard poster failed:", posterResult.reason);
   }
 
   // ─── Step 5: Generate Video Prompt Text ────────────────────────────
@@ -176,6 +190,7 @@ export async function generateFullStoryboard(
       characterRefSheetUrl,
       storyboardPosterUrl,
       videoPrompt,
+      warnings,
     },
   };
 }
