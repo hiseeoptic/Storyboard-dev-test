@@ -465,12 +465,21 @@ export function GenerateClient() {
 
   // ─── Downloads ───────────────────────────────────────────────────
 
-  const downloadImage = (url: string, filename: string) => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.target = "_blank";
-    a.click();
+  const downloadImage = async (url: string, filename: string) => {
+    try {
+      // Works for both data URIs (Gemini) and remote URLs (DALL-E)
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch {
+      // Fallback: open in new tab if fetch fails (e.g. CORS)
+      window.open(url, "_blank");
+    }
   };
 
   const copyVideoPrompt = () => {
