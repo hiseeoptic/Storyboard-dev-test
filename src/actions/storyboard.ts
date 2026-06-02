@@ -9,6 +9,7 @@ import { analyzeReferenceImages } from "@/services/image-analyzer";
 import { buildVideoPromptText } from "@/prompts";
 import type {
   ActionResult,
+  AIProvider,
   StoryboardGenerationInput,
   StoryboardGenerationOutput,
   CharacterLock,
@@ -24,7 +25,8 @@ export interface StoryboardResult {
 }
 
 export async function generateFullStoryboard(
-  input: StoryboardGenerationInput
+  input: StoryboardGenerationInput,
+  provider: AIProvider = "openai"
 ): Promise<ActionResult<StoryboardResult>> {
   const warnings: string[] = [];
 
@@ -44,6 +46,7 @@ export async function generateFullStoryboard(
         characters: input.character_images,
         products: input.product_images,
         backgrounds: input.background_images,
+        provider,
       });
       analyzedCharacters = analysis.characterDescriptions;
       analyzedProducts = analysis.productDescriptions;
@@ -88,7 +91,7 @@ export async function generateFullStoryboard(
   // ─── Step 2: AI scene breakdown + character locks ──────────────────
   let breakdown: StoryboardGenerationOutput;
   try {
-    breakdown = await generateStoryboardBreakdown(enhancedInput);
+    breakdown = await generateStoryboardBreakdown(enhancedInput, provider);
   } catch (err) {
     return {
       success: false,
@@ -125,6 +128,7 @@ export async function generateFullStoryboard(
       ? generateCharacterRefSheet({
           characterLock: breakdown.character_locks[0] as CharacterLock,
           colorPalette: breakdown.style_guide.color_palette,
+          provider,
         })
       : Promise.resolve(null),
 
@@ -145,6 +149,7 @@ export async function generateFullStoryboard(
       characterDescription: charDescForPoster || "No specific character",
       style: input.style,
       colorPalette: breakdown.style_guide.color_palette,
+      provider,
     }),
   ]);
 

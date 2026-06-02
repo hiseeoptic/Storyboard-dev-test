@@ -1,9 +1,11 @@
 import { getOpenAIClient } from "@/lib/openai/client";
+import { geminiGenerateText } from "@/lib/gemini/client";
 import {
   buildStoryboardSystemPrompt,
   buildStoryboardUserPrompt,
 } from "@/prompts";
 import type {
+  AIProvider,
   StoryboardGenerationInput,
   StoryboardGenerationOutput,
 } from "@/types";
@@ -47,27 +49,40 @@ function sanitizeJsonResponse(text: string): string {
 }
 
 export async function generateStoryboardBreakdown(
-  input: StoryboardGenerationInput
+  input: StoryboardGenerationInput,
+  provider: AIProvider = "openai"
 ): Promise<StoryboardGenerationOutput> {
-  const openai = getOpenAIClient();
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          { role: "system", content: buildStoryboardSystemPrompt() },
-          { role: "user", content: buildStoryboardUserPrompt(input) },
-        ],
-        temperature: 0.7,
-        max_tokens: 8000,
-        response_format: { type: "json_object" },
-      });
+      let rawContent: string | null = null;
 
-      const rawContent = completion.choices[0]?.message?.content;
+      if (provider === "gemini") {
+        rawContent = await geminiGenerateText({
+          systemPrompt: buildStoryboardSystemPrompt(),
+          userPrompt: buildStoryboardUserPrompt(input),
+          jsonMode: true,
+          temperature: 0.7,
+          maxOutputTokens: 8192,
+        });
+      } else {
+        const openai = getOpenAIClient();
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: buildStoryboardSystemPrompt() },
+            { role: "user", content: buildStoryboardUserPrompt(input) },
+          ],
+          temperature: 0.7,
+          max_tokens: 8000,
+          response_format: { type: "json_object" },
+        });
+        rawContent = completion.choices[0]?.message?.content ?? null;
+      }
+
       if (!rawContent) {
-        throw new Error("Empty response from OpenAI");
+        throw new Error(`Empty response from ${provider}`);
       }
 
       const sanitized = sanitizeJsonResponse(rawContent);

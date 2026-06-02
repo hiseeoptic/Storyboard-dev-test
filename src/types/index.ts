@@ -2,6 +2,10 @@
 
 export type Plan = "free" | "pro" | "enterprise";
 
+// ─── AI Provider ──────────────────────────────────────────────────────────────
+
+export type AIProvider = "openai" | "gemini";
+
 // ─── Storyboard ─────────────────────────────────────────────────────────────
 
 export type StoryboardStyle =

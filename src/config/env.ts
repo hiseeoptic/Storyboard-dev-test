@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const serverEnvSchema = z.object({
   OPENAI_API_KEY: z.string().min(1),
+  GEMINI_API_KEY: z.string().optional(),
 });
 
 export function getServerEnv() {

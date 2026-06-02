@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Sparkles,
   Loader2,
@@ -36,6 +36,7 @@ import type {
   StoryboardStyle,
   StoryboardGenerationInput,
   ImageReference,
+  AIProvider,
 } from "@/types";
 
 // ─── Bilingual Labels ──────────────────────────────────────────────────────
@@ -151,6 +152,20 @@ const t = {
 
   // Language toggle
   langLabel: { vi: "EN", en: "VI" },
+
+  // Admin panel
+  adminTitle: { vi: "Bảng điều khiển Admin", en: "Admin Control Panel" },
+  adminPwPrompt: { vi: "Nhập mật khẩu admin", en: "Enter admin password" },
+  adminPwPlaceholder: { vi: "Mật khẩu", en: "Password" },
+  adminPwError: { vi: "Mật khẩu không đúng", en: "Incorrect password" },
+  adminUnlock: { vi: "Mở khóa", en: "Unlock" },
+  adminClose: { vi: "Đóng", en: "Close" },
+  adminProviderLabel: { vi: "Nhà cung cấp AI", en: "AI Provider" },
+  adminProviderHint: {
+    vi: "Lựa chọn được lưu lại cho lần sau. OpenAI dùng GPT-4o + DALL-E 3, Gemini dùng Gemini 2.5 Flash.",
+    en: "Your choice is saved for next time. OpenAI uses GPT-4o + DALL-E 3, Gemini uses Gemini 2.5 Flash.",
+  },
+  adminCurrentProvider: { vi: "Đang dùng", en: "Currently using" },
 } as const;
 
 // ─── Options ────────────────────────────────────────────────────────────────
@@ -246,6 +261,48 @@ export function GenerateClient() {
   const [progressMessage, setProgressMessage] = useState("");
   const [result, setResult] = useState<StoryboardResult | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // ─── Admin: AI Provider Switch ──────────────────────────────────
+  const [provider, setProvider] = useState<AIProvider>("openai");
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [pwInput, setPwInput] = useState("");
+  const [pwError, setPwError] = useState(false);
+
+  // Load saved provider choice on mount
+  useEffect(() => {
+    const saved =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("sb_ai_provider")
+        : null;
+    if (saved === "gemini" || saved === "openai") {
+      setProvider(saved);
+    }
+  }, []);
+
+  const switchProvider = (p: AIProvider) => {
+    setProvider(p);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("sb_ai_provider", p);
+    }
+  };
+
+  const checkPassword = () => {
+    if (pwInput === "25021987") {
+      setAdminUnlocked(true);
+      setPwError(false);
+      setPwInput("");
+    } else {
+      setPwError(true);
+    }
+  };
+
+  const closeAdmin = () => {
+    setShowAdmin(false);
+    setAdminUnlocked(false);
+    setPwInput("");
+    setPwError(false);
+  };
 
   const L = (key: keyof typeof t) => {
     const val = t[key];
@@ -381,7 +438,7 @@ export function GenerateClient() {
     }, 2000);
 
     try {
-      const res = await generateFullStoryboard(input);
+      const res = await generateFullStoryboard(input, provider);
       clearInterval(progressTimer);
 
       setProgressPercent(95);
@@ -639,8 +696,95 @@ export function GenerateClient() {
 
   const canNext = step === 0 ? storyIdea.trim().length > 0 : true;
 
+  // ─── Admin Modal (hidden double-click trigger) ───────────────────
+  const adminModal = showAdmin && (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={closeAdmin}
+    >
+      <div
+        className="w-full max-w-sm rounded-xl border bg-background p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="mb-4 text-lg font-bold">{L("adminTitle")}</h3>
+
+        {!adminUnlocked ? (
+          <div className="space-y-3">
+            <label className="text-sm text-muted-foreground">{L("adminPwPrompt")}</label>
+            <Input
+              type="password"
+              value={pwInput}
+              onChange={(e) => { setPwInput(e.target.value); setPwError(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter") checkPassword(); }}
+              placeholder={L("adminPwPlaceholder")}
+              autoFocus
+            />
+            {pwError && <p className="text-xs text-destructive">{L("adminPwError")}</p>}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" size="sm" onClick={closeAdmin}>{L("adminClose")}</Button>
+              <Button size="sm" onClick={checkPassword}>{L("adminUnlock")}</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-medium">{L("adminProviderLabel")}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{L("adminProviderHint")}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => switchProvider("openai")}
+                className={`rounded-lg border-2 p-3 text-center text-sm font-medium transition ${
+                  provider === "openai"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-muted text-muted-foreground hover:border-primary/40"
+                }`}
+              >
+                OpenAI
+                <span className="mt-0.5 block text-[10px] font-normal opacity-70">GPT-4o · DALL-E 3</span>
+              </button>
+              <button
+                onClick={() => switchProvider("gemini")}
+                className={`rounded-lg border-2 p-3 text-center text-sm font-medium transition ${
+                  provider === "gemini"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-muted text-muted-foreground hover:border-primary/40"
+                }`}
+              >
+                Gemini
+                <span className="mt-0.5 block text-[10px] font-normal opacity-70">Gemini 2.5 Flash</span>
+              </button>
+            </div>
+
+            <p className="text-center text-xs text-muted-foreground">
+              {L("adminCurrentProvider")}: <strong className="uppercase">{provider}</strong>
+            </p>
+
+            <div className="flex justify-end pt-1">
+              <Button size="sm" onClick={closeAdmin}>{L("adminClose")}</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // Hidden trigger: low-opacity dot, double-click to open admin panel
+  const hiddenTrigger = (
+    <div
+      onDoubleClick={() => setShowAdmin(true)}
+      title=""
+      className="fixed bottom-2 right-2 z-40 h-4 w-4 cursor-default select-none rounded-full opacity-[0.06] hover:opacity-20"
+      style={{ backgroundColor: "currentColor" }}
+      aria-hidden="true"
+    />
+  );
+
   return (
     <div className="mx-auto max-w-2xl">
+      {hiddenTrigger}
+      {adminModal}
       <div className="mb-6 text-center">
         <div className="mb-3 flex justify-center">
           <LangToggle />

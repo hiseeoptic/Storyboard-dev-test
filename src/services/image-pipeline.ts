@@ -1,9 +1,10 @@
 import { getOpenAIClient } from "@/lib/openai/client";
+import { geminiGenerateImage } from "@/lib/gemini/client";
 import {
   buildCharacterRefSheetPrompt,
   buildStoryboardPosterPrompt,
 } from "@/prompts";
-import type { CharacterLock } from "@/types";
+import type { AIProvider, CharacterLock } from "@/types";
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
@@ -12,12 +13,20 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function generateImage(prompt: string): Promise<string> {
-  const openai = getOpenAIClient();
+async function generateImage(
+  prompt: string,
+  provider: AIProvider = "openai"
+): Promise<string> {
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
+      if (provider === "gemini") {
+        // Returns a data URI (data:image/png;base64,...)
+        return await geminiGenerateImage(prompt);
+      }
+
+      const openai = getOpenAIClient();
       const response = await openai.images.generate({
         model: "dall-e-3",
         prompt,
@@ -32,7 +41,7 @@ async function generateImage(prompt: string): Promise<string> {
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       console.error(
-        `[Image Pipeline] Attempt ${attempt + 1}/${MAX_RETRIES}:`,
+        `[Image Pipeline] Attempt ${attempt + 1}/${MAX_RETRIES} (${provider}):`,
         lastError.message
       );
       if (attempt < MAX_RETRIES - 1) {
@@ -50,6 +59,7 @@ export async function generateCharacterRefSheet(params: {
   characterLock: CharacterLock;
   props?: string[];
   colorPalette?: string[];
+  provider?: AIProvider;
 }): Promise<{ url: string }> {
   const prompt = buildCharacterRefSheetPrompt({
     characterLock: params.characterLock,
@@ -57,7 +67,7 @@ export async function generateCharacterRefSheet(params: {
     colorPalette: params.colorPalette,
   });
 
-  const url = await generateImage(prompt);
+  const url = await generateImage(prompt, params.provider);
   return { url };
 }
 
@@ -79,9 +89,10 @@ export async function generateStoryboardPoster(params: {
   characterDescription: string;
   style: string;
   colorPalette?: string[];
+  provider?: AIProvider;
 }): Promise<{ url: string }> {
   const prompt = buildStoryboardPosterPrompt(params);
-  const url = await generateImage(prompt);
+  const url = await generateImage(prompt, params.provider);
   return { url };
 }
 
