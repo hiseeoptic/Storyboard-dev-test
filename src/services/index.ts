@@ -1,2 +1,5 @@
 export { generateStoryboardBreakdown } from "./ai-engine";
-export { generateSceneImage } from "./image-pipeline";
+export {
+  generateCharacterRefSheet,
+  generateStoryboardPoster,
+} from "./image-pipeline";

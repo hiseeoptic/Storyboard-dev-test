@@ -4,12 +4,15 @@ import { generateStoryboardBreakdown } from "@/services/ai-engine";
 import {
   generateCharacterRefSheet,
   generateStoryboardPoster,
+  dataUriToBase64,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
 import { buildVideoPromptText } from "@/prompts";
 import type {
   ActionResult,
   AIProvider,
+  AspectRatio,
+  ImageQuality,
   StoryboardGenerationInput,
   StoryboardGenerationOutput,
   CharacterLock,
@@ -109,9 +112,20 @@ export async function generateFullStoryboard(
     }
   }
 
-  // ─── Step 3 & 4: Generate images in parallel ──────────────────────
+  // ─── Step 3 & 4: Generate images ──────────────────────────────────
   let characterRefSheetUrl: string | null = null;
   let storyboardPosterUrl: string | null = null;
+
+  const aspectRatio: AspectRatio = input.aspect_ratio ?? "16:9";
+  const quality: ImageQuality = input.image_quality ?? "standard";
+
+  // Only Gemini supports image-to-image reference chaining (face lock).
+  const canChain = provider === "gemini";
+
+  // Uploaded photos of the main character (real face to preserve).
+  const uploadedCharRefs = (input.character_images?.[0]?.images ?? [])
+    .slice(0, 4)
+    .map((base64) => ({ base64, mimeType: "image/jpeg" }));
 
   // Build character description string for poster consistency
   const charDescForPoster = breakdown.character_locks
@@ -121,52 +135,98 @@ export async function generateFullStoryboard(
     )
     .join(". ");
 
-  // Run both image generations in parallel for speed
-  const [charRefResult, posterResult] = await Promise.allSettled([
-    // Character Reference Sheet
-    breakdown.character_locks.length > 0
-      ? generateCharacterRefSheet({
+  const buildPosterArgs = (
+    referenceImages?: { base64: string; mimeType?: string }[]
+  ) => ({
+    title: breakdown.title,
+    totalDuration: breakdown.total_duration_seconds,
+    sceneCount: breakdown.scenes.length,
+    moodTags: breakdown.mood_tags,
+    scenes: breakdown.scenes.map((s) => ({
+      scene_number: s.scene_number,
+      title: s.title,
+      description: s.description,
+      camera_code: s.camera_code || "[EYE]",
+      dialogue: s.dialogue,
+      characters: s.characters,
+    })),
+    characterDescription: charDescForPoster || "No specific character",
+    style: input.style,
+    colorPalette: breakdown.style_guide.color_palette,
+    provider,
+    aspectRatio,
+    quality,
+    referenceImages,
+  });
+
+  if (canChain) {
+    // Sequential reference chain → maximum face consistency.
+    // 1) Character sheet locked to the uploaded photos.
+    if (breakdown.character_locks.length > 0) {
+      try {
+        const r = await generateCharacterRefSheet({
           characterLock: breakdown.character_locks[0] as CharacterLock,
           colorPalette: breakdown.style_guide.color_palette,
           provider,
-        })
-      : Promise.resolve(null),
+          aspectRatio,
+          quality,
+          referenceImages: uploadedCharRefs.length > 0 ? uploadedCharRefs : undefined,
+        });
+        characterRefSheetUrl = r.url;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        warnings.push(`Character Reference Sheet: ${msg}`);
+        console.error("[Storyboard] Character ref sheet failed:", err);
+      }
+    }
 
-    // Storyboard Poster
-    generateStoryboardPoster({
-      title: breakdown.title,
-      totalDuration: breakdown.total_duration_seconds,
-      sceneCount: breakdown.scenes.length,
-      moodTags: breakdown.mood_tags,
-      scenes: breakdown.scenes.map((s) => ({
-        scene_number: s.scene_number,
-        title: s.title,
-        description: s.description,
-        camera_code: s.camera_code || "[EYE]",
-        dialogue: s.dialogue,
-        characters: s.characters,
-      })),
-      characterDescription: charDescForPoster || "No specific character",
-      style: input.style,
-      colorPalette: breakdown.style_guide.color_palette,
-      provider,
-    }),
-  ]);
+    // 2) Poster locked to the generated sheet (fallback: uploaded photos).
+    let posterRefs = uploadedCharRefs;
+    if (characterRefSheetUrl) {
+      const sheetB64 = dataUriToBase64(characterRefSheetUrl);
+      if (sheetB64) posterRefs = [sheetB64];
+    }
 
-  if (charRefResult.status === "fulfilled" && charRefResult.value) {
-    characterRefSheetUrl = charRefResult.value.url;
-  } else if (charRefResult.status === "rejected") {
-    const msg = charRefResult.reason instanceof Error ? charRefResult.reason.message : "Unknown error";
-    warnings.push(`Character Reference Sheet: ${msg}`);
-    console.error("[Storyboard] Character ref sheet failed:", charRefResult.reason);
-  }
+    try {
+      const r = await generateStoryboardPoster(
+        buildPosterArgs(posterRefs.length > 0 ? posterRefs : undefined)
+      );
+      storyboardPosterUrl = r.url;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      warnings.push(`Storyboard Poster: ${msg}`);
+      console.error("[Storyboard] Storyboard poster failed:", err);
+    }
+  } else {
+    // OpenAI / DALL-E — no reference images; run in parallel for speed.
+    const [charRefResult, posterResult] = await Promise.allSettled([
+      breakdown.character_locks.length > 0
+        ? generateCharacterRefSheet({
+            characterLock: breakdown.character_locks[0] as CharacterLock,
+            colorPalette: breakdown.style_guide.color_palette,
+            provider,
+            aspectRatio,
+            quality,
+          })
+        : Promise.resolve(null),
+      generateStoryboardPoster(buildPosterArgs()),
+    ]);
 
-  if (posterResult.status === "fulfilled" && posterResult.value) {
-    storyboardPosterUrl = posterResult.value.url;
-  } else if (posterResult.status === "rejected") {
-    const msg = posterResult.reason instanceof Error ? posterResult.reason.message : "Unknown error";
-    warnings.push(`Storyboard Poster: ${msg}`);
-    console.error("[Storyboard] Storyboard poster failed:", posterResult.reason);
+    if (charRefResult.status === "fulfilled" && charRefResult.value) {
+      characterRefSheetUrl = charRefResult.value.url;
+    } else if (charRefResult.status === "rejected") {
+      const msg = charRefResult.reason instanceof Error ? charRefResult.reason.message : "Unknown error";
+      warnings.push(`Character Reference Sheet: ${msg}`);
+      console.error("[Storyboard] Character ref sheet failed:", charRefResult.reason);
+    }
+
+    if (posterResult.status === "fulfilled" && posterResult.value) {
+      storyboardPosterUrl = posterResult.value.url;
+    } else if (posterResult.status === "rejected") {
+      const msg = posterResult.reason instanceof Error ? posterResult.reason.message : "Unknown error";
+      warnings.push(`Storyboard Poster: ${msg}`);
+      console.error("[Storyboard] Storyboard poster failed:", posterResult.reason);
+    }
   }
 
   // ─── Step 5: Generate Video Prompt Text ────────────────────────────

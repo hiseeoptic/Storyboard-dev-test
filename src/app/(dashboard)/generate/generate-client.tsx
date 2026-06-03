@@ -37,6 +37,8 @@ import type {
   StoryboardGenerationInput,
   ImageReference,
   AIProvider,
+  ImageQuality,
+  AspectRatio,
 } from "@/types";
 
 // ─── Bilingual Labels ──────────────────────────────────────────────────────
@@ -111,6 +113,16 @@ const t = {
   // Step 5: Style
   visualStyle: { vi: "Phong cách hình ảnh *", en: "Visual Style *" },
   sceneCount: { vi: "Số lượng cảnh", en: "Number of Scenes" },
+  imageQuality: { vi: "Chất lượng ảnh", en: "Image Quality" },
+  qualityStandard: { vi: "Standard (nhanh, tiết kiệm)", en: "Standard (fast, cheaper)" },
+  qualityPro: { vi: "Pro — Nano Banana Pro (giữ mặt tốt nhất)", en: "Pro — Nano Banana Pro (best face lock)" },
+  qualityHint: {
+    vi: "Chế độ Pro chỉ hoạt động với Gemini, giữ khuôn mặt nhân vật chính xác nhất.",
+    en: "Pro mode works with Gemini only and preserves the character's face most accurately.",
+  },
+  aspectRatio: { vi: "Tỉ lệ khung hình", en: "Aspect Ratio" },
+  aspectLandscape: { vi: "Ngang 16:9 (YouTube)", en: "Landscape 16:9 (YouTube)" },
+  aspectPortrait: { vi: "Dọc 9:16 (TikTok/Reels)", en: "Portrait 9:16 (TikTok/Reels)" },
   summary: { vi: "Tóm tắt", en: "Summary" },
   scenes: { vi: "cảnh", en: "scenes" },
   style: { vi: "phong cách", en: "style" },
@@ -342,6 +354,8 @@ export function GenerateClient() {
   // Step 5: Style
   const [style, setStyle] = useState<StoryboardStyle>("cinematic");
   const [sceneCount, setSceneCount] = useState(6);
+  const [imageQuality, setImageQuality] = useState<ImageQuality>("standard");
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
 
   // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -419,6 +433,8 @@ export function GenerateClient() {
       background_images: backgroundImages.length > 0 ? backgroundImages : undefined,
       setting: setting || undefined,
       tone: tone || undefined,
+      image_quality: imageQuality,
+      aspect_ratio: aspectRatio,
     };
 
     setProgressPercent(20);
@@ -1017,11 +1033,72 @@ export function GenerateClient() {
                 <Select value={String(sceneCount)} onChange={(e) => setSceneCount(Number(e.target.value))} options={SCENE_OPTIONS} />
               </div>
 
+              {/* Aspect ratio */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{L("aspectRatio")}</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAspectRatio("16:9")}
+                    className={`rounded-lg border-2 p-3 text-center text-sm font-medium transition ${
+                      aspectRatio === "16:9"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-muted text-muted-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    <span className="mx-auto mb-1 block h-5 w-9 rounded-sm border-2 border-current" />
+                    {L("aspectLandscape")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAspectRatio("9:16")}
+                    className={`rounded-lg border-2 p-3 text-center text-sm font-medium transition ${
+                      aspectRatio === "9:16"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-muted text-muted-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    <span className="mx-auto mb-1 block h-9 w-5 rounded-sm border-2 border-current" />
+                    {L("aspectPortrait")}
+                  </button>
+                </div>
+              </div>
+
+              {/* Image quality */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{L("imageQuality")}</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setImageQuality("standard")}
+                    className={`rounded-lg border-2 p-3 text-center text-xs font-medium transition ${
+                      imageQuality === "standard"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-muted text-muted-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    {L("qualityStandard")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImageQuality("pro")}
+                    className={`rounded-lg border-2 p-3 text-center text-xs font-medium transition ${
+                      imageQuality === "pro"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-muted text-muted-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    {L("qualityPro")}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">{L("qualityHint")}</p>
+              </div>
+
               {/* Summary */}
               <div className="rounded-lg border bg-muted/50 p-4 text-sm space-y-1">
                 <p className="font-medium">{L("summary")}</p>
                 <p className="text-muted-foreground">
-                  <strong>{sceneCount}</strong> {L("scenes")} · <strong>{style}</strong> {L("style")}
+                  <strong>{sceneCount}</strong> {L("scenes")} · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong> · <strong>{imageQuality === "pro" ? "Pro" : "Standard"}</strong>
                   {characters.length > 0 && <> · {characters.length} {L("characters")}</>}
                   {products.length > 0 && <> · {products.length} {L("products")}</>}
                   {backgrounds.length > 0 && <> · {backgrounds.length} {L("locations")}</>}

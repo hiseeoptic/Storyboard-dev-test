@@ -6,6 +6,12 @@ export type Plan = "free" | "pro" | "enterprise";
 
 export type AIProvider = "openai" | "gemini";
 
+/** Image quality tier — maps to different image models / cost. */
+export type ImageQuality = "standard" | "pro";
+
+/** Output aspect ratio for generated storyboard images. */
+export type AspectRatio = "16:9" | "9:16";
+
 // ─── Storyboard ─────────────────────────────────────────────────────────────
 
 export type StoryboardStyle =
@@ -81,6 +87,8 @@ export interface StoryboardGenerationInput {
   tone?: string;
   setting?: string;
   custom_instructions?: string;
+  image_quality?: ImageQuality;
+  aspect_ratio?: AspectRatio;
 }
 
 export interface CharacterDescription {
