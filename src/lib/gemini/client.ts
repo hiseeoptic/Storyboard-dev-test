@@ -8,7 +8,7 @@
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 // Model names — change here if Google updates model identifiers.
-const TEXT_MODEL = "gemini-2.0-flash";
+const TEXT_MODEL = "gemini-2.5-flash";
 const IMAGE_MODEL = "gemini-2.5-flash-image-preview";
 
 function getApiKey(): string {
