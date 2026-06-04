@@ -4,6 +4,7 @@ import {
   buildCharacterRefSheetPrompt,
   buildSegmentFirstFramePrompt,
   buildStoryboardPosterPrompt,
+  type RefRole,
 } from "@/prompts";
 import type {
   AIProvider,
@@ -99,6 +100,7 @@ export async function generateCharacterRefSheet(params: {
   colorPalette?: string[];
   /** Uploaded reference photos of the real person/character (Gemini). */
   referenceImages?: { base64: string; mimeType?: string }[];
+  referenceRoles?: RefRole[];
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
@@ -106,19 +108,14 @@ export async function generateCharacterRefSheet(params: {
 }): Promise<{ url: string }> {
   const hasRefs = (params.referenceImages?.length ?? 0) > 0;
 
-  let prompt = buildCharacterRefSheetPrompt({
+  const prompt = buildCharacterRefSheetPrompt({
     characterLock: params.characterLock,
     props: params.props,
     colorPalette: params.colorPalette,
     style: params.style,
     preserveRealFace: hasRefs,
+    referenceRoles: params.referenceRoles,
   });
-
-  // When real reference photos are supplied, instruct the model to lock
-  // the face to the uploaded image rather than inventing one.
-  if (hasRefs) {
-    prompt = `IMPORTANT: Use the attached reference photo(s) as the EXACT identity for this character. Keep the face, facial features, skin tone and hair IDENTICAL to the reference photo across every pose and angle. Do not invent a different face.\n\n${prompt}`;
-  }
 
   const url = await generateImage(prompt, {
     provider: params.provider,
@@ -140,6 +137,7 @@ export async function generateSegmentFrame(params: {
   isFirst: boolean;
   preserveRealFace?: boolean;
   referenceImages?: RefImage[];
+  referenceRoles?: RefRole[];
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
@@ -152,6 +150,7 @@ export async function generateSegmentFrame(params: {
     style: params.style,
     isFirst: params.isFirst,
     preserveRealFace: params.preserveRealFace,
+    referenceRoles: params.referenceRoles,
   });
 
   const url = await generateImage(prompt, {

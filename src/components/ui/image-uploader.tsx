@@ -38,31 +38,33 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
-async function resizeImage(file: File, maxSize = 1024): Promise<File> {
+async function resizeImage(file: File, maxSize = 1280): Promise<File> {
   return new Promise((resolve) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(url);
       const { width, height } = img;
-      if (width <= maxSize && height <= maxSize) {
-        resolve(file);
-        return;
-      }
-      const scale = maxSize / Math.max(width, height);
+      // Always re-encode to JPEG (flattening transparency on white) so the
+      // base64 data and the declared mime type always match — required for
+      // the Gemini reference-image API to accept the photos reliably.
+      const scale = Math.min(1, maxSize / Math.max(width, height));
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(width * scale);
       canvas.height = Math.round(height * scale);
       const ctx = canvas.getContext("2d");
       if (!ctx) { resolve(file); return; }
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       canvas.toBlob(
         (blob) => {
           if (!blob) { resolve(file); return; }
-          resolve(new File([blob], file.name, { type: "image/jpeg" }));
+          const name = file.name.replace(/\.\w+$/, "") + ".jpg";
+          resolve(new File([blob], name, { type: "image/jpeg" }));
         },
         "image/jpeg",
-        0.85
+        0.9
       );
     };
     img.src = url;

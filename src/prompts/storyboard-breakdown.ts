@@ -144,6 +144,31 @@ function renderDirective(style: string, preserveRealFace: boolean): string {
   }`;
 }
 
+export type RefRole = "face" | "product" | "setting";
+
+/**
+ * Builds explicit "Image N = role" instructions. Nano Banana follows
+ * reference images far better when each one is assigned a clear role,
+ * in the SAME order the images are attached to the request.
+ */
+export function buildReferenceInstructions(roles: RefRole[]): string {
+  if (roles.length === 0) return "";
+  const lines = roles.map((role, i) => {
+    const n = i + 1;
+    switch (role) {
+      case "face":
+        return `• Image ${n} = THE PERSON. Reproduce this EXACT same face — same head shape, facial features, hairstyle, skin tone and eyeglasses. It must be unmistakably the same real person. Do NOT invent or alter the face.`;
+      case "product":
+        return `• Image ${n} = THE PRODUCT. Reproduce this EXACT product: same shape, colour, material, handle and any branding. Do NOT redesign or substitute it.`;
+      case "setting":
+        return `• Image ${n} = THE LOCATION. Use this exact environment/room as the background setting.`;
+      default:
+        return `• Image ${n} = reference, keep it consistent.`;
+    }
+  });
+  return `ATTACHED REFERENCE IMAGES — you MUST follow them precisely (in this order):\n${lines.join("\n")}\n\n`;
+}
+
 // ─── Step 2: Character Reference Sheet Image Prompt ─────────────────────────
 
 export function buildCharacterRefSheetPrompt(params: {
@@ -163,17 +188,19 @@ export function buildCharacterRefSheetPrompt(params: {
   colorPalette?: string[];
   style?: string;
   preserveRealFace?: boolean;
+  referenceRoles?: RefRole[];
 }): string {
   const c = params.characterLock;
   const style = params.style ?? c.render_style;
   const directive = renderDirective(style, params.preserveRealFace ?? false);
+  const refBlock = buildReferenceInstructions(params.referenceRoles ?? []);
 
   const colorSwatches =
     params.colorPalette && params.colorPalette.length > 0
       ? params.colorPalette.slice(0, 6).join(", ")
       : "#F5E6D3, #8B4513, #2D5016, #FFFFFF, #1A1A1A, #D4A574";
 
-  return `Professional CHARACTER REFERENCE SHEET, single horizontal image, clean light studio background.
+  return `${refBlock}Professional CHARACTER REFERENCE SHEET, single horizontal image, clean light studio background.
 
 CHARACTER — ${c.name}: ${c.gender_age}, ${c.build} build, ${c.skin_tone} skin, ${c.hair} hair, ${c.eyes} eyes. Wearing ${c.costume}. ${c.signature_features}.
 
@@ -198,8 +225,10 @@ export function buildSegmentFirstFramePrompt(params: {
   style: string;
   isFirst: boolean;
   preserveRealFace?: boolean;
+  referenceRoles?: RefRole[];
 }): string {
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
+  const refBlock = buildReferenceInstructions(params.referenceRoles ?? []);
 
   const beats = params.beats.slice(0, 3);
   while (beats.length < 3) {
@@ -213,7 +242,7 @@ export function buildSegmentFirstFramePrompt(params: {
     ? "Panel 1 is the opening shot of the whole video."
     : "Panel 1 must continue seamlessly from the previous segment's final shot (same character, wardrobe, lighting, location).";
 
-  return `STORYBOARD STRIP for ONE ~8 second video clip: a single horizontal image split into 3 EQUAL panels side by side, showing a fast 3-shot sequence (left → right) that plays within the 8 seconds. ${params.style} style.
+  return `${refBlock}STORYBOARD STRIP for ONE ~8 second video clip: a single horizontal image split into 3 EQUAL panels side by side, showing a fast 3-shot sequence (left → right) that plays within the 8 seconds. ${params.style} style.
 
 CHARACTER (identical face in every panel): ${params.characterDescription}
 

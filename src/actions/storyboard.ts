@@ -5,10 +5,9 @@ import {
   generateCharacterRefSheet,
   generateSegmentFrame,
   generateStoryboardPoster,
-  dataUriToBase64,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
-import { buildVideoPromptText } from "@/prompts";
+import { buildVideoPromptText, type RefRole } from "@/prompts";
 import type {
   ActionResult,
   AIProvider,
@@ -123,18 +122,29 @@ export async function generateFullStoryboard(
   // Only Gemini supports image-to-image reference chaining (face lock).
   const canChain = provider === "gemini";
 
-  // Uploaded photos of the main character (real face to preserve).
-  const uploadedCharRefs = (input.character_images?.[0]?.images ?? [])
-    .slice(0, 4)
-    .map((base64) => ({ base64, mimeType: "image/jpeg" }));
+  // Labeled anchor references (the user's real uploads), in a FIXED order
+  // so the prompt's "Image 1 = face, Image 2 = product, ..." matches the
+  // images attached to the request. This is what makes Nano Banana obey.
+  const faceImg = input.character_images?.[0]?.images?.[0];
+  const productImg = input.product_images?.[0]?.images?.[0];
+  const bgImg = input.background_images?.[0]?.images?.[0];
 
-  // Uploaded product photos (to feature the real product in scenes).
-  const uploadedProductRefs = (input.product_images ?? [])
-    .flatMap((p) => p.images.slice(0, 1))
-    .slice(0, 2)
-    .map((base64) => ({ base64, mimeType: "image/jpeg" }));
+  const anchorRefs: { base64: string; mimeType?: string }[] = [];
+  const anchorRoles: RefRole[] = [];
+  if (faceImg) {
+    anchorRefs.push({ base64: faceImg, mimeType: "image/jpeg" });
+    anchorRoles.push("face");
+  }
+  if (productImg) {
+    anchorRefs.push({ base64: productImg, mimeType: "image/jpeg" });
+    anchorRoles.push("product");
+  }
+  if (bgImg) {
+    anchorRefs.push({ base64: bgImg, mimeType: "image/jpeg" });
+    anchorRoles.push("setting");
+  }
 
-  const preserveRealFace = canChain && uploadedCharRefs.length > 0;
+  const preserveRealFace = canChain && !!faceImg;
 
   const charDescForPoster = breakdown.character_locks
     .map(
@@ -154,8 +164,8 @@ export async function generateFullStoryboard(
         aspectRatio,
         quality,
         style: input.style,
-        referenceImages:
-          canChain && uploadedCharRefs.length > 0 ? uploadedCharRefs : undefined,
+        referenceImages: canChain && faceImg ? [{ base64: faceImg, mimeType: "image/jpeg" }] : undefined,
+        referenceRoles: canChain && faceImg ? ["face"] : undefined,
       });
       characterRefSheetUrl = r.url;
     } catch (err) {
@@ -165,28 +175,14 @@ export async function generateFullStoryboard(
     }
   }
 
-  // Base reference for the very first frame: the ref sheet (face) + product.
-  let baseRef: { base64: string; mimeType?: string }[] = [...uploadedCharRefs];
-  if (characterRefSheetUrl) {
-    const sheetB64 = dataUriToBase64(characterRefSheetUrl);
-    if (sheetB64) baseRef = [sheetB64];
-  }
-  // Always include product photos so the real product appears in scenes.
-  baseRef = [...baseRef, ...uploadedProductRefs];
-
-  // ─── Step 4b: Per-segment first frames (seamless chaining) ─────────
+  // ─── Step 4b: Per-segment frames, anchored to the real uploads ─────
+  // Every segment references the SAME labeled originals (face/product/
+  // setting) so identity never drifts. Continuity is carried by the
+  // prompt's continuity note, not by chaining a degraded previous frame.
   if (canChain) {
-    // Sequential: each frame references the previous one for continuity.
-    let prevFrameRef: { base64: string; mimeType?: string } | null = null;
-
     for (let i = 0; i < breakdown.segments.length; i++) {
       const seg = breakdown.segments[i];
       if (!seg) continue;
-
-      // Reference: previous frame (continuity) + face + product refs.
-      const refs: { base64: string; mimeType?: string }[] = [];
-      if (prevFrameRef) refs.push(prevFrameRef);
-      refs.push(...baseRef);
 
       try {
         const r = await generateSegmentFrame({
@@ -197,15 +193,13 @@ export async function generateFullStoryboard(
           style: input.style,
           isFirst: i === 0,
           preserveRealFace,
-          referenceImages: refs.length > 0 ? refs.slice(0, 4) : undefined,
+          referenceImages: anchorRefs.length > 0 ? anchorRefs : undefined,
+          referenceRoles: anchorRoles.length > 0 ? anchorRoles : undefined,
           provider,
           aspectRatio,
           quality,
         });
         seg.first_frame_url = r.url;
-
-        const b64 = dataUriToBase64(r.url);
-        if (b64) prevFrameRef = b64;
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
         warnings.push(`Segment ${seg.segment_number} frame: ${msg}`);
@@ -263,7 +257,7 @@ export async function generateFullStoryboard(
       provider,
       aspectRatio,
       quality,
-      referenceImages: canChain && baseRef[0] ? [baseRef[0]] : undefined,
+      referenceImages: canChain && faceImg ? [{ base64: faceImg, mimeType: "image/jpeg" }] : undefined,
     });
     storyboardPosterUrl = r.url;
   } catch (err) {
