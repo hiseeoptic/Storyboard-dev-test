@@ -12,9 +12,21 @@ const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 // Model names — change here if Google updates model identifiers.
 const TEXT_MODEL = "gemini-2.5-flash";
-// Standard = Nano Banana, Pro = Nano Banana Pro (best face consistency).
-const IMAGE_MODEL_STANDARD = "gemini-2.5-flash-image";
-const IMAGE_MODEL_PRO = "gemini-3-pro-image";
+
+// Image model fallback chains (newest first). If the API key doesn't have
+// access to a model (404 / not found), we automatically try the next one.
+// Pro    = Nano Banana Pro (Gemini 3 Pro Image) — best identity/text fidelity.
+// Standard = Nano Banana 2 (Gemini 3.1 Flash Image) — fast, high-volume.
+const IMAGE_MODELS_PRO = [
+  "gemini-3-pro-image",
+  "gemini-3-pro-image-preview",
+  "gemini-3.1-flash-image",
+  "gemini-2.5-flash-image",
+];
+const IMAGE_MODELS_STANDARD = [
+  "gemini-3.1-flash-image",
+  "gemini-2.5-flash-image",
+];
 
 function getApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
@@ -116,14 +128,29 @@ function extractImage(json: GeminiResponse): string | null {
   return null;
 }
 
+function isModelUnavailable(status: number, message?: string): boolean {
+  if (status === 404) return true;
+  const m = (message ?? "").toLowerCase();
+  return (
+    m.includes("not found") ||
+    m.includes("not supported") ||
+    m.includes("does not exist") ||
+    m.includes("no access") ||
+    m.includes("permission")
+  );
+}
+
 /**
  * Generates an image and returns a data URI (data:image/png;base64,...).
  *
  * - referenceImages: passed as input so the model keeps the same character /
  *   product / scene (image-to-image, the key to face consistency).
- * - aspectRatio: 16:9 or 9:16 etc.
- * - quality: "pro" uses Nano Banana Pro (gemini-3-pro-image) for best
- *   identity preservation; "standard" uses gemini-2.5-flash-image.
+ * - aspectRatio: 16:9 or 9:16.
+ * - quality: "pro" = Nano Banana Pro (gemini-3-pro-image),
+ *            "standard" = Nano Banana 2 (gemini-3.1-flash-image).
+ *
+ * Tries each model in the chain (newest first) and falls back to the next
+ * one if the key has no access to it.
  */
 export async function geminiGenerateImage(params: {
   prompt: string;
@@ -132,7 +159,7 @@ export async function geminiGenerateImage(params: {
   quality?: ImageQuality;
 }): Promise<string> {
   const apiKey = getApiKey();
-  const model = params.quality === "pro" ? IMAGE_MODEL_PRO : IMAGE_MODEL_STANDARD;
+  const models = params.quality === "pro" ? IMAGE_MODELS_PRO : IMAGE_MODELS_STANDARD;
 
   // Reinforce aspect ratio in the prompt text (always works as a hint).
   const ratioHint = params.aspectRatio
@@ -163,7 +190,7 @@ export async function geminiGenerateImage(params: {
     },
   });
 
-  const callApi = async (withImageConfig: boolean) => {
+  const callApi = async (model: string, withImageConfig: boolean) => {
     const res = await fetch(`${API_BASE}/${model}:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -173,25 +200,36 @@ export async function geminiGenerateImage(params: {
     return { res, json };
   };
 
-  // First attempt: with aspect-ratio config.
-  let { res, json } = await callApi(true);
+  let lastErr = "Unknown error";
 
-  // If the config field is rejected (400), retry without it. The prompt
-  // text still requests the aspect ratio.
-  if (res.status === 400 && params.aspectRatio) {
-    ({ res, json } = await callApi(false));
+  for (const model of models) {
+    // Attempt 1: with aspect-ratio config.
+    let { res, json } = await callApi(model, true);
+
+    // If config rejected (400), retry the same model without it.
+    if (res.status === 400 && params.aspectRatio) {
+      ({ res, json } = await callApi(model, false));
+    }
+
+    if (res.ok && !json.error) {
+      const image = extractImage(json);
+      if (image) return image;
+      lastErr = `Model ${model} returned no image`;
+      continue; // try next model
+    }
+
+    const message = json.error?.message;
+    lastErr = `${model} (${res.status}): ${message ?? "Unknown error"}`;
+
+    // If this model is simply unavailable to the key, try the next one.
+    if (isModelUnavailable(res.status, message)) {
+      console.warn(`[Gemini] ${model} unavailable, falling back. ${lastErr}`);
+      continue;
+    }
+
+    // A real error (quota, safety, bad request) — stop and report.
+    throw new Error(`Gemini image generation failed: ${lastErr}`);
   }
 
-  if (!res.ok || json.error) {
-    throw new Error(
-      `Gemini image generation failed (${res.status}): ${json.error?.message ?? "Unknown error"}`
-    );
-  }
-
-  const image = extractImage(json);
-  if (!image) {
-    throw new Error("Gemini did not return an image");
-  }
-
-  return image;
+  throw new Error(`Gemini image generation failed (no available model): ${lastErr}`);
 }
