@@ -102,6 +102,7 @@ export async function generateCharacterRefSheet(params: {
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
+  style?: string;
 }): Promise<{ url: string }> {
   const hasRefs = (params.referenceImages?.length ?? 0) > 0;
 
@@ -109,6 +110,8 @@ export async function generateCharacterRefSheet(params: {
     characterLock: params.characterLock,
     props: params.props,
     colorPalette: params.colorPalette,
+    style: params.style,
+    preserveRealFace: hasRefs,
   });
 
   // When real reference photos are supplied, instruct the model to lock
@@ -126,14 +129,16 @@ export async function generateCharacterRefSheet(params: {
   return { url };
 }
 
-// ─── Generate a Segment First-Frame (8s clip start) ─────────────────────────
+// ─── Generate a Segment Storyboard Strip (3-shot 8s clip) ───────────────────
 
 export async function generateSegmentFrame(params: {
   segmentNumber: number;
   firstFramePrompt: string;
+  beats: { beat: string; camera: string }[];
   characterDescription: string;
   style: string;
   isFirst: boolean;
+  preserveRealFace?: boolean;
   referenceImages?: RefImage[];
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
@@ -142,9 +147,11 @@ export async function generateSegmentFrame(params: {
   const prompt = buildSegmentFirstFramePrompt({
     segmentNumber: params.segmentNumber,
     firstFramePrompt: params.firstFramePrompt,
+    beats: params.beats,
     characterDescription: params.characterDescription,
     style: params.style,
     isFirst: params.isFirst,
+    preserveRealFace: params.preserveRealFace,
   });
 
   const url = await generateImage(prompt, {

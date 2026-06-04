@@ -30,7 +30,7 @@ export interface StoryboardResult {
 
 export async function generateFullStoryboard(
   input: StoryboardGenerationInput,
-  provider: AIProvider = "openai"
+  provider: AIProvider = "gemini"
 ): Promise<ActionResult<StoryboardResult>> {
   const warnings: string[] = [];
 
@@ -128,6 +128,14 @@ export async function generateFullStoryboard(
     .slice(0, 4)
     .map((base64) => ({ base64, mimeType: "image/jpeg" }));
 
+  // Uploaded product photos (to feature the real product in scenes).
+  const uploadedProductRefs = (input.product_images ?? [])
+    .flatMap((p) => p.images.slice(0, 1))
+    .slice(0, 2)
+    .map((base64) => ({ base64, mimeType: "image/jpeg" }));
+
+  const preserveRealFace = canChain && uploadedCharRefs.length > 0;
+
   const charDescForPoster = breakdown.character_locks
     .map(
       (c) =>
@@ -145,6 +153,7 @@ export async function generateFullStoryboard(
         provider,
         aspectRatio,
         quality,
+        style: input.style,
         referenceImages:
           canChain && uploadedCharRefs.length > 0 ? uploadedCharRefs : undefined,
       });
@@ -156,12 +165,14 @@ export async function generateFullStoryboard(
     }
   }
 
-  // Base reference for the very first frame: the ref sheet, else uploads.
-  let baseRef: { base64: string; mimeType?: string }[] = uploadedCharRefs;
+  // Base reference for the very first frame: the ref sheet (face) + product.
+  let baseRef: { base64: string; mimeType?: string }[] = [...uploadedCharRefs];
   if (characterRefSheetUrl) {
     const sheetB64 = dataUriToBase64(characterRefSheetUrl);
     if (sheetB64) baseRef = [sheetB64];
   }
+  // Always include product photos so the real product appears in scenes.
+  baseRef = [...baseRef, ...uploadedProductRefs];
 
   // ─── Step 4b: Per-segment first frames (seamless chaining) ─────────
   if (canChain) {
@@ -172,19 +183,21 @@ export async function generateFullStoryboard(
       const seg = breakdown.segments[i];
       if (!seg) continue;
 
-      // Reference: previous frame (continuity) + base/face ref.
+      // Reference: previous frame (continuity) + face + product refs.
       const refs: { base64: string; mimeType?: string }[] = [];
       if (prevFrameRef) refs.push(prevFrameRef);
-      if (baseRef[0]) refs.push(baseRef[0]);
+      refs.push(...baseRef);
 
       try {
         const r = await generateSegmentFrame({
           segmentNumber: seg.segment_number,
           firstFramePrompt: seg.first_frame_prompt,
+          beats: seg.beats,
           characterDescription: charDesc,
           style: input.style,
           isFirst: i === 0,
-          referenceImages: refs.length > 0 ? refs.slice(0, 3) : undefined,
+          preserveRealFace,
+          referenceImages: refs.length > 0 ? refs.slice(0, 4) : undefined,
           provider,
           aspectRatio,
           quality,
@@ -207,6 +220,7 @@ export async function generateFullStoryboard(
         generateSegmentFrame({
           segmentNumber: seg.segment_number,
           firstFramePrompt: seg.first_frame_prompt,
+          beats: seg.beats,
           characterDescription: charDesc,
           style: input.style,
           isFirst: i === 0,

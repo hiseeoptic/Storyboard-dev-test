@@ -169,10 +169,10 @@ const t = {
   newStoryboard: { vi: "Tạo mới", en: "New" },
   segments: { vi: "đoạn", en: "segments" },
   downloadAll: { vi: "Tải tất cả (ZIP)", en: "Download all (ZIP)" },
-  segmentsTitle: { vi: "Các đoạn video 8 giây", en: "8-second video segments" },
+  segmentsTitle: { vi: "Các đoạn video 8 giây (mỗi đoạn 3 cảnh)", en: "8-second segments (3 shots each)" },
   segmentsHint: {
-    vi: "Mỗi thẻ = 1 clip 8s. Tải frame đầu + copy motion prompt → dán vào Veo/Seedance (image-to-video). Tạo lần lượt theo thứ tự để video liền mạch.",
-    en: "Each card = one 8s clip. Download the first frame + copy the motion prompt → paste into Veo/Seedance (image-to-video). Generate in order for a seamless video.",
+    vi: "Mỗi thẻ = 1 clip 8s gồm 3 cảnh (storyboard 3 khung). Copy motion prompt → dán vào Seedance/Veo. Tạo lần lượt theo thứ tự để các clip nối liền mạch.",
+    en: "Each card = one 8s clip with 3 shots (3-panel storyboard). Copy the motion prompt → paste into Seedance/Veo. Generate in order so the clips chain seamlessly.",
   },
   motionPrompt: { vi: "Motion prompt (Veo/Seedance)", en: "Motion prompt (Veo/Seedance)" },
   continuity: { vi: "Nối tiếp", en: "Continuity" },
@@ -311,7 +311,8 @@ export function GenerateClient() {
   const [copied, setCopied] = useState(false);
 
   // ─── Admin: AI Provider Switch ──────────────────────────────────
-  const [provider, setProvider] = useState<AIProvider>("openai");
+  // Default Gemini — required for face lock from uploaded photos.
+  const [provider, setProvider] = useState<AIProvider>("gemini");
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pwInput, setPwInput] = useState("");
@@ -769,12 +770,12 @@ export function GenerateClient() {
           </div>
           <p className="mb-4 text-sm text-muted-foreground">{L("segmentsHint")}</p>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4">
             {result.breakdown.segments.map((seg) => (
               <Card key={seg.segment_number} className="overflow-hidden">
-                <div className={`relative bg-muted ${aspectRatio === "9:16" ? "aspect-[9/16]" : "aspect-video"}`}>
+                <div className="relative aspect-[16/7] bg-black/90">
                   {seg.first_frame_url ? (
-                    <img src={seg.first_frame_url} alt={`Segment ${seg.segment_number}`} className="h-full w-full object-cover" />
+                    <img src={seg.first_frame_url} alt={`Segment ${seg.segment_number}`} className="h-full w-full object-contain" />
                   ) : (
                     <div className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground">
                       <ImageIcon className="h-6 w-6 opacity-50" />
