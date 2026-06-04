@@ -2,6 +2,7 @@ import { getOpenAIClient } from "@/lib/openai/client";
 import { geminiGenerateImage } from "@/lib/gemini/client";
 import {
   buildCharacterRefSheetPrompt,
+  buildSegmentFirstFramePrompt,
   buildStoryboardPosterPrompt,
 } from "@/prompts";
 import type {
@@ -10,6 +11,8 @@ import type {
   CharacterLock,
   ImageQuality,
 } from "@/types";
+
+type RefImage = { base64: string; mimeType?: string };
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
@@ -123,26 +126,54 @@ export async function generateCharacterRefSheet(params: {
   return { url };
 }
 
+// ─── Generate a Segment First-Frame (8s clip start) ─────────────────────────
+
+export async function generateSegmentFrame(params: {
+  segmentNumber: number;
+  firstFramePrompt: string;
+  characterDescription: string;
+  style: string;
+  isFirst: boolean;
+  referenceImages?: RefImage[];
+  provider?: AIProvider;
+  aspectRatio?: AspectRatio;
+  quality?: ImageQuality;
+}): Promise<{ url: string }> {
+  const prompt = buildSegmentFirstFramePrompt({
+    segmentNumber: params.segmentNumber,
+    firstFramePrompt: params.firstFramePrompt,
+    characterDescription: params.characterDescription,
+    style: params.style,
+    isFirst: params.isFirst,
+  });
+
+  const url = await generateImage(prompt, {
+    provider: params.provider,
+    referenceImages: params.referenceImages,
+    aspectRatio: params.aspectRatio,
+    quality: params.quality,
+  });
+  return { url };
+}
+
 // ─── Generate Storyboard Poster ─────────────────────────────────────────────
 
 export async function generateStoryboardPoster(params: {
   title: string;
   totalDuration: number;
-  sceneCount: number;
+  segmentCount: number;
   moodTags: string[];
-  scenes: {
-    scene_number: number;
+  segments: {
+    segment_number: number;
     title: string;
-    description: string;
-    camera_code: string;
-    dialogue?: string | null;
-    characters: string[];
+    summary: string;
+    role: string;
   }[];
   characterDescription: string;
   style: string;
   colorPalette?: string[];
   /** Reference images (e.g. the generated character sheet) for consistency. */
-  referenceImages?: { base64: string; mimeType?: string }[];
+  referenceImages?: RefImage[];
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;

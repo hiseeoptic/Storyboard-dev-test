@@ -23,8 +23,8 @@ function validateOutput(data: unknown): data is StoryboardGenerationOutput {
   return (
     typeof d.title === "string" &&
     typeof d.synopsis === "string" &&
-    Array.isArray(d.scenes) &&
-    d.scenes.length > 0 &&
+    Array.isArray(d.segments) &&
+    d.segments.length > 0 &&
     Array.isArray(d.character_locks) &&
     typeof d.style_guide === "object" &&
     d.style_guide !== null
@@ -92,30 +92,38 @@ export async function generateStoryboardBreakdown(
         throw new Error("Response does not match expected schema");
       }
 
-      // Ensure scene count matches
-      if (parsed.scenes.length !== input.scene_count) {
-        parsed.scenes = parsed.scenes.slice(0, input.scene_count);
-        parsed.scenes.forEach((scene, i) => {
-          scene.scene_number = i + 1;
-        });
-      }
+      const targetCount = input.segment_count ?? input.scene_count ?? 5;
 
-      // Rebuild timeline
-      let runningTime = 0;
-      parsed.timeline = parsed.scenes.map((scene) => {
-        const entry = {
-          scene_number: scene.scene_number,
-          start_time: runningTime,
-          end_time: runningTime + scene.duration_seconds,
-          description: scene.title,
-        };
-        runningTime += scene.duration_seconds;
-        return entry;
+      // Trim to requested segment count and renumber
+      if (parsed.segments.length > targetCount) {
+        parsed.segments = parsed.segments.slice(0, targetCount);
+      }
+      parsed.segments.forEach((seg, i) => {
+        seg.segment_number = i + 1;
+        if (!seg.duration_seconds) seg.duration_seconds = 8;
+        if (!Array.isArray(seg.beats)) seg.beats = [];
+        if (!seg.marketing_role) {
+          seg.marketing_role =
+            i === 0 ? "hook" : i === parsed.segments.length - 1 ? "cta" : "body";
+        }
+        if (!seg.first_frame_prompt) seg.first_frame_prompt = seg.title;
+        if (!seg.motion_prompt) seg.motion_prompt = seg.title;
+        if (seg.dialogue === undefined) seg.dialogue = null;
+        if (!seg.continuity_note) {
+          seg.continuity_note = i === 0 ? "opening shot" : "continues from previous segment";
+        }
+        // Backfill camera notes on beats
+        seg.beats.forEach((b) => {
+          if (!b.camera) b.camera = "[EYE]";
+        });
       });
 
       // Ensure total_duration_seconds
       if (!parsed.total_duration_seconds) {
-        parsed.total_duration_seconds = runningTime;
+        parsed.total_duration_seconds = parsed.segments.reduce(
+          (sum, s) => sum + (s.duration_seconds || 8),
+          0
+        );
       }
 
       // Ensure mood_tags
@@ -128,14 +136,14 @@ export async function generateStoryboardBreakdown(
         parsed.character_locks = [];
       }
 
-      // Backfill camera_code if missing
-      for (const scene of parsed.scenes) {
-        if (!scene.camera_code) {
-          scene.camera_code = "[EYE]";
-        }
-        if (!scene.camera_movement) {
-          scene.camera_movement = "static";
-        }
+      // Ensure marketing_structure exists
+      if (!parsed.marketing_structure) {
+        parsed.marketing_structure = {
+          hook: parsed.synopsis,
+          problem: "",
+          solution: "",
+          cta: "",
+        };
       }
 
       return parsed;

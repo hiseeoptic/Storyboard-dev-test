@@ -39,6 +39,7 @@ import type {
   AIProvider,
   ImageQuality,
   AspectRatio,
+  VideoGoal,
 } from "@/types";
 
 // ─── Bilingual Labels ──────────────────────────────────────────────────────
@@ -113,6 +114,12 @@ const t = {
   // Step 5: Style
   visualStyle: { vi: "Phong cách hình ảnh *", en: "Visual Style *" },
   sceneCount: { vi: "Số lượng cảnh", en: "Number of Scenes" },
+  segmentCount: { vi: "Số đoạn 8 giây (ghép thành video)", en: "Number of 8s segments (chained into video)" },
+  segmentCountHint: {
+    vi: "Mỗi đoạn = 1 clip 8s trên Veo/Seedance. Các đoạn được nối liền mạch (frame cuối → frame đầu) để video không bị khựng.",
+    en: "Each segment = one 8s clip on Veo/Seedance. Segments are chained (last frame → next first frame) for seamless playback.",
+  },
+  videoGoalLabel: { vi: "Mục tiêu video", en: "Video Goal" },
   imageQuality: { vi: "Chất lượng ảnh", en: "Image Quality" },
   qualityStandard: { vi: "Standard (nhanh, tiết kiệm)", en: "Standard (fast, cheaper)" },
   qualityPro: { vi: "Pro — Nano Banana Pro (giữ mặt tốt nhất)", en: "Pro — Nano Banana Pro (best face lock)" },
@@ -148,18 +155,29 @@ const t = {
     en: "Step 2/5 — AI creating script, characters, scene breakdown...",
   },
   generatingCharSheet: {
-    vi: "Bước 3-4/5 — Đang tạo Character Reference Sheet + Storyboard Poster...",
-    en: "Step 3-4/5 — Generating Character Reference Sheet + Storyboard Poster...",
+    vi: "Đang tạo Character Sheet + từng frame 8s (nối liền mạch)...",
+    en: "Generating Character Sheet + each 8s frame (chained)...",
   },
   generatingDone: {
-    vi: "Bước 5/5 — Hoàn tất, đang tạo Video Prompt...",
-    en: "Step 5/5 — Finalizing, creating Video Prompt...",
+    vi: "Sắp xong — đang tạo poster & hướng dẫn ghép video...",
+    en: "Almost done — building poster & assembly guide...",
   },
 
   // Results
   generated: { vi: "đã tạo", en: "generated" },
   failed: { vi: "thất bại", en: "failed" },
   newStoryboard: { vi: "Tạo mới", en: "New" },
+  segments: { vi: "đoạn", en: "segments" },
+  downloadAll: { vi: "Tải tất cả (ZIP)", en: "Download all (ZIP)" },
+  segmentsTitle: { vi: "Các đoạn video 8 giây", en: "8-second video segments" },
+  segmentsHint: {
+    vi: "Mỗi thẻ = 1 clip 8s. Tải frame đầu + copy motion prompt → dán vào Veo/Seedance (image-to-video). Tạo lần lượt theo thứ tự để video liền mạch.",
+    en: "Each card = one 8s clip. Download the first frame + copy the motion prompt → paste into Veo/Seedance (image-to-video). Generate in order for a seamless video.",
+  },
+  motionPrompt: { vi: "Motion prompt (Veo/Seedance)", en: "Motion prompt (Veo/Seedance)" },
+  continuity: { vi: "Nối tiếp", en: "Continuity" },
+  copyPrompt: { vi: "Copy prompt", en: "Copy prompt" },
+  assemblyGuide: { vi: "Hướng dẫn ghép video (Veo/Seedance)", en: "Video assembly guide (Veo/Seedance)" },
   noDesc: { vi: "Không có mô tả", en: "No description" },
 
   // Language toggle
@@ -232,12 +250,30 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
   ],
 };
 
-const SCENE_OPTIONS = [
-  { value: "4", label: "4" },
-  { value: "6", label: "6" },
-  { value: "8", label: "8" },
-  { value: "12", label: "12" },
+// Number of 8-second segments to chain into the final video.
+const SEGMENT_OPTIONS = [
+  { value: "3", label: "3 (~24s)" },
+  { value: "5", label: "5 (~40s)" },
+  { value: "7", label: "7 (~56s)" },
+  { value: "10", label: "10 (~80s)" },
 ];
+
+const VIDEO_GOAL_OPTIONS: Record<Lang, { value: VideoGoal; label: string }[]> = {
+  vi: [
+    { value: "marketing_general", label: "Marketing tổng quát" },
+    { value: "product_ad", label: "Quảng cáo sản phẩm" },
+    { value: "storytelling", label: "Kể chuyện" },
+    { value: "review", label: "Review / Đánh giá" },
+    { value: "educational", label: "Giáo dục / Hướng dẫn" },
+  ],
+  en: [
+    { value: "marketing_general", label: "General marketing" },
+    { value: "product_ad", label: "Product ad" },
+    { value: "storytelling", label: "Storytelling" },
+    { value: "review", label: "Review / Testimonial" },
+    { value: "educational", label: "Educational / How-to" },
+  ],
+};
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -353,9 +389,12 @@ export function GenerateClient() {
 
   // Step 5: Style
   const [style, setStyle] = useState<StoryboardStyle>("cinematic");
-  const [sceneCount, setSceneCount] = useState(6);
+  const [segmentCount, setSegmentCount] = useState(5);
+  const [videoGoal, setVideoGoal] = useState<VideoGoal>("marketing_general");
   const [imageQuality, setImageQuality] = useState<ImageQuality>("standard");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
+  const [copiedSeg, setCopiedSeg] = useState<number | null>(null);
+  const [zipping, setZipping] = useState(false);
 
   // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -424,7 +463,9 @@ export function GenerateClient() {
       story_idea: storyIdea,
       genre: genre as StoryboardGenerationInput["genre"],
       style,
-      scene_count: sceneCount,
+      scene_count: segmentCount,
+      segment_count: segmentCount,
+      video_goal: videoGoal,
       character_descriptions: characters.length > 0
         ? characters.map((c) => ({ name: c.name, appearance: c.appearance, personality: "", role: c.role }))
         : undefined,
@@ -505,6 +546,61 @@ export function GenerateClient() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const copySegmentPrompt = (segNumber: number, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedSeg(segNumber);
+    setTimeout(() => setCopiedSeg(null), 2000);
+  };
+
+  // Download all segment frames + prompts as a single ZIP.
+  const downloadAllFrames = async () => {
+    if (!result) return;
+    setZipping(true);
+    try {
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      const safeTitle = result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 40);
+
+      // Frames
+      for (const seg of result.breakdown.segments) {
+        if (!seg.first_frame_url) continue;
+        try {
+          const res = await fetch(seg.first_frame_url);
+          const blob = await res.blob();
+          const num = String(seg.segment_number).padStart(2, "0");
+          zip.file(`frame_${num}.png`, blob);
+        } catch {
+          // skip failed frame
+        }
+      }
+      // Ref sheet + poster
+      if (result.characterRefSheetUrl) {
+        try {
+          const b = await (await fetch(result.characterRefSheetUrl)).blob();
+          zip.file(`character_reference_sheet.png`, b);
+        } catch {}
+      }
+      if (result.storyboardPosterUrl) {
+        try {
+          const b = await (await fetch(result.storyboardPosterUrl)).blob();
+          zip.file(`storyboard_overview.png`, b);
+        } catch {}
+      }
+      // Assembly guide / prompts
+      zip.file(`video_assembly_guide.txt`, result.videoPrompt);
+
+      const out = await zip.generateAsync({ type: "blob" });
+      const objectUrl = URL.createObjectURL(out);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `${safeTitle || "storyboard"}_package.zip`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    } finally {
+      setZipping(false);
+    }
+  };
+
   // ─── Language Toggle Button ──────────────────────────────────────
 
   const LangToggle = () => (
@@ -547,15 +643,19 @@ export function GenerateClient() {
             <h1 className="text-2xl font-bold">{result.breakdown.title}</h1>
             <p className="mt-1 text-sm text-muted-foreground">{result.breakdown.synopsis}</p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{result.breakdown.scenes.length} {L("scenes")}</Badge>
-              <Badge variant="secondary">{result.breakdown.total_duration_seconds}s</Badge>
+              <Badge variant="secondary">{result.breakdown.segments.length} {L("segments")}</Badge>
+              <Badge variant="secondary">≈{result.breakdown.total_duration_seconds}s</Badge>
               {result.breakdown.mood_tags.map((tag) => (
                 <Badge key={tag} variant="outline">{tag}</Badge>
               ))}
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <LangToggle />
+            <Button variant="outline" onClick={downloadAllFrames} disabled={zipping} className="gap-2">
+              {zipping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {L("downloadAll")}
+            </Button>
             <Button onClick={() => { setPhase("input"); setResult(null); setStep(0); }} className="gap-2">
               <RotateCw className="h-4 w-4" /> {L("newStoryboard")}
             </Button>
@@ -642,8 +742,8 @@ export function GenerateClient() {
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? `Poster ${result.breakdown.scenes.length} cảnh — sẵn sàng để đưa vào Flowveo / Seedance / Kling`
-                  : `${result.breakdown.scenes.length}-panel poster — ready for Flowveo / Seedance / Kling`}
+                  ? `Poster tổng quan ${result.breakdown.segments.length} đoạn — xem nhanh toàn bộ video`
+                  : `${result.breakdown.segments.length}-segment overview poster — quick full-video view`}
               </p>
             </CardContent>
           </Card>
@@ -661,13 +761,93 @@ export function GenerateClient() {
           </Card>
         )}
 
-        {/* Video Prompt */}
+        {/* Segments — the core: per-8s first frame + motion prompt */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <Film className="h-5 w-5" />
+            <h2 className="text-lg font-bold">{L("segmentsTitle")}</h2>
+          </div>
+          <p className="mb-4 text-sm text-muted-foreground">{L("segmentsHint")}</p>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {result.breakdown.segments.map((seg) => (
+              <Card key={seg.segment_number} className="overflow-hidden">
+                <div className={`relative bg-muted ${aspectRatio === "9:16" ? "aspect-[9/16]" : "aspect-video"}`}>
+                  {seg.first_frame_url ? (
+                    <img src={seg.first_frame_url} alt={`Segment ${seg.segment_number}`} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground">
+                      <ImageIcon className="h-6 w-6 opacity-50" />
+                      <span className="text-xs">{lang === "vi" ? "Frame lỗi" : "Frame failed"}</span>
+                    </div>
+                  )}
+                  <Badge className="absolute left-2 top-2">#{seg.segment_number}</Badge>
+                  <Badge variant="secondary" className="absolute right-2 top-2 uppercase">{seg.marketing_role}</Badge>
+                  <Badge variant="outline" className="absolute bottom-2 right-2 bg-background/80">{seg.duration_seconds}s</Badge>
+                </div>
+                <CardContent className="space-y-3 p-3">
+                  <div>
+                    <p className="text-sm font-semibold">{seg.title}</p>
+                    {seg.dialogue && (
+                      <p className="mt-0.5 text-xs italic text-muted-foreground">&ldquo;{seg.dialogue}&rdquo;</p>
+                    )}
+                  </div>
+
+                  {seg.beats && seg.beats.length > 0 && (
+                    <ul className="space-y-0.5">
+                      {seg.beats.map((b, i) => (
+                        <li key={i} className="text-[11px] text-muted-foreground">
+                          <span className="font-mono text-primary">{b.camera}</span> — {b.beat}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <div className="rounded-md bg-muted p-2">
+                    <p className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">{L("motionPrompt")}</p>
+                    <p className="text-[11px] leading-relaxed">{seg.motion_prompt}</p>
+                  </div>
+
+                  {seg.continuity_note && (
+                    <p className="text-[10px] text-muted-foreground">
+                      <span className="font-semibold">{L("continuity")}:</span> {seg.continuity_note}
+                    </p>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 gap-1.5"
+                      onClick={() => copySegmentPrompt(seg.segment_number, seg.motion_prompt)}
+                    >
+                      {copiedSeg === seg.segment_number ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copiedSeg === seg.segment_number ? (lang === "vi" ? "Đã copy" : "Copied") : L("copyPrompt")}
+                    </Button>
+                    {seg.first_frame_url && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => downloadImage(seg.first_frame_url!, `frame_${String(seg.segment_number).padStart(2, "0")}.png`)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        {/* Assembly Guide */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Film className="h-5 w-5" />
-                {lang === "vi" ? "Video Prompt cho Flowveo / Seedance / Kling" : "Video Prompt for Flowveo / Seedance / Kling"}
+                {L("assemblyGuide")}
               </CardTitle>
               <Button variant="outline" size="sm" onClick={copyVideoPrompt} className="gap-1.5">
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -679,38 +859,6 @@ export function GenerateClient() {
             <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-muted p-4 text-xs font-mono">
               {result.videoPrompt}
             </pre>
-          </CardContent>
-        </Card>
-
-        {/* Scene Details */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              {lang === "vi" ? "Chi tiết từng cảnh" : "Scene Details"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {result.breakdown.scenes.map((scene) => (
-                <div key={scene.scene_number} className="flex gap-3 rounded-lg border p-3">
-                  <Badge variant="secondary" className="h-6 w-6 shrink-0 items-center justify-center p-0 text-xs">
-                    {scene.scene_number}
-                  </Badge>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{scene.title}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{scene.description}</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      <Badge variant="outline" className="text-[10px]">{scene.camera_code}</Badge>
-                      <Badge variant="outline" className="text-[10px]">{scene.shot_type}</Badge>
-                      <Badge variant="outline" className="text-[10px]">{scene.duration_seconds}s</Badge>
-                      {scene.dialogue && (
-                        <span className="text-[10px] italic text-muted-foreground">&ldquo;{scene.dialogue}&rdquo;</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
           </CardContent>
         </Card>
       </div>
@@ -1025,12 +1173,17 @@ export function GenerateClient() {
           {step === 4 && (
             <>
               <div className="space-y-2">
+                <label className="text-sm font-medium">{L("videoGoalLabel")}</label>
+                <Select value={videoGoal} onChange={(e) => setVideoGoal(e.target.value as VideoGoal)} options={VIDEO_GOAL_OPTIONS[lang]} />
+              </div>
+              <div className="space-y-2">
                 <label className="text-sm font-medium">{L("visualStyle")}</label>
                 <Select value={style} onChange={(e) => setStyle(e.target.value as StoryboardStyle)} options={STYLE_OPTIONS[lang]} />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">{L("sceneCount")}</label>
-                <Select value={String(sceneCount)} onChange={(e) => setSceneCount(Number(e.target.value))} options={SCENE_OPTIONS} />
+                <label className="text-sm font-medium">{L("segmentCount")}</label>
+                <Select value={String(segmentCount)} onChange={(e) => setSegmentCount(Number(e.target.value))} options={SEGMENT_OPTIONS} />
+                <p className="text-xs text-muted-foreground">{L("segmentCountHint")}</p>
               </div>
 
               {/* Aspect ratio */}
@@ -1098,7 +1251,7 @@ export function GenerateClient() {
               <div className="rounded-lg border bg-muted/50 p-4 text-sm space-y-1">
                 <p className="font-medium">{L("summary")}</p>
                 <p className="text-muted-foreground">
-                  <strong>{sceneCount}</strong> {L("scenes")} · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong> · <strong>{imageQuality === "pro" ? "Pro" : "Standard"}</strong>
+                  <strong>{segmentCount}</strong> {L("segments")} (~{segmentCount * 8}s) · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong> · <strong>{imageQuality === "pro" ? "Pro" : "Standard"}</strong>
                   {characters.length > 0 && <> · {characters.length} {L("characters")}</>}
                   {products.length > 0 && <> · {products.length} {L("products")}</>}
                   {backgrounds.length > 0 && <> · {backgrounds.length} {L("locations")}</>}

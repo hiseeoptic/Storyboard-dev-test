@@ -79,6 +79,10 @@ export interface StoryboardGenerationInput {
   genre: Genre;
   style: StoryboardStyle;
   scene_count: number;
+  /** Number of 8-second segments to chain into the final video. */
+  segment_count?: number;
+  /** Marketing goal/template for the script structure. */
+  video_goal?: VideoGoal;
   reference_images?: string[];
   character_descriptions?: CharacterDescription[];
   character_images?: ImageReference[];
@@ -90,6 +94,14 @@ export interface StoryboardGenerationInput {
   image_quality?: ImageQuality;
   aspect_ratio?: AspectRatio;
 }
+
+/** Marketing video template that drives the script structure. */
+export type VideoGoal =
+  | "marketing_general"
+  | "product_ad"
+  | "storytelling"
+  | "review"
+  | "educational";
 
 export interface CharacterDescription {
   name: string;
@@ -119,7 +131,7 @@ export interface CharacterLock {
   render_style: string;
 }
 
-// ─── Scene Breakdown ────────────────────────────────────────────────────────
+// ─── Scene Breakdown (legacy single-frame type) ─────────────────────────────
 
 export interface SceneBreakdown {
   scene_number: number;
@@ -141,22 +153,54 @@ export interface SceneBreakdown {
   continuity_notes: string;
 }
 
+// ─── Video Segment (8s clip unit for Veo/Seedance) ──────────────────────────
+
+/** Marketing role of a segment in the Hook→Problem→Solution→CTA arc. */
+export type MarketingRole = "hook" | "problem" | "solution" | "body" | "cta";
+
+/** A single action beat inside an 8s segment (3-5 per segment). */
+export interface ShotBeat {
+  beat: string; // short action description
+  camera: string; // camera note, e.g. [CLOSE] slow push-in
+}
+
+/**
+ * One ~8s segment = exactly one Veo/Seedance image-to-video generation.
+ * Segments are chained: the start frame of N+1 continues from N's end.
+ */
+export interface VideoSegment {
+  segment_number: number;
+  duration_seconds: number; // ~8
+  title: string;
+  marketing_role: MarketingRole;
+  beats: ShotBeat[]; // 3-5 beats within the 8s
+  /** Prompt used to generate this segment's start (first) frame image. */
+  first_frame_prompt: string;
+  /** Image-to-video motion prompt (30-80 words) for Veo/Seedance. */
+  motion_prompt: string;
+  dialogue: string | null;
+  /** How this segment visually connects to the previous one (seamless join). */
+  continuity_note: string;
+  /** Filled by the image pipeline — the generated start frame. */
+  first_frame_url?: string | null;
+}
+
+export interface MarketingStructure {
+  hook: string;
+  problem: string;
+  solution: string;
+  cta: string;
+}
+
 export interface StoryboardGenerationOutput {
   title: string;
   synopsis: string;
   total_duration_seconds: number;
   mood_tags: string[];
+  marketing_structure: MarketingStructure;
   character_locks: CharacterLock[];
-  scenes: SceneBreakdown[];
-  timeline: TimelineEntry[];
+  segments: VideoSegment[];
   style_guide: StyleGuide;
-}
-
-export interface TimelineEntry {
-  scene_number: number;
-  start_time: number;
-  end_time: number;
-  description: string;
 }
 
 export interface StyleGuide {
