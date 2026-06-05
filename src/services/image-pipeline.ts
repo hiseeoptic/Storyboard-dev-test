@@ -4,7 +4,7 @@ import {
   buildCharacterRefSheetPrompt,
   buildSegmentFirstFramePrompt,
   buildStoryboardPosterPrompt,
-  type RefRole,
+  type RefDescriptor,
 } from "@/prompts";
 import type {
   AIProvider,
@@ -100,7 +100,7 @@ export async function generateCharacterRefSheet(params: {
   colorPalette?: string[];
   /** Uploaded reference photos of the real person/character (Gemini). */
   referenceImages?: { base64: string; mimeType?: string }[];
-  referenceRoles?: RefRole[];
+  references?: RefDescriptor[];
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
@@ -114,7 +114,7 @@ export async function generateCharacterRefSheet(params: {
     colorPalette: params.colorPalette,
     style: params.style,
     preserveRealFace: hasRefs,
-    referenceRoles: params.referenceRoles,
+    references: params.references,
   });
 
   const url = await generateImage(prompt, {
@@ -137,7 +137,7 @@ export async function generateSegmentFrame(params: {
   isFirst: boolean;
   preserveRealFace?: boolean;
   referenceImages?: RefImage[];
-  referenceRoles?: RefRole[];
+  references?: RefDescriptor[];
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
@@ -150,7 +150,7 @@ export async function generateSegmentFrame(params: {
     style: params.style,
     isFirst: params.isFirst,
     preserveRealFace: params.preserveRealFace,
-    referenceRoles: params.referenceRoles,
+    references: params.references,
   });
 
   const url = await generateImage(prompt, {

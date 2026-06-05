@@ -441,15 +441,36 @@ export function GenerateClient() {
     setProgressPercent(5);
     setProgressMessage(L("preparing"));
 
-    const characterImages: ImageReference[] = characters
+    // Auto-include uploads still sitting in the form (user may not have
+    // clicked "Add ...") so reference photos are never silently dropped.
+    const effectiveCharacters = [
+      ...characters,
+      ...(charImages.length > 0
+        ? [{ name: charName.trim() || "Main character", role: charRole, appearance: charAppearance, images: charImages }]
+        : []),
+    ];
+    const effectiveProducts = [
+      ...products,
+      ...(prodImages.length > 0
+        ? [{ name: prodName.trim() || "Product", description: prodDesc, images: prodImages }]
+        : []),
+    ];
+    const effectiveBackgrounds = [
+      ...backgrounds,
+      ...(bgImages.length > 0
+        ? [{ name: bgName.trim() || "Setting", description: bgDesc, images: bgImages }]
+        : []),
+    ];
+
+    const characterImages: ImageReference[] = effectiveCharacters
       .filter((c) => c.images.length > 0)
       .map((c) => ({ name: c.name, images: c.images.map((i) => i.base64) }));
 
-    const productImages: ImageReference[] = products
+    const productImages: ImageReference[] = effectiveProducts
       .filter((p) => p.images.length > 0)
       .map((p) => ({ name: p.name, description: p.description, images: p.images.map((i) => i.base64) }));
 
-    const backgroundImages: ImageReference[] = backgrounds
+    const backgroundImages: ImageReference[] = effectiveBackgrounds
       .filter((b) => b.images.length > 0)
       .map((b) => ({ name: b.name, description: b.description, images: b.images.map((i) => i.base64) }));
 
@@ -467,8 +488,8 @@ export function GenerateClient() {
       scene_count: segmentCount,
       segment_count: segmentCount,
       video_goal: videoGoal,
-      character_descriptions: characters.length > 0
-        ? characters.map((c) => ({ name: c.name, appearance: c.appearance, personality: "", role: c.role }))
+      character_descriptions: effectiveCharacters.length > 0
+        ? effectiveCharacters.map((c) => ({ name: c.name, appearance: c.appearance, personality: "", role: c.role }))
         : undefined,
       character_images: characterImages.length > 0 ? characterImages : undefined,
       product_images: productImages.length > 0 ? productImages : undefined,

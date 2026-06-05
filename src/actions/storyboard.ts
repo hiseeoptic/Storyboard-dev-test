@@ -7,7 +7,7 @@ import {
   generateStoryboardPoster,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
-import { buildVideoPromptText, type RefRole } from "@/prompts";
+import { buildVideoPromptText, type RefDescriptor } from "@/prompts";
 import type {
   ActionResult,
   AIProvider,
@@ -129,30 +129,44 @@ export async function generateFullStoryboard(
   const productImg = input.product_images?.[0]?.images?.[0];
   const bgImg = input.background_images?.[0]?.images?.[0];
 
+  // Vision-derived descriptions of the real uploads (reinforce the photos).
+  const faceName = input.character_images?.[0]?.name;
+  const productName = input.product_images?.[0]?.name;
+  const faceDesc = faceName ? analyzedCharacters[faceName] : undefined;
+  const productDesc = productName ? analyzedProducts[productName] : undefined;
+  const bgDesc = analyzedBackground || undefined;
+
+  // Ordered reference images + matching semantic descriptors.
   const anchorRefs: { base64: string; mimeType?: string }[] = [];
-  const anchorRoles: RefRole[] = [];
+  const refDescriptors: RefDescriptor[] = [];
   if (faceImg) {
     anchorRefs.push({ base64: faceImg, mimeType: "image/jpeg" });
-    anchorRoles.push("face");
+    refDescriptors.push({ role: "face", description: faceDesc });
   }
   if (productImg) {
     anchorRefs.push({ base64: productImg, mimeType: "image/jpeg" });
-    anchorRoles.push("product");
+    refDescriptors.push({ role: "product", description: productDesc });
   }
   if (bgImg) {
     anchorRefs.push({ base64: bgImg, mimeType: "image/jpeg" });
-    anchorRoles.push("setting");
+    refDescriptors.push({ role: "setting", description: bgDesc });
   }
 
   const preserveRealFace = canChain && !!faceImg;
 
+  // Character description for the scene text. When we have the real face
+  // photo, DEFER identity to it (don't feed an invented face that fights
+  // the photo) — only keep clothing/role from the script.
   const charDescForPoster = breakdown.character_locks
     .map(
       (c) =>
         `${c.name}: ${c.gender_age}, ${c.build}, skin ${c.skin_tone}, hair ${c.hair}, eyes ${c.eyes}, wearing ${c.costume}. ${c.signature_features}`
     )
     .join(". ");
-  const charDesc = charDescForPoster || "the main character";
+  const mainCostume = breakdown.character_locks[0]?.costume ?? "casual clothes";
+  const charDesc = preserveRealFace
+    ? `the exact man shown in the attached portrait photo (keep his real face, eyeglasses and hair), wearing ${mainCostume}`
+    : charDescForPoster || "the main character";
 
   // ─── Step 4a: Character Reference Sheet (locked to uploaded photos) ─
   if (breakdown.character_locks.length > 0) {
@@ -165,7 +179,7 @@ export async function generateFullStoryboard(
         quality,
         style: input.style,
         referenceImages: canChain && faceImg ? [{ base64: faceImg, mimeType: "image/jpeg" }] : undefined,
-        referenceRoles: canChain && faceImg ? ["face"] : undefined,
+        references: canChain && faceImg ? [{ role: "face", description: faceDesc }] : undefined,
       });
       characterRefSheetUrl = r.url;
     } catch (err) {
@@ -194,7 +208,7 @@ export async function generateFullStoryboard(
           isFirst: i === 0,
           preserveRealFace,
           referenceImages: anchorRefs.length > 0 ? anchorRefs : undefined,
-          referenceRoles: anchorRoles.length > 0 ? anchorRoles : undefined,
+          references: refDescriptors.length > 0 ? refDescriptors : undefined,
           provider,
           aspectRatio,
           quality,

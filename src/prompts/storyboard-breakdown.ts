@@ -146,27 +146,35 @@ function renderDirective(style: string, preserveRealFace: boolean): string {
 
 export type RefRole = "face" | "product" | "setting";
 
+export interface RefDescriptor {
+  role: RefRole;
+  /** Optional vision-derived description that reinforces the photo. */
+  description?: string;
+}
+
 /**
- * Builds explicit "Image N = role" instructions. Nano Banana follows
- * reference images far better when each one is assigned a clear role,
- * in the SAME order the images are attached to the request.
+ * Builds SEMANTIC reference instructions. Google DeepMind's guide warns
+ * that positional labels ("image 2") get misread as "output a copy of
+ * image 2"; semantic naming ("the man in the portrait photo") works far
+ * better and an optional text description (from vision analysis) makes
+ * the photo + text agree, which the model then obeys.
  */
-export function buildReferenceInstructions(roles: RefRole[]): string {
-  if (roles.length === 0) return "";
-  const lines = roles.map((role, i) => {
-    const n = i + 1;
-    switch (role) {
+export function buildReferenceInstructions(refs: RefDescriptor[]): string {
+  if (refs.length === 0) return "";
+  const lines = refs.map((r) => {
+    const d = r.description ? ` (${r.description.replace(/\s+/g, " ").slice(0, 220)})` : "";
+    switch (r.role) {
       case "face":
-        return `• Image ${n} = THE PERSON. Reproduce this EXACT same face — same head shape, facial features, hairstyle, skin tone and eyeglasses. It must be unmistakably the same real person. Do NOT invent or alter the face.`;
+        return `• THE PERSON — use the exact man shown in the attached portrait photo${d}. Keep his real face, eyeglasses, hairstyle and skin tone identical in every shot. He is the main character. Do NOT invent a different face.`;
       case "product":
-        return `• Image ${n} = THE PRODUCT. Reproduce this EXACT product: same shape, colour, material, handle and any branding. Do NOT redesign or substitute it.`;
+        return `• THE PRODUCT — feature the exact product shown in the attached product photo${d}. Keep its exact shape, colour, material, handle and branding. Do NOT redesign, age, or swap it for another pan.`;
       case "setting":
-        return `• Image ${n} = THE LOCATION. Use this exact environment/room as the background setting.`;
+        return `• THE KITCHEN — set every scene inside the exact kitchen shown in the attached interior photo${d}. Match its cabinets, colours and layout.`;
       default:
-        return `• Image ${n} = reference, keep it consistent.`;
+        return `• Reference — keep it consistent.`;
     }
   });
-  return `ATTACHED REFERENCE IMAGES — you MUST follow them precisely (in this order):\n${lines.join("\n")}\n\n`;
+  return `You are given reference photos. RE-CREATE new cinematic scenes using these real subjects — do NOT simply output a copy of any reference photo. Follow them precisely:\n${lines.join("\n")}\n\n`;
 }
 
 // ─── Step 2: Character Reference Sheet Image Prompt ─────────────────────────
@@ -188,12 +196,12 @@ export function buildCharacterRefSheetPrompt(params: {
   colorPalette?: string[];
   style?: string;
   preserveRealFace?: boolean;
-  referenceRoles?: RefRole[];
+  references?: RefDescriptor[];
 }): string {
   const c = params.characterLock;
   const style = params.style ?? c.render_style;
   const directive = renderDirective(style, params.preserveRealFace ?? false);
-  const refBlock = buildReferenceInstructions(params.referenceRoles ?? []);
+  const refBlock = buildReferenceInstructions(params.references ?? []);
 
   const colorSwatches =
     params.colorPalette && params.colorPalette.length > 0
@@ -225,10 +233,10 @@ export function buildSegmentFirstFramePrompt(params: {
   style: string;
   isFirst: boolean;
   preserveRealFace?: boolean;
-  referenceRoles?: RefRole[];
+  references?: RefDescriptor[];
 }): string {
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
-  const refBlock = buildReferenceInstructions(params.referenceRoles ?? []);
+  const refBlock = buildReferenceInstructions(params.references ?? []);
 
   const beats = params.beats.slice(0, 3);
   while (beats.length < 3) {

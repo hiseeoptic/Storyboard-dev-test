@@ -7,7 +7,7 @@ export {
   buildVideoPromptText,
   buildReferenceInstructions,
 } from "./storyboard-breakdown";
-export type { RefRole } from "./storyboard-breakdown";
+export type { RefRole, RefDescriptor } from "./storyboard-breakdown";
 
 export {
   buildImagePrompt,
