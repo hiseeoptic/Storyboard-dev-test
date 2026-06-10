@@ -61,12 +61,30 @@ const t = {
   },
 
   // Step 1: Story
-  storyIdea: { vi: "Ý tưởng câu chuyện *", en: "Story Idea *" },
+  storyIdea: { vi: "Ý tưởng / Concept video *", en: "Idea / Video concept *" },
   storyIdeaPlaceholder: {
-    vi: "Một thám tử điều tra những vụ mất tích bí ẩn tại thị trấn ven biển...",
-    en: "A detective investigates mysterious disappearances in a small coastal town...",
+    vi: "VD: Quảng cáo nồi chiên không dầu — một bà mẹ bận rộn nấu bữa tối ngon lành cho con chỉ trong 15 phút...",
+    en: "e.g. Air fryer ad — a busy mom cooks a delicious dinner for her kid in just 15 minutes...",
   },
   genre: { vi: "Thể loại", en: "Genre" },
+  productBriefTitle: { vi: "Thông tin sản phẩm (cho TVC quảng cáo)", en: "Product brief (for TVC ads)" },
+  productBriefHint: {
+    vi: "Điền để AI dựng kịch bản quảng cáo bám sát sản phẩm. Không bắt buộc nếu chỉ làm phim kể chuyện.",
+    en: "Fill in so the AI builds an ad script around your product. Optional for non-ad stories.",
+  },
+  productName: { vi: "Tên sản phẩm / dịch vụ", en: "Product / service name" },
+  productNamePlaceholder: { vi: "VD: Nồi chiên không dầu XYZ", en: "e.g. XYZ Air Fryer" },
+  sellingPoints: { vi: "Điểm bán hàng nổi bật (USP)", en: "Key selling points (USP)" },
+  sellingPointsPlaceholder: {
+    vi: "VD: Tiết kiệm 80% dầu, nấu nhanh 15 phút, dễ vệ sinh",
+    en: "e.g. 80% less oil, 15-min cooking, easy to clean",
+  },
+  targetAudience: { vi: "Khách hàng mục tiêu", en: "Target audience" },
+  targetAudiencePlaceholder: { vi: "VD: Mẹ bỉm sữa 25-40 tuổi, bận rộn", en: "e.g. Busy moms aged 25-40" },
+  keyMessage: { vi: "Thông điệp chính", en: "Key message" },
+  keyMessagePlaceholder: { vi: "VD: Bữa ngon cho cả nhà chỉ trong 15 phút", en: "e.g. A tasty meal for the family in 15 minutes" },
+  callToAction: { vi: "Kêu gọi hành động (CTA)", en: "Call to action (CTA)" },
+  callToActionPlaceholder: { vi: "VD: Đặt mua ngay hôm nay, giảm 30%", en: "e.g. Order today, 30% off" },
   setting: { vi: "Bối cảnh", en: "Setting" },
   settingPlaceholder: { vi: "Thị trấn ven biển, thập niên 90", en: "Coastal town, 1990s" },
   tone: { vi: "Tông màu / Giọng kể", en: "Tone" },
@@ -245,9 +263,14 @@ const STYLE_OPTIONS: Record<Lang, { value: StoryboardStyle; label: string }[]> =
 
 const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
   vi: [
+    { value: "advertising", label: "Quảng cáo / TVC" },
+    { value: "product_demo", label: "Demo / Giới thiệu sản phẩm" },
+    { value: "brand_film", label: "Phim thương hiệu" },
+    { value: "promo", label: "Khuyến mãi / Sale" },
+    { value: "unboxing", label: "Unboxing / Trải nghiệm" },
+    { value: "drama", label: "Chính kịch" },
     { value: "action", label: "Hành động" },
     { value: "comedy", label: "Hài" },
-    { value: "drama", label: "Chính kịch" },
     { value: "horror", label: "Kinh dị" },
     { value: "romance", label: "Tình cảm" },
     { value: "sci-fi", label: "Khoa học viễn tưởng" },
@@ -256,9 +279,14 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "documentary", label: "Tài liệu" },
   ],
   en: [
+    { value: "advertising", label: "Advertising / TVC" },
+    { value: "product_demo", label: "Product demo" },
+    { value: "brand_film", label: "Brand film" },
+    { value: "promo", label: "Promo / Sale" },
+    { value: "unboxing", label: "Unboxing / Experience" },
+    { value: "drama", label: "Drama" },
     { value: "action", label: "Action" },
     { value: "comedy", label: "Comedy" },
-    { value: "drama", label: "Drama" },
     { value: "horror", label: "Horror" },
     { value: "romance", label: "Romance" },
     { value: "sci-fi", label: "Sci-Fi" },
@@ -406,9 +434,15 @@ export function GenerateClient() {
 
   // Step 1: Story
   const [storyIdea, setStoryIdea] = useState("");
-  const [genre, setGenre] = useState("drama");
+  const [genre, setGenre] = useState("advertising");
   const [setting, setSetting] = useState("");
   const [tone, setTone] = useState("");
+  // Product / TVC brief
+  const [productName, setProductName] = useState("");
+  const [sellingPoints, setSellingPoints] = useState("");
+  const [targetAudience, setTargetAudience] = useState("");
+  const [keyMessage, setKeyMessage] = useState("");
+  const [callToAction, setCallToAction] = useState("");
 
   // Step 2: Characters
   const [characters, setCharacters] = useState<CharacterEntry[]>([]);
@@ -434,7 +468,7 @@ export function GenerateClient() {
   const [segmentCount, setSegmentCount] = useState(4);
   const [beatsPerSegment, setBeatsPerSegment] = useState(3);
   const [forceVietnameseDialogue, setForceVietnameseDialogue] = useState(true);
-  const [videoGoal, setVideoGoal] = useState<VideoGoal>("marketing_general");
+  const [videoGoal, setVideoGoal] = useState<VideoGoal>("product_ad");
   const [imageQuality, setImageQuality] = useState<ImageQuality>("standard");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   const [copiedSeg, setCopiedSeg] = useState<number | null>(null);
@@ -542,6 +576,11 @@ export function GenerateClient() {
       background_images: backgroundImages.length > 0 ? backgroundImages : undefined,
       setting: setting || undefined,
       tone: tone || undefined,
+      product_name: productName || undefined,
+      selling_points: sellingPoints || undefined,
+      target_audience: targetAudience || undefined,
+      key_message: keyMessage || undefined,
+      call_to_action: callToAction || undefined,
       image_quality: imageQuality,
       aspect_ratio: aspectRatio,
     };
@@ -1077,6 +1116,45 @@ export function GenerateClient() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("tone")}</label>
                 <Input value={tone} onChange={(e) => setTone(e.target.value)} placeholder={L("tonePlaceholder")} />
+              </div>
+
+              {/* Product / TVC brief */}
+              <div className="space-y-3 rounded-lg border border-dashed p-4">
+                <div className="flex items-center gap-2">
+                  <Package className="h-4 w-4 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-sm font-medium">{L("productBriefTitle")}</p>
+                    <p className="text-xs text-muted-foreground">{L("productBriefHint")}</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{L("productName")}</label>
+                  <Input value={productName} onChange={(e) => setProductName(e.target.value)} placeholder={L("productNamePlaceholder")} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{L("sellingPoints")}</label>
+                  <Textarea
+                    value={sellingPoints}
+                    onChange={(e) => setSellingPoints(e.target.value)}
+                    placeholder={L("sellingPointsPlaceholder")}
+                    rows={2}
+                    className="resize-none"
+                  />
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{L("targetAudience")}</label>
+                    <Input value={targetAudience} onChange={(e) => setTargetAudience(e.target.value)} placeholder={L("targetAudiencePlaceholder")} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{L("callToAction")}</label>
+                    <Input value={callToAction} onChange={(e) => setCallToAction(e.target.value)} placeholder={L("callToActionPlaceholder")} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{L("keyMessage")}</label>
+                  <Input value={keyMessage} onChange={(e) => setKeyMessage(e.target.value)} placeholder={L("keyMessagePlaceholder")} />
+                </div>
               </div>
             </>
           )}

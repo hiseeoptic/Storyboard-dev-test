@@ -75,6 +75,12 @@ export type Genre =
   | "thriller"
   | "animation"
   | "documentary"
+  // ─── Advertising / marketing genres (for TVC & product ads) ─────────
+  | "advertising"
+  | "product_demo"
+  | "brand_film"
+  | "promo"
+  | "unboxing"
   | "other";
 
 // ─── AI Engine ──────────────────────────────────────────────────────────────
@@ -102,6 +108,13 @@ export interface StoryboardGenerationInput {
   tone?: string;
   setting?: string;
   custom_instructions?: string;
+  // ─── Product / TVC brief (drives a product-advertising script) ───────
+  product_name?: string;
+  /** Key selling points / USP, free text. */
+  selling_points?: string;
+  target_audience?: string;
+  key_message?: string;
+  call_to_action?: string;
   image_quality?: ImageQuality;
   aspect_ratio?: AspectRatio;
 }
