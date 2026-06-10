@@ -109,6 +109,12 @@ export async function generateStoryboardBreakdown(
         if (!seg.first_frame_prompt) seg.first_frame_prompt = seg.title;
         if (!seg.motion_prompt) seg.motion_prompt = seg.title;
         if (seg.dialogue === undefined) seg.dialogue = null;
+        // When dialogue is required, never leave it empty — fall back to the
+        // segment title so the UI/assembly guide always carries a spoken line.
+        if (input.force_dialogue !== false) {
+          const line = typeof seg.dialogue === "string" ? seg.dialogue.trim() : "";
+          if (!line) seg.dialogue = seg.title;
+        }
         if (!seg.continuity_note) {
           seg.continuity_note = i === 0 ? "opening shot" : "continues from previous segment";
         }

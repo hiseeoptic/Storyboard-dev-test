@@ -24,6 +24,11 @@ export type StoryboardStyle =
   | "cinematic"
   | "3d_render"
   | "pixel_art"
+  // ─── Marketing-oriented looks ──────────────────────────────────────
+  | "commercial"
+  | "ugc"
+  | "product_showcase"
+  | "corporate_clean"
   | "custom";
 
 // ─── Scene ──────────────────────────────────────────────────────────────────
@@ -81,8 +86,14 @@ export interface StoryboardGenerationInput {
   scene_count: number;
   /** Number of 8-second segments to chain into the final video. */
   segment_count?: number;
+  /** Number of quick shots (beats) inside each 8s segment (3-5). */
+  beats_per_segment?: number;
   /** Marketing goal/template for the script structure. */
   video_goal?: VideoGoal;
+  /** Spoken-line language for every segment (ISO-ish name, e.g. "Vietnamese"). */
+  dialogue_language?: string;
+  /** When true, every segment MUST carry a spoken line in dialogue_language. */
+  force_dialogue?: boolean;
   reference_images?: string[];
   character_descriptions?: CharacterDescription[];
   character_images?: ImageReference[];
@@ -101,7 +112,12 @@ export type VideoGoal =
   | "product_ad"
   | "storytelling"
   | "review"
-  | "educational";
+  | "educational"
+  // ─── Extra marketing templates ─────────────────────────────────────
+  | "brand_story"
+  | "social_short"
+  | "testimonial"
+  | "promo_sale";
 
 export interface CharacterDescription {
   name: string;

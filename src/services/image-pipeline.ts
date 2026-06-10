@@ -132,6 +132,7 @@ export async function generateSegmentFrame(params: {
   segmentNumber: number;
   firstFramePrompt: string;
   beats: { beat: string; camera: string }[];
+  beatsPerSegment?: number;
   characterDescription: string;
   style: string;
   isFirst: boolean;
@@ -146,6 +147,7 @@ export async function generateSegmentFrame(params: {
     segmentNumber: params.segmentNumber,
     firstFramePrompt: params.firstFramePrompt,
     beats: params.beats,
+    beatsPerSegment: params.beatsPerSegment,
     characterDescription: params.characterDescription,
     style: params.style,
     isFirst: params.isFirst,

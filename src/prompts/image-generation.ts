@@ -19,6 +19,14 @@ const STYLE_MODIFIERS: Record<StoryboardStyle, string> = {
     "3D rendered, Pixar quality, subsurface scattering, ambient occlusion, ray traced lighting",
   pixel_art:
     "pixel art style, retro game aesthetic, limited color palette, crisp pixels, 16-bit era",
+  commercial:
+    "high-end TV commercial look, glossy advertising photography, studio softbox lighting, vivid saturated colors, polished and aspirational, brand-ready",
+  ugc:
+    "authentic UGC selfie-style footage, handheld phone camera, natural daylight, slightly imperfect framing, relatable everyday realism, TikTok/Reels native look",
+  product_showcase:
+    "clean product showcase, minimal seamless background, crisp studio lighting, sharp focus on the product, soft reflections, e-commerce hero shot quality",
+  corporate_clean:
+    "clean corporate brand style, bright modern office or minimal set, soft even lighting, professional and trustworthy, muted brand palette, polished business look",
   custom: "",
 };
 

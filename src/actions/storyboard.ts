@@ -5,6 +5,7 @@ import {
   generateCharacterRefSheet,
   generateSegmentFrame,
   generateStoryboardPoster,
+  dataUriToBase64,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
 import { buildVideoPromptText, type RefDescriptor } from "@/prompts";
@@ -118,6 +119,8 @@ export async function generateFullStoryboard(
 
   const aspectRatio: AspectRatio = input.aspect_ratio ?? "16:9";
   const quality: ImageQuality = input.image_quality ?? "standard";
+  const beatsPerSegment = Math.min(5, Math.max(3, input.beats_per_segment ?? 3));
+  const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
 
   // Only Gemini supports image-to-image reference chaining (face lock).
   const canChain = provider === "gemini";
@@ -135,22 +138,6 @@ export async function generateFullStoryboard(
   const faceDesc = faceName ? analyzedCharacters[faceName] : undefined;
   const productDesc = productName ? analyzedProducts[productName] : undefined;
   const bgDesc = analyzedBackground || undefined;
-
-  // Ordered reference images + matching semantic descriptors.
-  const anchorRefs: { base64: string; mimeType?: string }[] = [];
-  const refDescriptors: RefDescriptor[] = [];
-  if (faceImg) {
-    anchorRefs.push({ base64: faceImg, mimeType: "image/jpeg" });
-    refDescriptors.push({ role: "face", description: faceDesc });
-  }
-  if (productImg) {
-    anchorRefs.push({ base64: productImg, mimeType: "image/jpeg" });
-    refDescriptors.push({ role: "product", description: productDesc });
-  }
-  if (bgImg) {
-    anchorRefs.push({ base64: bgImg, mimeType: "image/jpeg" });
-    refDescriptors.push({ role: "setting", description: bgDesc });
-  }
 
   const preserveRealFace = canChain && !!faceImg;
 
@@ -189,10 +176,48 @@ export async function generateFullStoryboard(
     }
   }
 
-  // ─── Step 4b: Per-segment frames, anchored to the real uploads ─────
-  // Every segment references the SAME labeled originals (face/product/
-  // setting) so identity never drifts. Continuity is carried by the
-  // prompt's continuity note, not by chaining a degraded previous frame.
+  // ─── Step 4a.5: Build the per-segment reference set ─────────────────
+  // The generated CHARACTER REFERENCE SHEET becomes the primary identity
+  // anchor that is fed into EVERY segment + the poster, so the character
+  // is repeated across all shots (fixes Veo rendering the wrong person).
+  // Veo/Gemini accept up to 3 reference images, so we cap at: character,
+  // product, setting. The ref sheet already encodes the uploaded face, so
+  // we lead with it; if it failed, we fall back to the raw face photo.
+  const charSheetBase64 = characterRefSheetUrl
+    ? dataUriToBase64(characterRefSheetUrl)
+    : null;
+
+  const segmentRefImages: { base64: string; mimeType?: string }[] = [];
+  const segmentRefDescriptors: RefDescriptor[] = [];
+
+  if (charSheetBase64) {
+    segmentRefImages.push({
+      base64: charSheetBase64.base64,
+      mimeType: charSheetBase64.mimeType,
+    });
+    segmentRefDescriptors.push({ role: "character_sheet", description: charDescForPoster });
+  } else if (faceImg) {
+    segmentRefImages.push({ base64: faceImg, mimeType: "image/jpeg" });
+    segmentRefDescriptors.push({ role: "face", description: faceDesc });
+  }
+  if (productImg && segmentRefImages.length < 3) {
+    segmentRefImages.push({ base64: productImg, mimeType: "image/jpeg" });
+    segmentRefDescriptors.push({ role: "product", description: productDesc });
+  }
+  if (bgImg && segmentRefImages.length < 3) {
+    segmentRefImages.push({ base64: bgImg, mimeType: "image/jpeg" });
+    segmentRefDescriptors.push({ role: "setting", description: bgDesc });
+  }
+
+  // Character ref for the scene/poster text. If we have a generated sheet,
+  // defer identity to it; keep the locked appearance wording for the model.
+  const charDescForShots =
+    charSheetBase64 || preserveRealFace ? charDesc : charDescForPoster || "the main character";
+
+  // ─── Step 4b: Per-segment frames, anchored to the character sheet ───
+  // Every segment references the SAME character sheet (+ product/setting)
+  // so identity never drifts. Continuity is carried by the prompt's
+  // continuity note, not by chaining a degraded previous frame.
   if (canChain) {
     for (let i = 0; i < breakdown.segments.length; i++) {
       const seg = breakdown.segments[i];
@@ -203,12 +228,13 @@ export async function generateFullStoryboard(
           segmentNumber: seg.segment_number,
           firstFramePrompt: seg.first_frame_prompt,
           beats: seg.beats,
-          characterDescription: charDesc,
+          beatsPerSegment,
+          characterDescription: charDescForShots,
           style: input.style,
           isFirst: i === 0,
-          preserveRealFace,
-          referenceImages: anchorRefs.length > 0 ? anchorRefs : undefined,
-          references: refDescriptors.length > 0 ? refDescriptors : undefined,
+          preserveRealFace: preserveRealFace || !!charSheetBase64,
+          referenceImages: segmentRefImages.length > 0 ? segmentRefImages : undefined,
+          references: segmentRefDescriptors.length > 0 ? segmentRefDescriptors : undefined,
           provider,
           aspectRatio,
           quality,
@@ -229,7 +255,8 @@ export async function generateFullStoryboard(
           segmentNumber: seg.segment_number,
           firstFramePrompt: seg.first_frame_prompt,
           beats: seg.beats,
-          characterDescription: charDesc,
+          beatsPerSegment,
+          characterDescription: charDescForShots,
           style: input.style,
           isFirst: i === 0,
           provider,
@@ -265,13 +292,16 @@ export async function generateFullStoryboard(
         summary: s.beats?.[0]?.beat || s.motion_prompt || s.title,
         role: s.marketing_role,
       })),
-      characterDescription: charDesc,
+      characterDescription: charDescForShots,
       style: input.style,
       colorPalette: breakdown.style_guide.color_palette,
       provider,
       aspectRatio,
       quality,
-      referenceImages: canChain && faceImg ? [{ base64: faceImg, mimeType: "image/jpeg" }] : undefined,
+      referenceImages:
+        canChain && segmentRefImages.length > 0
+          ? [segmentRefImages[0] as { base64: string; mimeType?: string }]
+          : undefined,
     });
     storyboardPosterUrl = r.url;
   } catch (err) {
@@ -283,11 +313,12 @@ export async function generateFullStoryboard(
   // ─── Step 5: Assembly guide (text for Veo / Seedance) ──────────────
   const videoPrompt = buildVideoPromptText({
     title: breakdown.title,
-    characterDescription: charDesc,
+    characterDescription: charDescForShots,
     setting: input.setting || "Unspecified",
     style: input.style,
     aspectRatio,
     colorPalette: breakdown.style_guide.color_palette,
+    dialogueLanguage,
     marketing: breakdown.marketing_structure,
     segments: breakdown.segments.map((s) => ({
       segment_number: s.segment_number,

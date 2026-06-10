@@ -119,6 +119,16 @@ const t = {
     vi: "Mỗi đoạn = 1 clip 8s trên Veo/Seedance. Các đoạn được nối liền mạch (frame cuối → frame đầu) để video không bị khựng.",
     en: "Each segment = one 8s clip on Veo/Seedance. Segments are chained (last frame → next first frame) for seamless playback.",
   },
+  beatsLabel: { vi: "Số cảnh nhỏ trong mỗi đoạn", en: "Shots per segment" },
+  beatsHint: {
+    vi: "Mỗi đoạn 8s được chia thành nhiều cảnh nhỏ theo từng mốc thời gian (3-5 cảnh).",
+    en: "Each 8s segment is split into several quick shots across time frames (3-5).",
+  },
+  forceDialogueLabel: { vi: "Bắt buộc lời thoại tiếng Việt", en: "Force Vietnamese dialogue" },
+  forceDialogueHint: {
+    vi: "Mỗi đoạn sẽ có một câu thoại tiếng Việt, được nhúng vào prompt theo định dạng Veo để nhân vật nói đúng (lip-sync, không phụ đề).",
+    en: "Every segment gets a Vietnamese spoken line, embedded into the Veo prompt for correct lip-sync (no subtitles).",
+  },
   videoGoalLabel: { vi: "Mục tiêu video", en: "Video Goal" },
   imageQuality: { vi: "Chất lượng ảnh", en: "Image Quality" },
   qualityStandard: { vi: "Standard (nhanh, tiết kiệm)", en: "Standard (fast, cheaper)" },
@@ -204,6 +214,10 @@ const STYLE_OPTIONS: Record<Lang, { value: StoryboardStyle; label: string }[]> =
   vi: [
     { value: "cinematic", label: "Điện ảnh" },
     { value: "realistic", label: "Chân thực" },
+    { value: "commercial", label: "Quảng cáo (TVC)" },
+    { value: "ugc", label: "UGC (quay điện thoại)" },
+    { value: "product_showcase", label: "Trưng bày sản phẩm" },
+    { value: "corporate_clean", label: "Doanh nghiệp / Brand" },
     { value: "anime", label: "Anime" },
     { value: "comic", label: "Truyện tranh" },
     { value: "watercolor", label: "Màu nước" },
@@ -215,6 +229,10 @@ const STYLE_OPTIONS: Record<Lang, { value: StoryboardStyle; label: string }[]> =
   en: [
     { value: "cinematic", label: "Cinematic" },
     { value: "realistic", label: "Realistic" },
+    { value: "commercial", label: "Commercial (TVC)" },
+    { value: "ugc", label: "UGC (phone-shot)" },
+    { value: "product_showcase", label: "Product Showcase" },
+    { value: "corporate_clean", label: "Corporate / Brand" },
     { value: "anime", label: "Anime" },
     { value: "comic", label: "Comic Book" },
     { value: "watercolor", label: "Watercolor" },
@@ -253,15 +271,34 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
 // Number of 8-second segments to chain into the final video.
 const SEGMENT_OPTIONS = [
   { value: "3", label: "3 (~24s)" },
+  { value: "4", label: "4 (~32s)" },
   { value: "5", label: "5 (~40s)" },
   { value: "7", label: "7 (~56s)" },
   { value: "10", label: "10 (~80s)" },
 ];
 
+// Number of quick shots (mini-frames) inside each 8s segment.
+const BEATS_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
+  vi: [
+    { value: "3", label: "3 cảnh / đoạn" },
+    { value: "4", label: "4 cảnh / đoạn" },
+    { value: "5", label: "5 cảnh / đoạn" },
+  ],
+  en: [
+    { value: "3", label: "3 shots / segment" },
+    { value: "4", label: "4 shots / segment" },
+    { value: "5", label: "5 shots / segment" },
+  ],
+};
+
 const VIDEO_GOAL_OPTIONS: Record<Lang, { value: VideoGoal; label: string }[]> = {
   vi: [
     { value: "marketing_general", label: "Marketing tổng quát" },
     { value: "product_ad", label: "Quảng cáo sản phẩm" },
+    { value: "promo_sale", label: "Khuyến mãi / Sale" },
+    { value: "brand_story", label: "Câu chuyện thương hiệu" },
+    { value: "social_short", label: "Video ngắn TikTok/Reels" },
+    { value: "testimonial", label: "Khách hàng review (testimonial)" },
     { value: "storytelling", label: "Kể chuyện" },
     { value: "review", label: "Review / Đánh giá" },
     { value: "educational", label: "Giáo dục / Hướng dẫn" },
@@ -269,6 +306,10 @@ const VIDEO_GOAL_OPTIONS: Record<Lang, { value: VideoGoal; label: string }[]> = 
   en: [
     { value: "marketing_general", label: "General marketing" },
     { value: "product_ad", label: "Product ad" },
+    { value: "promo_sale", label: "Promo / Sale" },
+    { value: "brand_story", label: "Brand story" },
+    { value: "social_short", label: "TikTok/Reels short" },
+    { value: "testimonial", label: "Customer testimonial" },
     { value: "storytelling", label: "Storytelling" },
     { value: "review", label: "Review / Testimonial" },
     { value: "educational", label: "Educational / How-to" },
@@ -390,7 +431,9 @@ export function GenerateClient() {
 
   // Step 5: Style
   const [style, setStyle] = useState<StoryboardStyle>("cinematic");
-  const [segmentCount, setSegmentCount] = useState(5);
+  const [segmentCount, setSegmentCount] = useState(4);
+  const [beatsPerSegment, setBeatsPerSegment] = useState(3);
+  const [forceVietnameseDialogue, setForceVietnameseDialogue] = useState(true);
   const [videoGoal, setVideoGoal] = useState<VideoGoal>("marketing_general");
   const [imageQuality, setImageQuality] = useState<ImageQuality>("standard");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
@@ -487,7 +530,10 @@ export function GenerateClient() {
       style,
       scene_count: segmentCount,
       segment_count: segmentCount,
+      beats_per_segment: beatsPerSegment,
       video_goal: videoGoal,
+      dialogue_language: forceVietnameseDialogue ? "Vietnamese" : undefined,
+      force_dialogue: forceVietnameseDialogue,
       character_descriptions: effectiveCharacters.length > 0
         ? effectiveCharacters.map((c) => ({ name: c.name, appearance: c.appearance, personality: "", role: c.role }))
         : undefined,
@@ -1206,6 +1252,27 @@ export function GenerateClient() {
                 <label className="text-sm font-medium">{L("segmentCount")}</label>
                 <Select value={String(segmentCount)} onChange={(e) => setSegmentCount(Number(e.target.value))} options={SEGMENT_OPTIONS} />
                 <p className="text-xs text-muted-foreground">{L("segmentCountHint")}</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{L("beatsLabel")}</label>
+                <Select value={String(beatsPerSegment)} onChange={(e) => setBeatsPerSegment(Number(e.target.value))} options={BEATS_OPTIONS[lang]} />
+                <p className="text-xs text-muted-foreground">{L("beatsHint")}</p>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={forceVietnameseDialogue}
+                    onChange={(e) => setForceVietnameseDialogue(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0"
+                  />
+                  <span>
+                    <span className="text-sm font-medium">{L("forceDialogueLabel")}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">{L("forceDialogueHint")}</span>
+                  </span>
+                </label>
               </div>
 
               {/* Aspect ratio */}
