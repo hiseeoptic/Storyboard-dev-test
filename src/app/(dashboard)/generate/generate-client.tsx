@@ -86,9 +86,26 @@ const t = {
   callToAction: { vi: "Kêu gọi hành động (CTA)", en: "Call to action (CTA)" },
   callToActionPlaceholder: { vi: "VD: Đặt mua ngay hôm nay, giảm 30%", en: "e.g. Order today, 30% off" },
   setting: { vi: "Bối cảnh", en: "Setting" },
-  settingPlaceholder: { vi: "Thị trấn ven biển, thập niên 90", en: "Coastal town, 1990s" },
+  settingPlaceholder: { vi: "Chọn bối cảnh...", en: "Choose a setting..." },
+  settingCustomPlaceholder: { vi: "Mô tả bối cảnh của bạn", en: "Describe your own setting" },
   tone: { vi: "Tông màu / Giọng kể", en: "Tone" },
-  tonePlaceholder: { vi: "Tối, u ám, hồi hộp", en: "Dark, atmospheric, suspenseful" },
+  tonePlaceholder: { vi: "Chọn giọng kể...", en: "Choose a tone..." },
+  toneCustomPlaceholder: { vi: "Mô tả giọng kể của bạn", en: "Describe your own tone" },
+
+  // Story / film brief
+  storyBriefTitle: { vi: "Thông tin câu chuyện (cho phim / kể chuyện)", en: "Story brief (for film / narrative)" },
+  storyBriefHint: {
+    vi: "Điền để AI dựng cốt truyện có chiều sâu. Không bắt buộc.",
+    en: "Fill in so the AI builds a deeper narrative. Optional.",
+  },
+  mainCharacter: { vi: "Nhân vật chính", en: "Main character" },
+  mainCharacterPlaceholder: { vi: "VD: Cô gái 20 tuổi nhút nhát, mơ làm ca sĩ", en: "e.g. A shy 20-year-old girl who dreams of singing" },
+  centralConflict: { vi: "Xung đột / Cao trào", en: "Central conflict" },
+  centralConflictPlaceholder: { vi: "VD: Phải vượt qua nỗi sợ đứng trên sân khấu", en: "e.g. Must overcome her fear of the stage" },
+  themeMessage: { vi: "Thông điệp / Ý nghĩa", en: "Theme / message" },
+  themeMessagePlaceholder: { vi: "VD: Dám ước mơ thì sẽ thành công", en: "e.g. Dare to dream and you'll succeed" },
+  audienceLabel: { vi: "Đối tượng khán giả", en: "Intended audience" },
+  audiencePlaceholder: { vi: "VD: Khán giả trẻ 16-25 tuổi", en: "e.g. Young viewers 16-25" },
 
   // Step 2: Characters
   charHint: {
@@ -296,6 +313,122 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
   ],
 };
 
+// Genres treated as product advertising → show the product brief.
+const AD_GENRES = new Set([
+  "advertising",
+  "product_demo",
+  "brand_film",
+  "promo",
+  "unboxing",
+]);
+
+const CUSTOM = "__custom__";
+
+// ─── Tone / narration voice (dropdown) ──────────────────────────────────────
+const TONE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
+  vi: [
+    { value: "cheerful", label: "Vui tươi, năng động" },
+    { value: "emotional", label: "Cảm động, sâu lắng" },
+    { value: "humorous", label: "Hài hước, vui nhộn" },
+    { value: "luxury", label: "Sang trọng, cao cấp" },
+    { value: "professional", label: "Chuyên nghiệp, tin cậy" },
+    { value: "dramatic", label: "Kịch tính, gay cấn" },
+    { value: "mysterious", label: "Bí ẩn, hồi hộp" },
+    { value: "inspirational", label: "Truyền cảm hứng" },
+    { value: "relatable", label: "Gần gũi, đời thường" },
+    { value: "trendy", label: "Trẻ trung, bắt trend" },
+    { value: "warm", label: "Ấm áp, tình cảm" },
+    { value: "epic", label: "Hoành tráng, sử thi" },
+    { value: CUSTOM, label: "Khác (tự nhập)" },
+  ],
+  en: [
+    { value: "cheerful", label: "Cheerful, energetic" },
+    { value: "emotional", label: "Emotional, heartfelt" },
+    { value: "humorous", label: "Humorous, fun" },
+    { value: "luxury", label: "Luxurious, premium" },
+    { value: "professional", label: "Professional, trustworthy" },
+    { value: "dramatic", label: "Dramatic, intense" },
+    { value: "mysterious", label: "Mysterious, suspenseful" },
+    { value: "inspirational", label: "Inspirational, uplifting" },
+    { value: "relatable", label: "Relatable, everyday" },
+    { value: "trendy", label: "Youthful, trendy" },
+    { value: "warm", label: "Warm, affectionate" },
+    { value: "epic", label: "Epic, grand" },
+    { value: CUSTOM, label: "Other (type your own)" },
+  ],
+};
+
+// English descriptor sent to the AI for each tone key.
+const TONE_PROMPT: Record<string, string> = {
+  cheerful: "cheerful, energetic and upbeat",
+  emotional: "emotional, heartfelt and touching",
+  humorous: "humorous, light and fun",
+  luxury: "luxurious, premium and elegant",
+  professional: "professional, clean and trustworthy",
+  dramatic: "dramatic, intense and high-stakes",
+  mysterious: "mysterious, suspenseful and intriguing",
+  inspirational: "inspirational and uplifting",
+  relatable: "relatable, everyday and down-to-earth",
+  trendy: "youthful, trendy and social-media native",
+  warm: "warm, affectionate and intimate",
+  epic: "epic, grand and cinematic",
+};
+
+// ─── Setting / location (dropdown) ──────────────────────────────────────────
+const SETTING_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
+  vi: [
+    { value: "home", label: "Trong nhà / phòng khách" },
+    { value: "kitchen", label: "Nhà bếp" },
+    { value: "office", label: "Văn phòng" },
+    { value: "cafe", label: "Quán cà phê" },
+    { value: "store", label: "Cửa hàng / trung tâm thương mại" },
+    { value: "studio", label: "Studio nền sạch" },
+    { value: "urban_street", label: "Đường phố thành thị" },
+    { value: "outdoor_nature", label: "Ngoài trời / thiên nhiên" },
+    { value: "beach", label: "Bãi biển" },
+    { value: "gym", label: "Phòng gym" },
+    { value: "restaurant", label: "Nhà hàng" },
+    { value: "classroom", label: "Lớp học" },
+    { value: "countryside", label: "Nông thôn / làng quê" },
+    { value: "night_city", label: "Thành phố về đêm" },
+    { value: CUSTOM, label: "Khác (tự nhập)" },
+  ],
+  en: [
+    { value: "home", label: "Home / living room" },
+    { value: "kitchen", label: "Kitchen" },
+    { value: "office", label: "Office" },
+    { value: "cafe", label: "Cafe" },
+    { value: "store", label: "Store / shopping mall" },
+    { value: "studio", label: "Clean studio backdrop" },
+    { value: "urban_street", label: "Urban street" },
+    { value: "outdoor_nature", label: "Outdoors / nature" },
+    { value: "beach", label: "Beach" },
+    { value: "gym", label: "Gym" },
+    { value: "restaurant", label: "Restaurant" },
+    { value: "classroom", label: "Classroom" },
+    { value: "countryside", label: "Countryside / village" },
+    { value: "night_city", label: "City at night" },
+    { value: CUSTOM, label: "Other (type your own)" },
+  ],
+};
+
+const SETTING_PROMPT: Record<string, string> = {
+  home: "indoors at home, a cozy living room",
+  kitchen: "a modern home kitchen",
+  office: "a modern office workspace",
+  cafe: "a cozy cafe",
+  store: "a retail store / shopping mall",
+  studio: "a clean studio backdrop",
+  urban_street: "a busy urban street",
+  outdoor_nature: "outdoors in nature",
+  beach: "a sunny beach",
+  gym: "a modern fitness gym",
+  restaurant: "a stylish restaurant",
+  classroom: "a classroom",
+  countryside: "the countryside / a village",
+  night_city: "a city at night with neon lights",
+};
+
 // Number of 8-second segments to chain into the final video.
 const SEGMENT_OPTIONS = [
   { value: "3", label: "3 (~24s)" },
@@ -435,14 +568,36 @@ export function GenerateClient() {
   // Step 1: Story
   const [storyIdea, setStoryIdea] = useState("");
   const [genre, setGenre] = useState("advertising");
-  const [setting, setSetting] = useState("");
-  const [tone, setTone] = useState("");
+  // Setting & tone are now dropdown-driven (with a custom free-text option).
+  const [settingSel, setSettingSel] = useState("");
+  const [settingCustom, setSettingCustom] = useState("");
+  const [toneSel, setToneSel] = useState("");
+  const [toneCustom, setToneCustom] = useState("");
   // Product / TVC brief
   const [productName, setProductName] = useState("");
   const [sellingPoints, setSellingPoints] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
   const [keyMessage, setKeyMessage] = useState("");
   const [callToAction, setCallToAction] = useState("");
+  // Story / film brief
+  const [mainCharacter, setMainCharacter] = useState("");
+  const [centralConflict, setCentralConflict] = useState("");
+
+  const isAdGenre = AD_GENRES.has(genre);
+
+  // Resolve dropdown selection (or custom text) into the value sent to the AI.
+  const effectiveSetting =
+    settingSel === CUSTOM
+      ? settingCustom.trim()
+      : settingSel
+        ? SETTING_PROMPT[settingSel] ?? ""
+        : "";
+  const effectiveTone =
+    toneSel === CUSTOM
+      ? toneCustom.trim()
+      : toneSel
+        ? TONE_PROMPT[toneSel] ?? ""
+        : "";
 
   // Step 2: Characters
   const [characters, setCharacters] = useState<CharacterEntry[]>([]);
@@ -574,13 +729,16 @@ export function GenerateClient() {
       character_images: characterImages.length > 0 ? characterImages : undefined,
       product_images: productImages.length > 0 ? productImages : undefined,
       background_images: backgroundImages.length > 0 ? backgroundImages : undefined,
-      setting: setting || undefined,
-      tone: tone || undefined,
-      product_name: productName || undefined,
-      selling_points: sellingPoints || undefined,
+      setting: effectiveSetting || undefined,
+      tone: effectiveTone || undefined,
+      // Ad genres send the product brief; narrative genres send the story brief.
+      product_name: isAdGenre ? productName || undefined : undefined,
+      selling_points: isAdGenre ? sellingPoints || undefined : undefined,
+      call_to_action: isAdGenre ? callToAction || undefined : undefined,
+      main_character: !isAdGenre ? mainCharacter || undefined : undefined,
+      central_conflict: !isAdGenre ? centralConflict || undefined : undefined,
       target_audience: targetAudience || undefined,
       key_message: keyMessage || undefined,
-      call_to_action: callToAction || undefined,
       image_quality: imageQuality,
       aspect_ratio: aspectRatio,
     };
@@ -1110,52 +1268,104 @@ export function GenerateClient() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">{L("setting")}</label>
-                  <Input value={setting} onChange={(e) => setSetting(e.target.value)} placeholder={L("settingPlaceholder")} />
+                  <Select
+                    value={settingSel}
+                    onChange={(e) => setSettingSel(e.target.value)}
+                    options={SETTING_OPTIONS[lang]}
+                    placeholder={L("settingPlaceholder")}
+                  />
+                  {settingSel === CUSTOM && (
+                    <Input value={settingCustom} onChange={(e) => setSettingCustom(e.target.value)} placeholder={L("settingCustomPlaceholder")} />
+                  )}
                 </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("tone")}</label>
-                <Input value={tone} onChange={(e) => setTone(e.target.value)} placeholder={L("tonePlaceholder")} />
+                <Select
+                  value={toneSel}
+                  onChange={(e) => setToneSel(e.target.value)}
+                  options={TONE_OPTIONS[lang]}
+                  placeholder={L("tonePlaceholder")}
+                />
+                {toneSel === CUSTOM && (
+                  <Input value={toneCustom} onChange={(e) => setToneCustom(e.target.value)} placeholder={L("toneCustomPlaceholder")} />
+                )}
               </div>
 
-              {/* Product / TVC brief */}
-              <div className="space-y-3 rounded-lg border border-dashed p-4">
-                <div className="flex items-center gap-2">
-                  <Package className="h-4 w-4 shrink-0 text-primary" />
-                  <div>
-                    <p className="text-sm font-medium">{L("productBriefTitle")}</p>
-                    <p className="text-xs text-muted-foreground">{L("productBriefHint")}</p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{L("productName")}</label>
-                  <Input value={productName} onChange={(e) => setProductName(e.target.value)} placeholder={L("productNamePlaceholder")} />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{L("sellingPoints")}</label>
-                  <Textarea
-                    value={sellingPoints}
-                    onChange={(e) => setSellingPoints(e.target.value)}
-                    placeholder={L("sellingPointsPlaceholder")}
-                    rows={2}
-                    className="resize-none"
-                  />
-                </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{L("targetAudience")}</label>
-                    <Input value={targetAudience} onChange={(e) => setTargetAudience(e.target.value)} placeholder={L("targetAudiencePlaceholder")} />
+              {/* Brief — product (ad genres) vs story (narrative genres) */}
+              {isAdGenre ? (
+                <div className="space-y-3 rounded-lg border border-dashed p-4">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-4 w-4 shrink-0 text-primary" />
+                    <div>
+                      <p className="text-sm font-medium">{L("productBriefTitle")}</p>
+                      <p className="text-xs text-muted-foreground">{L("productBriefHint")}</p>
+                    </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">{L("callToAction")}</label>
-                    <Input value={callToAction} onChange={(e) => setCallToAction(e.target.value)} placeholder={L("callToActionPlaceholder")} />
+                    <label className="text-sm font-medium">{L("productName")}</label>
+                    <Input value={productName} onChange={(e) => setProductName(e.target.value)} placeholder={L("productNamePlaceholder")} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{L("sellingPoints")}</label>
+                    <Textarea
+                      value={sellingPoints}
+                      onChange={(e) => setSellingPoints(e.target.value)}
+                      placeholder={L("sellingPointsPlaceholder")}
+                      rows={2}
+                      className="resize-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{L("targetAudience")}</label>
+                      <Input value={targetAudience} onChange={(e) => setTargetAudience(e.target.value)} placeholder={L("targetAudiencePlaceholder")} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{L("callToAction")}</label>
+                      <Input value={callToAction} onChange={(e) => setCallToAction(e.target.value)} placeholder={L("callToActionPlaceholder")} />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{L("keyMessage")}</label>
+                    <Input value={keyMessage} onChange={(e) => setKeyMessage(e.target.value)} placeholder={L("keyMessagePlaceholder")} />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{L("keyMessage")}</label>
-                  <Input value={keyMessage} onChange={(e) => setKeyMessage(e.target.value)} placeholder={L("keyMessagePlaceholder")} />
+              ) : (
+                <div className="space-y-3 rounded-lg border border-dashed p-4">
+                  <div className="flex items-center gap-2">
+                    <Film className="h-4 w-4 shrink-0 text-primary" />
+                    <div>
+                      <p className="text-sm font-medium">{L("storyBriefTitle")}</p>
+                      <p className="text-xs text-muted-foreground">{L("storyBriefHint")}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{L("mainCharacter")}</label>
+                    <Input value={mainCharacter} onChange={(e) => setMainCharacter(e.target.value)} placeholder={L("mainCharacterPlaceholder")} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{L("centralConflict")}</label>
+                    <Textarea
+                      value={centralConflict}
+                      onChange={(e) => setCentralConflict(e.target.value)}
+                      placeholder={L("centralConflictPlaceholder")}
+                      rows={2}
+                      className="resize-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{L("themeMessage")}</label>
+                      <Input value={keyMessage} onChange={(e) => setKeyMessage(e.target.value)} placeholder={L("themeMessagePlaceholder")} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{L("audienceLabel")}</label>
+                      <Input value={targetAudience} onChange={(e) => setTargetAudience(e.target.value)} placeholder={L("audiencePlaceholder")} />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
             </>
           )}
 

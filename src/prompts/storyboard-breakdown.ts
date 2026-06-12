@@ -77,6 +77,19 @@ export function buildStoryboardUserPrompt(
         )}\nFeature the product clearly, dramatize the selling points for the target audience, land the key message, and close on the exact CTA above.`
       : "";
 
+  // Story / film brief — for narrative (non-ad) genres.
+  const storyLines: string[] = [];
+  if (input.main_character) storyLines.push(`- Main character: ${input.main_character}`);
+  if (input.central_conflict) storyLines.push(`- Central conflict / stakes: ${input.central_conflict}`);
+  if (input.key_message) storyLines.push(`- Theme / message: ${input.key_message}`);
+  if (input.target_audience) storyLines.push(`- Intended audience: ${input.target_audience}`);
+  const storyBriefBlock =
+    storyLines.length > 0
+      ? `\n\nSTORY BRIEF — build a compelling narrative around this:\n${storyLines.join(
+          "\n"
+        )}\nGive the main character a clear arc, escalate the conflict, and resolve it so the theme lands emotionally.`
+      : "";
+
   const settingBlock = input.setting ? `\nPrimary Setting: ${input.setting}` : "";
   const toneBlock = input.tone ? `\nTone: ${input.tone}` : "";
   const customBlock = input.custom_instructions
@@ -107,7 +120,7 @@ Video Goal: ${goal} — ${goalGuidance}
 Genre: ${input.genre}
 Visual Style: ${input.style}
 Number of 8-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 8} seconds)
-Beats per segment: ${beatsPerSegment} quick shots inside each 8s clip${productBriefBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
+Beats per segment: ${beatsPerSegment} quick shots inside each 8s clip${productBriefBlock}${storyBriefBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
 
 Produce EXACTLY ${segmentCount} segments. Each segment = one 8s clip containing EXACTLY ${beatsPerSegment} quick shots (${beatsPerSegment} beats), each beat covering a distinct time-frame inside the 8 seconds. Segment 1 must HOOK. The last segment must contain the CTA. Make every segment END in a state that flows seamlessly into the next segment's START. The "motion_prompt" must describe the ${beatsPerSegment}-shot sequence in order with rough timing (split 8s across the beats, e.g. "0-3s ...; 3-5s ...; 5-8s ..."), camera moves, the spoken ${dialogueLanguage} line, and how the clip ends so it leads into the next segment. Restate the main character's exact appearance (from character_locks) inside every motion_prompt so Veo keeps the same person.
 

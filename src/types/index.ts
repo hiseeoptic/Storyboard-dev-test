@@ -115,6 +115,9 @@ export interface StoryboardGenerationInput {
   target_audience?: string;
   key_message?: string;
   call_to_action?: string;
+  // ─── Story / film brief (drives a narrative script) ──────────────────
+  main_character?: string;
+  central_conflict?: string;
   image_quality?: ImageQuality;
   aspect_ratio?: AspectRatio;
 }
