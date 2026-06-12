@@ -214,10 +214,10 @@ const t = {
   newStoryboard: { vi: "Tạo mới", en: "New" },
   segments: { vi: "đoạn", en: "segments" },
   downloadAll: { vi: "Tải tất cả (ZIP)", en: "Download all (ZIP)" },
-  segmentsTitle: { vi: "Các shot ảnh (mỗi shot = 1 frame sạch cho Veo)", en: "Key-frame shots (one clean frame per clip)" },
+  segmentsTitle: { vi: "Các shot ảnh (mỗi shot = 1 board cho Veo)", en: "Shot boards (one board per 8s clip)" },
   segmentsHint: {
-    vi: "Mỗi thẻ = 1 frame sạch (không chữ) của 1 clip 8s, nhân vật nhất quán nhờ ảnh tham chiếu. Tải frame → đưa vào Veo làm ảnh bắt đầu + dán motion prompt. Frame N kết thúc đúng nơi frame N+1 bắt đầu nên các clip nối liền thành câu chuyện. Mẹo: dùng Veo 3.1 'first & last frame' — frame N làm đầu, frame N+1 làm cuối.",
-    en: "Each card = one clean text-free key frame for an 8s clip, character locked by the reference sheet. Download the frame → use it as Veo's start image + paste the motion prompt. Frame N ends exactly where frame N+1 begins, so the clips chain into one story. Tip: use Veo 3.1 'first & last frame' — frame N as first, frame N+1 as last.",
+    vi: "Mỗi thẻ = 1 BOARD của clip 8s gồm: dải tham chiếu nhân vật (các góc + biểu cảm), ảnh tổng quan cảnh/sản phẩm, và 3-5 ô hành động theo mốc thời gian. Tải board → đưa vào Veo làm ảnh tham chiếu + dán motion prompt. Board N kết thúc đúng nơi board N+1 bắt đầu nên các clip nối liền thành câu chuyện.",
+    en: "Each card = a BOARD for the 8s clip: a character reference strip (angles + expressions), a scene/product overview, and 3-5 time-frame action panels. Send the board to Veo as the reference + paste the motion prompt. Board N ends where board N+1 begins so the clips chain into one story.",
   },
   dialogueLabel: { vi: "Lời thoại", en: "Dialogue" },
   actionLabel: { vi: "Hành động", en: "Action" },
@@ -1039,7 +1039,7 @@ export function GenerateClient() {
           <div className="grid gap-4">
             {result.breakdown.segments.map((seg) => (
               <Card key={seg.segment_number} className="overflow-hidden">
-                <div className={`relative bg-black/90 ${aspectRatio === "9:16" ? "aspect-[9/16] max-h-[480px] mx-auto" : "aspect-video"}`}>
+                <div className="relative aspect-[16/9] bg-black/90">
                   {seg.first_frame_url ? (
                     <img src={seg.first_frame_url} alt={`Segment ${seg.segment_number}`} className="h-full w-full object-contain" />
                   ) : (

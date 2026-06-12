@@ -159,7 +159,7 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
       "beats": [
 ${beatExample}
       ],
-      "first_frame_prompt": "string — describe ONE single cinematic OPENING moment of this 8s segment (location, lighting, EXACT character appearance from character_locks, the action frozen mid-moment, product if any). It is rendered as a clean single key-frame image and fed to Veo as this clip's start frame, so describe one moment only — never a grid or collage.",
+      "first_frame_prompt": "string — describe the SHARED scene/setting of this 8s segment (location, lighting, EXACT character appearance from character_locks, product if any). It is used as the scene-overview context for the shot board, so describe the environment and the character clearly.",
       "motion_prompt": "string — 50-90 word multi-shot image-to-video prompt for Veo/Seedance covering all ${beatsPerSegment} shots with rough timing (e.g. '0-3s ...; 3-5s ...; 5-8s ...'), camera moves, the exact character appearance restated, the spoken ${dialogueLanguage} line in Veo format (the character says in ${dialogueLanguage}: \\"...\\" (no subtitles)), and an ending that leads into the next segment.",
       "dialogue": "string — the spoken line in ${dialogueLanguage} (short, natural)",
       "continuity_note": "string — how this segment visually continues from the previous segment (for segment 1 write 'opening shot')"
@@ -294,7 +294,7 @@ export function buildSegmentFirstFramePrompt(params: {
   characterDescription: string;
   style: string;
   isFirst: boolean;
-  /** Kept for compatibility; the frame always depicts ONE single moment. */
+  /** Number of action panels to render (3-5). Defaults to the beat count. */
   beatsPerSegment?: number;
   preserveRealFace?: boolean;
   references?: RefDescriptor[];
@@ -302,32 +302,39 @@ export function buildSegmentFirstFramePrompt(params: {
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
   const refBlock = buildReferenceInstructions(params.references ?? []);
 
-  // The frame depicts the OPENING moment (beat 1); later beats are context
-  // only, so the model knows where the clip goes but renders ONE moment.
-  const opening = params.beats[0];
-  const laterBeats = params.beats.slice(1);
-  const laterContext =
-    laterBeats.length > 0
-      ? `\nLATER IN THE CLIP (context only — do NOT depict these in this frame): ${laterBeats
-          .map((b) => b.beat)
-          .join("; ")}.`
-      : "";
+  const hasProduct = (params.references ?? []).some((r) => r.role === "product");
+
+  const target = Math.min(5, Math.max(3, params.beatsPerSegment ?? params.beats.length ?? 3));
+  const beats = params.beats.slice(0, target);
+  while (beats.length < target) {
+    beats.push({ beat: params.firstFramePrompt, camera: "[EYE]" });
+  }
+  const panelLines = beats
+    .map((b, i) => `Action panel ${i + 1} (${b.camera}): ${b.beat}`)
+    .join("\n");
+  const numberLabels = beats.map((_, i) => i + 1).join(", ");
 
   const continuity = params.isFirst
-    ? "This is the OPENING shot of the whole video."
-    : "This frame must continue seamlessly from the previous segment's final moment (same character, wardrobe, lighting, location, continuous action).";
+    ? "This is the opening shot of the whole video."
+    : "Action panel 1 must continue seamlessly from the previous shot's final action (same character, wardrobe, lighting, location).";
 
-  return `${refBlock}ONE SINGLE cinematic KEY FRAME (shot ${params.segmentNumber}) for an ~8 second video clip. This image is fed directly into an image-to-video model (Veo), so it must be ONE full-bleed scene — NOT a collage, NOT a multi-panel strip, NO split screen, NO storyboard grid. ${params.style} style.
+  return `${refBlock}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for ONE ~8 second video clip, presented as ONE single horizontal image. This board gives an image-to-video model (Veo) full context: who the character is (from every angle), what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions that happen across the 8 seconds. ${params.style} style.
 
-CHARACTER (must match the reference exactly): ${params.characterDescription}
+THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 
-SCENE: ${params.firstFramePrompt}
-THIS EXACT MOMENT${opening ? ` (${opening.camera})` : ""}: ${opening ? opening.beat : params.firstFramePrompt}${laterContext}
+■ TOP — "CHARACTER REFERENCE" strip (REPEAT THIS IN EVERY SHOT): a thin row of 5 small thumbnails of THE SAME main character to lock identity — FRONT face, 3/4 face, SIDE profile, plus 2 expression heads matching this shot's emotion. Small label "CHARACTER REF". Character: ${params.characterDescription}.
+
+■ LEFT — "SCENE OVERVIEW": one larger establishing panel showing the full location/environment of this shot (wide angle)${hasProduct ? ", with the product clearly visible on a surface" : ""}. This tells Veo the setting.
+
+■ RIGHT / BOTTOM — "ACTION SEQUENCE": ${target} numbered action panels (${numberLabels}) laid out left → right showing the ${target} key moments across the 8 seconds, each a small illustration with a SHORT caption under it describing the action:
+${panelLines}
+
+SCENE CONTEXT for all panels: ${params.firstFramePrompt}
 
 ${continuity}
 ${directive}
 
-STRICT RULES: one single frame filling the whole image; the SAME individual as the reference with identical face, hair and outfit; NO text of any kind — no captions, no labels, no numbers, no subtitles, no logos, no watermark, no borders.`;
+RULES: ONE cohesive board image; the SAME individual (identical face, hair, glasses, outfit) appears in the character-ref strip, the scene overview and all ${target} action panels; thin clean dividers and small numbered badges; captions short and legible; no watermark.`;
 }
 
 // ─── Step 4: Master Board (Character Sheet + captioned storyboard grid) ─────
@@ -472,9 +479,9 @@ ${params.setting}
 Color palette: ${params.colorPalette.join(", ")}
 
 ## HOW TO BUILD THE VIDEO (seamless chaining)
-Each shot's key-frame image is a CLEAN single frame (no text) made to be fed straight into Veo. The frames already chain: frame N's clip is written to END exactly where frame N+1 begins.
-1. For each segment, upload its KEY-FRAME image as the START frame in Veo/Seedance (image-to-video), add the character reference sheet as a reference image, and paste the motion prompt. Set aspect ratio ${params.aspectRatio}.
-2. BEST JOINS (Veo 3.1 "first & last frame"): give Veo frame N as the FIRST frame and frame N+1 as the LAST frame — the clip will land exactly on the next shot. Alternatively use the last frame of clip N as the start of clip N+1, or Veo "Extend".
+Each shot has a STORYBOARD BOARD image — one picture holding the character reference (every angle), the scene overview${" "}and the ${params.segments[0]?.beats.length ?? 3}-action sequence — so Veo gets full context for that 8s clip.
+1. For each shot, upload its BOARD image to Veo/Seedance (image-to-video) as the reference, ALSO add the character reference sheet, and paste the motion prompt. Set aspect ratio ${params.aspectRatio}.
+2. The boards already chain: shot N's clip is written to END exactly where shot N+1 begins. For the tightest joins (Veo 3.1) use the last frame of clip N as the start image of clip N+1, or Veo "Extend".
 3. Keep the spoken ${dialogueLanguage} line exactly as written so the lip-sync matches. Generate all ${params.segments.length} clips in order, then stitch them (CapCut/ffmpeg) and add the CTA end card.
 
 ## SEGMENTS

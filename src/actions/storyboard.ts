@@ -118,6 +118,8 @@ export async function generateFullStoryboard(
   let storyboardPosterUrl: string | null = null;
 
   const aspectRatio: AspectRatio = input.aspect_ratio ?? "16:9";
+  // Shot boards & the master board are multi-zone documents → always landscape.
+  const boardAspect: AspectRatio = "16:9";
   const quality: ImageQuality = input.image_quality ?? "standard";
   const beatsPerSegment = Math.min(5, Math.max(3, input.beats_per_segment ?? 3));
   const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
@@ -236,7 +238,7 @@ export async function generateFullStoryboard(
           referenceImages: segmentRefImages.length > 0 ? segmentRefImages : undefined,
           references: segmentRefDescriptors.length > 0 ? segmentRefDescriptors : undefined,
           provider,
-          aspectRatio,
+          aspectRatio: boardAspect,
           quality,
         });
         seg.first_frame_url = r.url;
@@ -260,7 +262,7 @@ export async function generateFullStoryboard(
           style: input.style,
           isFirst: i === 0,
           provider,
-          aspectRatio,
+          aspectRatio: boardAspect,
           quality,
         })
       )
@@ -298,7 +300,7 @@ export async function generateFullStoryboard(
       colorPalette: breakdown.style_guide.color_palette,
       dialogueLanguage,
       provider,
-      aspectRatio,
+      aspectRatio: boardAspect,
       quality,
       referenceImages:
         canChain && segmentRefImages.length > 0
