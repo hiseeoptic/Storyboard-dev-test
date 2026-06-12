@@ -214,11 +214,13 @@ const t = {
   newStoryboard: { vi: "Tạo mới", en: "New" },
   segments: { vi: "đoạn", en: "segments" },
   downloadAll: { vi: "Tải tất cả (ZIP)", en: "Download all (ZIP)" },
-  segmentsTitle: { vi: "Các đoạn video 8 giây (mỗi đoạn 3 cảnh)", en: "8-second segments (3 shots each)" },
+  segmentsTitle: { vi: "Các shot ảnh (mỗi shot = 1 frame sạch cho Veo)", en: "Key-frame shots (one clean frame per clip)" },
   segmentsHint: {
-    vi: "Mỗi thẻ = 1 clip 8s gồm 3 cảnh (storyboard 3 khung). Copy motion prompt → dán vào Seedance/Veo. Tạo lần lượt theo thứ tự để các clip nối liền mạch.",
-    en: "Each card = one 8s clip with 3 shots (3-panel storyboard). Copy the motion prompt → paste into Seedance/Veo. Generate in order so the clips chain seamlessly.",
+    vi: "Mỗi thẻ = 1 frame sạch (không chữ) của 1 clip 8s, nhân vật nhất quán nhờ ảnh tham chiếu. Tải frame → đưa vào Veo làm ảnh bắt đầu + dán motion prompt. Frame N kết thúc đúng nơi frame N+1 bắt đầu nên các clip nối liền thành câu chuyện. Mẹo: dùng Veo 3.1 'first & last frame' — frame N làm đầu, frame N+1 làm cuối.",
+    en: "Each card = one clean text-free key frame for an 8s clip, character locked by the reference sheet. Download the frame → use it as Veo's start image + paste the motion prompt. Frame N ends exactly where frame N+1 begins, so the clips chain into one story. Tip: use Veo 3.1 'first & last frame' — frame N as first, frame N+1 as last.",
   },
+  dialogueLabel: { vi: "Lời thoại", en: "Dialogue" },
+  actionLabel: { vi: "Hành động", en: "Action" },
   motionPrompt: { vi: "Motion prompt (Veo/Seedance)", en: "Motion prompt (Veo/Seedance)" },
   continuity: { vi: "Nối tiếp", en: "Continuity" },
   copyPrompt: { vi: "Copy prompt", en: "Copy prompt" },
@@ -993,7 +995,7 @@ export function GenerateClient() {
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <ImageIcon className="h-5 w-5" />
-                  {lang === "vi" ? "Poster Storyboard" : "Storyboard Poster"}
+                  {lang === "vi" ? "Bảng Storyboard Tổng (Sheet + Action + Lời thoại)" : "Master Board (Sheet + Action + Dialogue)"}
                 </CardTitle>
                 <Button variant="outline" size="sm" onClick={() => downloadImage(result.storyboardPosterUrl!, `storyboard-${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.png`)} className="gap-1.5">
                   <Download className="h-3.5 w-3.5" />
@@ -1007,8 +1009,8 @@ export function GenerateClient() {
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? `Poster tổng quan ${result.breakdown.segments.length} đoạn — xem nhanh toàn bộ video`
-                  : `${result.breakdown.segments.length}-segment overview poster — quick full-video view`}
+                  ? `Bố cục tài liệu production: Character Sheet bên trái + lưới ${result.breakdown.segments.length} panel kèm Action & Lời thoại — dùng để trình bày/duyệt kịch bản`
+                  : `Production-document layout: Character Sheet on the left + ${result.breakdown.segments.length}-panel grid with Action & Dialogue captions — for presenting/approving the script`}
               </p>
             </CardContent>
           </Card>
@@ -1017,7 +1019,7 @@ export function GenerateClient() {
             <CardContent className="flex flex-col items-center justify-center py-10 text-center">
               <ImageIcon className="mb-2 h-8 w-8 text-muted-foreground/50" />
               <p className="text-sm font-medium text-muted-foreground">
-                {lang === "vi" ? "Storyboard Poster không tạo được" : "Storyboard Poster could not be generated"}
+                {lang === "vi" ? "Bảng Storyboard Tổng không tạo được" : "Master Board could not be generated"}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {lang === "vi" ? "Vui lòng thử lại hoặc kiểm tra kết nối API" : "Please try again or check API connection"}
@@ -1037,7 +1039,7 @@ export function GenerateClient() {
           <div className="grid gap-4">
             {result.breakdown.segments.map((seg) => (
               <Card key={seg.segment_number} className="overflow-hidden">
-                <div className="relative aspect-[16/7] bg-black/90">
+                <div className={`relative bg-black/90 ${aspectRatio === "9:16" ? "aspect-[9/16] max-h-[480px] mx-auto" : "aspect-video"}`}>
                   {seg.first_frame_url ? (
                     <img src={seg.first_frame_url} alt={`Segment ${seg.segment_number}`} className="h-full w-full object-contain" />
                   ) : (
@@ -1053,8 +1055,16 @@ export function GenerateClient() {
                 <CardContent className="space-y-3 p-3">
                   <div>
                     <p className="text-sm font-semibold">{seg.title}</p>
+                    {seg.beats?.[0]?.beat && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        <span className="font-semibold">{L("actionLabel")}:</span> {seg.beats[0].beat}
+                      </p>
+                    )}
                     {seg.dialogue && (
-                      <p className="mt-0.5 text-xs italic text-muted-foreground">&ldquo;{seg.dialogue}&rdquo;</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        <span className="font-semibold">{L("dialogueLabel")}:</span>{" "}
+                        <span className="italic">&ldquo;{seg.dialogue}&rdquo;</span>
+                      </p>
                     )}
                   </div>
 

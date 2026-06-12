@@ -3,7 +3,7 @@ export {
   buildStoryboardUserPrompt,
   buildCharacterRefSheetPrompt,
   buildSegmentFirstFramePrompt,
-  buildStoryboardPosterPrompt,
+  buildMasterBoardPrompt,
   buildVideoPromptText,
   buildReferenceInstructions,
 } from "./storyboard-breakdown";

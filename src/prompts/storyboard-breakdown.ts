@@ -122,7 +122,7 @@ Visual Style: ${input.style}
 Number of 8-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 8} seconds)
 Beats per segment: ${beatsPerSegment} quick shots inside each 8s clip${productBriefBlock}${storyBriefBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
 
-Produce EXACTLY ${segmentCount} segments. Each segment = one 8s clip containing EXACTLY ${beatsPerSegment} quick shots (${beatsPerSegment} beats), each beat covering a distinct time-frame inside the 8 seconds. Segment 1 must HOOK. The last segment must contain the CTA. Make every segment END in a state that flows seamlessly into the next segment's START. The "motion_prompt" must describe the ${beatsPerSegment}-shot sequence in order with rough timing (split 8s across the beats, e.g. "0-3s ...; 3-5s ...; 5-8s ..."), camera moves, the spoken ${dialogueLanguage} line, and how the clip ends so it leads into the next segment. Restate the main character's exact appearance (from character_locks) inside every motion_prompt so Veo keeps the same person.
+Produce EXACTLY ${segmentCount} segments. Each segment = one 8s clip containing EXACTLY ${beatsPerSegment} quick shots (${beatsPerSegment} beats), each beat covering a distinct time-frame inside the 8 seconds. Segment 1 must HOOK. The last segment must contain the CTA. CRITICAL CHAINING RULE: the visual state at the END of segment N (pose, position, expression, camera) must EQUAL the opening moment described in segment N+1's "first_frame_prompt", so the generated clips join into one continuous story with no jumps. The "motion_prompt" must describe the ${beatsPerSegment}-shot sequence in order with rough timing (split 8s across the beats, e.g. "0-3s ...; 3-5s ...; 5-8s ..."), camera moves, the spoken ${dialogueLanguage} line, and an explicit final state that matches the next segment's first_frame_prompt. Restate the main character's exact appearance (from character_locks) inside every motion_prompt and every first_frame_prompt so Veo keeps the same person.
 
 Return a JSON object with this EXACT structure (the "beats" array must contain EXACTLY ${beatsPerSegment} items):
 {
@@ -159,7 +159,7 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
       "beats": [
 ${beatExample}
       ],
-      "first_frame_prompt": "string — describe the SHARED scene/setting of this 8s segment (location, lighting, EXACT character appearance from character_locks, product if any). Used to render the multi-shot storyboard strip.",
+      "first_frame_prompt": "string — describe ONE single cinematic OPENING moment of this 8s segment (location, lighting, EXACT character appearance from character_locks, the action frozen mid-moment, product if any). It is rendered as a clean single key-frame image and fed to Veo as this clip's start frame, so describe one moment only — never a grid or collage.",
       "motion_prompt": "string — 50-90 word multi-shot image-to-video prompt for Veo/Seedance covering all ${beatsPerSegment} shots with rough timing (e.g. '0-3s ...; 3-5s ...; 5-8s ...'), camera moves, the exact character appearance restated, the spoken ${dialogueLanguage} line in Veo format (the character says in ${dialogueLanguage}: \\"...\\" (no subtitles)), and an ending that leads into the next segment.",
       "dialogue": "string — the spoken line in ${dialogueLanguage} (short, natural)",
       "continuity_note": "string — how this segment visually continues from the previous segment (for segment 1 write 'opening shot')"
@@ -294,7 +294,7 @@ export function buildSegmentFirstFramePrompt(params: {
   characterDescription: string;
   style: string;
   isFirst: boolean;
-  /** Number of panels to render (3-5). Defaults to the beat count. */
+  /** Kept for compatibility; the frame always depicts ONE single moment. */
   beatsPerSegment?: number;
   preserveRealFace?: boolean;
   references?: RefDescriptor[];
@@ -302,40 +302,43 @@ export function buildSegmentFirstFramePrompt(params: {
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
   const refBlock = buildReferenceInstructions(params.references ?? []);
 
-  const target = Math.min(5, Math.max(3, params.beatsPerSegment ?? params.beats.length ?? 3));
-  const beats = params.beats.slice(0, target);
-  while (beats.length < target) {
-    beats.push({ beat: params.firstFramePrompt, camera: "[EYE]" });
-  }
-  const panelLines = beats
-    .map((b, i) => `Panel ${i + 1} (${b.camera}): ${b.beat}`)
-    .join("\n");
-  const numberLabels = beats.map((_, i) => i + 1).join(", ");
+  // The frame depicts the OPENING moment (beat 1); later beats are context
+  // only, so the model knows where the clip goes but renders ONE moment.
+  const opening = params.beats[0];
+  const laterBeats = params.beats.slice(1);
+  const laterContext =
+    laterBeats.length > 0
+      ? `\nLATER IN THE CLIP (context only — do NOT depict these in this frame): ${laterBeats
+          .map((b) => b.beat)
+          .join("; ")}.`
+      : "";
 
   const continuity = params.isFirst
-    ? "Panel 1 is the opening shot of the whole video."
-    : "Panel 1 must continue seamlessly from the previous segment's final shot (same character, wardrobe, lighting, location).";
+    ? "This is the OPENING shot of the whole video."
+    : "This frame must continue seamlessly from the previous segment's final moment (same character, wardrobe, lighting, location, continuous action).";
 
-  return `${refBlock}STORYBOARD STRIP for ONE ~8 second video clip: a single horizontal image split into ${target} EQUAL panels side by side, showing a fast ${target}-shot sequence (left → right) that plays within the 8 seconds. ${params.style} style.
+  return `${refBlock}ONE SINGLE cinematic KEY FRAME (shot ${params.segmentNumber}) for an ~8 second video clip. This image is fed directly into an image-to-video model (Veo), so it must be ONE full-bleed scene — NOT a collage, NOT a multi-panel strip, NO split screen, NO storyboard grid. ${params.style} style.
 
-CHARACTER (identical face in every panel): ${params.characterDescription}
+CHARACTER (must match the reference exactly): ${params.characterDescription}
 
-CHARACTER REFERENCE BAND: across the TOP of the strip, add a thin reference row with 3 small head-and-shoulders insets of THIS SAME character — front, 3/4 and side angle, each with a different expression (calm, confident, friendly) — to lock the face/identity. Keep these insets small so the ${target} main panels below stay dominant.
-
-SCENE CONTEXT: ${params.firstFramePrompt}
-
-THE ${target} MAIN PANELS (left to right):
-${panelLines}
+SCENE: ${params.firstFramePrompt}
+THIS EXACT MOMENT${opening ? ` (${opening.camera})` : ""}: ${opening ? opening.beat : params.firstFramePrompt}${laterContext}
 
 ${continuity}
 ${directive}
 
-Each main panel: a small number (${numberLabels}) in the top-left corner, distinct camera framing per its note, thin clean divider lines between panels. The SAME individual with the SAME face/outfit across the reference band and all ${target} panels. No captions, no subtitles, no watermark.`;
+STRICT RULES: one single frame filling the whole image; the SAME individual as the reference with identical face, hair and outfit; NO text of any kind — no captions, no labels, no numbers, no subtitles, no logos, no watermark, no borders.`;
 }
 
-// ─── Step 4: Storyboard Overview Poster (presentation) ──────────────────────
+// ─── Step 4: Master Board (Character Sheet + captioned storyboard grid) ─────
 
-export function buildStoryboardPosterPrompt(params: {
+/**
+ * One presentation canvas in the classic production layout: a CHARACTER
+ * REFERENCE SHEET column on the left and a numbered storyboard grid on the
+ * right, each panel captioned with "Action:" and "Lời thoại:" (the spoken
+ * Vietnamese line) — like a professional ad-agency storyboard document.
+ */
+export function buildMasterBoardPrompt(params: {
   title: string;
   totalDuration: number;
   segmentCount: number;
@@ -343,23 +346,30 @@ export function buildStoryboardPosterPrompt(params: {
   segments: {
     segment_number: number;
     title: string;
-    summary: string;
-    role: string;
+    action: string;
+    dialogue: string | null;
   }[];
   characterDescription: string;
+  characterName?: string;
   style: string;
   colorPalette?: string[];
+  dialogueLanguage?: string;
 }): string {
   const maxPanels = Math.min(params.segments.length, 12);
   const panels = params.segments.slice(0, maxPanels);
-
-  const cols = maxPanels <= 6 ? 3 : 4;
+  const cols = maxPanels <= 4 ? 2 : 3;
   const rows = Math.ceil(maxPanels / cols);
+  const lang = params.dialogueLanguage ?? "Vietnamese";
 
   const panelLines = panels
     .map((s) => {
-      const short = s.summary.length > 50 ? s.summary.slice(0, 50) + "..." : s.summary;
-      return `[${s.segment_number}] "${s.title}" (${s.role}): ${short}`;
+      const action = s.action.length > 90 ? s.action.slice(0, 90) + "..." : s.action;
+      const line = s.dialogue
+        ? s.dialogue.length > 70
+          ? s.dialogue.slice(0, 70) + "..."
+          : s.dialogue
+        : "—";
+      return `Panel ${s.segment_number} — Action: ${action} | Dialogue (${lang}): "${line}"`;
     })
     .join("\n");
 
@@ -370,21 +380,31 @@ export function buildStoryboardPosterPrompt(params: {
 
   const colorBlock =
     params.colorPalette && params.colorPalette.length > 0
-      ? `Color palette: ${params.colorPalette.join(", ")}.`
-      : "";
+      ? params.colorPalette.slice(0, 6).join(", ")
+      : "#F5E6D3, #8B4513, #2D5016, #FFFFFF, #1A1A1A";
 
-  return `Professional STORYBOARD overview poster, single horizontal image, clean white/cream background.
+  return `Professional production STORYBOARD DOCUMENT, ONE single horizontal image, clean white/light background, agency-quality layout with two zones:
 
-CHARACTER (identical in every panel): ${charDesc}
+◀ LEFT COLUMN (about 1/4 width) — "CHARACTER REFERENCE SHEET":
+- Header text "CHARACTER REFERENCE SHEET".
+- FULL BODY: 3 standing turnaround views (front, side, back) of the character.
+- CLOSE UP / PORTRAIT: 3 head studies at different angles.
+- COLOR PALETTE: small circular swatches: ${colorBlock}.
+${params.characterName ? `- Small profile block with the name "${params.characterName}".` : ""}
 
-HEADER: bold title "STORYBOARD" left; subtitle "${params.title}" center; right metadata "${params.totalDuration}s • ${maxPanels} segments • ${params.moodTags.slice(0, 4).join(" • ")}".
+▶ RIGHT ZONE (about 3/4 width) — "STORYBOARD — ${params.title.toUpperCase()}":
+- Grid of ${maxPanels} panels, ${cols} columns × ${rows} rows, thin clean borders, numbered badge (01, 02, ...) in each panel's top-left corner.
+- Each panel: a ${params.style} illustration of that moment, and BELOW the picture a small white caption band with two labeled lines of text:
+  "Action:" the action description, then "Lời thoại:" the spoken ${lang} line in quotes.
 
-PANEL GRID: ${cols} columns × ${rows} rows, thin black borders. Each panel: numbered badge top-left, ${params.style} illustration of the segment, 1-line italic caption below.
+CHARACTER (THE SAME individual in the reference column AND every storyboard panel — identical face, hair, outfit): ${charDesc}
 
-PANELS:
+THE ${maxPanels} PANELS:
 ${panelLines}
 
-RULES: ONE single image with ALL ${maxPanels} panels; same character across panels; ${params.style} style; ${colorBlock} clean production-document look; numbered badges visible.`;
+Metadata footer: "${params.totalDuration}s • ${maxPanels} shots • ${params.moodTags.slice(0, 3).join(" • ")}".
+
+RULES: ONE cohesive document image; same character everywhere; ${params.style} style for the panel art; caption text small, clean and legible; no watermark.`;
 }
 
 // ─── Step 5: Video Assembly Guide (text for Veo / Seedance) ─────────────────
@@ -452,9 +472,10 @@ ${params.setting}
 Color palette: ${params.colorPalette.join(", ")}
 
 ## HOW TO BUILD THE VIDEO (seamless chaining)
-1. For each segment, upload its FIRST-FRAME image (and the character reference sheet) to Veo/Seedance (image-to-video) and paste its motion prompt. Set aspect ratio ${params.aspectRatio}.
-2. To join clips seamlessly: use the LAST frame of clip N as the start image of clip N+1, OR use Veo "Extend". Each segment's start frame is already designed to continue the previous one.
-3. Keep the spoken ${dialogueLanguage} line exactly as written so the lip-sync matches. Generate all ${params.segments.length} clips, then stitch them in order (CapCut/ffmpeg) and add the CTA end card.
+Each shot's key-frame image is a CLEAN single frame (no text) made to be fed straight into Veo. The frames already chain: frame N's clip is written to END exactly where frame N+1 begins.
+1. For each segment, upload its KEY-FRAME image as the START frame in Veo/Seedance (image-to-video), add the character reference sheet as a reference image, and paste the motion prompt. Set aspect ratio ${params.aspectRatio}.
+2. BEST JOINS (Veo 3.1 "first & last frame"): give Veo frame N as the FIRST frame and frame N+1 as the LAST frame — the clip will land exactly on the next shot. Alternatively use the last frame of clip N as the start of clip N+1, or Veo "Extend".
+3. Keep the spoken ${dialogueLanguage} line exactly as written so the lip-sync matches. Generate all ${params.segments.length} clips in order, then stitch them (CapCut/ffmpeg) and add the CTA end card.
 
 ## SEGMENTS
 ${segLines}

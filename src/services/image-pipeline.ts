@@ -3,7 +3,7 @@ import { geminiGenerateImage } from "@/lib/gemini/client";
 import {
   buildCharacterRefSheetPrompt,
   buildSegmentFirstFramePrompt,
-  buildStoryboardPosterPrompt,
+  buildMasterBoardPrompt,
   type RefDescriptor,
 } from "@/prompts";
 import type {
@@ -164,9 +164,9 @@ export async function generateSegmentFrame(params: {
   return { url };
 }
 
-// ─── Generate Storyboard Poster ─────────────────────────────────────────────
+// ─── Generate Master Board (Character Sheet + captioned storyboard grid) ────
 
-export async function generateStoryboardPoster(params: {
+export async function generateMasterBoard(params: {
   title: string;
   totalDuration: number;
   segmentCount: number;
@@ -174,12 +174,14 @@ export async function generateStoryboardPoster(params: {
   segments: {
     segment_number: number;
     title: string;
-    summary: string;
-    role: string;
+    action: string;
+    dialogue: string | null;
   }[];
   characterDescription: string;
+  characterName?: string;
   style: string;
   colorPalette?: string[];
+  dialogueLanguage?: string;
   /** Reference images (e.g. the generated character sheet) for consistency. */
   referenceImages?: RefImage[];
   provider?: AIProvider;
@@ -188,10 +190,10 @@ export async function generateStoryboardPoster(params: {
 }): Promise<{ url: string }> {
   const hasRefs = (params.referenceImages?.length ?? 0) > 0;
 
-  let prompt = buildStoryboardPosterPrompt(params);
+  let prompt = buildMasterBoardPrompt(params);
 
   if (hasRefs) {
-    prompt = `IMPORTANT: The attached reference image defines the character's exact appearance. Keep the same face, hair, costume and features IDENTICAL across every panel.\n\n${prompt}`;
+    prompt = `IMPORTANT: The attached reference image defines the character's exact appearance. Keep the same face, hair, costume and features IDENTICAL in the reference column and across every storyboard panel.\n\n${prompt}`;
   }
 
   const url = await generateImage(prompt, {

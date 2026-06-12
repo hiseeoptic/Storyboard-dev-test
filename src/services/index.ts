@@ -1,5 +1,5 @@
 export { generateStoryboardBreakdown } from "./ai-engine";
 export {
   generateCharacterRefSheet,
-  generateStoryboardPoster,
+  generateMasterBoard,
 } from "./image-pipeline";

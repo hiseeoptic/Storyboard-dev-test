@@ -4,7 +4,7 @@ import { generateStoryboardBreakdown } from "@/services/ai-engine";
 import {
   generateCharacterRefSheet,
   generateSegmentFrame,
-  generateStoryboardPoster,
+  generateMasterBoard,
   dataUriToBase64,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
@@ -279,9 +279,9 @@ export async function generateFullStoryboard(
     });
   }
 
-  // ─── Step 4c: Overview poster (presentation) ───────────────────────
+  // ─── Step 4c: Master Board (char sheet + captioned storyboard grid) ─
   try {
-    const r = await generateStoryboardPoster({
+    const r = await generateMasterBoard({
       title: breakdown.title,
       totalDuration: breakdown.total_duration_seconds,
       segmentCount: breakdown.segments.length,
@@ -289,12 +289,14 @@ export async function generateFullStoryboard(
       segments: breakdown.segments.map((s) => ({
         segment_number: s.segment_number,
         title: s.title,
-        summary: s.beats?.[0]?.beat || s.motion_prompt || s.title,
-        role: s.marketing_role,
+        action: s.beats?.[0]?.beat || s.title,
+        dialogue: s.dialogue,
       })),
       characterDescription: charDescForShots,
+      characterName: breakdown.character_locks[0]?.name,
       style: input.style,
       colorPalette: breakdown.style_guide.color_palette,
+      dialogueLanguage,
       provider,
       aspectRatio,
       quality,
@@ -306,8 +308,8 @@ export async function generateFullStoryboard(
     storyboardPosterUrl = r.url;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    warnings.push(`Storyboard Poster: ${msg}`);
-    console.error("[Storyboard] Storyboard poster failed:", err);
+    warnings.push(`Master Board: ${msg}`);
+    console.error("[Storyboard] Master board failed:", err);
   }
 
   // ─── Step 5: Assembly guide (text for Veo / Seedance) ──────────────
