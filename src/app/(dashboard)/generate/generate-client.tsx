@@ -208,6 +208,25 @@ const t = {
     en: "Almost done — building poster & assembly guide...",
   },
 
+  // How-to-use guide
+  howToTitle: { vi: "Cách dùng (làm từng shot một)", en: "How to use (one shot at a time)" },
+  howToStep1: {
+    vi: "Mỗi shot làm RIÊNG 1 clip 8s. KHÔNG dán cả bảng lớn vào Veo.",
+    en: "Each shot is its OWN 8s clip. Do NOT paste the big guide into Veo.",
+  },
+  howToStep2: {
+    vi: "Với mỗi thẻ shot bên dưới: tải ảnh board của shot đó + đính kèm Character Sheet → đưa vào Veo (image-to-video).",
+    en: "For each shot card below: upload that shot's board image + attach the Character Sheet → into Veo (image-to-video).",
+  },
+  howToStep3: {
+    vi: "Bấm 'Copy' ở thẻ đó để lấy 'Prompt Veo đầy đủ' (1 khối liền — copy nguyên, không tách mục) → dán vào Veo → tạo clip.",
+    en: "Click 'Copy' on that card for the full Veo prompt (one block — paste as-is) → paste into Veo → generate the clip.",
+  },
+  howToStep4: {
+    vi: "Làm lần lượt Shot 1 → 2 → 3... rồi ghép các clip theo thứ tự (CapCut/ffmpeg). Bảng 'Hướng dẫn ghép' chỉ để tham khảo.",
+    en: "Repeat for Shot 1 → 2 → 3... then stitch the clips in order (CapCut/ffmpeg). The 'assembly guide' is reference only.",
+  },
+
   // Results
   generated: { vi: "đã tạo", en: "generated" },
   failed: { vi: "thất bại", en: "failed" },
@@ -223,8 +242,8 @@ const t = {
   actionLabel: { vi: "Hành động", en: "Action" },
   motionPrompt: { vi: "Prompt Veo đầy đủ (bám reference + negative)", en: "Full Veo prompt (reference-locked + negative)" },
   continuity: { vi: "Nối tiếp", en: "Continuity" },
-  copyPrompt: { vi: "Copy prompt", en: "Copy prompt" },
-  assemblyGuide: { vi: "Hướng dẫn ghép video (Veo/Seedance)", en: "Video assembly guide (Veo/Seedance)" },
+  copyPrompt: { vi: "Copy prompt Veo (shot này)", en: "Copy Veo prompt (this shot)" },
+  assemblyGuide: { vi: "Hướng dẫn ghép video (tài liệu — đừng dán cả vào Veo)", en: "Assembly guide (reference only — don't paste it all into Veo)" },
   noDesc: { vi: "Không có mô tả", en: "No description" },
 
   // Language toggle
@@ -947,6 +966,28 @@ export function GenerateClient() {
             </div>
           </div>
         )}
+
+        {/* How to use */}
+        <Card className="border-primary/40 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Film className="h-5 w-5 text-primary" />
+              {L("howToTitle")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ol className="space-y-2 text-sm">
+              {[L("howToStep1"), L("howToStep2"), L("howToStep3"), L("howToStep4")].map((s, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
+                    {i + 1}
+                  </span>
+                  <span>{s}</span>
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
 
         {/* Character Reference Sheet */}
         {hasCharSheet ? (
