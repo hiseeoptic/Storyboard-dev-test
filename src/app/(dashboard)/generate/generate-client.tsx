@@ -221,7 +221,7 @@ const t = {
   },
   dialogueLabel: { vi: "Lời thoại", en: "Dialogue" },
   actionLabel: { vi: "Hành động", en: "Action" },
-  motionPrompt: { vi: "Motion prompt (Veo/Seedance)", en: "Motion prompt (Veo/Seedance)" },
+  motionPrompt: { vi: "Prompt Veo đầy đủ (bám reference + negative)", en: "Full Veo prompt (reference-locked + negative)" },
   continuity: { vi: "Nối tiếp", en: "Continuity" },
   copyPrompt: { vi: "Copy prompt", en: "Copy prompt" },
   assemblyGuide: { vi: "Hướng dẫn ghép video (Veo/Seedance)", en: "Video assembly guide (Veo/Seedance)" },
@@ -1080,7 +1080,7 @@ export function GenerateClient() {
 
                   <div className="rounded-md bg-muted p-2">
                     <p className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">{L("motionPrompt")}</p>
-                    <p className="text-[11px] leading-relaxed">{seg.motion_prompt}</p>
+                    <p className="text-[11px] leading-relaxed">{seg.full_prompt ?? seg.motion_prompt}</p>
                   </div>
 
                   {seg.continuity_note && (
@@ -1094,7 +1094,7 @@ export function GenerateClient() {
                       variant="outline"
                       size="sm"
                       className="flex-1 gap-1.5"
-                      onClick={() => copySegmentPrompt(seg.segment_number, seg.motion_prompt)}
+                      onClick={() => copySegmentPrompt(seg.segment_number, seg.full_prompt ?? seg.motion_prompt)}
                     >
                       {copiedSeg === seg.segment_number ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                       {copiedSeg === seg.segment_number ? (lang === "vi" ? "Đã copy" : "Copied") : L("copyPrompt")}

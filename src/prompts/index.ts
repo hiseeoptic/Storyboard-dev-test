@@ -5,6 +5,7 @@ export {
   buildSegmentFirstFramePrompt,
   buildMasterBoardPrompt,
   buildVideoPromptText,
+  buildSegmentVeoPrompt,
   buildReferenceInstructions,
 } from "./storyboard-breakdown";
 export type { RefRole, RefDescriptor } from "./storyboard-breakdown";

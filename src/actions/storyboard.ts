@@ -8,7 +8,11 @@ import {
   dataUriToBase64,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
-import { buildVideoPromptText, type RefDescriptor } from "@/prompts";
+import {
+  buildVideoPromptText,
+  buildSegmentVeoPrompt,
+  type RefDescriptor,
+} from "@/prompts";
 import type {
   ActionResult,
   AIProvider,
@@ -315,13 +319,31 @@ export async function generateFullStoryboard(
   }
 
   // ─── Step 5: Assembly guide (text for Veo / Seedance) ──────────────
+  // Product descriptor restated in every clip prompt so Veo keeps it intact.
+  const productDescription =
+    productDesc || input.product_name || productName || undefined;
+
+  // Attach a full ready-to-paste Veo prompt to each segment.
+  const palette = breakdown.style_guide.color_palette;
+  for (const seg of breakdown.segments) {
+    seg.full_prompt = buildSegmentVeoPrompt({
+      characterDescription: charDescForShots,
+      productDescription,
+      colorPalette: palette,
+      motionPrompt: seg.motion_prompt,
+      dialogue: seg.dialogue,
+      dialogueLanguage,
+    });
+  }
+
   const videoPrompt = buildVideoPromptText({
     title: breakdown.title,
     characterDescription: charDescForShots,
+    productDescription,
     setting: input.setting || "Unspecified",
     style: input.style,
     aspectRatio,
-    colorPalette: breakdown.style_guide.color_palette,
+    colorPalette: palette,
     dialogueLanguage,
     marketing: breakdown.marketing_structure,
     segments: breakdown.segments.map((s) => ({

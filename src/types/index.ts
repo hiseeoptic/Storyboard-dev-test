@@ -215,6 +215,8 @@ export interface VideoSegment {
   continuity_note: string;
   /** Filled by the image pipeline — the generated start frame. */
   first_frame_url?: string | null;
+  /** Full ready-to-paste Veo prompt (ref-lock + motion + dialogue + negative). */
+  full_prompt?: string;
 }
 
 export interface MarketingStructure {

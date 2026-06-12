@@ -160,7 +160,7 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
 ${beatExample}
       ],
       "first_frame_prompt": "string — describe the SHARED scene/setting of this 8s segment (location, lighting, EXACT character appearance from character_locks, product if any). It is used as the scene-overview context for the shot board, so describe the environment and the character clearly.",
-      "motion_prompt": "string — 50-90 word multi-shot image-to-video prompt for Veo/Seedance covering all ${beatsPerSegment} shots with rough timing (e.g. '0-3s ...; 3-5s ...; 5-8s ...'), camera moves, the exact character appearance restated, the spoken ${dialogueLanguage} line in Veo format (the character says in ${dialogueLanguage}: \\"...\\" (no subtitles)), and an ending that leads into the next segment.",
+      "motion_prompt": "string — a LONG, highly detailed 110-160 word image-to-video prompt for Veo 3.1 covering all ${beatsPerSegment} shots. Structure it in this order: (1) START by ordering the model to STRICTLY FOLLOW THE ATTACHED REFERENCE IMAGES — keep the SAME person (restate his exact face, hair, glasses, wardrobe word-for-word from character_locks, as a slightly younger/more attractive version) and the SAME product (restate its exact shape, colour, material, branding); (2) the action across the 8s with rough timing ('0-3s ...; 3-5s ...; 5-8s ...') using slow, single, clear motion verbs; (3) camera (shot size + movement) and lens; (4) lighting + colour palette + mood; (5) setting details; (6) audio: ambient sound + the spoken line in Veo format — the character says in ${dialogueLanguage}: \\"...\\"; (7) end with a NEGATIVE list: 'No subtitles, no on-screen text, no watermark, do not change the face, do not distort or change the product, no extra fingers, no morphing.'; (8) finish with the exact final state so it leads into the next segment.",
       "dialogue": "string — the spoken line in ${dialogueLanguage} (short, natural)",
       "continuity_note": "string — how this segment visually continues from the previous segment (for segment 1 write 'opening shot')"
     }
@@ -189,17 +189,21 @@ export function isPhotoStyle(style: string): boolean {
   return PHOTO_STYLES.has(style);
 }
 
+// Light, natural "glow-up": keep identity, render a younger/attractive take.
+const BEAUTIFY_DIRECTIVE =
+  "GLOW-UP (keep it the SAME person): preserve the exact face geometry, bone structure, eye shape and colour, and natural skin pores/texture, but apply a tasteful editorial retouch — even healthy skin tone, clear complexion, softened under-eye shadows and blemishes, a subtle cheekbone highlight, bright clear eyes, neat well-groomed hair and a fit jawline — so he looks a few years younger, more handsome and camera-ready. High-end beauty-photography quality, true-to-life. Do NOT over-smooth into a plastic/CGI/wax look and do NOT change his identity.";
+
 function renderDirective(style: string, preserveRealFace: boolean): string {
   if (isPhotoStyle(style)) {
     return `Photorealistic, lifelike, real human, cinematic photography quality — NOT a cartoon, NOT an illustration.${
       preserveRealFace
-        ? " CRITICAL: preserve the EXACT real face, skin tone, hairstyle and likeness from the attached reference photo. Keep it the same real person, do NOT stylize the face into a cartoon."
+        ? ` CRITICAL: preserve the EXACT real face, skin tone, hairstyle and likeness from the attached reference photo — same real person, never stylized into a cartoon. ${BEAUTIFY_DIRECTIVE}`
         : ""
     }`;
   }
   return `${style} art style.${
     preserveRealFace
-      ? " Keep the person's real facial structure and likeness recognizable from the reference photo, rendered in this art style."
+      ? ` Keep the person's real facial structure and likeness recognizable from the reference photo, rendered in this art style, as a slightly younger and more attractive version of himself.`
       : ""
   }`;
 }
@@ -225,18 +229,18 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
     const d = r.description ? ` (${r.description.replace(/\s+/g, " ").slice(0, 220)})` : "";
     switch (r.role) {
       case "character_sheet":
-        return `• THE CHARACTER — the attached CHARACTER REFERENCE SHEET (turnaround + expressions)${d} defines the main character's exact face, hair, body and costume. Reproduce the SAME individual identically in every shot — same face, same wardrobe, same proportions. Do NOT invent a different person.`;
+        return `• THE CHARACTER — the attached CHARACTER REFERENCE SHEET (turnaround + expressions)${d} defines the main character's exact face, hair, body and costume. Reproduce the SAME individual identically in every shot — same face, same wardrobe, same proportions — rendered as a slightly younger, more attractive version of himself. Do NOT invent a different person.`;
       case "face":
-        return `• THE PERSON — use the exact man shown in the attached portrait photo${d}. Keep his real face, eyeglasses, hairstyle and skin tone identical in every shot. He is the main character. Do NOT invent a different face.`;
+        return `• THE PERSON — use the exact man shown in the attached portrait photo${d}. Keep his real face, eyeglasses, hairstyle and skin tone CLEARLY recognizable and identical in every shot; render him as a tasteful, slightly younger and more handsome version of himself (light natural retouch, same identity). He is the main character. Do NOT invent a different face.`;
       case "product":
-        return `• THE PRODUCT — feature the exact product shown in the attached product photo${d}. Keep its exact shape, colour, material, handle and branding. Do NOT redesign, age, or swap it for another pan.`;
+        return `• THE PRODUCT — feature the EXACT product shown in the attached product photo${d}. Keep its EXACT shape, silhouette, colour, material, proportions, handle/parts and branding identical in every single shot. Do NOT redesign, recolour, distort, resize, age, damage or swap it for a different object.`;
       case "setting":
-        return `• THE KITCHEN — set every scene inside the exact kitchen shown in the attached interior photo${d}. Match its cabinets, colours and layout.`;
+        return `• THE LOCATION — keep every scene in the same location shown in the attached interior photo${d}. Match its layout, colours, furniture and key props; keep it consistent across all shots.`;
       default:
         return `• Reference — keep it consistent.`;
     }
   });
-  return `You are given reference photos. RE-CREATE new cinematic scenes using these real subjects — do NOT simply output a copy of any reference photo. Follow them precisely:\n${lines.join("\n")}\n\n`;
+  return `You are given reference photos. RE-CREATE new cinematic scenes using these real subjects — do NOT simply output a copy of any reference photo, but match them PRECISELY (same identity, same product, same place). Follow them exactly:\n${lines.join("\n")}\n\n`;
 }
 
 // ─── Step 2: Character Reference Sheet Image Prompt ─────────────────────────
@@ -416,9 +420,37 @@ RULES: ONE cohesive document image; same character everywhere; ${params.style} s
 
 // ─── Step 5: Video Assembly Guide (text for Veo / Seedance) ─────────────────
 
+/**
+ * Composes the full, long, ready-to-paste Veo prompt for ONE clip:
+ * reference-lock preamble + the model's motion prompt + the spoken line +
+ * a negative list. Used both per-card (copy button) and in the text guide.
+ */
+export function buildSegmentVeoPrompt(params: {
+  characterDescription: string;
+  productDescription?: string;
+  colorPalette: string[];
+  motionPrompt: string;
+  dialogue?: string | null;
+  dialogueLanguage?: string;
+}): string {
+  const lang = params.dialogueLanguage ?? "Vietnamese";
+  const refLock = `STRICTLY FOLLOW THE REFERENCE IMAGES. Same person, same face/identity (rendered as a slightly younger, more attractive version — light natural retouch, never plastic): ${params.characterDescription}. ${
+    params.productDescription
+      ? `Same product, unchanged shape/colour/material/branding: ${params.productDescription}. `
+      : ""
+  }Match this colour palette: ${params.colorPalette.join(", ")}.`;
+  const spoken = params.dialogue
+    ? ` The character says in ${lang}: "${params.dialogue}" (lip-synced, no subtitles).`
+    : "";
+  const negative =
+    " NEGATIVE (avoid): subtitles, on-screen text/captions, watermark or logo, changing the character's face or identity, distorting/recolouring/resizing the product, extra fingers, warping or morphing, duplicate people, plastic/CGI skin.";
+  return `${refLock} ${params.motionPrompt}${spoken}${negative}`;
+}
+
 export function buildVideoPromptText(params: {
   title: string;
   characterDescription: string;
+  productDescription?: string;
   setting: string;
   style: string;
   aspectRatio: string;
@@ -447,15 +479,19 @@ export function buildVideoPromptText(params: {
       const beats = s.beats
         .map((b) => `      • ${b.camera} — ${b.beat}`)
         .join("\n");
-      // Veo-style spoken-line block so the model voices the exact words.
-      const spoken = s.dialogue
-        ? `\n  Spoken line (${dialogueLanguage}, lip-synced): the character says in ${dialogueLanguage}: "${s.dialogue}" (no subtitles)`
-        : "";
+      const fullPrompt = buildSegmentVeoPrompt({
+        characterDescription: params.characterDescription,
+        productDescription: params.productDescription,
+        colorPalette: params.colorPalette,
+        motionPrompt: s.motion_prompt,
+        dialogue: s.dialogue,
+        dialogueLanguage,
+      });
       return `SEGMENT ${s.segment_number} — "${s.title}" [${s.role.toUpperCase()}] (${s.duration_seconds}s)
   Beats:
 ${beats}
-  Motion prompt (paste into Veo/Seedance image-to-video):
-    ${s.motion_prompt}${spoken}
+  ▶ FULL PROMPT TO PASTE into Veo/Seedance image-to-video (attach the board + character sheet):
+    ${fullPrompt}
   Continuity: ${s.continuity_note}`;
     })
     .join("\n\n");
