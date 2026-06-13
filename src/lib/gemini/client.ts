@@ -198,12 +198,16 @@ export async function geminiGenerateImage(params: {
     }
   }
 
+  // 1K keeps responses small enough for the serverless response-size limit
+  // (multiple board data-URIs per request); Pro renders at 2K for fidelity.
+  const imageSize = params.quality === "pro" ? "2K" : "1K";
+
   const buildBody = (withImageConfig: boolean): Record<string, unknown> => ({
     contents: [{ role: "user", parts }],
     generationConfig: {
       responseModalities: ["IMAGE", "TEXT"],
       ...(withImageConfig && params.aspectRatio
-        ? { responseFormat: { image: { aspectRatio: params.aspectRatio, imageSize: "2K" } } }
+        ? { responseFormat: { image: { aspectRatio: params.aspectRatio, imageSize } } }
         : {}),
     },
   });

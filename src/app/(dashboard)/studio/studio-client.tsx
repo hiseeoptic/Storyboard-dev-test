@@ -55,6 +55,30 @@ function dataUriToBase64(uri: string): string {
   return uri.includes(",") ? uri.split(",")[1]! : uri;
 }
 
+// Generated images come back at up to 2K — downscale to a reference-friendly
+// size (JPEG) before handing off, so the storyboard request stays well under
+// the server-action body limit and analysis is fast.
+function downscaleToBase64(uri: string, max = 1024, quality = 0.88): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve(dataUriToBase64(uri));
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const out = canvas.toDataURL("image/jpeg", quality);
+      resolve(out.split(",")[1] ?? out);
+    };
+    img.onerror = () => resolve(dataUriToBase64(uri));
+    img.src = uri;
+  });
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
@@ -158,20 +182,24 @@ export function StudioClient() {
       }))
     );
 
-  const pushToStoryboard = () => {
+  const pushToStoryboard = async () => {
     if (approved.length === 0) return;
-    const handoff = {
-      studio: true,
-      characterImages: approved.map((r) => dataUriToBase64(r.url)),
-      productImages: [...productImages, ...outfitImage].map((i) => i.base64),
-    };
+    setBusy(true);
+    setProgress("Đang chuẩn bị ảnh cho Storyboard...");
     try {
+      const characterImages = await Promise.all(approved.map((r) => downscaleToBase64(r.url)));
+      const handoff = {
+        studio: true,
+        characterImages,
+        productImages: [...productImages, ...outfitImage].map((i) => i.base64),
+      };
       window.sessionStorage.setItem(STUDIO_HANDOFF_KEY, JSON.stringify(handoff));
+      router.push("/generate");
     } catch {
       setError("Ảnh quá lớn để chuyển sang Storyboard. Hãy duyệt ít ảnh hơn.");
-      return;
+      setBusy(false);
+      setProgress(null);
     }
-    router.push("/generate");
   };
 
   return (
