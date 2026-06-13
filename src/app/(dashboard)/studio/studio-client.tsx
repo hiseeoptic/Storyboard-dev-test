@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Check, Sparkles, Trash2, ArrowRight, Wand2 } from "lucide-react";
+import { Loader2, Check, Sparkles, Trash2, ArrowRight, Wand2, Users, Smile } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,16 +13,10 @@ import { DEFAULT_CONFIG, type PhotoConfig, type SubjectType } from "@/lib/studio
 import {
   SPECIAL_STYLES,
   STANDARD_STYLES,
-  POSE_CATEGORIES,
   FACE_ENHANCEMENT_OPTIONS,
   RATIO_OPTIONS,
-  CONTEXT_CATEGORIES,
-  OUTFIT_DATABASE,
   QUALITY_OPTIONS,
   EXPRESSION_OPTIONS,
-  LIGHTING_OPTIONS,
-  CAMERA_OPTIONS,
-  ANGLE_OPTIONS,
 } from "@/lib/studio/options";
 
 export const STUDIO_HANDOFF_KEY = "sb_studio_handoff";
@@ -30,6 +24,7 @@ export const STUDIO_HANDOFF_KEY = "sb_studio_handoff";
 interface StudioResult {
   id: string;
   url: string;
+  label: string;
   approved: boolean;
 }
 
@@ -39,6 +34,18 @@ const SUBJECTS: { value: SubjectType; label: string }[] = [
   { value: "COUPLE", label: "Cặp đôi" },
   { value: "GROUP", label: "Nhóm" },
   { value: "PRODUCT", label: "Sản phẩm" },
+];
+
+const FRONT_HEADSHOT =
+  "Front-facing studio headshot, symmetrical face, head and shoulders, clean neutral background";
+
+// Angle set to generate for review.
+const ANGLE_VARIANTS: { label: string; override: Partial<PhotoConfig> }[] = [
+  { label: "Chính diện", override: { photographyStyle: "Front-facing studio portrait, symmetrical face, clean neutral background" } },
+  { label: "Góc 3/4", override: { photographyStyle: "Three-quarter face portrait, slight head turn, natural facial depth, studio lighting" } },
+  { label: "Nghiêng", override: { photographyStyle: "Side profile studio portrait, clean outline, minimal background, elegant composition" } },
+  { label: "Sau lưng", override: { photographyStyle: "Back view of the same person from behind, head and shoulders, showing hairstyle and outfit from the back, clean neutral background" } },
+  { label: "Toàn thân", override: { photographyStyle: "Full body shot, head to toe visible, standing naturally and confidently, clean neutral background", aspectRatio: "9:16" } },
 ];
 
 function rid() {
@@ -71,6 +78,7 @@ export function StudioClient() {
   const [config, setConfig] = useState<PhotoConfig>(DEFAULT_CONFIG);
   const [results, setResults] = useState<StudioResult[]>([]);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const set = <K extends keyof PhotoConfig>(key: K, value: PhotoConfig[K]) =>
@@ -81,39 +89,39 @@ export function StudioClient() {
     set("faceEnhancements", cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
   };
 
-  // Outfit DB is keyed by gender; default to MALE/FEMALE based on subject.
-  const outfitGender = config.subjectType === "FEMALE" || config.subjectType === "COUPLE" ? "FEMALE" : "MALE";
-  const outfitCats = OUTFIT_DATABASE[outfitGender] ?? OUTFIT_DATABASE.MALE ?? [];
-  const currentContextCat = CONTEXT_CATEGORIES.find((c) => c.id === config.contextCategory);
   const styleList = config.photographyStyleCategory === "special" ? SPECIAL_STYLES : STANDARD_STYLES;
-
-  const [poseTab, setPoseTab] = useState(POSE_CATEGORIES[0]?.id ?? "");
-  const currentPoseCat = POSE_CATEGORIES.find((p) => p.id === poseTab);
-  const [outfitCatId, setOutfitCatId] = useState(outfitCats[0]?.id ?? "");
-  const currentOutfitCat = outfitCats.find((o) => o.id === outfitCatId) ?? outfitCats[0];
-
   const approved = useMemo(() => results.filter((r) => r.approved), [results]);
 
-  const generate = async () => {
-    if (config.source === "UPLOAD" && faceImages.length === 0 && productImages.length === 0) {
+  const hasInput = faceImages.length > 0 || productImages.length > 0;
+
+  // Generate one image with an optional config override.
+  const genOne = async (label: string, override?: Partial<PhotoConfig>) => {
+    const cfg = { ...config, ...override, outfitImage: outfitImage[0]?.base64 ?? null };
+    const res = await generateStudioImage({
+      config: cfg,
+      faces: faceImages.map((i) => i.base64),
+      products: productImages.map((i) => i.base64),
+      logo: logoImage[0]?.base64 ?? null,
+      outfitImage: outfitImage[0]?.base64 ?? null,
+    });
+    if (!res.success) throw new Error(res.error);
+    setResults((prev) => [{ id: rid(), url: res.data.url, label, approved: false }, ...prev]);
+  };
+
+  const guard = () => {
+    if (!hasInput) {
       setError("Hãy tải lên ảnh khuôn mặt (hoặc sản phẩm) trước.");
-      return;
+      return false;
     }
     setError(null);
+    return true;
+  };
+
+  const generateSingle = async () => {
+    if (!guard()) return;
     setBusy(true);
     try {
-      const res = await generateStudioImage({
-        config: { ...config, outfitImage: outfitImage[0]?.base64 ?? null },
-        faces: faceImages.map((i) => i.base64),
-        products: productImages.map((i) => i.base64),
-        logo: logoImage[0]?.base64 ?? null,
-        outfitImage: outfitImage[0]?.base64 ?? null,
-      });
-      if (!res.success) {
-        setError(res.error);
-        return;
-      }
-      setResults((prev) => [{ id: rid(), url: res.data.url, approved: false }, ...prev]);
+      await genOne("Tuỳ chỉnh");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Tạo ảnh thất bại");
     } finally {
@@ -121,9 +129,39 @@ export function StudioClient() {
     }
   };
 
+  const runBatch = async (name: string, items: { label: string; override?: Partial<PhotoConfig> }[]) => {
+    if (!guard()) return;
+    setBusy(true);
+    try {
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i]!;
+        setProgress(`Đang tạo ${name} ${i + 1}/${items.length}: ${it.label}`);
+        try {
+          await genOne(it.label, it.override);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Tạo ảnh thất bại");
+        }
+      }
+    } finally {
+      setBusy(false);
+      setProgress(null);
+    }
+  };
+
+  const genAngles = () => runBatch("góc", ANGLE_VARIANTS);
+  const genExpressions = () =>
+    runBatch(
+      "biểu cảm",
+      EXPRESSION_OPTIONS.map((o) => ({
+        label: o.label,
+        override: { expression: o.value, photographyStyleCategory: "standard", photographyStyle: FRONT_HEADSHOT },
+      }))
+    );
+
   const pushToStoryboard = () => {
     if (approved.length === 0) return;
     const handoff = {
+      studio: true,
       characterImages: approved.map((r) => dataUriToBase64(r.url)),
       productImages: [...productImages, ...outfitImage].map((i) => i.base64),
     };
@@ -143,15 +181,15 @@ export function StudioClient() {
           <Wand2 className="h-6 w-6 text-primary" /> Image Studio
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Tạo ảnh người thật đẹp & giống từ ảnh bạn tải lên — đầy đủ làm đẹp mặt, biểu cảm, trang
-          phục, ánh sáng, ống kính. Duyệt ảnh ưng ý rồi đẩy sang Storyboard.
+          Tạo ảnh người thật đẹp & giống từ ảnh bạn tải lên — làm đẹp mặt, nét mặt, nhiều góc &
+          biểu cảm. Duyệt ảnh ưng ý rồi đẩy sang Storyboard (Storyboard chỉ lo kịch bản & prompt).
         </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         {/* ─── Left: controls ─── */}
         <div className="space-y-6">
-          {/* Uploads */}
+          {/* 1. Uploads */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">1. Ảnh đầu vào</CardTitle>
@@ -163,7 +201,7 @@ export function StudioClient() {
               <Field label="Sản phẩm / túi / phụ kiện (tuỳ chọn)">
                 <ImageUploader images={productImages} onChange={setProductImages} maxImages={2} />
               </Field>
-              <Field label="Trang phục cần mặc (tuỳ chọn)">
+              <Field label="Trang phục cần mặc — ảnh thật (tuỳ chọn)">
                 <ImageUploader images={outfitImage} onChange={setOutfitImage} maxImages={1} />
               </Field>
               <Field label="Logo (tuỳ chọn)">
@@ -172,7 +210,7 @@ export function StudioClient() {
             </CardContent>
           </Card>
 
-          {/* Face beautify + expression + quality */}
+          {/* 2. Face beautify + expression + quality */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">2. Làm đẹp khuôn mặt & nét mặt</CardTitle>
@@ -186,9 +224,7 @@ export function StudioClient() {
                       key={opt.id}
                       onClick={() => toggleEnh(opt.id)}
                       className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                        on
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-input hover:border-primary/50"
+                        on ? "border-primary bg-primary text-primary-foreground" : "border-input hover:border-primary/50"
                       }`}
                     >
                       {opt.label}
@@ -197,7 +233,7 @@ export function StudioClient() {
                 })}
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Biểu cảm (nét mặt)">
+                <Field label="Biểu cảm mặc định (nét mặt)">
                   <select className={selectCls} value={config.expression} onChange={(e) => set("expression", e.target.value)}>
                     {EXPRESSION_OPTIONS.map((o) => (
                       <option key={o.id} value={o.value}>{o.label}</option>
@@ -215,7 +251,7 @@ export function StudioClient() {
             </CardContent>
           </Card>
 
-          {/* Subject + style */}
+          {/* 3. Subject + style */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">3. Chủ thể & phong cách chụp</CardTitle>
@@ -237,7 +273,6 @@ export function StudioClient() {
                   </select>
                 </Field>
               </div>
-
               <Tabs
                 value={config.photographyStyleCategory}
                 onValueChange={(v) => {
@@ -258,117 +293,6 @@ export function StudioClient() {
                   </select>
                 </TabsContent>
               </Tabs>
-            </CardContent>
-          </Card>
-
-          {/* Outfit + pose + context */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">4. Trang phục, dáng & bối cảnh</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Nhóm trang phục">
-                  <select
-                    className={selectCls}
-                    value={outfitCatId}
-                    onChange={(e) => {
-                      setOutfitCatId(e.target.value);
-                      const cat = outfitCats.find((o) => o.id === e.target.value);
-                      const first = cat?.options[0];
-                      if (first) set("outfitDetail", first.value);
-                    }}
-                  >
-                    {outfitCats.map((o) => (
-                      <option key={o.id} value={o.id}>{o.label}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Trang phục cụ thể">
-                  <select className={selectCls} value={config.outfitDetail} onChange={(e) => set("outfitDetail", e.target.value)}>
-                    {(currentOutfitCat?.options ?? []).map((o) => (
-                      <option key={o.id} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-
-              <Field label="Dáng / tư thế">
-                <div className="mb-2 flex flex-wrap gap-1">
-                  {POSE_CATEGORIES.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => setPoseTab(p.id)}
-                      className={`rounded px-2 py-1 text-xs ${poseTab === p.id ? "bg-primary text-primary-foreground" : "bg-muted"}`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-                <select className={selectCls} value={config.pose} onChange={(e) => set("pose", e.target.value)}>
-                  {(currentPoseCat?.options ?? []).map((o) => (
-                    <option key={o.id} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </Field>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Nhóm bối cảnh">
-                  <select
-                    className={selectCls}
-                    value={config.contextCategory}
-                    onChange={(e) => {
-                      set("contextCategory", e.target.value);
-                      const cat = CONTEXT_CATEGORIES.find((c) => c.id === e.target.value);
-                      const first = cat?.options[0];
-                      if (first) set("contextDetail", first.value);
-                    }}
-                  >
-                    {CONTEXT_CATEGORIES.map((c) => (
-                      <option key={c.id} value={c.id}>{c.label}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Bối cảnh cụ thể">
-                  <select className={selectCls} value={config.contextDetail} onChange={(e) => set("contextDetail", e.target.value)}>
-                    {(currentContextCat?.options ?? []).map((o) => (
-                      <option key={o.id} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Lighting + camera */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">5. Ánh sáng & máy ảnh</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Field label="Ánh sáng">
-                  <select className={selectCls} value={config.lighting} onChange={(e) => set("lighting", e.target.value)}>
-                    {LIGHTING_OPTIONS.map((o) => (
-                      <option key={o.id} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Ống kính">
-                  <select className={selectCls} value={config.camera} onChange={(e) => set("camera", e.target.value)}>
-                    {CAMERA_OPTIONS.map((o) => (
-                      <option key={o.id} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Góc máy">
-                  <select className={selectCls} value={config.cameraAngle} onChange={(e) => set("cameraAngle", e.target.value)}>
-                    {ANGLE_OPTIONS.map((o) => (
-                      <option key={o.id} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
               <Field label="Ghi chú thêm (tuỳ chọn)">
                 <Textarea
                   value={config.additionalPrompt}
@@ -380,16 +304,35 @@ export function StudioClient() {
             </CardContent>
           </Card>
 
-          {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
-
-          <Button onClick={generate} disabled={busy} size="lg" className="w-full gap-2">
-            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
-            Tạo ảnh
-          </Button>
+          {/* Generate */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">4. Tạo ảnh để duyệt</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={genAngles} disabled={busy || !hasInput} className="gap-2">
+                  <Users className="h-4 w-4" /> Tạo bộ góc (5 ảnh)
+                </Button>
+                <Button onClick={genExpressions} disabled={busy || !hasInput} variant="outline" className="gap-2">
+                  <Smile className="h-4 w-4" /> Tạo bộ biểu cảm
+                </Button>
+                <Button onClick={generateSingle} disabled={busy || !hasInput} variant="outline" className="gap-2">
+                  <Sparkles className="h-4 w-4" /> Tạo 1 ảnh (tuỳ chỉnh)
+                </Button>
+              </div>
+              {busy && (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> {progress ?? "Đang tạo ảnh..."}
+                </p>
+              )}
+              {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+            </CardContent>
+          </Card>
         </div>
 
         {/* ─── Right: results ─── */}
-        <div className="space-y-4">
+        <div>
           <Card className="sticky top-20">
             <CardHeader>
               <CardTitle className="text-base">Kết quả ({approved.length} đã duyệt)</CardTitle>
@@ -397,7 +340,7 @@ export function StudioClient() {
             <CardContent className="space-y-4">
               {results.length === 0 && (
                 <p className="py-8 text-center text-sm text-muted-foreground">
-                  Chưa có ảnh. Cấu hình bên trái rồi bấm “Tạo ảnh”.
+                  Chưa có ảnh. Cấu hình bên trái rồi bấm tạo.
                 </p>
               )}
               <div className="grid grid-cols-2 gap-3">
@@ -407,7 +350,8 @@ export function StudioClient() {
                     className={`group relative overflow-hidden rounded-lg border-2 ${r.approved ? "border-primary" : "border-transparent"}`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={r.url} alt="result" className="w-full object-cover" />
+                    <img src={r.url} alt={r.label} className="w-full object-cover" />
+                    <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">{r.label}</span>
                     <button
                       onClick={() => setResults((p) => p.filter((x) => x.id !== r.id))}
                       className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
@@ -425,7 +369,7 @@ export function StudioClient() {
               </div>
               {results.length > 0 && (
                 <Button onClick={pushToStoryboard} disabled={approved.length === 0} className="w-full gap-2">
-                  Dùng cho Storyboard <ArrowRight className="h-4 w-4" />
+                  Đẩy {approved.length} ảnh sang Storyboard <ArrowRight className="h-4 w-4" />
                 </Button>
               )}
             </CardContent>

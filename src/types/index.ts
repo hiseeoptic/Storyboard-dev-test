@@ -107,6 +107,8 @@ export interface StoryboardGenerationInput {
   /** Named auxiliary/ingredient images (herbs, components) — referenced by name. */
   ingredient_images?: ImageReference[];
   background_images?: ImageReference[];
+  /** Skip generating a character reference sheet (e.g. references already approved in the Image Studio). */
+  skip_character_sheet?: boolean;
   tone?: string;
   setting?: string;
   custom_instructions?: string;

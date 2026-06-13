@@ -299,7 +299,11 @@ export async function generateStoryboardDraft(
   }
 
   const ctx = buildRefContext(input, breakdown, analysis, provider);
-  const characterRefSheetUrl = await genCharSheet(input, breakdown, ctx, provider, warnings);
+  // When references were already approved in the Image Studio, skip generating
+  // a (lower-quality) character sheet — the storyboard uses those images directly.
+  const characterRefSheetUrl = input.skip_character_sheet
+    ? null
+    : await genCharSheet(input, breakdown, ctx, provider, warnings);
 
   return { success: true, data: { breakdown, analysis, characterRefSheetUrl, warnings } };
 }

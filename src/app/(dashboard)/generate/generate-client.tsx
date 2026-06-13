@@ -862,6 +862,9 @@ export function GenerateClient() {
       key_message: keyMessage || undefined,
       image_quality: imageQuality,
       aspect_ratio: aspectRatio,
+      // References approved in the Image Studio → don't regenerate a character
+      // sheet; the storyboard only builds the script, boards and prompts.
+      skip_character_sheet: fromStudio || undefined,
     };
 
     setProgressPercent(25);
@@ -872,15 +875,39 @@ export function GenerateClient() {
       setProgressPercent((prev) => (prev < 85 ? prev + 1.5 : prev));
     }, 2000);
 
-    // PHASE 1: script + character sheet only → review before building.
     try {
       const res = await generateStoryboardDraft(input, provider);
-      clearInterval(progressTimer);
       if (!res.success) {
+        clearInterval(progressTimer);
         setError(res.error);
         setPhase("input");
         return;
       }
+
+      // Studio path: references already approved → skip the review step and
+      // build the full storyboard straight away.
+      if (fromStudio) {
+        setProgressMessage(L("generatingDone"));
+        const fin = await finalizeStoryboard(
+          input,
+          res.data.breakdown,
+          res.data.analysis,
+          res.data.characterRefSheetUrl,
+          provider
+        );
+        clearInterval(progressTimer);
+        if (!fin.success) {
+          setError(fin.error);
+          setPhase("input");
+          return;
+        }
+        setProgressPercent(100);
+        setResult(fin.data);
+        setPhase("result");
+        return;
+      }
+
+      clearInterval(progressTimer);
       setProgressPercent(100);
       setDraft(res.data);
       setPhase("review");
