@@ -1,8 +1,6 @@
 export {
   generateStudioImage,
-  type StudioImageInput,
-  type StudioAngle,
-  type StudioMode,
+  type StudioGenerateInput,
 } from "./studio";
 export {
   generateFullStoryboard,

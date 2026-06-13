@@ -155,17 +155,21 @@ function isModelUnavailable(status: number, message?: string): boolean {
 export async function geminiGenerateImage(params: {
   prompt: string;
   referenceImages?: { base64: string; mimeType?: string; label?: string }[];
-  aspectRatio?: AspectRatio;
+  aspectRatio?: AspectRatio | "1:1";
   quality?: ImageQuality;
 }): Promise<string> {
   const apiKey = getApiKey();
   const models = params.quality === "pro" ? IMAGE_MODELS_PRO : IMAGE_MODELS_STANDARD;
 
   // Reinforce aspect ratio in the prompt text (always works as a hint).
+  const ratioWord =
+    params.aspectRatio === "9:16"
+      ? "vertical (portrait)"
+      : params.aspectRatio === "1:1"
+        ? "square"
+        : "horizontal (landscape)";
   const ratioHint = params.aspectRatio
-    ? ` Generate the image in ${params.aspectRatio} ${
-        params.aspectRatio === "9:16" ? "vertical (portrait)" : "horizontal (landscape)"
-      } aspect ratio.`
+    ? ` Generate the image in ${params.aspectRatio} ${ratioWord} aspect ratio.`
     : "";
 
   // When references carry per-image role labels (Image Studio), interleave
