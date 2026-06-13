@@ -152,6 +152,16 @@ export async function generateStoryboardBreakdown(
         };
       }
 
+      // Ensure a Scene Bible exists (style fingerprint reused everywhere).
+      if (!parsed.scene_bible || typeof parsed.scene_bible !== "object") {
+        parsed.scene_bible = {
+          lens: "50mm lens, f/2.8",
+          lighting: "soft key 4800K + subtle rim light 5600K",
+          backdrop: "consistent single location for the whole segment",
+          color_grade: "neutral Rec.709 grade, photoreal premium commercial",
+        };
+      }
+
       return parsed;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));

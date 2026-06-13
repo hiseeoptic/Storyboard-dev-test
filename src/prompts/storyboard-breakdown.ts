@@ -1,4 +1,14 @@
-import type { StoryboardGenerationInput, VideoGoal } from "@/types";
+import type { StoryboardGenerationInput, VideoGoal, SceneBible } from "@/types";
+
+// Forbidden in every generated image/clip (the brief's negative list).
+const SHARED_NEGATIVE =
+  "NEGATIVE (must avoid): warped or altered label/logo text, logo change, brand-colour change, extra products, extra people, changed hair/wardrobe/accessories, human hands when the action does not require them, on-screen text overlays, captions, subtitles, watermark, object/container morphing, duplicate subject, plastic/CGI skin.";
+
+/** One-line "Scene Bible" style tokens, reproduced verbatim in every image. */
+function sceneBibleTokens(sb?: SceneBible): string {
+  if (!sb) return "";
+  return `STYLE TOKENS (reproduce these EXACTLY in every keyframe — same lens, light, backdrop, grade): ${sb.lens}; ${sb.lighting}; backdrop ${sb.backdrop}; ${sb.color_grade}.`;
+}
 
 // ─── Marketing templates ────────────────────────────────────────────────────
 
@@ -40,10 +50,15 @@ MARKETING STRUCTURE (always apply):
 - Then PROBLEM → SOLUTION → (optional BODY beats) → CTA in the final segment.
 - Reset attention every 5-8 seconds with an angle change, push-in, or reveal.
 
-CHARACTER CONSISTENCY (very important — the user complained characters drift):
-- Build a detailed "character_lock" per character. Treat it like a reference sheet: gender/age, build, skin tone, hair, eyes, exact costume, signature features, default expression.
-- This EXACT wording is restated VERBATIM in every image prompt and every motion prompt so Veo renders the same face, body and wardrobe in every shot. Never paraphrase the character between segments.
-- A generated CHARACTER REFERENCE SHEET image (front / 3-4 / side / back + expressions) is attached as a reference to every shot — describe the character to match it precisely.
+FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's video must not "look AI"):
+- Every object is locked to a "DNA" that NEVER drifts and is repeated VERBATIM in every board/keyframe and every motion prompt.
+- Build a detailed "character_lock" per character (gender/age, build, skin tone, hair, eyes, exact costume, signature features, default expression) PLUS a single-line "dna" string capturing the forensic identity WITH RGB HEX CODES for skin/hair/eyes/wardrobe/brand colours (e.g. "navy polo #1F2A44, light-blue tee #A9C7E8, matte steel watch #8A8D91, warm tan skin #C8956A").
+- If there is a hero PRODUCT, write "product_dna": exact shape, material, colours WITH RGB hex, label/logo text+colour, cap/parts — repeated verbatim.
+- Build a "scene_bible" (lens, lighting with Kelvin temps, backdrop with hex, colour grade) — the style fingerprint reused VERBATIM so lens, lighting, backdrop and tone never change.
+- One single set/location per segment; only camera framing and the action change.
+- A generated CHARACTER REFERENCE SHEET image (front / 3-4 / side / back + expressions) is attached as a reference to every shot — match it precisely.
+
+NEGATIVE (forbidden in every image/clip): warped/changed label or logo text, brand-colour change, extra products or extra people, changed hair/wardrobe/accessories, human hands when the script does not call for them, on-screen text overlays, object/container morphing, plastic/CGI skin.
 
 DIALOGUE (spoken audio in Veo 3):
 - Veo 3 generates real spoken audio. Each segment's "dialogue" is the exact line the on-screen character (or voiceover) speaks.
@@ -147,9 +162,17 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
       "costume": "string",
       "signature_features": "string",
       "default_expression": "string",
-      "render_style": "${input.style}"
+      "render_style": "${input.style}",
+      "dna": "string — ONE verbatim forensic-DNA line with RGB HEX codes for skin/hair/eyes/wardrobe/brand colours, e.g. 'navy polo #1F2A44, light-blue tee #A9C7E8, matte steel watch #8A8D91, short black side-part hair #14110F, warm tan skin #C8956A, rectangular tortoise glasses'"
     }
   ],
+  "scene_bible": {
+    "lens": "string — e.g. '85mm lens, f/1.8' or '100mm macro, f/5.6'",
+    "lighting": "string — with Kelvin temps, e.g. 'softbox key 4500K + strip rim light 5500K'",
+    "backdrop": "string — with hex when relevant, e.g. 'modern kitchen, soft window daylight' or 'seamless gradient #40E0D0 to #008080'",
+    "color_grade": "string — e.g. 'neutral Rec.709, photoreal premium commercial'"
+  },
+  "product_dna": "string or null — if there is a hero product: exact shape, material, colours WITH RGB hex, label/logo text+colour, cap/parts; else null",
   "segments": [
     {
       "segment_number": 1,
@@ -257,10 +280,12 @@ export function buildCharacterRefSheetPrompt(params: {
     signature_features: string;
     default_expression: string;
     render_style: string;
+    dna?: string;
   };
   props?: string[];
   colorPalette?: string[];
   style?: string;
+  sceneBible?: SceneBible;
   preserveRealFace?: boolean;
   references?: RefDescriptor[];
 }): string {
@@ -268,6 +293,7 @@ export function buildCharacterRefSheetPrompt(params: {
   const style = params.style ?? c.render_style;
   const directive = renderDirective(style, params.preserveRealFace ?? false);
   const refBlock = buildReferenceInstructions(params.references ?? []);
+  const tokens = sceneBibleTokens(params.sceneBible);
 
   const colorSwatches =
     params.colorPalette && params.colorPalette.length > 0
@@ -277,7 +303,7 @@ export function buildCharacterRefSheetPrompt(params: {
   return `${refBlock}Professional CHARACTER REFERENCE SHEET, single horizontal image, clean light studio background.
 
 CHARACTER — ${c.name}: ${c.gender_age}, ${c.build} build, ${c.skin_tone} skin, ${c.hair} hair, ${c.eyes} eyes. Wearing ${c.costume}. ${c.signature_features}.
-
+${c.dna ? `FORENSIC DNA (exact colours, keep identical everywhere): ${c.dna}.\n` : ""}${tokens ? tokens + "\n" : ""}
 EXACT LAYOUT (all in one image):
 ■ LEFT ZONE: Large FULL BODY hero pose, ${c.default_expression} expression, head to toe.
 ■ CENTER: "TURNAROUND" — 4 full-body views: FRONT, 3/4, SIDE, BACK; same scale, neutral pose, evenly lit, labeled.
@@ -286,7 +312,7 @@ EXACT LAYOUT (all in one image):
 
 ${directive}
 
-RULES: it must be the SAME individual in every zone with identical face; small bold labels; one cohesive image.`;
+RULES: it must be the SAME individual in every zone with identical face; small bold labels; one cohesive image. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 3: Per-Segment Storyboard Strip (3 shots in one 8s clip) ──────────
@@ -296,6 +322,10 @@ export function buildSegmentFirstFramePrompt(params: {
   firstFramePrompt: string;
   beats: { beat: string; camera: string }[];
   characterDescription: string;
+  /** Verbatim product DNA (with RGB) when a hero product exists. */
+  productDna?: string;
+  /** Scene Bible style tokens, repeated verbatim across boards. */
+  sceneBible?: SceneBible;
   style: string;
   isFirst: boolean;
   /** Number of action panels to render (3-5). Defaults to the beat count. */
@@ -305,8 +335,10 @@ export function buildSegmentFirstFramePrompt(params: {
 }): string {
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
   const refBlock = buildReferenceInstructions(params.references ?? []);
+  const tokens = sceneBibleTokens(params.sceneBible);
 
-  const hasProduct = (params.references ?? []).some((r) => r.role === "product");
+  const hasProduct =
+    (params.references ?? []).some((r) => r.role === "product") || !!params.productDna;
 
   const target = Math.min(5, Math.max(3, params.beatsPerSegment ?? params.beats.length ?? 3));
   const beats = params.beats.slice(0, target);
@@ -334,11 +366,11 @@ THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 ${panelLines}
 
 SCENE CONTEXT for all panels: ${params.firstFramePrompt}
-
+${params.productDna ? `PRODUCT DNA (identical in every panel, with exact colours): ${params.productDna}\n` : ""}${tokens ? tokens + "\n" : ""}
 ${continuity}
 ${directive}
 
-RULES: ONE cohesive board image; the SAME individual (identical face, hair, glasses, outfit) appears in the character-ref strip, the scene overview and all ${target} action panels; thin clean dividers and small numbered badges; captions short and legible; no watermark.`;
+RULES: ONE cohesive board image; the SAME individual (identical face, hair, glasses, outfit) AND the SAME product appear in the character-ref strip, the scene overview and all ${target} action panels; one single location for this whole board; thin clean dividers and small numbered badges; captions short and legible. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 4: Master Board (Character Sheet + captioned storyboard grid) ─────
@@ -428,29 +460,30 @@ RULES: ONE cohesive document image; same character everywhere; ${params.style} s
 export function buildSegmentVeoPrompt(params: {
   characterDescription: string;
   productDescription?: string;
+  sceneBible?: SceneBible;
   colorPalette: string[];
   motionPrompt: string;
   dialogue?: string | null;
   dialogueLanguage?: string;
 }): string {
   const lang = params.dialogueLanguage ?? "Vietnamese";
-  const refLock = `STRICTLY FOLLOW THE REFERENCE IMAGES. Same person, same face/identity (rendered as a slightly younger, more attractive version — light natural retouch, never plastic): ${params.characterDescription}. ${
+  const refLock = `STRICTLY FOLLOW THE REFERENCE IMAGES. Same person, same face/identity (rendered as a slightly younger, more attractive version — light natural retouch, never plastic), DNA: ${params.characterDescription}. ${
     params.productDescription
-      ? `Same product, unchanged shape/colour/material/branding: ${params.productDescription}. `
+      ? `Same product, unchanged shape/colour/material/branding, DNA: ${params.productDescription}. `
       : ""
   }Match this colour palette: ${params.colorPalette.join(", ")}.`;
+  const tokens = params.sceneBible ? ` ${sceneBibleTokens(params.sceneBible)}` : "";
   const spoken = params.dialogue
     ? ` The character says in ${lang}: "${params.dialogue}" (lip-synced, no subtitles).`
     : "";
-  const negative =
-    " NEGATIVE (avoid): subtitles, on-screen text/captions, watermark or logo, changing the character's face or identity, distorting/recolouring/resizing the product, extra fingers, warping or morphing, duplicate people, plastic/CGI skin.";
-  return `${refLock} ${params.motionPrompt}${spoken}${negative}`;
+  return `${refLock}${tokens} ${params.motionPrompt}${spoken} ${SHARED_NEGATIVE}`;
 }
 
 export function buildVideoPromptText(params: {
   title: string;
   characterDescription: string;
   productDescription?: string;
+  sceneBible?: SceneBible;
   setting: string;
   style: string;
   aspectRatio: string;
@@ -482,6 +515,7 @@ export function buildVideoPromptText(params: {
       const fullPrompt = buildSegmentVeoPrompt({
         characterDescription: params.characterDescription,
         productDescription: params.productDescription,
+        sceneBible: params.sceneBible,
         colorPalette: params.colorPalette,
         motionPrompt: s.motion_prompt,
         dialogue: s.dialogue,

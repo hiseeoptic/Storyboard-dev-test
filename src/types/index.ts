@@ -161,6 +161,20 @@ export interface CharacterLock {
   signature_features: string;
   default_expression: string;
   render_style: string;
+  /** One verbatim forensic-DNA line (with RGB hex) repeated in every keyframe. */
+  dna?: string;
+}
+
+/** Scene Bible style tokens — repeated VERBATIM in every keyframe/board. */
+export interface SceneBible {
+  /** e.g. "100mm macro lens, f/5.6" */
+  lens: string;
+  /** e.g. "softbox key 4500K + strip rim light 5500K" */
+  lighting: string;
+  /** e.g. "seamless gradient backdrop teal #40E0D0 to #008080" */
+  backdrop: string;
+  /** e.g. "neutral Rec.709 grade, photoreal premium commercial" */
+  color_grade: string;
 }
 
 // ─── Scene Breakdown (legacy single-frame type) ─────────────────────────────
@@ -233,6 +247,10 @@ export interface StoryboardGenerationOutput {
   mood_tags: string[];
   marketing_structure: MarketingStructure;
   character_locks: CharacterLock[];
+  /** Style fingerprint (lens/lighting/backdrop/grade) reused VERBATIM everywhere. */
+  scene_bible?: SceneBible;
+  /** Verbatim forensic DNA of the hero product (with RGB hex), if any. */
+  product_dna?: string;
   segments: VideoSegment[];
   style_guide: StyleGuide;
 }

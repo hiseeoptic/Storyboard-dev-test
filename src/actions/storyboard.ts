@@ -161,12 +161,19 @@ export async function generateFullStoryboard(
     ? `the exact man shown in the attached portrait photo (keep his real face, eyeglasses and hair), wearing ${mainCostume}`
     : charDescForPoster || "the main character";
 
+  // Forensic DNA + Scene Bible (repeated verbatim in every board/keyframe).
+  const sceneBible = breakdown.scene_bible;
+  const mainDna = breakdown.character_locks[0]?.dna;
+  const productDnaText =
+    breakdown.product_dna || productDesc || input.product_name || productName || undefined;
+
   // ─── Step 4a: Character Reference Sheet (locked to uploaded photos) ─
   if (breakdown.character_locks.length > 0) {
     try {
       const r = await generateCharacterRefSheet({
         characterLock: breakdown.character_locks[0] as CharacterLock,
         colorPalette: breakdown.style_guide.color_palette,
+        sceneBible,
         provider,
         aspectRatio,
         quality,
@@ -219,6 +226,8 @@ export async function generateFullStoryboard(
   // defer identity to it; keep the locked appearance wording for the model.
   const charDescForShots =
     charSheetBase64 || preserveRealFace ? charDesc : charDescForPoster || "the main character";
+  // Append the forensic DNA (with RGB) so every board/clip restates it verbatim.
+  const charDescDna = [charDescForShots, mainDna].filter(Boolean).join(". ");
 
   // ─── Step 4b: Per-segment frames, anchored to the character sheet ───
   // Every segment references the SAME character sheet (+ product/setting)
@@ -235,7 +244,9 @@ export async function generateFullStoryboard(
           firstFramePrompt: seg.first_frame_prompt,
           beats: seg.beats,
           beatsPerSegment,
-          characterDescription: charDescForShots,
+          characterDescription: charDescDna,
+          productDna: productDnaText,
+          sceneBible,
           style: input.style,
           isFirst: i === 0,
           preserveRealFace: preserveRealFace || !!charSheetBase64,
@@ -262,7 +273,9 @@ export async function generateFullStoryboard(
           firstFramePrompt: seg.first_frame_prompt,
           beats: seg.beats,
           beatsPerSegment,
-          characterDescription: charDescForShots,
+          characterDescription: charDescDna,
+          productDna: productDnaText,
+          sceneBible,
           style: input.style,
           isFirst: i === 0,
           provider,
@@ -298,7 +311,7 @@ export async function generateFullStoryboard(
         action: s.beats?.[0]?.beat || s.title,
         dialogue: s.dialogue,
       })),
-      characterDescription: charDescForShots,
+      characterDescription: charDescDna,
       characterName: breakdown.character_locks[0]?.name,
       style: input.style,
       colorPalette: breakdown.style_guide.color_palette,
@@ -319,16 +332,16 @@ export async function generateFullStoryboard(
   }
 
   // ─── Step 5: Assembly guide (text for Veo / Seedance) ──────────────
-  // Product descriptor restated in every clip prompt so Veo keeps it intact.
-  const productDescription =
-    productDesc || input.product_name || productName || undefined;
+  // Product DNA restated in every clip prompt so Veo keeps it intact.
+  const productDescription = productDnaText;
 
   // Attach a full ready-to-paste Veo prompt to each segment.
   const palette = breakdown.style_guide.color_palette;
   for (const seg of breakdown.segments) {
     seg.full_prompt = buildSegmentVeoPrompt({
-      characterDescription: charDescForShots,
+      characterDescription: charDescDna,
       productDescription,
+      sceneBible,
       colorPalette: palette,
       motionPrompt: seg.motion_prompt,
       dialogue: seg.dialogue,
@@ -338,8 +351,9 @@ export async function generateFullStoryboard(
 
   const videoPrompt = buildVideoPromptText({
     title: breakdown.title,
-    characterDescription: charDescForShots,
+    characterDescription: charDescDna,
     productDescription,
+    sceneBible,
     setting: input.setting || "Unspecified",
     style: input.style,
     aspectRatio,

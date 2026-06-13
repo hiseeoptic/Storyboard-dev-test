@@ -11,6 +11,7 @@ import type {
   AspectRatio,
   CharacterLock,
   ImageQuality,
+  SceneBible,
 } from "@/types";
 
 type RefImage = { base64: string; mimeType?: string };
@@ -98,6 +99,7 @@ export async function generateCharacterRefSheet(params: {
   characterLock: CharacterLock;
   props?: string[];
   colorPalette?: string[];
+  sceneBible?: SceneBible;
   /** Uploaded reference photos of the real person/character (Gemini). */
   referenceImages?: { base64: string; mimeType?: string }[];
   references?: RefDescriptor[];
@@ -113,6 +115,7 @@ export async function generateCharacterRefSheet(params: {
     props: params.props,
     colorPalette: params.colorPalette,
     style: params.style,
+    sceneBible: params.sceneBible,
     preserveRealFace: hasRefs,
     references: params.references,
   });
@@ -134,6 +137,8 @@ export async function generateSegmentFrame(params: {
   beats: { beat: string; camera: string }[];
   beatsPerSegment?: number;
   characterDescription: string;
+  productDna?: string;
+  sceneBible?: SceneBible;
   style: string;
   isFirst: boolean;
   preserveRealFace?: boolean;
@@ -149,6 +154,8 @@ export async function generateSegmentFrame(params: {
     beats: params.beats,
     beatsPerSegment: params.beatsPerSegment,
     characterDescription: params.characterDescription,
+    productDna: params.productDna,
+    sceneBible: params.sceneBible,
     style: params.style,
     isFirst: params.isFirst,
     preserveRealFace: params.preserveRealFace,
