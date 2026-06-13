@@ -1,4 +1,10 @@
 export {
+  generateStudioImage,
+  type StudioImageInput,
+  type StudioAngle,
+  type StudioMode,
+} from "./studio";
+export {
   generateFullStoryboard,
   generateStoryboardDraft,
   regenerateCharacterReference,

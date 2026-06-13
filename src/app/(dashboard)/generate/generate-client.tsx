@@ -563,6 +563,8 @@ export function GenerateClient() {
   const [pendingInput, setPendingInput] = useState<StoryboardGenerationInput | null>(null);
   const [draft, setDraft] = useState<StoryboardDraft | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  // Set when reference images were handed off from the Image Studio.
+  const [fromStudio, setFromStudio] = useState(false);
 
   // ─── Admin: AI Provider Switch ──────────────────────────────────
   // Default Gemini — required for face lock from uploaded photos.
@@ -674,6 +676,42 @@ export function GenerateClient() {
   const [bgName, setBgName] = useState("");
   const [bgDesc, setBgDesc] = useState("");
   const [bgImages, setBgImages] = useState<UploadedImage[]>([]);
+
+  // Hydrate approved images handed off from the Image Studio (/studio).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.sessionStorage.getItem("sb_studio_handoff");
+    if (!raw) return;
+    window.sessionStorage.removeItem("sb_studio_handoff");
+    try {
+      const h = JSON.parse(raw) as { characterImages?: string[]; productImages?: string[] };
+      const toUploaded = (b64: string): UploadedImage => ({
+        id: Math.random().toString(36).slice(2, 10),
+        preview: `data:image/jpeg;base64,${b64}`,
+        base64: b64,
+        fileName: "studio.jpg",
+      });
+      if (h.characterImages && h.characterImages.length > 0) {
+        setCharacters([
+          {
+            name: "Nhân vật chính",
+            role: "",
+            appearance: "",
+            images: h.characterImages.map(toUploaded),
+          },
+        ]);
+      }
+      if (h.productImages && h.productImages.length > 0) {
+        setProducts([
+          { name: "Sản phẩm", description: "", images: h.productImages.map(toUploaded) },
+        ]);
+      }
+      setFromStudio(true);
+      setStep(1);
+    } catch {
+      /* ignore malformed handoff */
+    }
+  }, []);
 
   // Step 5: Style
   const [style, setStyle] = useState<StoryboardStyle>("cinematic");
@@ -1600,6 +1638,12 @@ export function GenerateClient() {
           {/* ── Step 2: Characters ────────────────────────────────── */}
           {step === 1 && (
             <>
+              {fromStudio && (
+                <div className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm text-primary">
+                  <Sparkles className="h-4 w-4 shrink-0" />
+                  <span>{lang === "vi" ? "Đã nhận ảnh đã duyệt từ Image Studio làm ảnh tham chiếu nhân vật." : "Approved images from Image Studio loaded as character references."}</span>
+                </div>
+              )}
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Users className="h-4 w-4 shrink-0" />
                 <span>{L("charHint")}</span>

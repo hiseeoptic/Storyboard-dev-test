@@ -154,7 +154,7 @@ function isModelUnavailable(status: number, message?: string): boolean {
  */
 export async function geminiGenerateImage(params: {
   prompt: string;
-  referenceImages?: { base64: string; mimeType?: string }[];
+  referenceImages?: { base64: string; mimeType?: string; label?: string }[];
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
 }): Promise<string> {
@@ -168,15 +168,29 @@ export async function geminiGenerateImage(params: {
       } aspect ratio.`
     : "";
 
-  const parts: GeminiPart[] = [{ text: params.prompt + ratioHint }];
-  if (params.referenceImages) {
+  // When references carry per-image role labels (Image Studio), interleave
+  // "label → image" pairs FIRST and put the instruction LAST — this is what
+  // makes the model lock onto the right face/outfit/product per reference.
+  // Without labels (storyboard boards) keep the original "prompt then images".
+  const hasLabels = params.referenceImages?.some((i) => i.label);
+  const parts: GeminiPart[] = [];
+  if (hasLabels && params.referenceImages) {
     for (const img of params.referenceImages) {
-      parts.push({
-        inlineData: {
-          mimeType: img.mimeType ?? "image/jpeg",
-          data: img.base64,
-        },
-      });
+      if (img.label) parts.push({ text: img.label });
+      parts.push({ inlineData: { mimeType: img.mimeType ?? "image/jpeg", data: img.base64 } });
+    }
+    parts.push({ text: params.prompt + ratioHint });
+  } else {
+    parts.push({ text: params.prompt + ratioHint });
+    if (params.referenceImages) {
+      for (const img of params.referenceImages) {
+        parts.push({
+          inlineData: {
+            mimeType: img.mimeType ?? "image/jpeg",
+            data: img.base64,
+          },
+        });
+      }
     }
   }
 
