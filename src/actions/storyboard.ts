@@ -2,10 +2,8 @@
 
 import { generateStoryboardBreakdown } from "@/services/ai-engine";
 import {
-  generateCharacterRefSheet,
   generateSegmentFrame,
   generateMasterBoard,
-  dataUriToBase64,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
 import {
@@ -21,7 +19,6 @@ import type {
   SceneBible,
   StoryboardGenerationInput,
   StoryboardGenerationOutput,
-  CharacterLock,
 } from "@/types";
 
 export interface StoryboardResult {
@@ -29,11 +26,10 @@ export interface StoryboardResult {
   characterRefSheetUrl: string | null;
   storyboardPosterUrl: string | null;
   videoPrompt: string;
-  /** Non-fatal errors/warnings encountered during generation */
   warnings: string[];
 }
 
-/** Vision-derived descriptions, carried between the two generation phases. */
+/** Vision-derived descriptions, carried between calls. */
 export interface StoryboardAnalysis {
   characterDescriptions: Record<string, string>;
   productDescriptions: Record<string, string>;
@@ -41,11 +37,11 @@ export interface StoryboardAnalysis {
   backgroundDescription: string;
 }
 
-/** Phase-1 output: the script + a character sheet to review before building. */
-export interface StoryboardDraft {
+/** Phase-1 output: script + ready-to-paste prompts, NO images (small payload). */
+export interface StoryboardPlan {
   breakdown: StoryboardGenerationOutput;
   analysis: StoryboardAnalysis;
-  characterRefSheetUrl: string | null;
+  videoPrompt: string;
   warnings: string[];
 }
 
@@ -89,7 +85,6 @@ async function runAnalysis(
     }
   }
 
-  // Merge text-based character descriptions with analyzed ones.
   if (input.character_descriptions) {
     for (const char of input.character_descriptions) {
       const existing = analysis.characterDescriptions[char.name];
@@ -104,7 +99,6 @@ async function runAnalysis(
   return analysis;
 }
 
-/** Named-ingredient text "name (desc); name2 (desc2)" for prompts. */
 function buildIngredientsText(
   input: StoryboardGenerationInput,
   analysis: StoryboardAnalysis
@@ -116,8 +110,6 @@ function buildIngredientsText(
   }
   return parts.length > 0 ? parts.join("; ") : undefined;
 }
-
-// ─── Shared: enhance the script input with analyzed context ───────────────
 
 function enhanceInput(
   input: StoryboardGenerationInput,
@@ -153,7 +145,7 @@ function enhanceInput(
   return enhanced;
 }
 
-// ─── Shared: reference context derived from input + analysis + breakdown ──
+// ─── Reference context derived from input + analysis + breakdown ──────────
 
 interface RefContext {
   canChain: boolean;
@@ -162,7 +154,6 @@ interface RefContext {
   quality: ImageQuality;
   beatsPerSegment: number;
   dialogueLanguage: string;
-  faceImgs: string[];
   faceImg?: string;
   productImg?: string;
   bgImg?: string;
@@ -172,8 +163,8 @@ interface RefContext {
   preserveRealFace: boolean;
   charDescForPoster: string;
   charDesc: string;
+  charDescDna: string;
   sceneBible?: SceneBible;
-  mainDna?: string;
   productDnaText?: string;
   ingredientsText?: string;
 }
@@ -185,8 +176,7 @@ function buildRefContext(
   provider: AIProvider
 ): RefContext {
   const canChain = provider === "gemini";
-  const faceImgs = (input.character_images?.[0]?.images ?? []).slice(0, 3);
-  const faceImg = faceImgs[0];
+  const faceImg = input.character_images?.[0]?.images?.[0];
   const productImg = input.product_images?.[0]?.images?.[0];
   const bgImg = input.background_images?.[0]?.images?.[0];
 
@@ -206,8 +196,11 @@ function buildRefContext(
     .join(". ");
   const mainCostume = breakdown.character_locks[0]?.costume ?? "casual clothes";
   const charDesc = preserveRealFace
-    ? `the exact man shown in the attached portrait photo (keep his real face, eyeglasses and hair), wearing ${mainCostume}`
+    ? `the exact person shown in the attached portrait photo (keep their real face, hair and look), wearing ${mainCostume}`
     : charDescForPoster || "the main character";
+  const mainDna = breakdown.character_locks[0]?.dna;
+  const charDescForShots = preserveRealFace ? charDesc : charDescForPoster || "the main character";
+  const charDescDna = [charDescForShots, mainDna].filter(Boolean).join(". ");
 
   return {
     canChain,
@@ -216,7 +209,6 @@ function buildRefContext(
     quality: input.image_quality ?? "standard",
     beatsPerSegment: Math.min(5, Math.max(3, input.beats_per_segment ?? 3)),
     dialogueLanguage: input.dialogue_language ?? "Vietnamese",
-    faceImgs,
     faceImg,
     productImg,
     bgImg,
@@ -226,58 +218,43 @@ function buildRefContext(
     preserveRealFace,
     charDescForPoster,
     charDesc,
+    charDescDna,
     sceneBible: breakdown.scene_bible,
-    mainDna: breakdown.character_locks[0]?.dna,
     productDnaText:
       breakdown.product_dna || productDesc || input.product_name || productName || undefined,
     ingredientsText: buildIngredientsText(input, analysis),
   };
 }
 
-// ─── Shared: generate the character reference sheet ───────────────────────
-
-async function genCharSheet(
-  input: StoryboardGenerationInput,
-  breakdown: StoryboardGenerationOutput,
-  ctx: RefContext,
-  provider: AIProvider,
-  warnings: string[]
-): Promise<string | null> {
-  if (breakdown.character_locks.length === 0) return null;
-  try {
-    const refImgs =
-      ctx.canChain && ctx.faceImgs.length > 0
-        ? ctx.faceImgs.map((base64) => ({ base64, mimeType: "image/jpeg" }))
-        : undefined;
-    const r = await generateCharacterRefSheet({
-      characterLock: breakdown.character_locks[0] as CharacterLock,
-      colorPalette: breakdown.style_guide.color_palette,
-      sceneBible: ctx.sceneBible,
-      provider,
-      aspectRatio: ctx.aspectRatio,
-      quality: ctx.quality,
-      style: input.style,
-      referenceImages: refImgs,
-      references:
-        ctx.canChain && ctx.faceImg ? [{ role: "face", description: ctx.faceDesc }] : undefined,
-    });
-    return r.url;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    warnings.push(`Character Reference Sheet: ${msg}`);
-    console.error("[Storyboard] Character ref sheet failed:", err);
-    return null;
+// The board reference set: character portrait + product + setting (max 3).
+function buildBoardRefs(ctx: RefContext): {
+  images: { base64: string; mimeType?: string }[];
+  descriptors: RefDescriptor[];
+} {
+  const images: { base64: string; mimeType?: string }[] = [];
+  const descriptors: RefDescriptor[] = [];
+  if (ctx.faceImg) {
+    images.push({ base64: ctx.faceImg, mimeType: "image/jpeg" });
+    descriptors.push({ role: "face", description: ctx.faceDesc ?? ctx.charDescForPoster });
   }
+  if (ctx.productImg && images.length < 3) {
+    images.push({ base64: ctx.productImg, mimeType: "image/jpeg" });
+    descriptors.push({ role: "product", description: ctx.productDesc });
+  }
+  if (ctx.bgImg && images.length < 3) {
+    images.push({ base64: ctx.bgImg, mimeType: "image/jpeg" });
+    descriptors.push({ role: "setting", description: ctx.bgDesc });
+  }
+  return { images, descriptors };
 }
 
-// ─── Phase 1: analyse + script + character sheet (for review) ─────────────
+// ─── Phase 1: script + prompts (no images) ────────────────────────────────
 
-export async function generateStoryboardDraft(
+export async function generateStoryboardPlan(
   input: StoryboardGenerationInput,
   provider: AIProvider = "gemini"
-): Promise<ActionResult<StoryboardDraft>> {
+): Promise<ActionResult<StoryboardPlan>> {
   const warnings: string[] = [];
-
   const analysis = await runAnalysis(input, provider, warnings);
   const enhanced = enhanceInput(input, analysis);
 
@@ -288,7 +265,6 @@ export async function generateStoryboardDraft(
     return { success: false, error: err instanceof Error ? err.message : "AI generation failed" };
   }
 
-  // Merge analyzed character descriptions into character_locks.
   for (const lock of breakdown.character_locks) {
     const analyzed = analysis.characterDescriptions[lock.name];
     if (analyzed) {
@@ -299,176 +275,13 @@ export async function generateStoryboardDraft(
   }
 
   const ctx = buildRefContext(input, breakdown, analysis, provider);
-  // When references were already approved in the Image Studio, skip generating
-  // a (lower-quality) character sheet — the storyboard uses those images directly.
-  const characterRefSheetUrl = input.skip_character_sheet
-    ? null
-    : await genCharSheet(input, breakdown, ctx, provider, warnings);
 
-  return { success: true, data: { breakdown, analysis, characterRefSheetUrl, warnings } };
-}
-
-// ─── Regenerate just the character sheet (review loop) ────────────────────
-
-export async function regenerateCharacterReference(
-  input: StoryboardGenerationInput,
-  breakdown: StoryboardGenerationOutput,
-  analysis: StoryboardAnalysis,
-  provider: AIProvider = "gemini"
-): Promise<ActionResult<{ characterRefSheetUrl: string | null; warnings: string[] }>> {
-  const warnings: string[] = [];
-  const ctx = buildRefContext(input, breakdown, analysis, provider);
-  const characterRefSheetUrl = await genCharSheet(input, breakdown, ctx, provider, warnings);
-  if (!characterRefSheetUrl) {
-    return { success: false, error: warnings[0] || "Character sheet generation failed" };
-  }
-  return { success: true, data: { characterRefSheetUrl, warnings } };
-}
-
-// ─── Phase 2: boards + master board + assembly guide ──────────────────────
-
-export async function finalizeStoryboard(
-  input: StoryboardGenerationInput,
-  breakdown: StoryboardGenerationOutput,
-  analysis: StoryboardAnalysis,
-  characterRefSheetUrl: string | null,
-  provider: AIProvider = "gemini"
-): Promise<ActionResult<StoryboardResult>> {
-  const warnings: string[] = [];
-  const ctx = buildRefContext(input, breakdown, analysis, provider);
-  let storyboardPosterUrl: string | null = null;
-
-  // Reference set fed into every board: character sheet (or face) + product + setting.
-  const charSheetBase64 = characterRefSheetUrl ? dataUriToBase64(characterRefSheetUrl) : null;
-  const segmentRefImages: { base64: string; mimeType?: string }[] = [];
-  const segmentRefDescriptors: RefDescriptor[] = [];
-
-  if (charSheetBase64) {
-    segmentRefImages.push({ base64: charSheetBase64.base64, mimeType: charSheetBase64.mimeType });
-    segmentRefDescriptors.push({ role: "character_sheet", description: ctx.charDescForPoster });
-  } else if (ctx.faceImg) {
-    segmentRefImages.push({ base64: ctx.faceImg, mimeType: "image/jpeg" });
-    segmentRefDescriptors.push({ role: "face", description: ctx.faceDesc });
-  }
-  if (ctx.productImg && segmentRefImages.length < 3) {
-    segmentRefImages.push({ base64: ctx.productImg, mimeType: "image/jpeg" });
-    segmentRefDescriptors.push({ role: "product", description: ctx.productDesc });
-  }
-  if (ctx.bgImg && segmentRefImages.length < 3) {
-    segmentRefImages.push({ base64: ctx.bgImg, mimeType: "image/jpeg" });
-    segmentRefDescriptors.push({ role: "setting", description: ctx.bgDesc });
-  }
-
-  const charDescForShots =
-    charSheetBase64 || ctx.preserveRealFace
-      ? ctx.charDesc
-      : ctx.charDescForPoster || "the main character";
-  const charDescDna = [charDescForShots, ctx.mainDna].filter(Boolean).join(". ");
-
-  // ─── Per-segment boards ───────────────────────────────────────────
-  if (ctx.canChain) {
-    for (let i = 0; i < breakdown.segments.length; i++) {
-      const seg = breakdown.segments[i];
-      if (!seg) continue;
-      try {
-        const r = await generateSegmentFrame({
-          segmentNumber: seg.segment_number,
-          firstFramePrompt: seg.first_frame_prompt,
-          beats: seg.beats,
-          beatsPerSegment: ctx.beatsPerSegment,
-          characterDescription: charDescDna,
-          productDna: ctx.productDnaText,
-          ingredients: ctx.ingredientsText,
-          sceneBible: ctx.sceneBible,
-          style: input.style,
-          isFirst: i === 0,
-          preserveRealFace: ctx.preserveRealFace || !!charSheetBase64,
-          referenceImages: segmentRefImages.length > 0 ? segmentRefImages : undefined,
-          references: segmentRefDescriptors.length > 0 ? segmentRefDescriptors : undefined,
-          provider,
-          aspectRatio: ctx.boardAspect,
-          quality: ctx.quality,
-        });
-        seg.first_frame_url = r.url;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        warnings.push(`Segment ${seg.segment_number} frame: ${msg}`);
-        console.error(`[Storyboard] Segment ${seg.segment_number} frame failed:`, err);
-        seg.first_frame_url = null;
-      }
-    }
-  } else {
-    const results = await Promise.allSettled(
-      breakdown.segments.map((seg, i) =>
-        generateSegmentFrame({
-          segmentNumber: seg.segment_number,
-          firstFramePrompt: seg.first_frame_prompt,
-          beats: seg.beats,
-          beatsPerSegment: ctx.beatsPerSegment,
-          characterDescription: charDescDna,
-          productDna: ctx.productDnaText,
-          ingredients: ctx.ingredientsText,
-          sceneBible: ctx.sceneBible,
-          style: input.style,
-          isFirst: i === 0,
-          provider,
-          aspectRatio: ctx.boardAspect,
-          quality: ctx.quality,
-        })
-      )
-    );
-    results.forEach((res, i) => {
-      const seg = breakdown.segments[i];
-      if (!seg) return;
-      if (res.status === "fulfilled") {
-        seg.first_frame_url = res.value.url;
-      } else {
-        const msg = res.reason instanceof Error ? res.reason.message : "Unknown error";
-        warnings.push(`Segment ${seg.segment_number} frame: ${msg}`);
-        console.error(`[Storyboard] Segment ${seg.segment_number} frame failed:`, res.reason);
-        seg.first_frame_url = null;
-      }
-    });
-  }
-
-  // ─── Master board (presentation) ──────────────────────────────────
-  try {
-    const r = await generateMasterBoard({
-      title: breakdown.title,
-      totalDuration: breakdown.total_duration_seconds,
-      segmentCount: breakdown.segments.length,
-      moodTags: breakdown.mood_tags,
-      segments: breakdown.segments.map((s) => ({
-        segment_number: s.segment_number,
-        title: s.title,
-        action: s.beats?.[0]?.beat || s.title,
-        dialogue: s.dialogue,
-      })),
-      characterDescription: charDescDna,
-      characterName: breakdown.character_locks[0]?.name,
-      style: input.style,
-      colorPalette: breakdown.style_guide.color_palette,
-      dialogueLanguage: ctx.dialogueLanguage,
-      provider,
-      aspectRatio: ctx.boardAspect,
-      quality: ctx.quality,
-      referenceImages:
-        ctx.canChain && segmentRefImages.length > 0
-          ? [segmentRefImages[0] as { base64: string; mimeType?: string }]
-          : undefined,
-    });
-    storyboardPosterUrl = r.url;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    warnings.push(`Master Board: ${msg}`);
-    console.error("[Storyboard] Master board failed:", err);
-  }
-
-  // ─── Assembly guide + per-segment ready-to-paste Veo prompts ──────
+  // Ready-to-paste Veo prompts (text only).
   const palette = breakdown.style_guide.color_palette;
   for (const seg of breakdown.segments) {
+    seg.first_frame_url = null;
     seg.full_prompt = buildSegmentVeoPrompt({
-      characterDescription: charDescDna,
+      characterDescription: ctx.charDescDna,
       productDescription: ctx.productDnaText,
       ingredients: ctx.ingredientsText,
       sceneBible: ctx.sceneBible,
@@ -481,7 +294,7 @@ export async function finalizeStoryboard(
 
   const videoPrompt = buildVideoPromptText({
     title: breakdown.title,
-    characterDescription: charDescDna,
+    characterDescription: ctx.charDescDna,
     productDescription: ctx.productDnaText,
     ingredients: ctx.ingredientsText,
     sceneBible: ctx.sceneBible,
@@ -503,28 +316,76 @@ export async function finalizeStoryboard(
     })),
   });
 
-  return {
-    success: true,
-    data: { breakdown, characterRefSheetUrl, storyboardPosterUrl, videoPrompt, warnings },
-  };
+  return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
 }
 
-// ─── One-shot (draft + finalize) for callers that don't review ────────────
+// ─── Phase 2: one board image per call (small request + response) ──────────
 
-export async function generateFullStoryboard(
-  input: StoryboardGenerationInput,
-  provider: AIProvider = "gemini"
-): Promise<ActionResult<StoryboardResult>> {
-  const draft = await generateStoryboardDraft(input, provider);
-  if (!draft.success) return draft;
-  const fin = await finalizeStoryboard(
-    input,
-    draft.data.breakdown,
-    draft.data.analysis,
-    draft.data.characterRefSheetUrl,
-    provider
-  );
-  if (!fin.success) return fin;
-  fin.data.warnings = [...draft.data.warnings, ...fin.data.warnings];
-  return fin;
+export type BoardKind = "segment" | "master";
+
+export async function generateBoardImage(params: {
+  input: StoryboardGenerationInput;
+  breakdown: StoryboardGenerationOutput;
+  analysis: StoryboardAnalysis;
+  kind: BoardKind;
+  segmentIndex?: number;
+  provider?: AIProvider;
+}): Promise<ActionResult<{ url: string }>> {
+  const provider = params.provider ?? "gemini";
+  const { input, breakdown, analysis } = params;
+  const ctx = buildRefContext(input, breakdown, analysis, provider);
+  const { images, descriptors } = buildBoardRefs(ctx);
+
+  try {
+    if (params.kind === "master") {
+      const r = await generateMasterBoard({
+        title: breakdown.title,
+        totalDuration: breakdown.total_duration_seconds,
+        segmentCount: breakdown.segments.length,
+        moodTags: breakdown.mood_tags,
+        segments: breakdown.segments.map((s) => ({
+          segment_number: s.segment_number,
+          title: s.title,
+          action: s.beats?.[0]?.beat || s.title,
+          dialogue: s.dialogue,
+        })),
+        characterDescription: ctx.charDescDna,
+        characterName: breakdown.character_locks[0]?.name,
+        style: input.style,
+        colorPalette: breakdown.style_guide.color_palette,
+        dialogueLanguage: ctx.dialogueLanguage,
+        provider,
+        aspectRatio: ctx.boardAspect,
+        quality: ctx.quality,
+        referenceImages: ctx.canChain && images.length > 0 ? [images[0]!] : undefined,
+      });
+      return { success: true, data: { url: r.url } };
+    }
+
+    const i = params.segmentIndex ?? 0;
+    const seg = breakdown.segments[i];
+    if (!seg) return { success: false, error: `Segment ${i} not found` };
+
+    const r = await generateSegmentFrame({
+      segmentNumber: seg.segment_number,
+      firstFramePrompt: seg.first_frame_prompt,
+      beats: seg.beats,
+      beatsPerSegment: ctx.beatsPerSegment,
+      characterDescription: ctx.charDescDna,
+      productDna: ctx.productDnaText,
+      ingredients: ctx.ingredientsText,
+      sceneBible: ctx.sceneBible,
+      style: input.style,
+      isFirst: i === 0,
+      preserveRealFace: ctx.preserveRealFace,
+      referenceImages: ctx.canChain && images.length > 0 ? images : undefined,
+      references: ctx.canChain && descriptors.length > 0 ? descriptors : undefined,
+      provider,
+      aspectRatio: ctx.boardAspect,
+      quality: ctx.quality,
+    });
+    return { success: true, data: { url: r.url } };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Image generation failed" };
+  }
 }

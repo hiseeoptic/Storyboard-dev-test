@@ -32,12 +32,11 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploader";
 import {
-  generateStoryboardDraft,
-  regenerateCharacterReference,
-  finalizeStoryboard,
+  generateStoryboardPlan,
+  generateBoardImage,
   type StoryboardResult,
-  type StoryboardDraft,
 } from "@/actions";
+import { CharacterStudio } from "./character-studio";
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
@@ -545,7 +544,7 @@ interface BackgroundEntry {
   images: UploadedImage[];
 }
 
-type Phase = "input" | "generating" | "review" | "result";
+type Phase = "input" | "generating" | "result";
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -559,10 +558,6 @@ export function GenerateClient() {
   const [result, setResult] = useState<StoryboardResult | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // ─── Two-phase review (approve the character sheet before building) ──
-  const [pendingInput, setPendingInput] = useState<StoryboardGenerationInput | null>(null);
-  const [draft, setDraft] = useState<StoryboardDraft | null>(null);
-  const [regenerating, setRegenerating] = useState(false);
   // Set when reference images were handed off from the Image Studio.
   const [fromStudio, setFromStudio] = useState(false);
 
@@ -862,116 +857,80 @@ export function GenerateClient() {
       key_message: keyMessage || undefined,
       image_quality: imageQuality,
       aspect_ratio: aspectRatio,
-      // References approved in the Image Studio → don't regenerate a character
-      // sheet; the storyboard only builds the script, boards and prompts.
-      skip_character_sheet: fromStudio || undefined,
     };
 
-    setProgressPercent(25);
+    setProgressPercent(6);
     setProgressMessage(L("creatingScenes"));
-    setPendingInput(input);
-
-    const progressTimer = setInterval(() => {
-      setProgressPercent((prev) => (prev < 85 ? prev + 1.5 : prev));
-    }, 2000);
 
     try {
-      const res = await generateStoryboardDraft(input, provider);
-      if (!res.success) {
-        clearInterval(progressTimer);
-        setError(res.error);
+      // Phase 1: script + ready-to-paste prompts (fast, tiny payload).
+      const plan = await generateStoryboardPlan(input, provider);
+      if (!plan.success) {
+        setError(plan.error);
         setPhase("input");
         return;
       }
 
-      // Studio path: references already approved → skip the review step and
-      // build the full storyboard straight away.
-      if (fromStudio) {
-        setProgressMessage(L("generatingDone"));
-        const fin = await finalizeStoryboard(
-          input,
-          res.data.breakdown,
-          res.data.analysis,
-          res.data.characterRefSheetUrl,
-          provider
-        );
-        clearInterval(progressTimer);
-        if (!fin.success) {
-          setError(fin.error);
-          setPhase("input");
-          return;
+      const breakdown = plan.data.breakdown;
+      const segCount = breakdown.segments.length;
+      const total = segCount + 1; // + master board
+      let done = 0;
+      const bump = () => {
+        done++;
+        setProgressPercent(12 + Math.round((done / total) * 85));
+      };
+
+      // Phase 2: ONE board per server call — each request/response stays well
+      // under Vercel's 4.5MB + timeout limits, so boards never get truncated.
+      for (let i = 0; i < segCount; i++) {
+        setProgressMessage(lang === "vi" ? `Đang vẽ cảnh ${i + 1}/${segCount}` : `Drawing board ${i + 1}/${segCount}`);
+        try {
+          const r = await generateBoardImage({
+            input,
+            breakdown,
+            analysis: plan.data.analysis,
+            kind: "segment",
+            segmentIndex: i,
+            provider,
+          });
+          const seg = breakdown.segments[i];
+          if (seg) seg.first_frame_url = r.success ? r.data.url : null;
+        } catch {
+          const seg = breakdown.segments[i];
+          if (seg) seg.first_frame_url = null;
         }
-        setProgressPercent(100);
-        setResult(fin.data);
-        setPhase("result");
-        return;
+        bump();
       }
 
-      clearInterval(progressTimer);
+      // Master board (presentation grid).
+      setProgressMessage(lang === "vi" ? "Đang vẽ bảng tổng" : "Drawing master board");
+      let posterUrl: string | null = null;
+      try {
+        const master = await generateBoardImage({
+          input,
+          breakdown,
+          analysis: plan.data.analysis,
+          kind: "master",
+          provider,
+        });
+        if (master.success) posterUrl = master.data.url;
+      } catch {
+        posterUrl = null;
+      }
+      bump();
+
       setProgressPercent(100);
-      setDraft(res.data);
-      setPhase("review");
-    } catch (err) {
-      clearInterval(progressTimer);
-      setError(err instanceof Error ? err.message : "An unexpected error occurred");
-      setPhase("input");
-    }
-  };
-
-  // Review loop: regenerate just the character sheet.
-  const handleRegenerateSheet = async () => {
-    if (!pendingInput || !draft) return;
-    setRegenerating(true);
-    try {
-      const res = await regenerateCharacterReference(
-        pendingInput,
-        draft.breakdown,
-        draft.analysis,
-        provider
-      );
-      if (res.success) {
-        setDraft({ ...draft, characterRefSheetUrl: res.data.characterRefSheetUrl });
-      } else {
-        setError(res.error);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Regenerate failed");
-    } finally {
-      setRegenerating(false);
-    }
-  };
-
-  // PHASE 2: approve the sheet → build boards + master board + prompts.
-  const handleApprove = async () => {
-    if (!pendingInput || !draft) return;
-    setPhase("generating");
-    setError(null);
-    setProgressPercent(20);
-    setProgressMessage(L("generatingCharSheet"));
-    const progressTimer = setInterval(() => {
-      setProgressPercent((prev) => (prev < 90 ? prev + 1 : prev));
-    }, 2000);
-    try {
-      const res = await finalizeStoryboard(
-        pendingInput,
-        draft.breakdown,
-        draft.analysis,
-        draft.characterRefSheetUrl,
-        provider
-      );
-      clearInterval(progressTimer);
-      if (!res.success) {
-        setError(res.error);
-        setPhase("review");
-        return;
-      }
-      setProgressPercent(100);
-      setResult(res.data);
+      setResult({
+        breakdown,
+        characterRefSheetUrl: null,
+        storyboardPosterUrl: posterUrl,
+        videoPrompt: plan.data.videoPrompt,
+        warnings: plan.data.warnings,
+      });
       setPhase("result");
     } catch (err) {
-      clearInterval(progressTimer);
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
-      setPhase("review");
+      setPhase("input");
     }
   };
 
@@ -1083,78 +1042,6 @@ export function GenerateClient() {
     );
   }
 
-  // ─── Review Phase (approve character sheet before building) ─────────
-
-  if (phase === "review" && draft) {
-    return (
-      <div className="mx-auto max-w-3xl space-y-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold">{L("reviewTitle")}</h1>
-          <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">{L("reviewHint")}</p>
-        </div>
-
-        {draft.warnings && draft.warnings.length > 0 && (
-          <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-600 dark:bg-yellow-950 dark:text-yellow-200">
-            <ul className="list-disc pl-4">
-              {draft.warnings.map((w, i) => <li key={i}>{w}</li>)}
-            </ul>
-          </div>
-        )}
-
-        <Card>
-          <CardContent className="p-3">
-            {draft.characterRefSheetUrl ? (
-              <div className="overflow-hidden rounded-lg border bg-black/5">
-                <img src={draft.characterRefSheetUrl} alt="Character reference" className="w-full" />
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground">
-                <Users className="h-8 w-8 opacity-50" />
-                <p className="text-sm">{lang === "vi" ? "Chưa tạo được ảnh — thử tạo lại" : "No image — try regenerate"}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Script preview */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{L("reviewScript")}: {draft.breakdown.title}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="mb-2 text-sm text-muted-foreground">{draft.breakdown.synopsis}</p>
-            <ul className="space-y-1 text-xs text-muted-foreground">
-              {draft.breakdown.segments.map((s) => (
-                <li key={s.segment_number}>
-                  <span className="font-semibold text-foreground">#{s.segment_number} {s.title}</span>
-                  {s.dialogue ? ` — “${s.dialogue}”` : ""}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-
-        {error && (
-          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
-        )}
-
-        <div className="flex flex-wrap justify-between gap-2">
-          <Button variant="outline" onClick={() => { setPhase("input"); setDraft(null); }} className="gap-1">
-            <ChevronLeft className="h-4 w-4" /> {L("back")}
-          </Button>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={handleRegenerateSheet} disabled={regenerating} className="gap-2">
-              {regenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
-              {L("regenerate")}
-            </Button>
-            <Button onClick={handleApprove} className="gap-2">
-              <Check className="h-4 w-4" /> {L("approveBuild")}
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // ─── Result Phase ──────────────────────────────────────────────────
 
@@ -1184,7 +1071,7 @@ export function GenerateClient() {
               {zipping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               {L("downloadAll")}
             </Button>
-            <Button onClick={() => { setPhase("input"); setResult(null); setDraft(null); setPendingInput(null); setStep(0); }} className="gap-2">
+            <Button onClick={() => { setPhase("input"); setResult(null); setStep(0); }} className="gap-2">
               <RotateCw className="h-4 w-4" /> {L("newStoryboard")}
             </Button>
           </div>
@@ -1715,6 +1602,12 @@ export function GenerateClient() {
                   label={L("charPhotos")}
                   hint={L("charPhotosHint")}
                 />
+
+                <CharacterStudio
+                  sourceImages={charImages}
+                  onApprove={(img) => setCharImages((prev) => [...prev, img].slice(0, 6))}
+                />
+
                 <Button variant="outline" size="sm" onClick={addCharacter} disabled={!charName.trim()}>
                   {L("addCharacter")}
                 </Button>

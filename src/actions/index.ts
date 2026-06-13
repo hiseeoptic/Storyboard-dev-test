@@ -3,11 +3,10 @@ export {
   type StudioGenerateInput,
 } from "./studio";
 export {
-  generateFullStoryboard,
-  generateStoryboardDraft,
-  regenerateCharacterReference,
-  finalizeStoryboard,
+  generateStoryboardPlan,
+  generateBoardImage,
+  type BoardKind,
   type StoryboardResult,
   type StoryboardAnalysis,
-  type StoryboardDraft,
+  type StoryboardPlan,
 } from "./storyboard";
