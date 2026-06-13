@@ -214,7 +214,7 @@ export function isPhotoStyle(style: string): boolean {
 
 // Light, natural "glow-up": keep identity, render a younger/attractive take.
 const BEAUTIFY_DIRECTIVE =
-  "GLOW-UP (keep it the SAME person): preserve the exact face geometry, bone structure, eye shape and colour, and natural skin pores/texture, but apply a tasteful editorial retouch — even healthy skin tone, clear complexion, softened under-eye shadows and blemishes, a subtle cheekbone highlight, bright clear eyes, neat well-groomed hair and a fit jawline — so he looks a few years younger, more handsome and camera-ready. High-end beauty-photography quality, true-to-life. Do NOT over-smooth into a plastic/CGI/wax look and do NOT change his identity.";
+  "Derive EVERY view from the attached reference photo(s) — same exact person, same face geometry, bone structure, eye shape and colour, same hairline. Render in sharp, high-resolution photoreal portrait quality with natural skin texture and pores. Apply only a tasteful editorial retouch — even healthy skin tone, clear complexion, softened under-eye shadows and blemishes, a subtle cheekbone highlight, bright eyes, neat well-groomed hair, a fresh fit look — so he reads a few years younger, more handsome and camera-ready, like a flattering professional headshot of the SAME man. Shot on an 85mm portrait lens, soft natural light. Do NOT over-smooth into a plastic/CGI/wax/airbrushed look, do NOT beautify into a different face, do NOT change his identity, ethnicity or age bracket drastically.";
 
 function renderDirective(style: string, preserveRealFace: boolean): string {
   if (isPhotoStyle(style)) {
@@ -324,6 +324,8 @@ export function buildSegmentFirstFramePrompt(params: {
   characterDescription: string;
   /** Verbatim product DNA (with RGB) when a hero product exists. */
   productDna?: string;
+  /** Named auxiliary ingredients to illustrate & label, e.g. "papaya powder (orange); selenium crystals (silver)". */
+  ingredients?: string;
   /** Scene Bible style tokens, repeated verbatim across boards. */
   sceneBible?: SceneBible;
   style: string;
@@ -366,7 +368,7 @@ THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 ${panelLines}
 
 SCENE CONTEXT for all panels: ${params.firstFramePrompt}
-${params.productDna ? `PRODUCT DNA (identical in every panel, with exact colours): ${params.productDna}\n` : ""}${tokens ? tokens + "\n" : ""}
+${params.productDna ? `PRODUCT DNA (identical in every panel, with exact colours): ${params.productDna}\n` : ""}${params.ingredients ? `NAMED INGREDIENTS (show each clearly and write its NAME label next to it): ${params.ingredients}\n` : ""}${tokens ? tokens + "\n" : ""}
 ${continuity}
 ${directive}
 
@@ -460,6 +462,7 @@ RULES: ONE cohesive document image; same character everywhere; ${params.style} s
 export function buildSegmentVeoPrompt(params: {
   characterDescription: string;
   productDescription?: string;
+  ingredients?: string;
   sceneBible?: SceneBible;
   colorPalette: string[];
   motionPrompt: string;
@@ -472,17 +475,21 @@ export function buildSegmentVeoPrompt(params: {
       ? `Same product, unchanged shape/colour/material/branding, DNA: ${params.productDescription}. `
       : ""
   }Match this colour palette: ${params.colorPalette.join(", ")}.`;
+  const ing = params.ingredients
+    ? ` Named ingredients (show and refer to each by its exact name): ${params.ingredients}.`
+    : "";
   const tokens = params.sceneBible ? ` ${sceneBibleTokens(params.sceneBible)}` : "";
   const spoken = params.dialogue
     ? ` The character says in ${lang}: "${params.dialogue}" (lip-synced, no subtitles).`
     : "";
-  return `${refLock}${tokens} ${params.motionPrompt}${spoken} ${SHARED_NEGATIVE}`;
+  return `${refLock}${ing}${tokens} ${params.motionPrompt}${spoken} ${SHARED_NEGATIVE}`;
 }
 
 export function buildVideoPromptText(params: {
   title: string;
   characterDescription: string;
   productDescription?: string;
+  ingredients?: string;
   sceneBible?: SceneBible;
   setting: string;
   style: string;
@@ -515,6 +522,7 @@ export function buildVideoPromptText(params: {
       const fullPrompt = buildSegmentVeoPrompt({
         characterDescription: params.characterDescription,
         productDescription: params.productDescription,
+        ingredients: params.ingredients,
         sceneBible: params.sceneBible,
         colorPalette: params.colorPalette,
         motionPrompt: s.motion_prompt,

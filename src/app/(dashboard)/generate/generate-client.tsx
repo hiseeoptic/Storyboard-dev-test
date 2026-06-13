@@ -31,7 +31,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploader";
-import { generateFullStoryboard, type StoryboardResult } from "@/actions";
+import {
+  generateStoryboardDraft,
+  regenerateCharacterReference,
+  finalizeStoryboard,
+  type StoryboardResult,
+  type StoryboardDraft,
+} from "@/actions";
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
@@ -134,6 +140,26 @@ const t = {
   prodPhotos: { vi: "Ảnh sản phẩm", en: "Product Photos" },
   prodPhotosHint: { vi: "Tải lên 2-3 ảnh sản phẩm từ các góc khác nhau", en: "Upload 2-3 product photos from different angles" },
   addProduct: { vi: "Thêm sản phẩm", en: "Add Product" },
+  // Auxiliary / ingredient images
+  ingTitle: { vi: "Ảnh phụ / thành phần (gọi theo tên)", en: "Auxiliary / ingredient images (by name)" },
+  ingHint: {
+    vi: "Tải ảnh thành phần (thảo dược, nguyên liệu...) kèm TÊN. AI sẽ minh hoạ và gọi đúng tên trong prompt để Veo nhận diện.",
+    en: "Upload ingredient/component images WITH a name. The AI illustrates them and refers to each by name so Veo recognizes them.",
+  },
+  ingName: { vi: "Tên thành phần (VD: Hoa đu đủ đực)", en: "Ingredient name (e.g. Papaya flower)" },
+  ingDesc: { vi: "Mô tả ngắn (không bắt buộc)", en: "Short description (optional)" },
+  ingImage: { vi: "Ảnh thành phần", en: "Ingredient image" },
+  ingImageHint: { vi: "1-2 ảnh rõ nét của thành phần", en: "1-2 clear images of the ingredient" },
+  addIngredient: { vi: "Thêm thành phần", en: "Add ingredient" },
+  // Review phase
+  reviewTitle: { vi: "Duyệt ảnh tham chiếu nhân vật", en: "Review the character reference" },
+  reviewHint: {
+    vi: "Kiểm tra ảnh nhân vật có giống & đẹp như mong muốn chưa. Chưa ưng thì bấm 'Tạo lại'. Ưng rồi bấm 'Duyệt & dựng storyboard' để khoá ảnh này và dựng toàn bộ board + prompt.",
+    en: "Check the character looks right. Not happy? 'Regenerate'. Happy? 'Approve & build' to lock this and build the full storyboard.",
+  },
+  regenerate: { vi: "Tạo lại ảnh nhân vật", en: "Regenerate character" },
+  approveBuild: { vi: "Duyệt & dựng storyboard", en: "Approve & build storyboard" },
+  reviewScript: { vi: "Kịch bản (xem trước)", en: "Script (preview)" },
 
   // Step 4: Background
   bgHint: {
@@ -519,7 +545,7 @@ interface BackgroundEntry {
   images: UploadedImage[];
 }
 
-type Phase = "input" | "generating" | "result";
+type Phase = "input" | "generating" | "review" | "result";
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -532,6 +558,11 @@ export function GenerateClient() {
   const [progressMessage, setProgressMessage] = useState("");
   const [result, setResult] = useState<StoryboardResult | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // ─── Two-phase review (approve the character sheet before building) ──
+  const [pendingInput, setPendingInput] = useState<StoryboardGenerationInput | null>(null);
+  const [draft, setDraft] = useState<StoryboardDraft | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
 
   // ─── Admin: AI Provider Switch ──────────────────────────────────
   // Default Gemini — required for face lock from uploaded photos.
@@ -627,11 +658,16 @@ export function GenerateClient() {
   const [charAppearance, setCharAppearance] = useState("");
   const [charImages, setCharImages] = useState<UploadedImage[]>([]);
 
-  // Step 3: Products
+  // Step 3: Products (main) + named ingredients (auxiliary)
   const [products, setProducts] = useState<ProductEntry[]>([]);
   const [prodName, setProdName] = useState("");
   const [prodDesc, setProdDesc] = useState("");
   const [prodImages, setProdImages] = useState<UploadedImage[]>([]);
+  // Auxiliary/ingredient images — each named, referenced by name in prompts.
+  const [ingredients, setIngredients] = useState<ProductEntry[]>([]);
+  const [ingName, setIngName] = useState("");
+  const [ingDesc, setIngDesc] = useState("");
+  const [ingImages, setIngImages] = useState<UploadedImage[]>([]);
 
   // Step 4: Backgrounds
   const [backgrounds, setBackgrounds] = useState<BackgroundEntry[]>([]);
@@ -673,6 +709,17 @@ export function GenerateClient() {
     setProdName("");
     setProdDesc("");
     setProdImages([]);
+  };
+
+  const addIngredient = () => {
+    if (!ingName.trim() || ingImages.length === 0) return;
+    setIngredients((prev) => [
+      ...prev,
+      { name: ingName, description: ingDesc, images: ingImages },
+    ]);
+    setIngName("");
+    setIngDesc("");
+    setIngImages([]);
   };
 
   const addBackground = () => {
@@ -727,7 +774,21 @@ export function GenerateClient() {
       .filter((b) => b.images.length > 0)
       .map((b) => ({ name: b.name, description: b.description, images: b.images.map((i) => i.base64) }));
 
-    const hasUploads = characterImages.length > 0 || productImages.length > 0 || backgroundImages.length > 0;
+    const effectiveIngredients = [
+      ...ingredients,
+      ...(ingImages.length > 0 && ingName.trim()
+        ? [{ name: ingName.trim(), description: ingDesc, images: ingImages }]
+        : []),
+    ];
+    const ingredientImages: ImageReference[] = effectiveIngredients
+      .filter((g) => g.images.length > 0)
+      .map((g) => ({ name: g.name, description: g.description, images: g.images.map((i) => i.base64) }));
+
+    const hasUploads =
+      characterImages.length > 0 ||
+      productImages.length > 0 ||
+      ingredientImages.length > 0 ||
+      backgroundImages.length > 0;
 
     if (hasUploads) {
       setProgressPercent(10);
@@ -749,6 +810,7 @@ export function GenerateClient() {
         : undefined,
       character_images: characterImages.length > 0 ? characterImages : undefined,
       product_images: productImages.length > 0 ? productImages : undefined,
+      ingredient_images: ingredientImages.length > 0 ? ingredientImages : undefined,
       background_images: backgroundImages.length > 0 ? backgroundImages : undefined,
       setting: effectiveSetting || undefined,
       tone: effectiveTone || undefined,
@@ -764,45 +826,87 @@ export function GenerateClient() {
       aspect_ratio: aspectRatio,
     };
 
-    setProgressPercent(20);
+    setProgressPercent(25);
     setProgressMessage(L("creatingScenes"));
+    setPendingInput(input);
 
-    // Simulate progress during long generation
     const progressTimer = setInterval(() => {
-      setProgressPercent((prev) => {
-        if (prev < 40) return prev + 2;
-        if (prev < 60) {
-          setProgressMessage(L("generatingCharSheet"));
-          return prev + 1;
-        }
-        if (prev < 85) return prev + 0.5;
-        return prev;
-      });
+      setProgressPercent((prev) => (prev < 85 ? prev + 1.5 : prev));
     }, 2000);
 
+    // PHASE 1: script + character sheet only → review before building.
     try {
-      const res = await generateFullStoryboard(input, provider);
+      const res = await generateStoryboardDraft(input, provider);
       clearInterval(progressTimer);
-
-      setProgressPercent(95);
-      setProgressMessage(L("generatingDone"));
-
       if (!res.success) {
         setError(res.error);
         setPhase("input");
         return;
       }
-
-      // Brief delay for visual completion
-      await new Promise((r) => setTimeout(r, 500));
       setProgressPercent(100);
+      setDraft(res.data);
+      setPhase("review");
+    } catch (err) {
+      clearInterval(progressTimer);
+      setError(err instanceof Error ? err.message : "An unexpected error occurred");
+      setPhase("input");
+    }
+  };
 
+  // Review loop: regenerate just the character sheet.
+  const handleRegenerateSheet = async () => {
+    if (!pendingInput || !draft) return;
+    setRegenerating(true);
+    try {
+      const res = await regenerateCharacterReference(
+        pendingInput,
+        draft.breakdown,
+        draft.analysis,
+        provider
+      );
+      if (res.success) {
+        setDraft({ ...draft, characterRefSheetUrl: res.data.characterRefSheetUrl });
+      } else {
+        setError(res.error);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Regenerate failed");
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  // PHASE 2: approve the sheet → build boards + master board + prompts.
+  const handleApprove = async () => {
+    if (!pendingInput || !draft) return;
+    setPhase("generating");
+    setError(null);
+    setProgressPercent(20);
+    setProgressMessage(L("generatingCharSheet"));
+    const progressTimer = setInterval(() => {
+      setProgressPercent((prev) => (prev < 90 ? prev + 1 : prev));
+    }, 2000);
+    try {
+      const res = await finalizeStoryboard(
+        pendingInput,
+        draft.breakdown,
+        draft.analysis,
+        draft.characterRefSheetUrl,
+        provider
+      );
+      clearInterval(progressTimer);
+      if (!res.success) {
+        setError(res.error);
+        setPhase("review");
+        return;
+      }
+      setProgressPercent(100);
       setResult(res.data);
       setPhase("result");
     } catch (err) {
       clearInterval(progressTimer);
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
-      setPhase("input");
+      setPhase("review");
     }
   };
 
@@ -914,6 +1018,79 @@ export function GenerateClient() {
     );
   }
 
+  // ─── Review Phase (approve character sheet before building) ─────────
+
+  if (phase === "review" && draft) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">{L("reviewTitle")}</h1>
+          <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">{L("reviewHint")}</p>
+        </div>
+
+        {draft.warnings && draft.warnings.length > 0 && (
+          <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-600 dark:bg-yellow-950 dark:text-yellow-200">
+            <ul className="list-disc pl-4">
+              {draft.warnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          </div>
+        )}
+
+        <Card>
+          <CardContent className="p-3">
+            {draft.characterRefSheetUrl ? (
+              <div className="overflow-hidden rounded-lg border bg-black/5">
+                <img src={draft.characterRefSheetUrl} alt="Character reference" className="w-full" />
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground">
+                <Users className="h-8 w-8 opacity-50" />
+                <p className="text-sm">{lang === "vi" ? "Chưa tạo được ảnh — thử tạo lại" : "No image — try regenerate"}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Script preview */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{L("reviewScript")}: {draft.breakdown.title}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-2 text-sm text-muted-foreground">{draft.breakdown.synopsis}</p>
+            <ul className="space-y-1 text-xs text-muted-foreground">
+              {draft.breakdown.segments.map((s) => (
+                <li key={s.segment_number}>
+                  <span className="font-semibold text-foreground">#{s.segment_number} {s.title}</span>
+                  {s.dialogue ? ` — “${s.dialogue}”` : ""}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+
+        {error && (
+          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+        )}
+
+        <div className="flex flex-wrap justify-between gap-2">
+          <Button variant="outline" onClick={() => { setPhase("input"); setDraft(null); }} className="gap-1">
+            <ChevronLeft className="h-4 w-4" /> {L("back")}
+          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={handleRegenerateSheet} disabled={regenerating} className="gap-2">
+              {regenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+              {L("regenerate")}
+            </Button>
+            <Button onClick={handleApprove} className="gap-2">
+              <Check className="h-4 w-4" /> {L("approveBuild")}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ─── Result Phase ──────────────────────────────────────────────────
 
   if (phase === "result" && result) {
@@ -942,7 +1119,7 @@ export function GenerateClient() {
               {zipping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               {L("downloadAll")}
             </Button>
-            <Button onClick={() => { setPhase("input"); setResult(null); setStep(0); }} className="gap-2">
+            <Button onClick={() => { setPhase("input"); setResult(null); setDraft(null); setPendingInput(null); setStep(0); }} className="gap-2">
               <RotateCw className="h-4 w-4" /> {L("newStoryboard")}
             </Button>
           </div>
@@ -1520,6 +1697,56 @@ export function GenerateClient() {
                 />
                 <Button variant="outline" size="sm" onClick={addProduct} disabled={!prodName.trim()}>
                   {L("addProduct")}
+                </Button>
+              </div>
+
+              {/* Auxiliary / ingredient images (named) */}
+              <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                <Package className="h-4 w-4 shrink-0 text-primary" />
+                <div>
+                  <p className="font-medium text-foreground">{L("ingTitle")}</p>
+                  <p className="text-xs">{L("ingHint")}</p>
+                </div>
+              </div>
+
+              {ingredients.length > 0 && (
+                <div className="space-y-2">
+                  {ingredients.map((g, i) => (
+                    <div key={i} className="flex items-start justify-between rounded-lg border p-3">
+                      <div className="flex gap-3">
+                        {g.images.length > 0 && (
+                          <div className="flex gap-1">
+                            {g.images.map((img) => (
+                              <img key={img.id} src={img.preview} alt="" className="h-12 w-12 rounded object-cover" />
+                            ))}
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium">{g.name}</p>
+                          <p className="text-xs text-muted-foreground">{g.description || L("noDesc")}</p>
+                          <p className="text-xs text-muted-foreground">{g.images.length} {L("photos")}</p>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => setIngredients((prev) => prev.filter((_, j) => j !== i))}>
+                        {L("remove")}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-3 rounded-lg border border-dashed p-4">
+                <Input value={ingName} onChange={(e) => setIngName(e.target.value)} placeholder={L("ingName")} />
+                <Input value={ingDesc} onChange={(e) => setIngDesc(e.target.value)} placeholder={L("ingDesc")} />
+                <ImageUploader
+                  images={ingImages}
+                  onChange={setIngImages}
+                  maxImages={2}
+                  label={L("ingImage")}
+                  hint={L("ingImageHint")}
+                />
+                <Button variant="outline" size="sm" onClick={addIngredient} disabled={!ingName.trim() || ingImages.length === 0}>
+                  {L("addIngredient")}
                 </Button>
               </div>
             </>

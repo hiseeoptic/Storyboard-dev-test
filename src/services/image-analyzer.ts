@@ -57,16 +57,19 @@ async function analyzeWithVision(params: {
 export async function analyzeReferenceImages(params: {
   characters?: ImageReference[];
   products?: ImageReference[];
+  ingredients?: ImageReference[];
   backgrounds?: ImageReference[];
   provider?: AIProvider;
 }): Promise<{
   characterDescriptions: Record<string, string>;
   productDescriptions: Record<string, string>;
+  ingredientDescriptions: Record<string, string>;
   backgroundDescription: string;
 }> {
   const provider: AIProvider = params.provider ?? "openai";
   const characterDescriptions: Record<string, string> = {};
   const productDescriptions: Record<string, string> = {};
+  const ingredientDescriptions: Record<string, string> = {};
   let backgroundDescription = "";
 
   // ─── Analyze character images (HIGH detail for accuracy) ──────────
@@ -119,6 +122,20 @@ Write as a continuous paragraph, NOT bullet points. Use precise color names. Thi
     }
   }
 
+  // ─── Analyze auxiliary/ingredient images (named) ───────────────────
+  if (params.ingredients && params.ingredients.length > 0) {
+    for (const ing of params.ingredients) {
+      if (ing.images.length === 0) continue;
+      const desc = await analyzeWithVision({
+        provider,
+        images: ing.images,
+        maxTokens: 150,
+        prompt: `Analyze this image of "${ing.name}"${ing.description ? ` (${ing.description})` : ""}. In max 60 words, describe its exact visual form and colours (use precise colour names and RGB hex when obvious), texture and shape, so it can be illustrated accurately and recognised by the name "${ing.name}". Be concise and specific.`,
+      });
+      if (desc) ingredientDescriptions[ing.name] = desc.trim();
+    }
+  }
+
   // ─── Analyze background/setting images ─────────────────────────────
   if (params.backgrounds && params.backgrounds.length > 0) {
     const allBgImages = params.backgrounds.flatMap((bg) => bg.images);
@@ -139,5 +156,10 @@ Write as a continuous paragraph, NOT bullet points. Use precise color names. Thi
     }
   }
 
-  return { characterDescriptions, productDescriptions, backgroundDescription };
+  return {
+    characterDescriptions,
+    productDescriptions,
+    ingredientDescriptions,
+    backgroundDescription,
+  };
 }

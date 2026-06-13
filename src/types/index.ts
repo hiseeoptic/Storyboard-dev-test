@@ -104,6 +104,8 @@ export interface StoryboardGenerationInput {
   character_descriptions?: CharacterDescription[];
   character_images?: ImageReference[];
   product_images?: ImageReference[];
+  /** Named auxiliary/ingredient images (herbs, components) — referenced by name. */
+  ingredient_images?: ImageReference[];
   background_images?: ImageReference[];
   tone?: string;
   setting?: string;

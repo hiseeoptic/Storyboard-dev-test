@@ -1,1 +1,9 @@
-export { generateFullStoryboard, type StoryboardResult } from "./storyboard";
+export {
+  generateFullStoryboard,
+  generateStoryboardDraft,
+  regenerateCharacterReference,
+  finalizeStoryboard,
+  type StoryboardResult,
+  type StoryboardAnalysis,
+  type StoryboardDraft,
+} from "./storyboard";

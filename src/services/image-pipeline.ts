@@ -138,6 +138,7 @@ export async function generateSegmentFrame(params: {
   beatsPerSegment?: number;
   characterDescription: string;
   productDna?: string;
+  ingredients?: string;
   sceneBible?: SceneBible;
   style: string;
   isFirst: boolean;
@@ -155,6 +156,7 @@ export async function generateSegmentFrame(params: {
     beatsPerSegment: params.beatsPerSegment,
     characterDescription: params.characterDescription,
     productDna: params.productDna,
+    ingredients: params.ingredients,
     sceneBible: params.sceneBible,
     style: params.style,
     isFirst: params.isFirst,
