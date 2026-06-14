@@ -230,8 +230,12 @@ function buildRefContext(
   // glasses to a man who wears none).
   const charDescForPoster = preserveRealFace ? stripEyewear(charDescForPosterRaw) : charDescForPosterRaw;
   const mainCostume = breakdown.character_locks[0]?.costume ?? "casual clothes";
+  // Hard gender word (veoflow-aligned) prepended so the image model never
+  // flips the subject's gender.
+  const mainGender = breakdown.character_locks[0]?.gender;
+  const genderWord = mainGender === "male" ? "man" : mainGender === "female" ? "woman" : "person";
   const charDesc = preserveRealFace
-    ? `the exact person shown in the attached portrait photo (keep their real face, hair and look), wearing ${mainCostume}`
+    ? `the exact ${genderWord} shown in the attached portrait photo (keep their real face, hair and look), wearing ${mainCostume}`
     : charDescForPoster || "the main character";
   const mainDnaRaw = breakdown.character_locks[0]?.dna;
   const mainDna = preserveRealFace && mainDnaRaw ? stripEyewear(mainDnaRaw) : mainDnaRaw;

@@ -1324,10 +1324,24 @@ export function GenerateClient() {
               {draft.character_locks.map((c, i) => (
                 <div key={i} className="space-y-2 rounded-lg border p-3">
                   <p className="text-sm font-semibold">{c.name}</p>
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-2 sm:grid-cols-3">
                     <div className="space-y-1">
                       <label className="text-xs font-medium text-muted-foreground">
-                        {lang === "vi" ? "Giới tính & tuổi ⚠️" : "Gender & age ⚠️"}
+                        {lang === "vi" ? "Giới tính ⚠️" : "Gender ⚠️"}
+                      </label>
+                      <Select
+                        value={c.gender ?? ""}
+                        onChange={(e) => updateChar(i, "gender", e.target.value)}
+                        options={[
+                          { value: "male", label: lang === "vi" ? "Nam" : "Male" },
+                          { value: "female", label: lang === "vi" ? "Nữ" : "Female" },
+                        ]}
+                        placeholder={lang === "vi" ? "Chọn..." : "Pick..."}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        {lang === "vi" ? "Tuổi" : "Age"}
                       </label>
                       <Input value={c.gender_age ?? ""} onChange={(e) => updateChar(i, "gender_age", e.target.value)} />
                     </div>

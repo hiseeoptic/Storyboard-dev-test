@@ -141,6 +141,15 @@ export async function generateStoryboardBreakdown(
       if (!parsed.character_locks) {
         parsed.character_locks = [];
       }
+      // Backfill the explicit gender lock from gender_age text when the model
+      // forgot the dedicated field (so downstream always has a hard male/female).
+      for (const lock of parsed.character_locks) {
+        if (lock.gender !== "male" && lock.gender !== "female") {
+          const hay = `${lock.gender_age ?? ""} ${lock.name ?? ""}`.toLowerCase();
+          if (/\b(female|woman|girl|she|nữ|cô|chị|bà)\b/.test(hay)) lock.gender = "female";
+          else if (/\b(male|man|boy|he|nam|anh|ông|chú)\b/.test(hay)) lock.gender = "male";
+        }
+      }
 
       // Ensure marketing_structure exists
       if (!parsed.marketing_structure) {

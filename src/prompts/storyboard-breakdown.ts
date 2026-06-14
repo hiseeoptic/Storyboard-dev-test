@@ -52,7 +52,7 @@ MARKETING STRUCTURE (always apply):
 
 FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's video must not "look AI"):
 - Every object is locked to a "DNA" that NEVER drifts and is repeated VERBATIM in every board/keyframe and every motion prompt.
-- Build a detailed "character_lock" per character (gender/age, build, skin tone, hair, eyes, exact costume, signature features, default expression) PLUS a single-line "dna" string capturing the forensic identity WITH RGB HEX CODES for skin/hair/eyes/wardrobe/brand colours (e.g. "navy polo #1F2A44, light-blue tee #A9C7E8, matte steel watch #8A8D91, warm tan skin #C8956A").
+- Build a detailed "character_lock" per character with an EXPLICIT "gender" field (male/female — if a reference photo was provided it MUST match that real person's gender), plus age, build, skin tone, hair, eyes, exact costume, signature features, default expression, PLUS a single-line "dna" string capturing the forensic identity WITH RGB HEX CODES for skin/hair/eyes/wardrobe/brand colours (e.g. "navy polo #1F2A44, light-blue tee #A9C7E8, matte steel watch #8A8D91, warm tan skin #C8956A").
 - If there is a hero PRODUCT, write "product_dna": exact shape, material, colours WITH RGB hex, label/logo text+colour, cap/parts — repeated verbatim.
 - Build a "scene_bible" (lens, lighting with Kelvin temps, backdrop with hex, colour grade) — the style fingerprint reused VERBATIM so lens, lighting, backdrop and tone never change.
 - One single set/location per segment; only camera framing and the action change.
@@ -154,7 +154,8 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
   "character_locks": [
     {
       "name": "string",
-      "gender_age": "string",
+      "gender": "male | female — REQUIRED. If a reference photo of this person was provided, this MUST match the photo's actual gender. Never guess from the story.",
+      "gender_age": "string — e.g. 'male, ~35 years old'",
       "build": "string",
       "skin_tone": "string",
       "hair": "string",

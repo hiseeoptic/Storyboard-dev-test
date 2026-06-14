@@ -162,6 +162,8 @@ export interface ImageReference {
 
 export interface CharacterLock {
   name: string;
+  /** Hard gender lock (veoflow-aligned). Must match the uploaded photo. */
+  gender?: "male" | "female";
   gender_age: string;
   build: string;
   skin_tone: string;
