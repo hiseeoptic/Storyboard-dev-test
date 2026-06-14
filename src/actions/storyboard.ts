@@ -139,6 +139,21 @@ function enhanceInput(
   }
 
   const extra: string[] = [];
+
+  // CRITICAL: feed the uploaded character's REAL identity into script
+  // generation so the character_lock matches the photo. Without this the LLM
+  // invents a character from the story idea and can pick the WRONG GENDER
+  // (e.g. a man's photo → a "Young Woman" character_lock).
+  const charNames = Object.keys(analysis.characterDescriptions);
+  if (charNames.length > 0) {
+    const charLines = charNames
+      .map((n) => `"${n}": ${analysis.characterDescriptions[n]}`)
+      .join(" | ");
+    extra.unshift(
+      `MAIN CHARACTER REAL IDENTITY — the main character is a REAL person from an uploaded photo. Each character_lock MUST match that exact person: the SAME gender, age range, skin tone, hair and build. DO NOT invent a different gender or a different look, and do not restyle them into another person. Real identities: ${charLines}`
+    );
+  }
+
   const productNames = Object.keys(analysis.productDescriptions);
   if (productNames.length > 0) {
     extra.push(
