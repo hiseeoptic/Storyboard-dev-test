@@ -152,6 +152,19 @@ export async function generateStoryboardBreakdown(
         };
       }
 
+      // Ensure a style_guide exists (the model sometimes omits it, which used
+      // to crash downstream when reading style_guide.color_palette).
+      if (!parsed.style_guide || typeof parsed.style_guide !== "object") {
+        parsed.style_guide = {
+          color_palette: [],
+          art_direction: "",
+          visual_references: "",
+          consistency_notes: "",
+        };
+      } else if (!Array.isArray(parsed.style_guide.color_palette)) {
+        parsed.style_guide.color_palette = [];
+      }
+
       // Ensure a Scene Bible exists (style fingerprint reused everywhere).
       if (!parsed.scene_bible || typeof parsed.scene_bible !== "object") {
         parsed.scene_bible = {

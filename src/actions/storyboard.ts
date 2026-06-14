@@ -219,7 +219,7 @@ function buildRefContext(
 
   const preserveRealFace = canChain && !!faceImg;
 
-  const charDescForPosterRaw = breakdown.character_locks
+  const charDescForPosterRaw = (breakdown.character_locks ?? [])
     .map(
       (c) =>
         `${c.name}: ${c.gender_age}, ${c.build}, skin ${c.skin_tone}, hair ${c.hair}, eyes ${c.eyes}, wearing ${c.costume}. ${c.signature_features}`
@@ -292,68 +292,75 @@ export async function generateStoryboardPlan(
   provider: AIProvider = "gemini"
 ): Promise<ActionResult<StoryboardPlan>> {
   const warnings: string[] = [];
-  const analysis = await runAnalysis(input, provider, warnings);
-  const enhanced = enhanceInput(input, analysis);
-
-  let breakdown: StoryboardGenerationOutput;
   try {
-    breakdown = await generateStoryboardBreakdown(enhanced, provider);
-  } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "AI generation failed" };
-  }
+    const analysis = await runAnalysis(input, provider, warnings);
+    const enhanced = enhanceInput(input, analysis);
 
-  for (const lock of breakdown.character_locks) {
-    const analyzed = analysis.characterDescriptions[lock.name];
-    if (analyzed) {
-      lock.signature_features = lock.signature_features
-        ? `${lock.signature_features}. From reference: ${analyzed}`
-        : analyzed;
+    const breakdown = await generateStoryboardBreakdown(enhanced, provider);
+
+    // Defensive: the model can occasionally return JSON missing whole sections.
+    // Guard so a malformed breakdown returns a clean error instead of throwing
+    // an unhandled exception ("An error occurred in the Server Components render").
+    if (!Array.isArray(breakdown.segments) || breakdown.segments.length === 0) {
+      return { success: false, error: "AI không trả về cảnh nào. Vui lòng thử lại." };
     }
-  }
+    if (!Array.isArray(breakdown.character_locks)) breakdown.character_locks = [];
 
-  const ctx = buildRefContext(input, breakdown, analysis, provider);
+    for (const lock of breakdown.character_locks) {
+      const analyzed = analysis.characterDescriptions[lock.name];
+      if (analyzed) {
+        lock.signature_features = lock.signature_features
+          ? `${lock.signature_features}. From reference: ${analyzed}`
+          : analyzed;
+      }
+    }
 
-  // Ready-to-paste Veo prompts (text only).
-  const palette = breakdown.style_guide.color_palette;
-  for (const seg of breakdown.segments) {
-    seg.first_frame_url = null;
-    seg.full_prompt = buildSegmentVeoPrompt({
+    const ctx = buildRefContext(input, breakdown, analysis, provider);
+
+    // Ready-to-paste Veo prompts (text only).
+    const palette = breakdown.style_guide?.color_palette ?? [];
+    for (const seg of breakdown.segments) {
+      seg.first_frame_url = null;
+      seg.full_prompt = buildSegmentVeoPrompt({
+        characterDescription: ctx.charDescDna,
+        productDescription: ctx.productDnaText,
+        ingredients: ctx.ingredientsText,
+        sceneBible: ctx.sceneBible,
+        colorPalette: palette,
+        motionPrompt: seg.motion_prompt,
+        dialogue: seg.dialogue,
+        dialogueLanguage: ctx.dialogueLanguage,
+      });
+    }
+
+    const videoPrompt = buildVideoPromptText({
+      title: breakdown.title,
       characterDescription: ctx.charDescDna,
       productDescription: ctx.productDnaText,
       ingredients: ctx.ingredientsText,
       sceneBible: ctx.sceneBible,
+      setting: input.setting || "Unspecified",
+      style: input.style,
+      aspectRatio: ctx.aspectRatio,
       colorPalette: palette,
-      motionPrompt: seg.motion_prompt,
-      dialogue: seg.dialogue,
       dialogueLanguage: ctx.dialogueLanguage,
+      marketing: breakdown.marketing_structure,
+      segments: breakdown.segments.map((s) => ({
+        segment_number: s.segment_number,
+        title: s.title,
+        role: s.marketing_role,
+        duration_seconds: s.duration_seconds,
+        motion_prompt: s.motion_prompt,
+        dialogue: s.dialogue,
+        continuity_note: s.continuity_note,
+        beats: s.beats,
+      })),
     });
+
+    return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "AI generation failed" };
   }
-
-  const videoPrompt = buildVideoPromptText({
-    title: breakdown.title,
-    characterDescription: ctx.charDescDna,
-    productDescription: ctx.productDnaText,
-    ingredients: ctx.ingredientsText,
-    sceneBible: ctx.sceneBible,
-    setting: input.setting || "Unspecified",
-    style: input.style,
-    aspectRatio: ctx.aspectRatio,
-    colorPalette: palette,
-    dialogueLanguage: ctx.dialogueLanguage,
-    marketing: breakdown.marketing_structure,
-    segments: breakdown.segments.map((s) => ({
-      segment_number: s.segment_number,
-      title: s.title,
-      role: s.marketing_role,
-      duration_seconds: s.duration_seconds,
-      motion_prompt: s.motion_prompt,
-      dialogue: s.dialogue,
-      continuity_note: s.continuity_note,
-      beats: s.beats,
-    })),
-  });
-
-  return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
 }
 
 // ─── Phase 2: one board image per call (small request + response) ──────────
@@ -387,9 +394,9 @@ export async function generateBoardImage(params: {
           dialogue: s.dialogue,
         })),
         characterDescription: ctx.charDescDna,
-        characterName: breakdown.character_locks[0]?.name,
+        characterName: breakdown.character_locks?.[0]?.name,
         style: input.style,
-        colorPalette: breakdown.style_guide.color_palette,
+        colorPalette: breakdown.style_guide?.color_palette ?? [],
         dialogueLanguage: ctx.dialogueLanguage,
         provider,
         aspectRatio: ctx.boardAspect,
