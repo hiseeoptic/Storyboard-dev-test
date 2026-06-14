@@ -7,7 +7,6 @@
  */
 
 import type { AspectRatio, ImageQuality } from "@/types";
-import sharp from "sharp";
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -145,6 +144,11 @@ async function compressImage(dataUri: string, maxDim: number, quality: number): 
   const m = dataUri.match(/^data:([^;]+);base64,(.+)$/);
   if (!m || !m[2]) return dataUri;
   try {
+    // Lazy import so a missing/incompatible native binary degrades gracefully
+    // (return the original image) instead of crashing the whole server module
+    // at load time — which surfaces as "An error occurred in the Server
+    // Components render".
+    const sharp = (await import("sharp")).default;
     const out = await sharp(Buffer.from(m[2], "base64"))
       .rotate()
       .resize({ width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true })
