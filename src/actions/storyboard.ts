@@ -7,11 +7,9 @@ import {
   generateMasterBoard,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
-import { geminiGenerateImage } from "@/lib/gemini/client";
 import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
-  buildHandoffKeyframePrompt,
   type RefDescriptor,
 } from "@/prompts";
 import type {
@@ -241,9 +239,14 @@ function buildRefContext(
     ? `the exact ${genderWord} shown in the attached portrait photo (keep their real face, hair and look), wearing ${mainCostume}`
     : charDescForPoster || "the main character";
   const mainDnaRaw = breakdown.character_locks[0]?.dna;
-  const mainDna = preserveRealFace && mainDnaRaw ? stripEyewear(mainDnaRaw) : mainDnaRaw;
   const charDescForShots = preserveRealFace ? charDesc : charDescForPoster || "the main character";
-  const charDescDna = [charDescForShots, mainDna].filter(Boolean).join(". ");
+  // IMAGE-FIRST: when a real photo locks the face, RELY ON THE PHOTO and drop
+  // the AI-invented forensic DNA text entirely — it only ever contradicts the
+  // photo (the root of the gender-flip and stray-glasses bugs). Use the text
+  // DNA only when there is NO reference photo to lock to.
+  const charDescDna = preserveRealFace
+    ? charDescForShots
+    : [charDescForShots, mainDnaRaw].filter(Boolean).join(". ");
 
   return {
     canChain,
@@ -398,43 +401,6 @@ export async function finalizeScript(params: {
     return { success: true, data: { breakdown: params.breakdown, videoPrompt } };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Lỗi xử lý kịch bản" };
-  }
-}
-
-// ─── VeoFlow handoff: render a clean keyframe from a ready-made clip prompt ──
-
-export async function generateHandoffKeyframe(params: {
-  clipPrompt: string;
-  characterImages?: string[];
-  productImages?: string[];
-  aspectRatio?: AspectRatio;
-  quality?: ImageQuality;
-  provider?: AIProvider;
-}): Promise<ActionResult<{ url: string }>> {
-  const aspectRatio = params.aspectRatio ?? "16:9";
-  try {
-    const refs: { base64: string; mimeType?: string; label?: string }[] = [];
-    const descriptors: RefDescriptor[] = [];
-    for (const b64 of (params.characterImages ?? []).filter(Boolean).slice(0, 2)) {
-      refs.push({ base64: b64, mimeType: "image/jpeg" });
-      descriptors.push({ role: "face" });
-    }
-    for (const b64 of (params.productImages ?? []).filter(Boolean).slice(0, 1)) {
-      refs.push({ base64: b64, mimeType: "image/jpeg" });
-      descriptors.push({ role: "product" });
-    }
-    const prompt = buildHandoffKeyframePrompt({ clipPrompt: params.clipPrompt, references: descriptors, aspectRatio });
-    // Handoff keyframes need reference-image face lock → Gemini.
-    const url = await geminiGenerateImage({
-      prompt,
-      referenceImages: refs.length > 0 ? refs : undefined,
-      aspectRatio,
-      quality: params.quality ?? "standard",
-      imageSize: "1K",
-    });
-    return { success: true, data: { url } };
-  } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Keyframe failed" };
   }
 }
 
