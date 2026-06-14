@@ -161,6 +161,13 @@ export async function geminiGenerateImage(params: {
   referenceImages?: { base64: string; mimeType?: string; label?: string }[];
   aspectRatio?: AspectRatio | "1:1";
   quality?: ImageQuality;
+  /**
+   * Optional resolution cap. Composite storyboard boards pass "1K" so the
+   * base64 data-URI response stays well under the serverless body limit
+   * (a 2K board can be 5-10MB and the response then fails → "Frame lỗi").
+   * Single Studio portraits leave this unset to keep Pro's 2K detail.
+   */
+  imageSize?: "1K" | "2K";
 }): Promise<string> {
   const apiKey = getApiKey();
   const models = params.quality === "pro" ? IMAGE_MODELS_PRO : IMAGE_MODELS_STANDARD;
@@ -202,10 +209,9 @@ export async function geminiGenerateImage(params: {
     }
   }
 
-  // Pro (Nano Banana Pro / Gemini 3) renders at 2K for crisp, print-grade
-  // faces; the 2.5-flash standard model only supports 1K (and rejects an
-  // imageSize hint), so we degrade gracefully below.
-  const imageSize = params.quality === "pro" ? "2K" : null;
+  // Pro (Nano Banana Pro / Gemini 3) can render at 2K, but composite boards
+  // pass an explicit "1K" cap to keep the response small enough to return.
+  const imageSize = params.imageSize ?? (params.quality === "pro" ? "2K" : null);
 
   // Correct field per the Gemini Developer API (generativelanguage v1beta):
   //   generationConfig.imageConfig.{aspectRatio,imageSize}

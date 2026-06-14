@@ -667,6 +667,8 @@ export function GenerateClient() {
   const [genInput, setGenInput] = useState<StoryboardGenerationInput | null>(null);
   const [genAnalysis, setGenAnalysis] = useState<StoryboardAnalysis | null>(null);
   const [regenTarget, setRegenTarget] = useState<number | "master" | null>(null);
+  // Per-board failure reasons, keyed by "seg-<index>" / "master".
+  const [boardErrors, setBoardErrors] = useState<Record<string, string>>({});
 
   // Set when reference images were handed off from the Image Studio.
   const [fromStudio, setFromStudio] = useState(false);
@@ -1014,9 +1016,11 @@ export function GenerateClient() {
       // Generate one board with retry + backoff. Image models rate-limit bursts
       // (the cause of later boards failing with "Frame lỗi"), so we retry a few
       // times with growing waits and only give up after that.
+      const errs: Record<string, string> = {};
       const genBoard = async (
         args: Parameters<typeof generateBoardImage>[0],
-        label: string
+        label: string,
+        key: string
       ): Promise<string | null> => {
         let lastErr = "unknown";
         for (let k = 0; k < 3; k++) {
@@ -1030,6 +1034,7 @@ export function GenerateClient() {
           if (k < 2) await sleep(4000 * (k + 1)); // 4s, then 8s
         }
         boardWarnings.push(`${label}: ${lastErr}`);
+        errs[key] = lastErr;
         return null;
       };
 
@@ -1037,7 +1042,8 @@ export function GenerateClient() {
         setProgressMessage(lang === "vi" ? `Đang vẽ cảnh ${i + 1}/${segCount}` : `Drawing board ${i + 1}/${segCount}`);
         const url = await genBoard(
           { input, breakdown, analysis: plan.data.analysis, kind: "segment", segmentIndex: i, provider },
-          lang === "vi" ? `Cảnh ${i + 1}` : `Board ${i + 1}`
+          lang === "vi" ? `Cảnh ${i + 1}` : `Board ${i + 1}`,
+          `seg-${i}`
         );
         const seg = breakdown.segments[i];
         if (seg) seg.first_frame_url = url;
@@ -1051,10 +1057,12 @@ export function GenerateClient() {
       await sleep(1500);
       const posterUrl = await genBoard(
         { input, breakdown, analysis: plan.data.analysis, kind: "master", provider },
-        lang === "vi" ? "Bảng tổng" : "Master board"
+        lang === "vi" ? "Bảng tổng" : "Master board",
+        "master"
       );
       bump();
 
+      setBoardErrors(errs);
       setProgressPercent(100);
       setResult({
         breakdown,
@@ -1085,7 +1093,14 @@ export function GenerateClient() {
         segmentIndex: target === "master" ? undefined : target,
         provider,
       });
+      const key = target === "master" ? "master" : `seg-${target}`;
       if (r.success) {
+        // Clear any previous failure reason for this board.
+        setBoardErrors((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
         if (target === "master") {
           setResult({ ...result, storyboardPosterUrl: r.data.url });
         } else {
@@ -1095,6 +1110,7 @@ export function GenerateClient() {
           setResult({ ...result, breakdown: { ...result.breakdown, segments } });
         }
       } else {
+        setBoardErrors((prev) => ({ ...prev, [key]: r.error }));
         setError(r.error);
       }
     } catch (err) {
@@ -1353,9 +1369,13 @@ export function GenerateClient() {
               <p className="text-sm font-medium text-muted-foreground">
                 {lang === "vi" ? "Bảng Storyboard Tổng không tạo được" : "Master Board could not be generated"}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {lang === "vi" ? "Vui lòng thử lại hoặc kiểm tra kết nối API" : "Please try again or check API connection"}
-              </p>
+              {boardErrors["master"] && (
+                <p className="mt-1 max-w-md text-xs text-destructive/80">{boardErrors["master"]}</p>
+              )}
+              <Button variant="outline" size="sm" disabled={regenTarget !== null} onClick={() => regenerateBoard("master")} className="mt-3 gap-1.5">
+                {regenTarget === "master" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
+                {lang === "vi" ? "Thử lại" : "Retry"}
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -1383,9 +1403,17 @@ export function GenerateClient() {
                   {seg.first_frame_url ? (
                     <img src={seg.first_frame_url} alt={`Segment ${seg.segment_number}`} className="h-full w-full object-contain" />
                   ) : (
-                    <div className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground">
+                    <div className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center text-muted-foreground">
                       <ImageIcon className="h-6 w-6 opacity-50" />
                       <span className="text-xs">{lang === "vi" ? "Frame lỗi" : "Frame failed"}</span>
+                      {boardErrors[`seg-${result.breakdown.segments.indexOf(seg)}`] && (
+                        <span className="mt-0.5 max-w-full text-[10px] leading-tight text-destructive/80">
+                          {boardErrors[`seg-${result.breakdown.segments.indexOf(seg)}`]}
+                        </span>
+                      )}
+                      <span className="mt-1 text-[10px] opacity-70">
+                        {lang === "vi" ? "Bấm ↻ để thử lại" : "Press ↻ to retry"}
+                      </span>
                     </div>
                   )}
                   <Badge className="absolute left-2 top-2">#{seg.segment_number}</Badge>

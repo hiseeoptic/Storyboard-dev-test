@@ -29,6 +29,8 @@ export interface ImageGenOptions {
   referenceImages?: { base64: string; mimeType?: string }[];
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
+  /** Resolution cap (Gemini). Boards pass "1K" to keep responses returnable. */
+  imageSize?: "1K" | "2K";
 }
 
 /** Map an aspect ratio to the closest DALL-E 3 supported size. */
@@ -52,6 +54,7 @@ async function generateImage(
           referenceImages: opts.referenceImages,
           aspectRatio: opts.aspectRatio,
           quality: opts.quality,
+          imageSize: opts.imageSize,
         });
       }
 
@@ -125,6 +128,8 @@ export async function generateCharacterRefSheet(params: {
     referenceImages: params.referenceImages,
     aspectRatio: params.aspectRatio,
     quality: params.quality,
+    // Composite board → cap at 1K so the data-URI response stays returnable.
+    imageSize: "1K",
   });
   return { url };
 }
@@ -171,6 +176,8 @@ export async function generateSegmentFrame(params: {
     referenceImages: params.referenceImages,
     aspectRatio: params.aspectRatio,
     quality: params.quality,
+    // Composite board → cap at 1K so the data-URI response stays returnable.
+    imageSize: "1K",
   });
   return { url };
 }
@@ -212,6 +219,8 @@ export async function generateMasterBoard(params: {
     referenceImages: params.referenceImages,
     aspectRatio: params.aspectRatio,
     quality: params.quality,
+    // Composite board → cap at 1K so the data-URI response stays returnable.
+    imageSize: "1K",
   });
   return { url };
 }
