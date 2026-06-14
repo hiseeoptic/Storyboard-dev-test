@@ -332,25 +332,11 @@ export async function generateBoardImage(params: {
   kind: BoardKind;
   segmentIndex?: number;
   provider?: AIProvider;
-  /**
-   * A small downscaled image of an already-approved board (usually board #1).
-   * Passed as a CONTINUITY ANCHOR so later boards keep the SAME character,
-   * wardrobe and kitchen — the single most effective cross-board lock when no
-   * background photo was uploaded.
-   */
-  anchorImage?: { base64: string; mimeType?: string };
 }): Promise<ActionResult<{ url: string }>> {
   const provider = params.provider ?? "gemini";
   const { input, breakdown, analysis } = params;
   const ctx = buildRefContext(input, breakdown, analysis, provider);
   const { images, descriptors } = buildBoardRefs(ctx);
-
-  // Append the continuity anchor (if any) as an extra reference. Gemini Pro
-  // happily takes >3 references; it pins the look established by board #1.
-  const anchor =
-    ctx.canChain && params.anchorImage
-      ? { base64: params.anchorImage.base64, mimeType: params.anchorImage.mimeType ?? "image/jpeg" }
-      : null;
 
   try {
     if (params.kind === "master") {
@@ -373,13 +359,7 @@ export async function generateBoardImage(params: {
         provider,
         aspectRatio: ctx.boardAspect,
         quality: ctx.quality,
-        // Prefer the anchor (it already encodes the locked face + kitchen);
-        // otherwise fall back to the uploaded portrait.
-        referenceImages: anchor
-          ? [anchor]
-          : ctx.canChain && images.length > 0
-            ? [images[0]!]
-            : undefined,
+        referenceImages: ctx.canChain && images.length > 0 ? [images[0]!] : undefined,
       });
       return { success: true, data: { url: r.url } };
     }
@@ -400,12 +380,8 @@ export async function generateBoardImage(params: {
       style: input.style,
       isFirst: i === 0,
       preserveRealFace: ctx.preserveRealFace,
-      referenceImages: ctx.canChain
-        ? [...images, ...(anchor ? [anchor] : [])]
-        : undefined,
-      references: ctx.canChain
-        ? [...descriptors, ...(anchor ? [{ role: "anchor" as const }] : [])]
-        : undefined,
+      referenceImages: ctx.canChain && images.length > 0 ? images : undefined,
+      references: ctx.canChain && descriptors.length > 0 ? descriptors : undefined,
       referenceExpressions: ctx.referenceExpressions,
       provider,
       aspectRatio: ctx.boardAspect,

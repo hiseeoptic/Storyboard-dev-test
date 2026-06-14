@@ -231,7 +231,7 @@ function renderDirective(style: string, preserveRealFace: boolean): string {
   }`;
 }
 
-export type RefRole = "face" | "product" | "setting" | "character_sheet" | "anchor";
+export type RefRole = "face" | "product" | "setting" | "character_sheet";
 
 export interface RefDescriptor {
   role: RefRole;
@@ -259,8 +259,6 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
         return `• THE PRODUCT — feature the EXACT product shown in the attached product photo${d}. Keep its EXACT shape, silhouette, colour, material, proportions, handle/parts and branding identical in every single shot. Do NOT redesign, recolour, distort, resize, age, damage or swap it for a different object.`;
       case "setting":
         return `• THE LOCATION — keep every scene in the same location shown in the attached interior photo${d}. Match its layout, colours, furniture and key props; keep it consistent across all shots.`;
-      case "anchor":
-        return `• CONTINUITY ANCHOR — the attached image is a board from an EARLIER shot of this SAME video. It is the single source of truth for continuity: reproduce the SAME exact person (identical face, hairstyle, eyewear/no-eyewear, facial hair, build) wearing the SAME exact outfit (same apron, same shirt, same colours), in the SAME exact kitchen/location (identical cabinet style & colour, wall, countertop, window, appliances and layout), under the SAME lighting and the SAME art style. ONLY the camera framing and the action change for this new shot. Do NOT redesign the person, the wardrobe or the room, and do NOT add or remove accessories.`;
       default:
         return `• Reference — keep it consistent.`;
     }
