@@ -7,6 +7,7 @@
  */
 
 import type { AspectRatio, ImageQuality } from "@/types";
+import sharp from "sharp";
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -130,6 +131,29 @@ function extractImage(json: GeminiResponse): string | null {
     if (data) return `data:${mime};base64,${data}`;
   }
   return null;
+}
+
+/**
+ * Re-encode a generated image (Gemini returns multi-MB PNGs) to a compact
+ * JPEG. This is essential: a raw PNG board can be 3-10MB which blows past
+ * Vercel's ~4.5MB serverless response limit and the client then sees
+ * "An unexpected response was received from the server". A JPEG at these
+ * sizes is a few hundred KB — well within budget — and visually identical for
+ * a reference board / portrait. Falls back to the original on any failure.
+ */
+async function compressImage(dataUri: string, maxDim: number, quality: number): Promise<string> {
+  const m = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+  if (!m || !m[2]) return dataUri;
+  try {
+    const out = await sharp(Buffer.from(m[2], "base64"))
+      .rotate()
+      .resize({ width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality, mozjpeg: true })
+      .toBuffer();
+    return `data:image/jpeg;base64,${out.toString("base64")}`;
+  } catch {
+    return dataUri;
+  }
 }
 
 function isModelUnavailable(status: number, message?: string): boolean {
@@ -258,7 +282,12 @@ export async function geminiGenerateImage(params: {
 
     if (res.ok && !json.error) {
       const image = extractImage(json);
-      if (image) return image;
+      if (image) {
+        // Compress before returning so the data-URI fits the serverless
+        // response limit. 1K boards cap ~1280px; everything else ~2048px.
+        const cap = imageSize === "1K" ? 1280 : 2048;
+        return await compressImage(image, cap, 86);
+      }
       lastErr = `Model ${model} returned no image`;
       continue; // try next model
     }

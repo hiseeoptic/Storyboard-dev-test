@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // sharp is a native module used server-side to compress generated images;
+  // keep it external so Next doesn't try to bundle the platform binary.
+  serverExternalPackages: ["sharp"],
   eslint: {
     ignoreDuringBuilds: true,
   },
