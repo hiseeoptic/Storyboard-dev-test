@@ -1047,51 +1047,59 @@ export function GenerateClient() {
       // under Vercel's 4.5MB + timeout limits, so boards never get truncated.
       // The first successful board becomes the CONTINUITY ANCHOR fed into every
       // later board so the character, wardrobe and kitchen stop drifting.
+      const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+      const boardWarnings: string[] = [];
+
+      // Generate one board with retry + backoff. Image models rate-limit bursts
+      // (the cause of later boards failing with "Frame lỗi"), so we retry a few
+      // times with growing waits and only give up after that.
+      const genBoard = async (
+        args: Parameters<typeof generateBoardImage>[0],
+        label: string
+      ): Promise<string | null> => {
+        let lastErr = "unknown";
+        for (let k = 0; k < 3; k++) {
+          try {
+            const r = await generateBoardImage(args);
+            if (r.success) return r.data.url;
+            lastErr = r.error;
+          } catch (e) {
+            lastErr = e instanceof Error ? e.message : "network error";
+          }
+          if (k < 2) await sleep(4000 * (k + 1)); // 4s, then 8s
+        }
+        boardWarnings.push(`${label}: ${lastErr}`);
+        return null;
+      };
+
       let anchor: { base64: string; mimeType?: string } | undefined;
       for (let i = 0; i < segCount; i++) {
         setProgressMessage(lang === "vi" ? `Đang vẽ cảnh ${i + 1}/${segCount}` : `Drawing board ${i + 1}/${segCount}`);
-        try {
-          const r = await generateBoardImage({
-            input,
-            breakdown,
-            analysis: plan.data.analysis,
-            kind: "segment",
-            segmentIndex: i,
-            provider,
-            anchorImage: anchor,
-          });
-          const seg = breakdown.segments[i];
-          if (seg) seg.first_frame_url = r.success ? r.data.url : null;
-          if (r.success && !anchor) {
-            const a = await downscaleToBase64(r.data.url);
-            if (a) {
-              anchor = a;
-              setGenAnchor(a);
-            }
+        const url = await genBoard(
+          { input, breakdown, analysis: plan.data.analysis, kind: "segment", segmentIndex: i, provider, anchorImage: anchor },
+          lang === "vi" ? `Cảnh ${i + 1}` : `Board ${i + 1}`
+        );
+        const seg = breakdown.segments[i];
+        if (seg) seg.first_frame_url = url;
+        if (url && !anchor) {
+          const a = await downscaleToBase64(url);
+          if (a) {
+            anchor = a;
+            setGenAnchor(a);
           }
-        } catch {
-          const seg = breakdown.segments[i];
-          if (seg) seg.first_frame_url = null;
         }
         bump();
+        // Space calls out so we don't trip the API's per-minute burst limit.
+        if (i < segCount - 1) await sleep(1500);
       }
 
       // Master board (presentation grid).
       setProgressMessage(lang === "vi" ? "Đang vẽ bảng tổng" : "Drawing master board");
-      let posterUrl: string | null = null;
-      try {
-        const master = await generateBoardImage({
-          input,
-          breakdown,
-          analysis: plan.data.analysis,
-          kind: "master",
-          provider,
-          anchorImage: anchor,
-        });
-        if (master.success) posterUrl = master.data.url;
-      } catch {
-        posterUrl = null;
-      }
+      await sleep(1500);
+      const posterUrl = await genBoard(
+        { input, breakdown, analysis: plan.data.analysis, kind: "master", provider, anchorImage: anchor },
+        lang === "vi" ? "Bảng tổng" : "Master board"
+      );
       bump();
 
       setProgressPercent(100);
@@ -1100,7 +1108,7 @@ export function GenerateClient() {
         characterRefSheetUrl: null,
         storyboardPosterUrl: posterUrl,
         videoPrompt: plan.data.videoPrompt,
-        warnings: plan.data.warnings,
+        warnings: [...plan.data.warnings, ...boardWarnings],
       });
       setPhase("result");
     } catch (err) {
@@ -1331,8 +1339,11 @@ export function GenerateClient() {
           </CardContent>
         </Card>
 
-        {/* Character Reference Sheet */}
-        {hasCharSheet ? (
+        {/* Character Reference Sheet — only shown if one was generated.
+            (The per-board flow no longer produces a separate sheet; each board
+            carries its own character-ref strip, so we don't show a failure
+            card when it's intentionally absent.) */}
+        {hasCharSheet && (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -1350,23 +1361,6 @@ export function GenerateClient() {
               <div className="overflow-hidden rounded-lg border">
                 <img src={result.characterRefSheetUrl!} alt="Character Reference Sheet" className="w-full" />
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {lang === "vi"
-                  ? "Bao gồm: Full Body, Turnaround (4 góc), Expressions (6 biểu cảm), Props, Color Palette"
-                  : "Includes: Full Body, Turnaround (4 angles), Expressions (6 emotions), Props, Color Palette"}
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-10 text-center">
-              <Users className="mb-2 h-8 w-8 text-muted-foreground/50" />
-              <p className="text-sm font-medium text-muted-foreground">
-                {lang === "vi" ? "Character Reference Sheet không tạo được" : "Character Reference Sheet could not be generated"}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {lang === "vi" ? "Vui lòng thử lại hoặc kiểm tra kết nối API" : "Please try again or check API connection"}
-              </p>
             </CardContent>
           </Card>
         )}
