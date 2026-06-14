@@ -34,6 +34,7 @@ import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploade
 import {
   generateStoryboardPlan,
   generateBoardImage,
+  finalizeScript,
   type StoryboardResult,
   type StoryboardAnalysis,
 } from "@/actions";
@@ -41,6 +42,7 @@ import { CharacterStudio } from "./character-studio";
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
+  StoryboardGenerationOutput,
   ImageReference,
   AIProvider,
   ImageQuality,
@@ -648,7 +650,7 @@ interface BackgroundEntry {
   images: UploadedImage[];
 }
 
-type Phase = "input" | "generating" | "result";
+type Phase = "input" | "generating" | "script" | "result";
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -669,6 +671,10 @@ export function GenerateClient() {
   const [regenTarget, setRegenTarget] = useState<number | "master" | null>(null);
   // Per-board failure reasons, keyed by "seg-<index>" / "master".
   const [boardErrors, setBoardErrors] = useState<Record<string, string>>({});
+
+  // Script-review phase: the editable breakdown + carried plan data.
+  const [draft, setDraft] = useState<StoryboardGenerationOutput | null>(null);
+  const [planWarnings, setPlanWarnings] = useState<string[]>([]);
 
   // Set when reference images were handed off from the Image Studio.
   const [fromStudio, setFromStudio] = useState(false);
@@ -995,88 +1001,135 @@ export function GenerateClient() {
         return;
       }
 
-      // Keep the inputs so individual boards can be reviewed & re-rendered.
+      // Keep inputs + the generated script, then let the user REVIEW & EDIT it
+      // before we spend any image generations (catch wrong gender / dialogue /
+      // action while it's still cheap text).
       setGenInput(input);
       setGenAnalysis(plan.data.analysis);
-
-      const breakdown = plan.data.breakdown;
-      const segCount = breakdown.segments.length;
-      const total = segCount + 1; // + master board
-      let done = 0;
-      const bump = () => {
-        done++;
-        setProgressPercent(12 + Math.round((done / total) * 85));
-      };
-
-      // Phase 2: ONE board per server call — each request/response stays well
-      // under Vercel's 4.5MB + timeout limits, so boards never get truncated.
-      const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-      const boardWarnings: string[] = [];
-
-      // Generate one board with retry + backoff. Image models rate-limit bursts
-      // (the cause of later boards failing with "Frame lỗi"), so we retry a few
-      // times with growing waits and only give up after that.
-      const errs: Record<string, string> = {};
-      const genBoard = async (
-        args: Parameters<typeof generateBoardImage>[0],
-        label: string,
-        key: string
-      ): Promise<string | null> => {
-        let lastErr = "unknown";
-        for (let k = 0; k < 3; k++) {
-          try {
-            const r = await generateBoardImage(args);
-            if (r.success) return r.data.url;
-            lastErr = r.error;
-          } catch (e) {
-            lastErr = e instanceof Error ? e.message : "network error";
-          }
-          if (k < 2) await sleep(4000 * (k + 1)); // 4s, then 8s
-        }
-        boardWarnings.push(`${label}: ${lastErr}`);
-        errs[key] = lastErr;
-        return null;
-      };
-
-      for (let i = 0; i < segCount; i++) {
-        setProgressMessage(lang === "vi" ? `Đang vẽ cảnh ${i + 1}/${segCount}` : `Drawing board ${i + 1}/${segCount}`);
-        const url = await genBoard(
-          { input, breakdown, analysis: plan.data.analysis, kind: "segment", segmentIndex: i, provider },
-          lang === "vi" ? `Cảnh ${i + 1}` : `Board ${i + 1}`,
-          `seg-${i}`
-        );
-        const seg = breakdown.segments[i];
-        if (seg) seg.first_frame_url = url;
-        bump();
-        // Space calls out so we don't trip the API's per-minute burst limit.
-        if (i < segCount - 1) await sleep(1500);
-      }
-
-      // Master board (presentation grid).
-      setProgressMessage(lang === "vi" ? "Đang vẽ bảng tổng" : "Drawing master board");
-      await sleep(1500);
-      const posterUrl = await genBoard(
-        { input, breakdown, analysis: plan.data.analysis, kind: "master", provider },
-        lang === "vi" ? "Bảng tổng" : "Master board",
-        "master"
-      );
-      bump();
-
-      setBoardErrors(errs);
-      setProgressPercent(100);
-      setResult({
-        breakdown,
-        characterRefSheetUrl: null,
-        storyboardPosterUrl: posterUrl,
-        videoPrompt: plan.data.videoPrompt,
-        warnings: [...plan.data.warnings, ...boardWarnings],
-      });
-      setPhase("result");
+      setDraft(plan.data.breakdown);
+      setPlanWarnings(plan.data.warnings);
+      setPhase("script");
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
       setPhase("input");
     }
   };
+
+  // ─── Build the boards from the (edited) script ───────────────────
+  const runBoards = async (
+    breakdown: StoryboardGenerationOutput,
+    videoPrompt: string,
+    warnings: string[]
+  ) => {
+    if (!genInput || !genAnalysis) return;
+    const input = genInput;
+    const analysis = genAnalysis;
+    setPhase("generating");
+    setProgressPercent(12);
+
+    const segCount = breakdown.segments.length;
+    const total = segCount + 1;
+    let done = 0;
+    const bump = () => {
+      done++;
+      setProgressPercent(12 + Math.round((done / total) * 85));
+    };
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    const boardWarnings: string[] = [];
+    const errs: Record<string, string> = {};
+
+    const genBoard = async (
+      args: Parameters<typeof generateBoardImage>[0],
+      label: string,
+      key: string
+    ): Promise<string | null> => {
+      let lastErr = "unknown";
+      for (let k = 0; k < 3; k++) {
+        try {
+          const r = await generateBoardImage(args);
+          if (r.success) return r.data.url;
+          lastErr = r.error;
+        } catch (e) {
+          lastErr = e instanceof Error ? e.message : "network error";
+        }
+        if (k < 2) await sleep(4000 * (k + 1));
+      }
+      boardWarnings.push(`${label}: ${lastErr}`);
+      errs[key] = lastErr;
+      return null;
+    };
+
+    for (let i = 0; i < segCount; i++) {
+      setProgressMessage(lang === "vi" ? `Đang vẽ cảnh ${i + 1}/${segCount}` : `Drawing board ${i + 1}/${segCount}`);
+      const url = await genBoard(
+        { input, breakdown, analysis, kind: "segment", segmentIndex: i, provider },
+        lang === "vi" ? `Cảnh ${i + 1}` : `Board ${i + 1}`,
+        `seg-${i}`
+      );
+      const seg = breakdown.segments[i];
+      if (seg) seg.first_frame_url = url;
+      bump();
+      if (i < segCount - 1) await sleep(1500);
+    }
+
+    setProgressMessage(lang === "vi" ? "Đang vẽ bảng tổng" : "Drawing master board");
+    await sleep(1500);
+    const posterUrl = await genBoard(
+      { input, breakdown, analysis, kind: "master", provider },
+      lang === "vi" ? "Bảng tổng" : "Master board",
+      "master"
+    );
+    bump();
+
+    setBoardErrors(errs);
+    setProgressPercent(100);
+    setResult({
+      breakdown,
+      characterRefSheetUrl: null,
+      storyboardPosterUrl: posterUrl,
+      videoPrompt,
+      warnings: [...warnings, ...boardWarnings],
+    });
+    setPhase("result");
+  };
+
+  // Finalize the edited script (re-sync Veo prompts) then build the boards.
+  const buildStoryboardFromScript = async () => {
+    if (!genInput || !genAnalysis || !draft) return;
+    setError(null);
+    setPhase("generating");
+    setProgressMessage(lang === "vi" ? "Đang chốt kịch bản..." : "Finalizing script...");
+    setProgressPercent(8);
+    try {
+      const fin = await finalizeScript({
+        input: genInput,
+        breakdown: draft,
+        analysis: genAnalysis,
+        provider,
+      });
+      if (!fin.success) {
+        setError(fin.error);
+        setPhase("script");
+        return;
+      }
+      await runBoards(fin.data.breakdown, fin.data.videoPrompt, planWarnings);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred");
+      setPhase("script");
+    }
+  };
+
+  // ─── Script editor helpers (immutable updates on the draft) ──────
+  const updateChar = (i: number, field: string, value: string) =>
+    setDraft((d) =>
+      d
+        ? { ...d, character_locks: d.character_locks.map((c, idx) => (idx === i ? { ...c, [field]: value } : c)) }
+        : d
+    );
+  const updateSeg = (i: number, field: string, value: string) =>
+    setDraft((d) =>
+      d ? { ...d, segments: d.segments.map((s, idx) => (idx === i ? { ...s, [field]: value } : s)) } : d
+    );
 
   // ─── Review & redo: re-render a single board on demand ───────────
   const regenerateBoard = async (
@@ -1224,6 +1277,144 @@ export function GenerateClient() {
         <h2 className="mb-2 text-xl font-bold">{L("generating")}</h2>
         <p className="mb-6 text-sm text-muted-foreground">{progressMessage}</p>
         <Progress value={progressPercent} showLabel className="mx-auto max-w-xs" />
+      </div>
+    );
+  }
+
+  // ─── Script Review / Edit Phase ─────────────────────────────────────
+  if (phase === "script" && draft) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">
+              {lang === "vi" ? "Duyệt & sửa kịch bản" : "Review & edit the script"}
+            </h1>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              {lang === "vi"
+                ? "Kiểm tra & sửa kịch bản TRƯỚC khi vẽ ảnh (sửa ở đây miễn phí, nhanh). Đặc biệt: kiểm tra giới tính/diện mạo nhân vật và lời thoại. Ưng rồi bấm 'Dựng Storyboard'."
+                : "Check & fix the script BEFORE drawing (editing here is free & fast). Especially verify the character's gender/look and the dialogue. Then hit 'Build storyboard'."}
+            </p>
+          </div>
+          <LangToggle />
+        </div>
+
+        {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+
+        {/* Title */}
+        <Card>
+          <CardContent className="space-y-2 p-4">
+            <label className="text-xs font-medium text-muted-foreground">
+              {lang === "vi" ? "Tiêu đề" : "Title"}
+            </label>
+            <Input value={draft.title} onChange={(e) => setDraft((d) => (d ? { ...d, title: e.target.value } : d))} />
+            {draft.synopsis && <p className="text-xs text-muted-foreground">{draft.synopsis}</p>}
+          </CardContent>
+        </Card>
+
+        {/* Characters */}
+        {draft.character_locks.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Users className="h-4 w-4" /> {lang === "vi" ? "Nhân vật" : "Characters"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {draft.character_locks.map((c, i) => (
+                <div key={i} className="space-y-2 rounded-lg border p-3">
+                  <p className="text-sm font-semibold">{c.name}</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        {lang === "vi" ? "Giới tính & tuổi ⚠️" : "Gender & age ⚠️"}
+                      </label>
+                      <Input value={c.gender_age ?? ""} onChange={(e) => updateChar(i, "gender_age", e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        {lang === "vi" ? "Trang phục" : "Costume"}
+                      </label>
+                      <Input value={c.costume ?? ""} onChange={(e) => updateChar(i, "costume", e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      {lang === "vi" ? "Đặc điểm nhận dạng" : "Signature features"}
+                    </label>
+                    <Textarea
+                      value={c.signature_features ?? ""}
+                      onChange={(e) => updateChar(i, "signature_features", e.target.value)}
+                      rows={2}
+                      className="resize-none text-sm"
+                    />
+                  </div>
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground">
+                {lang === "vi"
+                  ? "⚠️ Nếu giới tính/diện mạo sai so với ảnh bạn tải, sửa ở đây — nó sẽ áp dụng cho toàn bộ board."
+                  : "⚠️ If the gender/look is wrong vs your photo, fix it here — it applies to every board."}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Segments */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Film className="h-4 w-4" /> {lang === "vi" ? "Các cảnh" : "Scenes"} ({draft.segments.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {draft.segments.map((s, i) => (
+              <div key={i} className="space-y-2 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <Badge>#{s.segment_number}</Badge>
+                  <Badge variant="secondary" className="uppercase">{s.marketing_role}</Badge>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {lang === "vi" ? "Tiêu đề cảnh" : "Scene title"}
+                  </label>
+                  <Input value={s.title} onChange={(e) => updateSeg(i, "title", e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {lang === "vi" ? "Hành động (mô tả cảnh quay)" : "Action (motion)"}
+                  </label>
+                  <Textarea
+                    value={s.motion_prompt ?? ""}
+                    onChange={(e) => updateSeg(i, "motion_prompt", e.target.value)}
+                    rows={2}
+                    className="resize-none text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {lang === "vi" ? "Lời thoại" : "Dialogue"}
+                  </label>
+                  <Input
+                    value={s.dialogue ?? ""}
+                    onChange={(e) => updateSeg(i, "dialogue", e.target.value)}
+                    placeholder={lang === "vi" ? "(không có thoại)" : "(no dialogue)"}
+                  />
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        {/* Actions */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+          <Button variant="outline" onClick={() => setPhase("input")} className="gap-1">
+            <ChevronLeft className="h-4 w-4" /> {lang === "vi" ? "Quay lại brief" : "Back to brief"}
+          </Button>
+          <Button onClick={buildStoryboardFromScript} className="gap-2">
+            <Sparkles className="h-4 w-4" /> {lang === "vi" ? "Dựng Storyboard" : "Build storyboard"}
+          </Button>
+        </div>
       </div>
     );
   }

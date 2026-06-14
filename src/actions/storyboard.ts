@@ -315,51 +315,82 @@ export async function generateStoryboardPlan(
       }
     }
 
-    const ctx = buildRefContext(input, breakdown, analysis, provider);
-
-    // Ready-to-paste Veo prompts (text only).
-    const palette = breakdown.style_guide?.color_palette ?? [];
-    for (const seg of breakdown.segments) {
-      seg.first_frame_url = null;
-      seg.full_prompt = buildSegmentVeoPrompt({
-        characterDescription: ctx.charDescDna,
-        productDescription: ctx.productDnaText,
-        ingredients: ctx.ingredientsText,
-        sceneBible: ctx.sceneBible,
-        colorPalette: palette,
-        motionPrompt: seg.motion_prompt,
-        dialogue: seg.dialogue,
-        dialogueLanguage: ctx.dialogueLanguage,
-      });
-    }
-
-    const videoPrompt = buildVideoPromptText({
-      title: breakdown.title,
-      characterDescription: ctx.charDescDna,
-      productDescription: ctx.productDnaText,
-      ingredients: ctx.ingredientsText,
-      sceneBible: ctx.sceneBible,
-      setting: input.setting || "Unspecified",
-      style: input.style,
-      aspectRatio: ctx.aspectRatio,
-      colorPalette: palette,
-      dialogueLanguage: ctx.dialogueLanguage,
-      marketing: breakdown.marketing_structure,
-      segments: breakdown.segments.map((s) => ({
-        segment_number: s.segment_number,
-        title: s.title,
-        role: s.marketing_role,
-        duration_seconds: s.duration_seconds,
-        motion_prompt: s.motion_prompt,
-        dialogue: s.dialogue,
-        continuity_note: s.continuity_note,
-        beats: s.beats,
-      })),
-    });
+    const videoPrompt = assemblePlanPrompts(input, breakdown, analysis, provider);
 
     return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "AI generation failed" };
+  }
+}
+
+/**
+ * Builds the ready-to-paste Veo prompts (per-segment full_prompt + the overall
+ * videoPrompt) from a breakdown. Pulled out so it can be re-run AFTER the user
+ * edits the script (finalizeScript), keeping the prompts in sync with edits.
+ * Mutates each segment's full_prompt and resets first_frame_url.
+ */
+function assemblePlanPrompts(
+  input: StoryboardGenerationInput,
+  breakdown: StoryboardGenerationOutput,
+  analysis: StoryboardAnalysis,
+  provider: AIProvider
+): string {
+  const ctx = buildRefContext(input, breakdown, analysis, provider);
+  const palette = breakdown.style_guide?.color_palette ?? [];
+  for (const seg of breakdown.segments) {
+    seg.first_frame_url = null;
+    seg.full_prompt = buildSegmentVeoPrompt({
+      characterDescription: ctx.charDescDna,
+      productDescription: ctx.productDnaText,
+      ingredients: ctx.ingredientsText,
+      sceneBible: ctx.sceneBible,
+      colorPalette: palette,
+      motionPrompt: seg.motion_prompt,
+      dialogue: seg.dialogue,
+      dialogueLanguage: ctx.dialogueLanguage,
+    });
+  }
+  return buildVideoPromptText({
+    title: breakdown.title,
+    characterDescription: ctx.charDescDna,
+    productDescription: ctx.productDnaText,
+    ingredients: ctx.ingredientsText,
+    sceneBible: ctx.sceneBible,
+    setting: input.setting || "Unspecified",
+    style: input.style,
+    aspectRatio: ctx.aspectRatio,
+    colorPalette: palette,
+    dialogueLanguage: ctx.dialogueLanguage,
+    marketing: breakdown.marketing_structure,
+    segments: breakdown.segments.map((s) => ({
+      segment_number: s.segment_number,
+      title: s.title,
+      role: s.marketing_role,
+      duration_seconds: s.duration_seconds,
+      motion_prompt: s.motion_prompt,
+      dialogue: s.dialogue,
+      continuity_note: s.continuity_note,
+      beats: s.beats,
+    })),
+  });
+}
+
+/**
+ * Re-assemble prompts from a user-EDITED breakdown before building boards, so
+ * the Veo prompts reflect the edits (gender, dialogue, action, etc.).
+ */
+export async function finalizeScript(params: {
+  input: StoryboardGenerationInput;
+  breakdown: StoryboardGenerationOutput;
+  analysis: StoryboardAnalysis;
+  provider?: AIProvider;
+}): Promise<ActionResult<{ breakdown: StoryboardGenerationOutput; videoPrompt: string }>> {
+  const provider = params.provider ?? "gemini";
+  try {
+    const videoPrompt = assemblePlanPrompts(params.input, params.breakdown, params.analysis, provider);
+    return { success: true, data: { breakdown: params.breakdown, videoPrompt } };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Lỗi xử lý kịch bản" };
   }
 }
 
