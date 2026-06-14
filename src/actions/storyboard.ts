@@ -7,9 +7,11 @@ import {
   generateMasterBoard,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
+import { geminiGenerateImage } from "@/lib/gemini/client";
 import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
+  buildHandoffKeyframePrompt,
   type RefDescriptor,
 } from "@/prompts";
 import type {
@@ -396,6 +398,43 @@ export async function finalizeScript(params: {
     return { success: true, data: { breakdown: params.breakdown, videoPrompt } };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Lỗi xử lý kịch bản" };
+  }
+}
+
+// ─── VeoFlow handoff: render a clean keyframe from a ready-made clip prompt ──
+
+export async function generateHandoffKeyframe(params: {
+  clipPrompt: string;
+  characterImages?: string[];
+  productImages?: string[];
+  aspectRatio?: AspectRatio;
+  quality?: ImageQuality;
+  provider?: AIProvider;
+}): Promise<ActionResult<{ url: string }>> {
+  const aspectRatio = params.aspectRatio ?? "16:9";
+  try {
+    const refs: { base64: string; mimeType?: string; label?: string }[] = [];
+    const descriptors: RefDescriptor[] = [];
+    for (const b64 of (params.characterImages ?? []).filter(Boolean).slice(0, 2)) {
+      refs.push({ base64: b64, mimeType: "image/jpeg" });
+      descriptors.push({ role: "face" });
+    }
+    for (const b64 of (params.productImages ?? []).filter(Boolean).slice(0, 1)) {
+      refs.push({ base64: b64, mimeType: "image/jpeg" });
+      descriptors.push({ role: "product" });
+    }
+    const prompt = buildHandoffKeyframePrompt({ clipPrompt: params.clipPrompt, references: descriptors, aspectRatio });
+    // Handoff keyframes need reference-image face lock → Gemini.
+    const url = await geminiGenerateImage({
+      prompt,
+      referenceImages: refs.length > 0 ? refs : undefined,
+      aspectRatio,
+      quality: params.quality ?? "standard",
+      imageSize: "1K",
+    });
+    return { success: true, data: { url } };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Keyframe failed" };
   }
 }
 

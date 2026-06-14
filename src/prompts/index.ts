@@ -4,6 +4,7 @@ export {
   buildCharacterRefSheetPrompt,
   buildSegmentFirstFramePrompt,
   buildKeyframePrompt,
+  buildHandoffKeyframePrompt,
   buildMasterBoardPrompt,
   buildVideoPromptText,
   buildSegmentVeoPrompt,

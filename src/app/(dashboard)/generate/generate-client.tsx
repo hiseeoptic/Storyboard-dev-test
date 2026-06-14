@@ -35,10 +35,44 @@ import {
   generateStoryboardPlan,
   generateBoardImage,
   finalizeScript,
+  generateHandoffKeyframe,
   type StoryboardResult,
   type StoryboardAnalysis,
 } from "@/actions";
 import { CharacterStudio } from "./character-studio";
+
+// Leniently split a pasted VeoFlow export into per-clip prompts (JSON manifest
+// or plain text separated by blank lines / numbered "Clip/Shot/Scene" headers).
+function splitHandoffClips(raw: string): string[] {
+  const text = raw.trim();
+  if (!text) return [];
+  try {
+    const json = JSON.parse(text);
+    const arr: unknown[] = Array.isArray(json) ? json : (json.clips ?? json.segments ?? json.shots ?? []);
+    const out = arr
+      .map((c) => {
+        if (typeof c === "string") return c;
+        const o = c as Record<string, unknown>;
+        return (
+          (o.flattenedPrompt as string) ||
+          (o.flattened_prompt as string) ||
+          (o.prompt as string) ||
+          (o.scriptSegment as string) ||
+          (typeof o.final_json_output === "object" ? JSON.stringify(o.final_json_output) : "")
+        );
+      })
+      .map((s) => (s || "").trim())
+      .filter(Boolean);
+    if (out.length > 0) return out;
+  } catch {
+    /* not JSON */
+  }
+  const blocks = text
+    .split(/\n\s*\n+|\n(?=\s*(?:clip|shot|scene|segment|cảnh)\s*#?\s*\d+|\s*#?\d+[.)]\s)/i)
+    .map((b) => b.trim())
+    .filter((b) => b.length > 15);
+  return blocks.length > 0 ? blocks : [text];
+}
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
@@ -676,6 +710,57 @@ export function GenerateClient() {
   // Script-review phase: the editable breakdown + carried plan data.
   const [draft, setDraft] = useState<StoryboardGenerationOutput | null>(null);
   const [planWarnings, setPlanWarnings] = useState<string[]>([]);
+
+  // VeoFlow handoff mode (paste ready-made prompts → keyframes).
+  const [inputMode, setInputMode] = useState<"wizard" | "veoflow">("wizard");
+  const [handoffText, setHandoffText] = useState("");
+  const [handoffFaces, setHandoffFaces] = useState<UploadedImage[]>([]);
+  const [handoffProducts, setHandoffProducts] = useState<UploadedImage[]>([]);
+  const [handoffResults, setHandoffResults] = useState<
+    { id: string; prompt: string; url: string | null; error: string | null; busy: boolean }[]
+  >([]);
+  const [handoffBusy, setHandoffBusy] = useState(false);
+
+  const runHandoff = async () => {
+    const clips = splitHandoffClips(handoffText);
+    if (clips.length === 0) {
+      setError(lang === "vi" ? "Hãy dán nội dung prompt từ VeoFlow." : "Paste VeoFlow prompt content first.");
+      return;
+    }
+    setError(null);
+    setHandoffBusy(true);
+    const faces = handoffFaces.map((i) => i.base64);
+    const products = handoffProducts.map((i) => i.base64);
+    setHandoffResults(clips.map((p, i) => ({ id: String(i), prompt: p, url: null, error: null, busy: true })));
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    for (let i = 0; i < clips.length; i++) {
+      let url: string | null = null;
+      let err: string | null = null;
+      for (let k = 0; k < 3; k++) {
+        try {
+          const r = await generateHandoffKeyframe({
+            clipPrompt: clips[i]!,
+            characterImages: faces,
+            productImages: products,
+            aspectRatio,
+            quality: imageQuality,
+            provider,
+          });
+          if (r.success) {
+            url = r.data.url;
+            break;
+          }
+          err = r.error;
+        } catch (e) {
+          err = e instanceof Error ? e.message : "network error";
+        }
+        if (k < 2) await sleep(3000 * (k + 1));
+      }
+      setHandoffResults((prev) => prev.map((x, idx) => (idx === i ? { ...x, url, error: err, busy: false } : x)));
+      if (i < clips.length - 1) await sleep(1500);
+    }
+    setHandoffBusy(false);
+  };
 
   // Set when reference images were handed off from the Image Studio.
   const [fromStudio, setFromStudio] = useState(false);
@@ -1894,6 +1979,132 @@ export function GenerateClient() {
     />
   );
 
+  // ── Mode switcher (Wizard vs VeoFlow handoff) ──
+  const ModeTabs = () => (
+    <div className="mb-5 flex justify-center gap-2">
+      <Button variant={inputMode === "wizard" ? "default" : "outline"} size="sm" onClick={() => setInputMode("wizard")}>
+        {lang === "vi" ? "Tạo từ ý tưởng" : "From idea"}
+      </Button>
+      <Button variant={inputMode === "veoflow" ? "default" : "outline"} size="sm" onClick={() => setInputMode("veoflow")}>
+        {lang === "vi" ? "Nhập từ VeoFlow" : "From VeoFlow"}
+      </Button>
+    </div>
+  );
+
+  // ── VeoFlow handoff panel ──
+  if (inputMode === "veoflow") {
+    const clipCount = splitHandoffClips(handoffText).length;
+    return (
+      <div className="mx-auto max-w-2xl">
+        {hiddenTrigger}
+        {adminModal}
+        <div className="mb-4 text-center">
+          <div className="mb-3 flex justify-center">
+            <LangToggle />
+          </div>
+          <h1 className="text-3xl font-bold">{lang === "vi" ? "Nhập từ VeoFlow" : "From VeoFlow"}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {lang === "vi"
+              ? "Dán prompt/manifest đã khoá DNA từ VeoFlow → tạo ảnh keyframe sạch để đẩy vào Veo. App không tự viết lại kịch bản."
+              : "Paste DNA-locked prompts/manifest from VeoFlow → render clean keyframes for Veo. The app won't rewrite the script."}
+          </p>
+        </div>
+        <ModeTabs />
+
+        {error && <div className="mb-3 rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+
+        <Card>
+          <CardContent className="space-y-4 p-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">
+                {lang === "vi" ? "Prompt từ VeoFlow (mỗi cảnh 1 khối, hoặc dán JSON manifest)" : "VeoFlow prompts (one block per clip, or paste JSON)"}
+              </label>
+              <Textarea
+                value={handoffText}
+                onChange={(e) => setHandoffText(e.target.value)}
+                rows={10}
+                placeholder={lang === "vi" ? "Dán toàn bộ output từ VeoFlow vào đây..." : "Paste your VeoFlow output here..."}
+                className="resize-y font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                {clipCount > 0
+                  ? (lang === "vi" ? `Nhận diện ${clipCount} cảnh.` : `Detected ${clipCount} clips.`)
+                  : (lang === "vi" ? "Cách nhau bằng dòng trống hoặc 'Clip 1/2...'." : "Separate by blank lines or 'Clip 1/2...'.")}
+              </p>
+            </div>
+
+            <ImageUploader
+              images={handoffFaces}
+              onChange={setHandoffFaces}
+              maxImages={2}
+              label={lang === "vi" ? "Ảnh nhân vật (khoá mặt)" : "Character photo (face lock)"}
+              hint={lang === "vi" ? "Tải ảnh mặt để keyframe giữ đúng người" : "Upload a face to keep identity"}
+            />
+            <ImageUploader
+              images={handoffProducts}
+              onChange={setHandoffProducts}
+              maxImages={1}
+              label={lang === "vi" ? "Ảnh sản phẩm (tuỳ chọn)" : "Product photo (optional)"}
+              hint={lang === "vi" ? "Khoá đúng sản phẩm nếu có" : "Lock the exact product if any"}
+            />
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">{L("aspectRatio")}</label>
+                <div className="grid grid-cols-2 gap-1">
+                  <Button variant={aspectRatio === "16:9" ? "default" : "outline"} size="sm" onClick={() => setAspectRatio("16:9")}>16:9</Button>
+                  <Button variant={aspectRatio === "9:16" ? "default" : "outline"} size="sm" onClick={() => setAspectRatio("9:16")}>9:16</Button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">{L("imageQuality")}</label>
+                <div className="grid grid-cols-2 gap-1">
+                  <Button variant={imageQuality === "standard" ? "default" : "outline"} size="sm" onClick={() => setImageQuality("standard")}>Standard</Button>
+                  <Button variant={imageQuality === "pro" ? "default" : "outline"} size="sm" onClick={() => setImageQuality("pro")}>Pro</Button>
+                </div>
+              </div>
+            </div>
+
+            <Button onClick={runHandoff} disabled={handoffBusy || handoffText.trim().length === 0} className="w-full gap-2">
+              {handoffBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {lang === "vi" ? "Tạo keyframes" : "Generate keyframes"}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {handoffResults.length > 0 && (
+          <div className="mt-6 space-y-4">
+            <h2 className="text-lg font-bold">{lang === "vi" ? "Keyframes" : "Keyframes"}</h2>
+            {handoffResults.map((r, i) => (
+              <Card key={r.id} className="overflow-hidden">
+                <div className="relative aspect-video bg-black/90">
+                  {r.url ? (
+                    <img src={r.url} alt={`Keyframe ${i + 1}`} className="h-full w-full object-contain" />
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center text-muted-foreground">
+                      {r.busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <ImageIcon className="h-6 w-6 opacity-50" />}
+                      <span className="text-xs">{r.busy ? (lang === "vi" ? "Đang vẽ..." : "Rendering...") : (lang === "vi" ? "Lỗi" : "Failed")}</span>
+                      {r.error && <span className="text-[10px] text-destructive/80">{r.error}</span>}
+                    </div>
+                  )}
+                  <Badge className="absolute left-2 top-2">#{i + 1}</Badge>
+                </div>
+                <CardContent className="space-y-2 p-3">
+                  <p className="line-clamp-2 text-[11px] text-muted-foreground">{r.prompt}</p>
+                  {r.url && (
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => downloadImage(r.url!, `keyframe_${String(i + 1).padStart(2, "0")}.jpg`)}>
+                      <Download className="h-3.5 w-3.5" /> {lang === "vi" ? "Tải" : "Download"}
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-2xl">
       {hiddenTrigger}
@@ -1905,6 +2116,8 @@ export function GenerateClient() {
         <h1 className="text-3xl font-bold">{L("pageTitle")}</h1>
         <p className="mt-1 text-muted-foreground">{L("pageSubtitle")}</p>
       </div>
+
+      <ModeTabs />
 
       <Card>
         <CardHeader>

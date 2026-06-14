@@ -423,6 +423,26 @@ ${params.productDna ? `PRODUCT (exact, unchanged, with colours): ${params.produc
 RENDER RULES: a SINGLE static frame; the subject is sharp and frozen in the STARTING posture for the upcoming action (no motion blur, no camera-movement effect); ${ratioWord} aspect ratio, 1080p quality. Do NOT include timeline markers, multiple panels, split-screens, reference thumbnails, captions, subtitles, on-screen text or speech bubbles. Photoreal premium commercial look. ${SHARED_NEGATIVE}`;
 }
 
+// ─── VeoFlow handoff: render a clean keyframe from a ready-made clip prompt ──
+// The user pastes a locked prompt produced by VeoFlow (already carrying the
+// forensic DNA + scene bible). We render it as ONE static first-frame, locking
+// to the attached reference photo if provided.
+export function buildHandoffKeyframePrompt(params: {
+  clipPrompt: string;
+  references?: RefDescriptor[];
+  aspectRatio: AspectRatio;
+}): string {
+  const refBlock = buildReferenceInstructions(params.references ?? []);
+  const hasFace = (params.references ?? []).some((r) => r.role === "face");
+  const ratioWord = params.aspectRatio === "9:16" ? "vertical 9:16 portrait" : "horizontal 16:9 landscape";
+  return `${refBlock}Render ONE clean, photoreal, STATIC KEYFRAME — a single first-frame image to feed an image-to-video model (Veo). Reproduce the LOCKED PROMPT below as a single frozen frame in ${ratioWord} aspect, 1080p. Do NOT add motion blur, camera-movement effects, timeline markers, multiple panels, split-screens, reference strips, captions, subtitles, on-screen text or speech.${hasFace ? " Keep the attached reference person's face, hair and identity EXACTLY — same person." : ""}
+
+LOCKED PROMPT (reproduce faithfully, keep all DNA / colours / scene-bible tokens):
+${params.clipPrompt.trim()}
+
+${SHARED_NEGATIVE}`;
+}
+
 // ─── Step 4: Master Board (Character Sheet + captioned storyboard grid) ─────
 
 /**

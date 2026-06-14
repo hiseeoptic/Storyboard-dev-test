@@ -6,6 +6,7 @@ export {
   generateStoryboardPlan,
   generateBoardImage,
   finalizeScript,
+  generateHandoffKeyframe,
   type BoardKind,
   type StoryboardResult,
   type StoryboardAnalysis,
