@@ -45,6 +45,21 @@ export interface StoryboardPlan {
   warnings: string[];
 }
 
+/** Remove eyewear mentions from a description (used when a real face photo
+ * is the source of truth, so invented "glasses" can't override it). */
+function stripEyewear(text: string): string {
+  return text
+    .replace(
+      /,?\s*(?:wearing|with)?\s*(?:black|dark|thin|thick|round|square|rectangular|metal|wire|rimless|horn-?rimmed|clear|stylish|modern)?\s*(?:eye)?glasses\b/gi,
+      ""
+    )
+    .replace(/,?\s*spectacles\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([.,])/g, "$1")
+    .replace(/(^[.,\s]+|[,\s]+$)/g, "")
+    .trim();
+}
+
 // ─── Shared: vision analysis of all uploads ───────────────────────────────
 
 async function runAnalysis(
@@ -189,17 +204,22 @@ function buildRefContext(
 
   const preserveRealFace = canChain && !!faceImg;
 
-  const charDescForPoster = breakdown.character_locks
+  const charDescForPosterRaw = breakdown.character_locks
     .map(
       (c) =>
         `${c.name}: ${c.gender_age}, ${c.build}, skin ${c.skin_tone}, hair ${c.hair}, eyes ${c.eyes}, wearing ${c.costume}. ${c.signature_features}`
     )
     .join(". ");
+  // When a real face photo governs identity, strip any LLM-invented eyewear
+  // from the text so it can't contradict the photo (the model kept adding
+  // glasses to a man who wears none).
+  const charDescForPoster = preserveRealFace ? stripEyewear(charDescForPosterRaw) : charDescForPosterRaw;
   const mainCostume = breakdown.character_locks[0]?.costume ?? "casual clothes";
   const charDesc = preserveRealFace
     ? `the exact person shown in the attached portrait photo (keep their real face, hair and look), wearing ${mainCostume}`
     : charDescForPoster || "the main character";
-  const mainDna = breakdown.character_locks[0]?.dna;
+  const mainDnaRaw = breakdown.character_locks[0]?.dna;
+  const mainDna = preserveRealFace && mainDnaRaw ? stripEyewear(mainDnaRaw) : mainDnaRaw;
   const charDescForShots = preserveRealFace ? charDesc : charDescForPoster || "the main character";
   const charDescDna = [charDescForShots, mainDna].filter(Boolean).join(". ");
 

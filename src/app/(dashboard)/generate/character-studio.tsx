@@ -18,10 +18,10 @@ interface GenResult {
 // Clean identity angles only — expressions are described per-scene in the
 // prompt (Veo renders them), so they are NOT generated as references.
 const ANGLE_VARIANTS: { label: string; override: Partial<PhotoConfig> }[] = [
-  { label: "Chính diện", override: { photographyStyle: "Front-facing studio portrait, symmetrical face, clean neutral background" } },
-  { label: "Góc 3/4", override: { photographyStyle: "Three-quarter face portrait, slight head turn, natural facial depth, studio lighting" } },
-  { label: "Nghiêng", override: { photographyStyle: "Side profile studio portrait, clean outline, minimal background" } },
-  { label: "Toàn thân", override: { photographyStyle: "Full body shot, head to toe visible, standing naturally and confidently, clean neutral background", aspectRatio: "9:16" } },
+  { label: "Toàn thân (chính diện)", override: { photographyStyle: "Full body FRONT view, head to toe visible, standing naturally and confidently, clean neutral studio background, sharp high detail", aspectRatio: "9:16" } },
+  { label: "Nửa người 3/4", override: { photographyStyle: "Waist-up three-quarter portrait, slight head turn, natural facial depth, sharp face, soft studio lighting, clean background" } },
+  { label: "Nửa người nghiêng", override: { photographyStyle: "Waist-up side-profile portrait, clean outline, sharp face, minimal background" } },
+  { label: "Cận mặt", override: { photographyStyle: "Close-up beauty headshot, face fills frame, sharp clear eyes, flattering soft light, clean background" } },
 ];
 
 function rid() {

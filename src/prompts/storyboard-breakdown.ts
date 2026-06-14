@@ -359,26 +359,25 @@ export function buildSegmentFirstFramePrompt(params: {
     ? "This is the opening shot of the whole video."
     : "Action panel 1 must continue seamlessly from the previous shot's final action (same character, wardrobe, lighting, location).";
 
-  // CHARACTER REFERENCE strip: 3 identity angles (always) + an optional, FIXED
-  // set of expression heads. We deliberately do NOT tie expressions to "this
-  // shot's emotion" — that forced every board to re-render emotional faces,
-  // which both over-used expressions and drifted the identity. Veo animates
-  // the per-shot emotion from the action captions instead.
+  // CHARACTER REFERENCE: the references must be LARGE and legible so an
+  // image-to-video model (Veo) can actually read the identity. One full-body
+  // FRONT view + waist-up (half-body) angle views — never tiny distant heads.
   const EXPRESSION_HEADS = ["calm neutral", "natural friendly smile", "confident"];
   const expCount = Math.min(3, Math.max(0, params.referenceExpressions ?? 0));
-  const thumbTotal = 3 + expCount;
-  const refStrip =
+  const expClause =
     expCount > 0
-      ? `a thin row of ${thumbTotal} small thumbnails of THE SAME main character to lock identity — FRONT face, 3/4 face, SIDE profile, plus ${expCount} expression head${expCount > 1 ? "s" : ""} (${EXPRESSION_HEADS.slice(0, expCount).join(", ")}). The face, hair and features must be IDENTICAL in every thumbnail — only the expression changes.`
-      : `a thin row of 3 small thumbnails of THE SAME main character to lock identity — FRONT face, 3/4 face, SIDE profile, all with a neutral relaxed expression. Do NOT add extra emotional expression heads; the character's emotion in the action panels is driven by the action captions only.`;
+      ? ` Add ${expCount} more WAIST-UP expression view${expCount > 1 ? "s" : ""} (${EXPRESSION_HEADS.slice(0, expCount).join(", ")}) with the SAME identical face — only the expression changes.`
+      : ` Keep a neutral relaxed expression on every reference view; do NOT add extra emotional head shots (per-shot emotion is driven by the action captions).`;
+  const refStrip =
+    `LARGE, clearly-visible reference portraits of THE SAME main character — big enough that the face and clothing read clearly, NOT small distant thumbnails: (1) one FULL-BODY FRONT view, head to toe, standing naturally; and (2) two WAIST-UP (half-body) views — a 3/4 angle and a side profile — each showing the face sharply and at good size.${expClause}`;
 
   return `${refBlock}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for ONE ~8 second video clip, presented as ONE single horizontal image. This board gives an image-to-video model (Veo) full context: who the character is (from every angle), what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions that happen across the 8 seconds. ${params.style} style.
 
 THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 
-■ TOP — "CHARACTER REFERENCE" strip (REPEAT THIS IN EVERY SHOT): ${refStrip} Small label "CHARACTER REF". Character: ${params.characterDescription}.
+■ TOP-LEFT — "CHARACTER REFERENCE" block (REPEAT THIS IN EVERY SHOT, make it prominent and reasonably large): ${refStrip} Label "CHARACTER REF". Character: ${params.characterDescription}.
 
-■ LEFT — "SCENE OVERVIEW": one larger establishing panel showing the full location/environment of this shot (wide angle)${hasProduct ? ", with the product clearly visible on a surface" : ""}. ${hasSetting ? "CRITICAL: reproduce the EXACT location from the attached interior reference photo — the SAME cabinet style & colour, wall, tiles, countertop, window, appliances and overall layout. Do NOT invent or restyle a different kitchen. This identical location must also appear behind every action panel." : "This tells Veo the setting."}
+■ "SCENE OVERVIEW": one larger establishing panel showing the full location/environment of this shot (wide angle)${hasProduct ? ", with the product clearly visible on a surface" : ""}. ${hasSetting ? "CRITICAL: reproduce the EXACT location from the attached interior reference photo — the SAME cabinet style & colour, wall, tiles, countertop, window, appliances and overall layout. Do NOT invent or restyle a different kitchen. Keep this SAME room even in 'before/problem' shots — only the pan/food/props state changes, never the kitchen itself. This identical location must also appear behind every action panel." : "This tells Veo the setting."}
 
 ■ RIGHT / BOTTOM — "ACTION SEQUENCE": ${target} numbered action panels (${numberLabels}) laid out left → right showing the ${target} key moments across the 8 seconds, each a small illustration with a SHORT caption under it describing the action:
 ${panelLines}
@@ -388,7 +387,7 @@ ${params.productDna ? `PRODUCT DNA (identical in every panel, with exact colours
 ${continuity}
 ${directive}
 
-RULES: ONE cohesive board image; the SAME individual (identical face, hair, eyewear and outfit) AND the SAME product appear in the character-ref strip, the scene overview and all ${target} action panels; ${hasSetting ? "the SAME exact kitchen/location from the interior reference photo" : "one single consistent location"} for this whole board; thin clean dividers and small numbered badges; captions short and legible. ${SHARED_NEGATIVE}`;
+RULES: ONE cohesive board image; the SAME individual (identical face, hair and outfit) AND the SAME product appear in the character-ref block, the scene overview and all ${target} action panels;${params.preserveRealFace ? " match the man's eyewear to his reference portrait EXACTLY — if he is NOT wearing glasses in the photo, do NOT add glasses anywhere; if he is, keep the same ones;" : ""} ${hasSetting ? "the SAME exact kitchen/location from the interior reference photo" : "one single consistent location"} for this whole board; thin clean dividers and small numbered badges; captions short and legible. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 4: Master Board (Character Sheet + captioned storyboard grid) ─────

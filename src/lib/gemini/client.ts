@@ -284,9 +284,11 @@ export async function geminiGenerateImage(params: {
       const image = extractImage(json);
       if (image) {
         // Compress before returning so the data-URI fits the serverless
-        // response limit. 1K boards cap ~1280px; everything else ~2048px.
-        const cap = imageSize === "1K" ? 1280 : 2048;
-        return await compressImage(image, cap, 86);
+        // response limit. Composite boards (1K) cap ~1280px at q86; single
+        // Studio portraits keep ~2048px at high quality (q93) so the reference
+        // images stay crisp and flattering — better refs = better video.
+        const isBoard = imageSize === "1K";
+        return await compressImage(image, isBoard ? 1280 : 2048, isBoard ? 86 : 93);
       }
       lastErr = `Model ${model} returned no image`;
       continue; // try next model
