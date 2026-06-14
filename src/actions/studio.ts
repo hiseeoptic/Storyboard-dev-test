@@ -66,11 +66,15 @@ export async function generateStudioImage(
     : "9:16") as AspectRatio | "1:1";
 
   try {
+    // Pro = Nano Banana Pro (gemini-3-pro-image-preview): it preserves the
+    // uploaded face identity far better than 2.5-flash AND renders at 2K, so
+    // the beautified character references actually look like the person and
+    // are sharp enough to anchor every storyboard board.
     const url = await geminiGenerateImage({
       prompt,
       referenceImages: refs.length > 0 ? refs : undefined,
       aspectRatio: aspect,
-      quality: "standard",
+      quality: "pro",
     });
     return { success: true, data: { url, prompt } };
   } catch (err) {

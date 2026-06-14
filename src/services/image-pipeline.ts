@@ -145,6 +145,7 @@ export async function generateSegmentFrame(params: {
   preserveRealFace?: boolean;
   referenceImages?: RefImage[];
   references?: RefDescriptor[];
+  referenceExpressions?: number;
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
@@ -162,6 +163,7 @@ export async function generateSegmentFrame(params: {
     isFirst: params.isFirst,
     preserveRealFace: params.preserveRealFace,
     references: params.references,
+    referenceExpressions: params.referenceExpressions,
   });
 
   const url = await generateImage(prompt, {

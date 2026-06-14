@@ -35,6 +35,7 @@ import {
   generateStoryboardPlan,
   generateBoardImage,
   type StoryboardResult,
+  type StoryboardAnalysis,
 } from "@/actions";
 import { CharacterStudio } from "./character-studio";
 import type {
@@ -123,6 +124,14 @@ const t = {
     vi: "Mô tả ngoại hình (không bắt buộc nếu có ảnh)",
     en: "Appearance description (optional if uploading photos)",
   },
+  refExprTitle: { vi: "Biểu cảm trong ảnh tham chiếu", en: "Expressions in the reference strip" },
+  refExprHint: {
+    vi: "Mỗi board luôn có 3 góc mặt để khoá danh tính. Chọn thêm biểu cảm nếu muốn — nhưng nên để Veo tự diễn cảm xúc theo prompt (ít biểu cảm = mặt ít bị 'trôi', giống bạn hơn).",
+    en: "Every board always has 3 face angles to lock identity. Add expressions only if you want — best to let Veo act the emotion from the prompt (fewer expressions = less identity drift).",
+  },
+  refExpr0: { vi: "Không — để Veo tự diễn (khuyên dùng)", en: "None — let Veo act it (recommended)" },
+  refExpr2: { vi: "2 biểu cảm", en: "2 expressions" },
+  refExpr3: { vi: "3 biểu cảm", en: "3 expressions" },
   charPhotos: { vi: "Ảnh nhân vật", en: "Character Photos" },
   charPhotosHint: { vi: "Tải lên 2-3 ảnh từ các góc khác nhau", en: "Upload 2-3 photos from different angles" },
   addCharacter: { vi: "Thêm nhân vật", en: "Add Character" },
@@ -283,8 +292,8 @@ const t = {
   adminClose: { vi: "Đóng", en: "Close" },
   adminProviderLabel: { vi: "Nhà cung cấp AI", en: "AI Provider" },
   adminProviderHint: {
-    vi: "Lựa chọn được lưu lại cho lần sau. OpenAI dùng GPT-4o + DALL-E 3, Gemini dùng Gemini 2.5 Flash.",
-    en: "Your choice is saved for next time. OpenAI uses GPT-4o + DALL-E 3, Gemini uses Gemini 2.5 Flash.",
+    vi: "Lựa chọn được lưu lại cho lần sau. OpenAI dùng GPT-4o + DALL-E 3, Gemini dùng Nano Banana / Nano Banana Pro (giữ khuôn mặt).",
+    en: "Your choice is saved for next time. OpenAI uses GPT-4o + DALL-E 3, Gemini uses Nano Banana / Nano Banana Pro (face lock).",
   },
   adminCurrentProvider: { vi: "Đang dùng", en: "Currently using" },
 } as const;
@@ -523,6 +532,101 @@ const VIDEO_GOAL_OPTIONS: Record<Lang, { value: VideoGoal; label: string }[]> = 
   ],
 };
 
+// ─── Description presets (dropdown instead of free typing) ──────────────────
+// FORCE_REF = "lock onto the uploaded reference photo for sync" — the option
+// the user picks so the tool reproduces the ref image exactly instead of
+// inventing from text.
+const FORCE_REF = "__force_ref__";
+
+// English instruction injected when FORCE_REF is chosen (it flows into the
+// image prompt as the subject's description).
+const FORCE_TEXT = {
+  character:
+    "Use the uploaded reference photo as the ABSOLUTE source of truth — reproduce this exact same person identically in every shot (same face, hairstyle, build); do not restyle or invent a different look.",
+  product:
+    "Use the uploaded product photo as the ABSOLUTE source of truth — reproduce the exact same product identically (same shape, colour, material, branding); do not redesign or swap it.",
+  background:
+    "Use the uploaded interior photo as the ABSOLUTE source of truth — reproduce the exact same location identically (same cabinets, colours, layout, window, appliances); do not invent a different place.",
+} as const;
+
+const CHAR_APPR_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
+  vi: [
+    { value: FORCE_REF, label: "🔒 Đồng bộ tuyệt đối với ảnh đã tải (khuyên dùng)" },
+    { value: "glowup", label: "Giữ nhận diện, làm đẹp tự nhiên" },
+    { value: "exact", label: "Giữ nguyên 100% như ảnh" },
+    { value: "businessman", label: "Doanh nhân lịch lãm" },
+    { value: "homecook", label: "Nội trợ / đầu bếp thân thiện" },
+    { value: "athletic", label: "Năng động, khỏe khoắn" },
+    { value: CUSTOM, label: "Khác (tự nhập)" },
+  ],
+  en: [
+    { value: FORCE_REF, label: "🔒 Lock to uploaded photo (recommended)" },
+    { value: "glowup", label: "Keep identity, natural glow-up" },
+    { value: "exact", label: "Keep exactly as the photo" },
+    { value: "businessman", label: "Polished businessman" },
+    { value: "homecook", label: "Friendly home cook" },
+    { value: "athletic", label: "Energetic, fit & healthy" },
+    { value: CUSTOM, label: "Other (type your own)" },
+  ],
+};
+const CHAR_APPR_PROMPT: Record<string, string> = {
+  glowup: "natural, friendly and camera-ready; keep the real identity from the reference photo",
+  exact: "reproduce the person exactly as in the reference photo, no restyling",
+  businessman: "polished, well-groomed, smart-casual businessman look",
+  homecook: "warm, friendly home cook / homemaker look",
+  athletic: "energetic, fit and healthy look",
+};
+
+const PROD_DESC_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
+  vi: [
+    { value: FORCE_REF, label: "🔒 Đồng bộ tuyệt đối với ảnh sản phẩm (khuyên dùng)" },
+    { value: "premium", label: "Cao cấp, bóng bẩy" },
+    { value: "natural", label: "Mộc mạc, tự nhiên" },
+    { value: CUSTOM, label: "Khác (tự nhập)" },
+  ],
+  en: [
+    { value: FORCE_REF, label: "🔒 Lock to uploaded product photo (recommended)" },
+    { value: "premium", label: "Premium, glossy" },
+    { value: "natural", label: "Natural, rustic" },
+    { value: CUSTOM, label: "Other (type your own)" },
+  ],
+};
+const PROD_DESC_PROMPT: Record<string, string> = {
+  premium: "premium, glossy, high-end product presentation",
+  natural: "natural, rustic, authentic product presentation",
+};
+
+const BG_DESC_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
+  vi: [
+    { value: FORCE_REF, label: "🔒 Đồng bộ tuyệt đối với ảnh bối cảnh (khuyên dùng)" },
+    { value: "bright", label: "Sáng sủa, hiện đại" },
+    { value: "cozy", label: "Ấm cúng, gần gũi" },
+    { value: CUSTOM, label: "Khác (tự nhập)" },
+  ],
+  en: [
+    { value: FORCE_REF, label: "🔒 Lock to uploaded location photo (recommended)" },
+    { value: "bright", label: "Bright, modern" },
+    { value: "cozy", label: "Cozy, homely" },
+    { value: CUSTOM, label: "Other (type your own)" },
+  ],
+};
+const BG_DESC_PROMPT: Record<string, string> = {
+  bright: "bright, clean, modern interior",
+  cozy: "cozy, warm, homely interior",
+};
+
+// Resolve a description dropdown selection into the text fed to the AI.
+function resolveDesc(
+  sel: string,
+  custom: string,
+  map: Record<string, string>,
+  forceText: string
+): string {
+  if (sel === FORCE_REF) return forceText;
+  if (sel === CUSTOM) return custom.trim();
+  return sel ? map[sel] ?? "" : "";
+}
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface CharacterEntry {
@@ -546,6 +650,38 @@ interface BackgroundEntry {
 
 type Phase = "input" | "generating" | "result";
 
+// Downscale a generated board (data URI) to a small JPEG so it can be sent
+// back as a lightweight CONTINUITY ANCHOR reference without bloating the
+// server-action payload. ~768px is plenty to convey face + wardrobe + kitchen.
+async function downscaleToBase64(
+  dataUri: string,
+  maxDim = 768,
+  quality = 0.82
+): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    const img = document.createElement("img");
+    img.src = dataUri;
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("anchor load failed"));
+    });
+    const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * scale);
+    const h = Math.round(img.naturalHeight * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    const out = canvas.toDataURL("image/jpeg", quality);
+    const base64 = out.includes(",") ? out.split(",")[1]! : out;
+    return { base64, mimeType: "image/jpeg" };
+  } catch {
+    return null;
+  }
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function GenerateClient() {
@@ -557,6 +693,13 @@ export function GenerateClient() {
   const [progressMessage, setProgressMessage] = useState("");
   const [result, setResult] = useState<StoryboardResult | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Kept after a build so any board can be reviewed and re-rendered on demand
+  // (the quality-review/redo gate) without rebuilding the whole storyboard.
+  const [genInput, setGenInput] = useState<StoryboardGenerationInput | null>(null);
+  const [genAnalysis, setGenAnalysis] = useState<StoryboardAnalysis | null>(null);
+  const [genAnchor, setGenAnchor] = useState<{ base64: string; mimeType?: string } | null>(null);
+  const [regenTarget, setRegenTarget] = useState<number | "master" | null>(null);
 
   // Set when reference images were handed off from the Image Studio.
   const [fromStudio, setFromStudio] = useState(false);
@@ -653,12 +796,14 @@ export function GenerateClient() {
   const [charName, setCharName] = useState("");
   const [charRole, setCharRole] = useState("");
   const [charAppearance, setCharAppearance] = useState("");
+  const [charApprSel, setCharApprSel] = useState("");
   const [charImages, setCharImages] = useState<UploadedImage[]>([]);
 
   // Step 3: Products (main) + named ingredients (auxiliary)
   const [products, setProducts] = useState<ProductEntry[]>([]);
   const [prodName, setProdName] = useState("");
   const [prodDesc, setProdDesc] = useState("");
+  const [prodDescSel, setProdDescSel] = useState("");
   const [prodImages, setProdImages] = useState<UploadedImage[]>([]);
   // Auxiliary/ingredient images — each named, referenced by name in prompts.
   const [ingredients, setIngredients] = useState<ProductEntry[]>([]);
@@ -670,7 +815,13 @@ export function GenerateClient() {
   const [backgrounds, setBackgrounds] = useState<BackgroundEntry[]>([]);
   const [bgName, setBgName] = useState("");
   const [bgDesc, setBgDesc] = useState("");
+  const [bgDescSel, setBgDescSel] = useState("");
   const [bgImages, setBgImages] = useState<UploadedImage[]>([]);
+
+  // Resolved description text (dropdown selection or custom free-text).
+  const effectiveCharAppearance = resolveDesc(charApprSel, charAppearance, CHAR_APPR_PROMPT, FORCE_TEXT.character);
+  const effectiveProdDesc = resolveDesc(prodDescSel, prodDesc, PROD_DESC_PROMPT, FORCE_TEXT.product);
+  const effectiveBgDesc = resolveDesc(bgDescSel, bgDesc, BG_DESC_PROMPT, FORCE_TEXT.background);
 
   // Hydrate approved images handed off from the Image Studio (/studio).
   useEffect(() => {
@@ -716,6 +867,9 @@ export function GenerateClient() {
   const [videoGoal, setVideoGoal] = useState<VideoGoal>("product_ad");
   const [imageQuality, setImageQuality] = useState<ImageQuality>("standard");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
+  // Expression heads in each board's character-reference strip (0 = let Veo act
+  // the emotion from the prompt; 2-3 = include a small fixed set).
+  const [refExpressions, setRefExpressions] = useState(0);
   const [copiedSeg, setCopiedSeg] = useState<number | null>(null);
   const [zipping, setZipping] = useState(false);
 
@@ -725,11 +879,12 @@ export function GenerateClient() {
     if (!charName.trim()) return;
     setCharacters((prev) => [
       ...prev,
-      { name: charName, role: charRole, appearance: charAppearance, images: charImages },
+      { name: charName, role: charRole, appearance: effectiveCharAppearance, images: charImages },
     ]);
     setCharName("");
     setCharRole("");
     setCharAppearance("");
+    setCharApprSel("");
     setCharImages([]);
   };
 
@@ -737,10 +892,11 @@ export function GenerateClient() {
     if (!prodName.trim()) return;
     setProducts((prev) => [
       ...prev,
-      { name: prodName, description: prodDesc, images: prodImages },
+      { name: prodName, description: effectiveProdDesc, images: prodImages },
     ]);
     setProdName("");
     setProdDesc("");
+    setProdDescSel("");
     setProdImages([]);
   };
 
@@ -759,10 +915,11 @@ export function GenerateClient() {
     if (!bgName.trim()) return;
     setBackgrounds((prev) => [
       ...prev,
-      { name: bgName, description: bgDesc, images: bgImages },
+      { name: bgName, description: effectiveBgDesc, images: bgImages },
     ]);
     setBgName("");
     setBgDesc("");
+    setBgDescSel("");
     setBgImages([]);
   };
 
@@ -771,6 +928,7 @@ export function GenerateClient() {
   const handleGenerate = async () => {
     setPhase("generating");
     setError(null);
+    setGenAnchor(null);
     setProgressPercent(5);
     setProgressMessage(L("preparing"));
 
@@ -779,19 +937,19 @@ export function GenerateClient() {
     const effectiveCharacters = [
       ...characters,
       ...(charImages.length > 0
-        ? [{ name: charName.trim() || "Main character", role: charRole, appearance: charAppearance, images: charImages }]
+        ? [{ name: charName.trim() || "Main character", role: charRole, appearance: effectiveCharAppearance, images: charImages }]
         : []),
     ];
     const effectiveProducts = [
       ...products,
       ...(prodImages.length > 0
-        ? [{ name: prodName.trim() || "Product", description: prodDesc, images: prodImages }]
+        ? [{ name: prodName.trim() || "Product", description: effectiveProdDesc, images: prodImages }]
         : []),
     ];
     const effectiveBackgrounds = [
       ...backgrounds,
       ...(bgImages.length > 0
-        ? [{ name: bgName.trim() || "Setting", description: bgDesc, images: bgImages }]
+        ? [{ name: bgName.trim() || "Setting", description: effectiveBgDesc, images: bgImages }]
         : []),
     ];
 
@@ -857,6 +1015,7 @@ export function GenerateClient() {
       key_message: keyMessage || undefined,
       image_quality: imageQuality,
       aspect_ratio: aspectRatio,
+      reference_expressions: refExpressions,
     };
 
     setProgressPercent(6);
@@ -871,6 +1030,10 @@ export function GenerateClient() {
         return;
       }
 
+      // Keep the inputs so individual boards can be reviewed & re-rendered.
+      setGenInput(input);
+      setGenAnalysis(plan.data.analysis);
+
       const breakdown = plan.data.breakdown;
       const segCount = breakdown.segments.length;
       const total = segCount + 1; // + master board
@@ -882,6 +1045,9 @@ export function GenerateClient() {
 
       // Phase 2: ONE board per server call — each request/response stays well
       // under Vercel's 4.5MB + timeout limits, so boards never get truncated.
+      // The first successful board becomes the CONTINUITY ANCHOR fed into every
+      // later board so the character, wardrobe and kitchen stop drifting.
+      let anchor: { base64: string; mimeType?: string } | undefined;
       for (let i = 0; i < segCount; i++) {
         setProgressMessage(lang === "vi" ? `Đang vẽ cảnh ${i + 1}/${segCount}` : `Drawing board ${i + 1}/${segCount}`);
         try {
@@ -892,9 +1058,17 @@ export function GenerateClient() {
             kind: "segment",
             segmentIndex: i,
             provider,
+            anchorImage: anchor,
           });
           const seg = breakdown.segments[i];
           if (seg) seg.first_frame_url = r.success ? r.data.url : null;
+          if (r.success && !anchor) {
+            const a = await downscaleToBase64(r.data.url);
+            if (a) {
+              anchor = a;
+              setGenAnchor(a);
+            }
+          }
         } catch {
           const seg = breakdown.segments[i];
           if (seg) seg.first_frame_url = null;
@@ -912,6 +1086,7 @@ export function GenerateClient() {
           analysis: plan.data.analysis,
           kind: "master",
           provider,
+          anchorImage: anchor,
         });
         if (master.success) posterUrl = master.data.url;
       } catch {
@@ -931,6 +1106,44 @@ export function GenerateClient() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
       setPhase("input");
+    }
+  };
+
+  // ─── Review & redo: re-render a single board on demand ───────────
+  const regenerateBoard = async (
+    target: number | "master"
+  ) => {
+    if (!genInput || !genAnalysis || !result || regenTarget !== null) return;
+    setRegenTarget(target);
+    try {
+      // Re-rendering board #0 itself? Don't anchor it to its own old version.
+      const anchorImage =
+        genAnchor && target !== 0 ? genAnchor : undefined;
+      const r = await generateBoardImage({
+        input: genInput,
+        breakdown: result.breakdown,
+        analysis: genAnalysis,
+        kind: target === "master" ? "master" : "segment",
+        segmentIndex: target === "master" ? undefined : target,
+        provider,
+        anchorImage,
+      });
+      if (r.success) {
+        if (target === "master") {
+          setResult({ ...result, storyboardPosterUrl: r.data.url });
+        } else {
+          const segments = result.breakdown.segments.slice();
+          const seg = segments[target];
+          if (seg) segments[target] = { ...seg, first_frame_url: r.data.url };
+          setResult({ ...result, breakdown: { ...result.breakdown, segments } });
+        }
+      } else {
+        setError(r.error);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Regenerate failed");
+    } finally {
+      setRegenTarget(null);
     }
   };
 
@@ -1167,10 +1380,16 @@ export function GenerateClient() {
                   <ImageIcon className="h-5 w-5" />
                   {lang === "vi" ? "Bảng Storyboard Tổng (Sheet + Action + Lời thoại)" : "Master Board (Sheet + Action + Dialogue)"}
                 </CardTitle>
-                <Button variant="outline" size="sm" onClick={() => downloadImage(result.storyboardPosterUrl!, `storyboard-${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.png`)} className="gap-1.5">
-                  <Download className="h-3.5 w-3.5" />
-                  {lang === "vi" ? "Tải ảnh" : "Download"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" disabled={regenTarget !== null} onClick={() => regenerateBoard("master")} className="gap-1.5">
+                    {regenTarget === "master" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
+                    {lang === "vi" ? "Tạo lại" : "Redo"}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => downloadImage(result.storyboardPosterUrl!, `storyboard-${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.png`)} className="gap-1.5">
+                    <Download className="h-3.5 w-3.5" />
+                    {lang === "vi" ? "Tải ảnh" : "Download"}
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -1204,7 +1423,15 @@ export function GenerateClient() {
             <Film className="h-5 w-5" />
             <h2 className="text-lg font-bold">{L("segmentsTitle")}</h2>
           </div>
-          <p className="mb-4 text-sm text-muted-foreground">{L("segmentsHint")}</p>
+          <p className="mb-2 text-sm text-muted-foreground">{L("segmentsHint")}</p>
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3 text-xs text-primary">
+            <RotateCw className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              {lang === "vi"
+                ? "Duyệt chất lượng từng ảnh trước khi xuất. Board nào chưa nét/chưa giống nhân vật, bấm nút Tạo lại ↻ trên thẻ đó để vẽ lại riêng board ấy — không phải dựng lại toàn bộ. Ưng hết thì mới tải ZIP."
+                : "Review each board's quality before exporting. If a board is soft or off-model, hit the Redo ↻ button on that card to re-render just that one — no need to rebuild everything. Download the ZIP once you're happy."}
+            </span>
+          </div>
 
           <div className="grid gap-4">
             {result.breakdown.segments.map((seg) => (
@@ -1268,6 +1495,20 @@ export function GenerateClient() {
                     >
                       {copiedSeg === seg.segment_number ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                       {copiedSeg === seg.segment_number ? (lang === "vi" ? "Đã copy" : "Copied") : L("copyPrompt")}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={regenTarget !== null}
+                      title={lang === "vi" ? "Chưa ưng? Vẽ lại board này" : "Not happy? Re-render this board"}
+                      onClick={() => regenerateBoard(result.breakdown.segments.indexOf(seg))}
+                    >
+                      {regenTarget === result.breakdown.segments.indexOf(seg) ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RotateCw className="h-3.5 w-3.5" />
+                      )}
                     </Button>
                     {seg.first_frame_url && (
                       <Button
@@ -1371,7 +1612,7 @@ export function GenerateClient() {
                 }`}
               >
                 Gemini
-                <span className="mt-0.5 block text-[10px] font-normal opacity-70">Gemini 2.5 Flash</span>
+                <span className="mt-0.5 block text-[10px] font-normal opacity-70">Nano Banana Pro</span>
               </button>
             </div>
 
@@ -1594,7 +1835,20 @@ export function GenerateClient() {
                   <Input value={charName} onChange={(e) => setCharName(e.target.value)} placeholder={L("charName")} />
                   <Input value={charRole} onChange={(e) => setCharRole(e.target.value)} placeholder={L("charRole")} />
                 </div>
-                <Input value={charAppearance} onChange={(e) => setCharAppearance(e.target.value)} placeholder={L("charAppearance")} />
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {lang === "vi" ? "Mô tả ngoại hình (chọn nhanh)" : "Appearance (quick pick)"}
+                  </label>
+                  <Select
+                    value={charApprSel}
+                    onChange={(e) => setCharApprSel(e.target.value)}
+                    options={CHAR_APPR_OPTIONS[lang]}
+                    placeholder={lang === "vi" ? "Chọn mô tả..." : "Choose..."}
+                  />
+                  {charApprSel === CUSTOM && (
+                    <Input value={charAppearance} onChange={(e) => setCharAppearance(e.target.value)} placeholder={L("charAppearance")} />
+                  )}
+                </div>
                 <ImageUploader
                   images={charImages}
                   onChange={setCharImages}
@@ -1607,6 +1861,21 @@ export function GenerateClient() {
                   sourceImages={charImages}
                   onApprove={(img) => setCharImages((prev) => [...prev, img].slice(0, 6))}
                 />
+
+                {/* Expression control for the board CHARACTER REFERENCE strip */}
+                <div className="space-y-1.5 rounded-lg border border-dashed p-3">
+                  <label className="text-sm font-medium">{L("refExprTitle")}</label>
+                  <Select
+                    value={String(refExpressions)}
+                    onChange={(e) => setRefExpressions(Number(e.target.value))}
+                    options={[
+                      { value: "0", label: L("refExpr0") },
+                      { value: "2", label: L("refExpr2") },
+                      { value: "3", label: L("refExpr3") },
+                    ]}
+                  />
+                  <p className="text-xs text-muted-foreground">{L("refExprHint")}</p>
+                </div>
 
                 <Button variant="outline" size="sm" onClick={addCharacter} disabled={!charName.trim()}>
                   {L("addCharacter")}
@@ -1651,7 +1920,20 @@ export function GenerateClient() {
 
               <div className="space-y-3 rounded-lg border border-dashed p-4">
                 <Input value={prodName} onChange={(e) => setProdName(e.target.value)} placeholder={L("prodName")} />
-                <Input value={prodDesc} onChange={(e) => setProdDesc(e.target.value)} placeholder={L("prodDesc")} />
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {lang === "vi" ? "Mô tả sản phẩm (chọn nhanh)" : "Product description (quick pick)"}
+                  </label>
+                  <Select
+                    value={prodDescSel}
+                    onChange={(e) => setProdDescSel(e.target.value)}
+                    options={PROD_DESC_OPTIONS[lang]}
+                    placeholder={lang === "vi" ? "Chọn mô tả..." : "Choose..."}
+                  />
+                  {prodDescSel === CUSTOM && (
+                    <Input value={prodDesc} onChange={(e) => setProdDesc(e.target.value)} placeholder={L("prodDesc")} />
+                  )}
+                </div>
                 <ImageUploader
                   images={prodImages}
                   onChange={setProdImages}
@@ -1752,7 +2034,20 @@ export function GenerateClient() {
 
               <div className="space-y-3 rounded-lg border border-dashed p-4">
                 <Input value={bgName} onChange={(e) => setBgName(e.target.value)} placeholder={L("bgName")} />
-                <Input value={bgDesc} onChange={(e) => setBgDesc(e.target.value)} placeholder={L("bgDesc")} />
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {lang === "vi" ? "Mô tả bối cảnh (chọn nhanh)" : "Location description (quick pick)"}
+                  </label>
+                  <Select
+                    value={bgDescSel}
+                    onChange={(e) => setBgDescSel(e.target.value)}
+                    options={BG_DESC_OPTIONS[lang]}
+                    placeholder={lang === "vi" ? "Chọn mô tả..." : "Choose..."}
+                  />
+                  {bgDescSel === CUSTOM && (
+                    <Input value={bgDesc} onChange={(e) => setBgDesc(e.target.value)} placeholder={L("bgDesc")} />
+                  )}
+                </div>
                 <ImageUploader
                   images={bgImages}
                   onChange={setBgImages}

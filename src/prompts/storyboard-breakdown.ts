@@ -231,7 +231,7 @@ function renderDirective(style: string, preserveRealFace: boolean): string {
   }`;
 }
 
-export type RefRole = "face" | "product" | "setting" | "character_sheet";
+export type RefRole = "face" | "product" | "setting" | "character_sheet" | "anchor";
 
 export interface RefDescriptor {
   role: RefRole;
@@ -254,11 +254,13 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
       case "character_sheet":
         return `• THE CHARACTER — the attached CHARACTER REFERENCE SHEET (turnaround + expressions)${d} defines the main character's exact face, hair, body and costume. Reproduce the SAME individual identically in every shot — same face, same wardrobe, same proportions — rendered as a slightly younger, more attractive version of himself. Do NOT invent a different person.`;
       case "face":
-        return `• THE PERSON — use the exact man shown in the attached portrait photo${d}. Keep his real face, eyeglasses, hairstyle and skin tone CLEARLY recognizable and identical in every shot; render him as a tasteful, slightly younger and more handsome version of himself (light natural retouch, same identity). He is the main character. Do NOT invent a different face.`;
+        return `• THE PERSON — use the exact man shown in the attached portrait photo${d}. Keep his real face, hairstyle, facial hair and skin tone CLEARLY recognizable and identical in every shot; render him as a tasteful, slightly younger and more handsome version of himself (light natural retouch, same identity). Match his eyewear EXACTLY to the photo — if he is NOT wearing glasses in the photo, do NOT add glasses; if he IS, keep the same glasses — and keep this consistent across every shot. He is the main character. Do NOT invent a different face.`;
       case "product":
         return `• THE PRODUCT — feature the EXACT product shown in the attached product photo${d}. Keep its EXACT shape, silhouette, colour, material, proportions, handle/parts and branding identical in every single shot. Do NOT redesign, recolour, distort, resize, age, damage or swap it for a different object.`;
       case "setting":
         return `• THE LOCATION — keep every scene in the same location shown in the attached interior photo${d}. Match its layout, colours, furniture and key props; keep it consistent across all shots.`;
+      case "anchor":
+        return `• CONTINUITY ANCHOR — the attached image is a board from an EARLIER shot of this SAME video. It is the single source of truth for continuity: reproduce the SAME exact person (identical face, hairstyle, eyewear/no-eyewear, facial hair, build) wearing the SAME exact outfit (same apron, same shirt, same colours), in the SAME exact kitchen/location (identical cabinet style & colour, wall, countertop, window, appliances and layout), under the SAME lighting and the SAME art style. ONLY the camera framing and the action change for this new shot. Do NOT redesign the person, the wardrobe or the room, and do NOT add or remove accessories.`;
       default:
         return `• Reference — keep it consistent.`;
     }
@@ -334,6 +336,8 @@ export function buildSegmentFirstFramePrompt(params: {
   beatsPerSegment?: number;
   preserveRealFace?: boolean;
   references?: RefDescriptor[];
+  /** Expression heads to add to the ref strip on top of the 3 angles (0-3). */
+  referenceExpressions?: number;
 }): string {
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
   const refBlock = buildReferenceInstructions(params.references ?? []);
@@ -341,6 +345,7 @@ export function buildSegmentFirstFramePrompt(params: {
 
   const hasProduct =
     (params.references ?? []).some((r) => r.role === "product") || !!params.productDna;
+  const hasSetting = (params.references ?? []).some((r) => r.role === "setting");
 
   const target = Math.min(5, Math.max(3, params.beatsPerSegment ?? params.beats.length ?? 3));
   const beats = params.beats.slice(0, target);
@@ -356,13 +361,26 @@ export function buildSegmentFirstFramePrompt(params: {
     ? "This is the opening shot of the whole video."
     : "Action panel 1 must continue seamlessly from the previous shot's final action (same character, wardrobe, lighting, location).";
 
+  // CHARACTER REFERENCE strip: 3 identity angles (always) + an optional, FIXED
+  // set of expression heads. We deliberately do NOT tie expressions to "this
+  // shot's emotion" — that forced every board to re-render emotional faces,
+  // which both over-used expressions and drifted the identity. Veo animates
+  // the per-shot emotion from the action captions instead.
+  const EXPRESSION_HEADS = ["calm neutral", "natural friendly smile", "confident"];
+  const expCount = Math.min(3, Math.max(0, params.referenceExpressions ?? 0));
+  const thumbTotal = 3 + expCount;
+  const refStrip =
+    expCount > 0
+      ? `a thin row of ${thumbTotal} small thumbnails of THE SAME main character to lock identity — FRONT face, 3/4 face, SIDE profile, plus ${expCount} expression head${expCount > 1 ? "s" : ""} (${EXPRESSION_HEADS.slice(0, expCount).join(", ")}). The face, hair and features must be IDENTICAL in every thumbnail — only the expression changes.`
+      : `a thin row of 3 small thumbnails of THE SAME main character to lock identity — FRONT face, 3/4 face, SIDE profile, all with a neutral relaxed expression. Do NOT add extra emotional expression heads; the character's emotion in the action panels is driven by the action captions only.`;
+
   return `${refBlock}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for ONE ~8 second video clip, presented as ONE single horizontal image. This board gives an image-to-video model (Veo) full context: who the character is (from every angle), what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions that happen across the 8 seconds. ${params.style} style.
 
 THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 
-■ TOP — "CHARACTER REFERENCE" strip (REPEAT THIS IN EVERY SHOT): a thin row of 5 small thumbnails of THE SAME main character to lock identity — FRONT face, 3/4 face, SIDE profile, plus 2 expression heads matching this shot's emotion. Small label "CHARACTER REF". Character: ${params.characterDescription}.
+■ TOP — "CHARACTER REFERENCE" strip (REPEAT THIS IN EVERY SHOT): ${refStrip} Small label "CHARACTER REF". Character: ${params.characterDescription}.
 
-■ LEFT — "SCENE OVERVIEW": one larger establishing panel showing the full location/environment of this shot (wide angle)${hasProduct ? ", with the product clearly visible on a surface" : ""}. This tells Veo the setting.
+■ LEFT — "SCENE OVERVIEW": one larger establishing panel showing the full location/environment of this shot (wide angle)${hasProduct ? ", with the product clearly visible on a surface" : ""}. ${hasSetting ? "CRITICAL: reproduce the EXACT location from the attached interior reference photo — the SAME cabinet style & colour, wall, tiles, countertop, window, appliances and overall layout. Do NOT invent or restyle a different kitchen. This identical location must also appear behind every action panel." : "This tells Veo the setting."}
 
 ■ RIGHT / BOTTOM — "ACTION SEQUENCE": ${target} numbered action panels (${numberLabels}) laid out left → right showing the ${target} key moments across the 8 seconds, each a small illustration with a SHORT caption under it describing the action:
 ${panelLines}
@@ -372,7 +390,7 @@ ${params.productDna ? `PRODUCT DNA (identical in every panel, with exact colours
 ${continuity}
 ${directive}
 
-RULES: ONE cohesive board image; the SAME individual (identical face, hair, glasses, outfit) AND the SAME product appear in the character-ref strip, the scene overview and all ${target} action panels; one single location for this whole board; thin clean dividers and small numbered badges; captions short and legible. ${SHARED_NEGATIVE}`;
+RULES: ONE cohesive board image; the SAME individual (identical face, hair, eyewear and outfit) AND the SAME product appear in the character-ref strip, the scene overview and all ${target} action panels; ${hasSetting ? "the SAME exact kitchen/location from the interior reference photo" : "one single consistent location"} for this whole board; thin clean dividers and small numbered badges; captions short and legible. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 4: Master Board (Character Sheet + captioned storyboard grid) ─────

@@ -124,6 +124,12 @@ export interface StoryboardGenerationInput {
   central_conflict?: string;
   image_quality?: ImageQuality;
   aspect_ratio?: AspectRatio;
+  /**
+   * How many expression heads to add to each board's CHARACTER REFERENCE strip
+   * (on top of the 3 identity angles). 0 = neutral identity only, let Veo act
+   * the emotion from the prompt (recommended); 2-3 = include a small fixed set.
+   */
+  reference_expressions?: number;
 }
 
 /** Marketing video template that drives the script structure. */

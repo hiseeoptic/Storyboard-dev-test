@@ -153,6 +153,7 @@ interface RefContext {
   boardAspect: AspectRatio;
   quality: ImageQuality;
   beatsPerSegment: number;
+  referenceExpressions: number;
   dialogueLanguage: string;
   faceImg?: string;
   productImg?: string;
@@ -208,6 +209,7 @@ function buildRefContext(
     boardAspect: "16:9",
     quality: input.image_quality ?? "standard",
     beatsPerSegment: Math.min(5, Math.max(3, input.beats_per_segment ?? 3)),
+    referenceExpressions: Math.min(3, Math.max(0, input.reference_expressions ?? 0)),
     dialogueLanguage: input.dialogue_language ?? "Vietnamese",
     faceImg,
     productImg,
@@ -330,11 +332,25 @@ export async function generateBoardImage(params: {
   kind: BoardKind;
   segmentIndex?: number;
   provider?: AIProvider;
+  /**
+   * A small downscaled image of an already-approved board (usually board #1).
+   * Passed as a CONTINUITY ANCHOR so later boards keep the SAME character,
+   * wardrobe and kitchen — the single most effective cross-board lock when no
+   * background photo was uploaded.
+   */
+  anchorImage?: { base64: string; mimeType?: string };
 }): Promise<ActionResult<{ url: string }>> {
   const provider = params.provider ?? "gemini";
   const { input, breakdown, analysis } = params;
   const ctx = buildRefContext(input, breakdown, analysis, provider);
   const { images, descriptors } = buildBoardRefs(ctx);
+
+  // Append the continuity anchor (if any) as an extra reference. Gemini Pro
+  // happily takes >3 references; it pins the look established by board #1.
+  const anchor =
+    ctx.canChain && params.anchorImage
+      ? { base64: params.anchorImage.base64, mimeType: params.anchorImage.mimeType ?? "image/jpeg" }
+      : null;
 
   try {
     if (params.kind === "master") {
@@ -357,7 +373,13 @@ export async function generateBoardImage(params: {
         provider,
         aspectRatio: ctx.boardAspect,
         quality: ctx.quality,
-        referenceImages: ctx.canChain && images.length > 0 ? [images[0]!] : undefined,
+        // Prefer the anchor (it already encodes the locked face + kitchen);
+        // otherwise fall back to the uploaded portrait.
+        referenceImages: anchor
+          ? [anchor]
+          : ctx.canChain && images.length > 0
+            ? [images[0]!]
+            : undefined,
       });
       return { success: true, data: { url: r.url } };
     }
@@ -378,8 +400,13 @@ export async function generateBoardImage(params: {
       style: input.style,
       isFirst: i === 0,
       preserveRealFace: ctx.preserveRealFace,
-      referenceImages: ctx.canChain && images.length > 0 ? images : undefined,
-      references: ctx.canChain && descriptors.length > 0 ? descriptors : undefined,
+      referenceImages: ctx.canChain
+        ? [...images, ...(anchor ? [anchor] : [])]
+        : undefined,
+      references: ctx.canChain
+        ? [...descriptors, ...(anchor ? [{ role: "anchor" as const }] : [])]
+        : undefined,
+      referenceExpressions: ctx.referenceExpressions,
       provider,
       aspectRatio: ctx.boardAspect,
       quality: ctx.quality,

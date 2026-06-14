@@ -15,16 +15,20 @@ const TEXT_MODEL = "gemini-2.5-flash";
 
 // Image model fallback chains (newest first). If the API key doesn't have
 // access to a model (404 / not found), we automatically try the next one.
-// Pro    = Nano Banana Pro (Gemini 3 Pro Image) — best identity/text fidelity.
-// Standard = Nano Banana 2 (Gemini 3.1 Flash Image) — fast, high-volume.
+// NOTE: these are the REAL public model IDs on the Gemini Developer API
+// (generativelanguage v1beta). The `-preview` suffix is REQUIRED — IDs like
+// "gemini-3-pro-image" or "gemini-3.1-flash-image" (no suffix) 404, which is
+// why earlier builds silently fell all the way back to gemini-2.5-flash-image
+// (the old Nano Banana, capped at 1024px) and produced soft, low-res faces.
+// Pro      = Nano Banana Pro (gemini-3-pro-image-preview) — best identity
+//            preservation (up to 5 subjects) + 2K/4K output.
+// Standard = Nano Banana (gemini-2.5-flash-image) — fast, 1K.
 const IMAGE_MODELS_PRO = [
-  "gemini-3-pro-image",
   "gemini-3-pro-image-preview",
-  "gemini-3.1-flash-image",
+  "gemini-3.1-flash-image-preview",
   "gemini-2.5-flash-image",
 ];
 const IMAGE_MODELS_STANDARD = [
-  "gemini-3.1-flash-image",
   "gemini-2.5-flash-image",
 ];
 
@@ -198,25 +202,34 @@ export async function geminiGenerateImage(params: {
     }
   }
 
-  // 1K keeps responses small enough for the serverless response-size limit
-  // (multiple board data-URIs per request); Pro renders at 2K for fidelity.
-  const imageSize = params.quality === "pro" ? "2K" : "1K";
+  // Pro (Nano Banana Pro / Gemini 3) renders at 2K for crisp, print-grade
+  // faces; the 2.5-flash standard model only supports 1K (and rejects an
+  // imageSize hint), so we degrade gracefully below.
+  const imageSize = params.quality === "pro" ? "2K" : null;
 
-  const buildBody = (withImageConfig: boolean): Record<string, unknown> => ({
-    contents: [{ role: "user", parts }],
-    generationConfig: {
+  // Correct field per the Gemini Developer API (generativelanguage v1beta):
+  //   generationConfig.imageConfig.{aspectRatio,imageSize}
+  // (the old `responseFormat.image` key was non-existent and silently 400'd,
+  // so neither aspect ratio nor resolution ever actually applied.)
+  // We try richest config first, then degrade so older models still answer:
+  //   level 2 = aspectRatio + imageSize · level 1 = aspectRatio only · level 0 = none
+  const buildBody = (level: 0 | 1 | 2): Record<string, unknown> => {
+    const generationConfig: Record<string, unknown> = {
       responseModalities: ["IMAGE", "TEXT"],
-      ...(withImageConfig && params.aspectRatio
-        ? { responseFormat: { image: { aspectRatio: params.aspectRatio, imageSize } } }
-        : {}),
-    },
-  });
+    };
+    if (level >= 1 && params.aspectRatio) {
+      const imageConfig: Record<string, string> = { aspectRatio: params.aspectRatio };
+      if (level >= 2 && imageSize) imageConfig.imageSize = imageSize;
+      generationConfig.imageConfig = imageConfig;
+    }
+    return { contents: [{ role: "user", parts }], generationConfig };
+  };
 
-  const callApi = async (model: string, withImageConfig: boolean) => {
+  const callApi = async (model: string, level: 0 | 1 | 2) => {
     const res = await fetch(`${API_BASE}/${model}:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildBody(withImageConfig)),
+      body: JSON.stringify(buildBody(level)),
     });
     const json = (await res.json()) as GeminiResponse;
     return { res, json };
@@ -225,12 +238,16 @@ export async function geminiGenerateImage(params: {
   let lastErr = "Unknown error";
 
   for (const model of models) {
-    // Attempt 1: with aspect-ratio config.
-    let { res, json } = await callApi(model, true);
+    // Richest config first (aspect + size). On a 400 (model rejects a field)
+    // step down: aspect-only, then no image config at all.
+    const topLevel: 0 | 1 | 2 = params.aspectRatio ? (imageSize ? 2 : 1) : 0;
+    let { res, json } = await callApi(model, topLevel);
 
-    // If config rejected (400), retry the same model without it.
-    if (res.status === 400 && params.aspectRatio) {
-      ({ res, json } = await callApi(model, false));
+    if (res.status === 400 && topLevel === 2) {
+      ({ res, json } = await callApi(model, 1)); // drop imageSize, keep aspect
+    }
+    if (res.status === 400 && topLevel >= 1) {
+      ({ res, json } = await callApi(model, 0)); // drop image config entirely
     }
 
     if (res.ok && !json.error) {
