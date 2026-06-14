@@ -804,20 +804,17 @@ export function GenerateClient() {
         base64: b64,
         fileName: "studio.jpg",
       });
+      // Land the handed-off images directly in the visible uploaders (not a
+      // hidden "added character" card) so the user SEES them, the Character
+      // Studio can reuse them, and handleGenerate auto-includes them as the
+      // locked references for the whole storyboard.
       if (h.characterImages && h.characterImages.length > 0) {
-        setCharacters([
-          {
-            name: "Nhân vật chính",
-            role: "",
-            appearance: "",
-            images: h.characterImages.map(toUploaded),
-          },
-        ]);
+        setCharName("Nhân vật chính");
+        setCharImages(h.characterImages.slice(0, 4).map(toUploaded));
       }
       if (h.productImages && h.productImages.length > 0) {
-        setProducts([
-          { name: "Sản phẩm", description: "", images: h.productImages.map(toUploaded) },
-        ]);
+        setProdName("Sản phẩm");
+        setProdImages(h.productImages.slice(0, 3).map(toUploaded));
       }
       setFromStudio(true);
       setStep(1);
