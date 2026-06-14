@@ -241,6 +241,8 @@ export interface VideoSegment {
   continuity_note: string;
   /** Filled by the image pipeline — the generated start frame. */
   first_frame_url?: string | null;
+  /** Clean single keyframe (veoflow-format first-frame) to feed Veo image-to-video. */
+  keyframe_url?: string | null;
   /** Full ready-to-paste Veo prompt (ref-lock + motion + dialogue + negative). */
   full_prompt?: string;
 }

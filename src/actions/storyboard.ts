@@ -3,6 +3,7 @@
 import { generateStoryboardBreakdown } from "@/services/ai-engine";
 import {
   generateSegmentFrame,
+  generateKeyframe,
   generateMasterBoard,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
@@ -400,7 +401,7 @@ export async function finalizeScript(params: {
 
 // ─── Phase 2: one board image per call (small request + response) ──────────
 
-export type BoardKind = "segment" | "master";
+export type BoardKind = "segment" | "master" | "keyframe";
 
 export async function generateBoardImage(params: {
   input: StoryboardGenerationInput;
@@ -444,6 +445,27 @@ export async function generateBoardImage(params: {
     const i = params.segmentIndex ?? 0;
     const seg = breakdown.segments[i];
     if (!seg) return { success: false, error: `Segment ${i} not found` };
+
+    if (params.kind === "keyframe") {
+      // Clean single first-frame (veoflow format) at the user's real aspect.
+      const r = await generateKeyframe({
+        segmentNumber: seg.segment_number,
+        sceneDescription: seg.first_frame_prompt || seg.title,
+        shot: seg.beats?.[0]?.camera || "[EYE]",
+        characterDescription: ctx.charDescDna,
+        productDna: ctx.productDnaText,
+        ingredients: ctx.ingredientsText,
+        sceneBible: ctx.sceneBible,
+        style: input.style,
+        preserveRealFace: ctx.preserveRealFace,
+        referenceImages: ctx.canChain && images.length > 0 ? images : undefined,
+        references: ctx.canChain && descriptors.length > 0 ? descriptors : undefined,
+        provider,
+        aspectRatio: ctx.aspectRatio,
+        quality: ctx.quality,
+      });
+      return { success: true, data: { url: r.url } };
+    }
 
     const r = await generateSegmentFrame({
       segmentNumber: seg.segment_number,

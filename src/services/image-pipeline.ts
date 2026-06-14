@@ -3,6 +3,7 @@ import { geminiGenerateImage } from "@/lib/gemini/client";
 import {
   buildCharacterRefSheetPrompt,
   buildSegmentFirstFramePrompt,
+  buildKeyframePrompt,
   buildMasterBoardPrompt,
   type RefDescriptor,
 } from "@/prompts";
@@ -177,6 +178,49 @@ export async function generateSegmentFrame(params: {
     aspectRatio: params.aspectRatio,
     quality: params.quality,
     // Composite board → cap at 1K so the data-URI response stays returnable.
+    imageSize: "1K",
+  });
+  return { url };
+}
+
+// ─── Generate a clean single KEYFRAME (veoflow first-frame for Veo) ─────────
+
+export async function generateKeyframe(params: {
+  segmentNumber: number;
+  sceneDescription: string;
+  shot: string;
+  characterDescription: string;
+  productDna?: string;
+  ingredients?: string;
+  sceneBible?: SceneBible;
+  style: string;
+  preserveRealFace?: boolean;
+  referenceImages?: RefImage[];
+  references?: RefDescriptor[];
+  provider?: AIProvider;
+  aspectRatio?: AspectRatio;
+  quality?: ImageQuality;
+}): Promise<{ url: string }> {
+  const prompt = buildKeyframePrompt({
+    segmentNumber: params.segmentNumber,
+    sceneDescription: params.sceneDescription,
+    shot: params.shot,
+    characterDescription: params.characterDescription,
+    productDna: params.productDna,
+    ingredients: params.ingredients,
+    sceneBible: params.sceneBible,
+    style: params.style,
+    aspectRatio: params.aspectRatio ?? "16:9",
+    preserveRealFace: params.preserveRealFace,
+    references: params.references,
+  });
+
+  const url = await generateImage(prompt, {
+    provider: params.provider,
+    referenceImages: params.referenceImages,
+    aspectRatio: params.aspectRatio,
+    quality: params.quality,
+    // Single clean frame → cap at 1K so the data-URI response stays returnable.
     imageSize: "1K",
   });
   return { url };

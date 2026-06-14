@@ -669,6 +669,7 @@ export function GenerateClient() {
   const [genInput, setGenInput] = useState<StoryboardGenerationInput | null>(null);
   const [genAnalysis, setGenAnalysis] = useState<StoryboardAnalysis | null>(null);
   const [regenTarget, setRegenTarget] = useState<number | "master" | null>(null);
+  const [keyframeBusy, setKeyframeBusy] = useState<number | null>(null);
   // Per-board failure reasons, keyed by "seg-<index>" / "master".
   const [boardErrors, setBoardErrors] = useState<Record<string, string>>({});
 
@@ -1173,6 +1174,34 @@ export function GenerateClient() {
     }
   };
 
+  // ─── Generate a clean keyframe (veoflow first-frame) for one clip ──
+  const genKeyframe = async (index: number) => {
+    if (!genInput || !genAnalysis || !result || keyframeBusy !== null) return;
+    setKeyframeBusy(index);
+    try {
+      const r = await generateBoardImage({
+        input: genInput,
+        breakdown: result.breakdown,
+        analysis: genAnalysis,
+        kind: "keyframe",
+        segmentIndex: index,
+        provider,
+      });
+      if (r.success) {
+        const segments = result.breakdown.segments.slice();
+        const seg = segments[index];
+        if (seg) segments[index] = { ...seg, keyframe_url: r.data.url };
+        setResult({ ...result, breakdown: { ...result.breakdown, segments } });
+      } else {
+        setError(r.error);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Keyframe failed");
+    } finally {
+      setKeyframeBusy(null);
+    }
+  };
+
   // ─── Downloads ───────────────────────────────────────────────────
 
   const downloadImage = async (url: string, filename: string) => {
@@ -1214,16 +1243,20 @@ export function GenerateClient() {
       const zip = new JSZip();
       const safeTitle = result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 40);
 
-      // Frames
+      // Frames (board) + clean keyframes (Veo first-frame)
       for (const seg of result.breakdown.segments) {
-        if (!seg.first_frame_url) continue;
-        try {
-          const res = await fetch(seg.first_frame_url);
-          const blob = await res.blob();
-          const num = String(seg.segment_number).padStart(2, "0");
-          zip.file(`frame_${num}.png`, blob);
-        } catch {
-          // skip failed frame
+        const num = String(seg.segment_number).padStart(2, "0");
+        if (seg.first_frame_url) {
+          try {
+            const blob = await (await fetch(seg.first_frame_url)).blob();
+            zip.file(`board_${num}.png`, blob);
+          } catch {}
+        }
+        if (seg.keyframe_url) {
+          try {
+            const blob = await (await fetch(seg.keyframe_url)).blob();
+            zip.file(`keyframe_${num}.jpg`, blob);
+          } catch {}
         }
       }
       // Ref sheet + poster
@@ -1696,6 +1729,51 @@ export function GenerateClient() {
                         <Download className="h-3.5 w-3.5" />
                       </Button>
                     )}
+                  </div>
+
+                  {/* Clean keyframe (veoflow first-frame for Veo image-to-video) */}
+                  <div className="rounded-md border border-dashed p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+                        {lang === "vi" ? "Keyframe sạch (ảnh đầu cho Veo)" : "Clean keyframe (Veo first-frame)"}
+                      </p>
+                      <div className="flex gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={keyframeBusy !== null}
+                          onClick={() => genKeyframe(result.breakdown.segments.indexOf(seg))}
+                          className="h-7 gap-1.5 text-[11px]"
+                        >
+                          {keyframeBusy === result.breakdown.segments.indexOf(seg) ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <ImageIcon className="h-3 w-3" />
+                          )}
+                          {seg.keyframe_url
+                            ? lang === "vi" ? "Tạo lại" : "Redo"
+                            : lang === "vi" ? "Tạo keyframe" : "Make keyframe"}
+                        </Button>
+                        {seg.keyframe_url && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 gap-1.5 text-[11px]"
+                            onClick={() => downloadImage(seg.keyframe_url!, `keyframe_${String(seg.segment_number).padStart(2, "0")}.jpg`)}
+                          >
+                            <Download className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    {seg.keyframe_url && (
+                      <img src={seg.keyframe_url} alt={`Keyframe ${seg.segment_number}`} className="mt-2 w-full rounded border" />
+                    )}
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      {lang === "vi"
+                        ? "Ảnh tĩnh 1 cảnh, đúng DNA/scene-bible — đẩy vào Veo (image-to-video) làm ảnh đầu."
+                        : "Single static frame with locked DNA/scene-bible — feed into Veo (image-to-video) as the first frame."}
+                    </p>
                   </div>
                 </CardContent>
               </Card>

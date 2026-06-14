@@ -1,4 +1,4 @@
-import type { StoryboardGenerationInput, VideoGoal, SceneBible } from "@/types";
+import type { StoryboardGenerationInput, VideoGoal, SceneBible, AspectRatio } from "@/types";
 
 // Forbidden in every generated image/clip (the brief's negative list).
 const SHARED_NEGATIVE =
@@ -389,6 +389,38 @@ ${continuity}
 ${directive}
 
 RULES: ONE cohesive board image; the SAME individual (identical face, hair and outfit) AND the SAME product appear in the character-ref block, the scene overview and all ${target} action panels;${params.preserveRealFace ? " match the man's eyewear to his reference portrait EXACTLY — if he is NOT wearing glasses in the photo, do NOT add glasses anywhere; if he is, keep the same ones;" : ""} ${hasSetting ? "the SAME exact kitchen/location from the interior reference photo" : "one single consistent location"} for this whole board; thin clean dividers and small numbered badges; captions short and legible. ${SHARED_NEGATIVE}`;
+}
+
+// ─── Clean single KEYFRAME (veoflow handoff format) ─────────────────────────
+// One static photographic first-frame per 8s clip — the actual image-to-video
+// reference for Veo. Follows veoflow's keyframe recipe: shot+composition +
+// subject forensic DNA + props + backdrop + lighting/lens/grade + style +
+// aspect + negative. Camera-motion verbs, timeline markers and dialogue are
+// stripped because this is a single frozen frame.
+export function buildKeyframePrompt(params: {
+  segmentNumber: number;
+  sceneDescription: string;
+  shot: string;
+  characterDescription: string;
+  productDna?: string;
+  ingredients?: string;
+  sceneBible?: SceneBible;
+  style: string;
+  aspectRatio: AspectRatio;
+  preserveRealFace?: boolean;
+  references?: RefDescriptor[];
+}): string {
+  const directive = renderDirective(params.style, params.preserveRealFace ?? false);
+  const refBlock = buildReferenceInstructions(params.references ?? []);
+  const tokens = sceneBibleTokens(params.sceneBible);
+  const ratioWord = params.aspectRatio === "9:16" ? "vertical 9:16 portrait" : "horizontal 16:9 landscape";
+  return `${refBlock}SINGLE STATIC KEYFRAME for shot ${params.segmentNumber} — ONE clean photographic first-frame image used as the STARTING frame for an image-to-video model (Veo). This is NOT a storyboard board: render ONE single cohesive scene only, no panels, no reference strip.
+
+COMPOSITION (${params.shot || "[EYE]"}): ${params.sceneDescription}
+SUBJECT — keep this exact forensic identity: ${params.characterDescription}
+${params.productDna ? `PRODUCT (exact, unchanged, with colours): ${params.productDna}\n` : ""}${params.ingredients ? `PROPS / INGREDIENTS (show clearly by name): ${params.ingredients}\n` : ""}${tokens ? tokens + "\n" : ""}${directive}
+
+RENDER RULES: a SINGLE static frame; the subject is sharp and frozen in the STARTING posture for the upcoming action (no motion blur, no camera-movement effect); ${ratioWord} aspect ratio, 1080p quality. Do NOT include timeline markers, multiple panels, split-screens, reference thumbnails, captions, subtitles, on-screen text or speech bubbles. Photoreal premium commercial look. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 4: Master Board (Character Sheet + captioned storyboard grid) ─────
