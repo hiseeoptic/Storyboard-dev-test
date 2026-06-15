@@ -4,6 +4,8 @@ import { generateStoryboardBreakdown } from "@/services/ai-engine";
 import {
   generateSegmentFrame,
   generateKeyframe,
+  generateCharacterPortrait,
+  generateScenePlate,
   generateMasterBoard,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
@@ -25,7 +27,10 @@ import type {
 
 export interface StoryboardResult {
   breakdown: StoryboardGenerationOutput;
+  /** Clean close-up character portrait — a Veo reference "ingredient". */
   characterRefSheetUrl: string | null;
+  /** Clean empty establishing scene plate — a Veo reference "ingredient". */
+  sceneRefUrl: string | null;
   storyboardPosterUrl: string | null;
   videoPrompt: string;
   warnings: string[];
@@ -539,7 +544,7 @@ export async function finalizeScript(params: {
 
 // ─── Phase 2: one board image per call (small request + response) ──────────
 
-export type BoardKind = "segment" | "master" | "keyframe";
+export type BoardKind = "segment" | "master" | "keyframe" | "character_ref" | "scene_ref";
 
 export async function generateBoardImage(params: {
   input: StoryboardGenerationInput;
@@ -583,6 +588,39 @@ export async function generateBoardImage(params: {
             : ctx.canChain && images.length > 0
               ? [images[0]!]
               : undefined,
+      });
+      return { success: true, data: { url: r.url } };
+    }
+
+    if (params.kind === "character_ref") {
+      // Clean close-up portrait — a Veo "ingredient" to lock the character face.
+      const r = await generateCharacterPortrait({
+        characterDescription: ctx.charDescDna,
+        style: input.style,
+        aspectRatio: ctx.aspectRatio,
+        preserveRealFace: ctx.preserveRealFace,
+        referenceImages: ctx.canChain && ctx.faceImg ? [{ base64: ctx.faceImg, mimeType: "image/jpeg" }] : undefined,
+        references:
+          ctx.canChain && ctx.faceImg
+            ? [{ role: "face" as const, description: ctx.faceDesc ?? ctx.charDescForPoster }]
+            : undefined,
+        provider,
+        quality: ctx.quality,
+      });
+      return { success: true, data: { url: r.url } };
+    }
+
+    if (params.kind === "scene_ref") {
+      // Clean empty establishing plate — a Veo "ingredient" to lock the location.
+      const r = await generateScenePlate({
+        setting: ctx.bgDesc || input.setting || "the scene location",
+        sceneBible: ctx.sceneBible,
+        style: input.style,
+        aspectRatio: ctx.aspectRatio,
+        referenceImages: ctx.canChain && ctx.bgImg ? [{ base64: ctx.bgImg, mimeType: "image/jpeg" }] : undefined,
+        references: ctx.canChain && ctx.bgImg ? [{ role: "setting" as const, description: ctx.bgDesc }] : undefined,
+        provider,
+        quality: ctx.quality,
       });
       return { success: true, data: { url: r.url } };
     }

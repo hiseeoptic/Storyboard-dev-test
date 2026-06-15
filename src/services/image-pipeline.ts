@@ -4,6 +4,8 @@ import {
   buildCharacterRefSheetPrompt,
   buildSegmentFirstFramePrompt,
   buildKeyframePrompt,
+  buildCharacterPortraitPrompt,
+  buildScenePlatePrompt,
   buildMasterBoardPrompt,
   type RefDescriptor,
 } from "@/prompts";
@@ -221,6 +223,62 @@ export async function generateKeyframe(params: {
     aspectRatio: params.aspectRatio,
     quality: params.quality,
     // Single clean frame → cap at 1K so the data-URI response stays returnable.
+    imageSize: "1K",
+  });
+  return { url };
+}
+
+// ─── Clean Veo "ingredient" references ──────────────────────────────────────
+
+export async function generateCharacterPortrait(params: {
+  characterDescription: string;
+  style: string;
+  aspectRatio?: AspectRatio;
+  preserveRealFace?: boolean;
+  referenceImages?: RefImage[];
+  references?: RefDescriptor[];
+  provider?: AIProvider;
+  quality?: ImageQuality;
+}): Promise<{ url: string }> {
+  const prompt = buildCharacterPortraitPrompt({
+    characterDescription: params.characterDescription,
+    style: params.style,
+    aspectRatio: params.aspectRatio ?? "16:9",
+    preserveRealFace: params.preserveRealFace,
+    references: params.references,
+  });
+  const url = await generateImage(prompt, {
+    provider: params.provider,
+    referenceImages: params.referenceImages,
+    aspectRatio: params.aspectRatio,
+    quality: params.quality,
+    imageSize: "1K",
+  });
+  return { url };
+}
+
+export async function generateScenePlate(params: {
+  setting: string;
+  sceneBible?: SceneBible;
+  style: string;
+  aspectRatio?: AspectRatio;
+  referenceImages?: RefImage[];
+  references?: RefDescriptor[];
+  provider?: AIProvider;
+  quality?: ImageQuality;
+}): Promise<{ url: string }> {
+  const prompt = buildScenePlatePrompt({
+    setting: params.setting,
+    sceneBible: params.sceneBible,
+    style: params.style,
+    aspectRatio: params.aspectRatio ?? "16:9",
+    references: params.references,
+  });
+  const url = await generateImage(prompt, {
+    provider: params.provider,
+    referenceImages: params.referenceImages,
+    aspectRatio: params.aspectRatio,
+    quality: params.quality,
     imageSize: "1K",
   });
   return { url };

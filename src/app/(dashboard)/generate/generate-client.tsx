@@ -1112,9 +1112,9 @@ export function GenerateClient() {
     setProgressPercent(12);
 
     const segCount = breakdown.segments.length;
-    // Per clip we render the review BOARD + the clean KEYFRAME (the actual Veo
-    // input), plus the master board at the end.
-    const total = segCount * 2 + 1;
+    // Per clip we render the review BOARD + the clean KEYFRAME, plus the master
+    // board and two clean Veo "ingredient" refs (character portrait + scene plate).
+    const total = segCount * 2 + 3;
     let done = 0;
     const bump = () => {
       done++;
@@ -1175,6 +1175,26 @@ export function GenerateClient() {
       if (i < segCount - 1) await sleep(1500);
     }
 
+    // Clean Veo "ingredient" references (generated once): a close-up character
+    // portrait + an empty scene plate. These are the SEPARATE clean reference
+    // images to feed Veo 3.1 reference/ingredients-to-video.
+    setProgressMessage(lang === "vi" ? "Đang vẽ ảnh ref nhân vật" : "Drawing character reference");
+    await sleep(1200);
+    const characterRefUrl = await genBoard(
+      { input, breakdown, analysis, kind: "character_ref", provider },
+      lang === "vi" ? "Ref nhân vật" : "Character ref",
+      "character_ref"
+    );
+    bump();
+    await sleep(1200);
+    setProgressMessage(lang === "vi" ? "Đang vẽ ảnh bối cảnh" : "Drawing scene reference");
+    const sceneRefUrl = await genBoard(
+      { input, breakdown, analysis, kind: "scene_ref", provider },
+      lang === "vi" ? "Ref bối cảnh" : "Scene ref",
+      "scene_ref"
+    );
+    bump();
+
     setProgressMessage(lang === "vi" ? "Đang vẽ bảng tổng" : "Drawing master board");
     await sleep(1500);
     const posterUrl = await genBoard(
@@ -1188,7 +1208,8 @@ export function GenerateClient() {
     setProgressPercent(100);
     setResult({
       breakdown,
-      characterRefSheetUrl: null,
+      characterRefSheetUrl: characterRefUrl,
+      sceneRefUrl,
       storyboardPosterUrl: posterUrl,
       videoPrompt,
       warnings: [...warnings, ...boardWarnings],
@@ -1371,11 +1392,17 @@ export function GenerateClient() {
           } catch {}
         }
       }
-      // Ref sheet + poster
+      // Veo ingredient refs (character + scene) + poster
       if (result.characterRefSheetUrl) {
         try {
           const b = await (await fetch(result.characterRefSheetUrl)).blob();
-          zip.file(`character_reference_sheet.png`, b);
+          zip.file(`ref_character.jpg`, b);
+        } catch {}
+      }
+      if (result.sceneRefUrl) {
+        try {
+          const b = await (await fetch(result.sceneRefUrl)).blob();
+          zip.file(`ref_scene.jpg`, b);
         } catch {}
       }
       if (result.storyboardPosterUrl) {
@@ -1583,6 +1610,8 @@ export function GenerateClient() {
 
   if (phase === "result" && result) {
     const hasCharSheet = !!result.characterRefSheetUrl;
+    const hasSceneRef = !!result.sceneRefUrl;
+    const hasIngredients = hasCharSheet || hasSceneRef;
     const hasPoster = !!result.storyboardPosterUrl;
     const hasWarnings = result.warnings && result.warnings.length > 0;
 
@@ -1658,23 +1687,47 @@ export function GenerateClient() {
             (The per-board flow no longer produces a separate sheet; each board
             carries its own character-ref strip, so we don't show a failure
             card when it's intentionally absent.) */}
-        {hasCharSheet && (
-          <Card>
+        {hasIngredients && (
+          <Card className="border-primary/40">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Users className="h-5 w-5" />
-                  {lang === "vi" ? "Bảng Tham Chiếu Nhân Vật" : "Character Reference Sheet"}
-                </CardTitle>
-                <Button variant="outline" size="sm" onClick={() => downloadImage(result.characterRefSheetUrl!, `character-ref-${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.png`)} className="gap-1.5">
-                  <Download className="h-3.5 w-3.5" />
-                  {lang === "vi" ? "Tải ảnh" : "Download"}
-                </Button>
-              </div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Users className="h-5 w-5" />
+                {lang === "vi" ? "Ảnh tham chiếu cho Veo (ingredients)" : "Veo reference images (ingredients)"}
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                {lang === "vi"
+                  ? "2 ảnh sạch, mỗi ảnh 1 chủ thể — đây là cách Veo 3.1 giữ đúng nhân vật & bối cảnh. Trong Veo/Flow chọn chế độ Reference/Ingredients, tải 2 ảnh này lên rồi dán motion prompt của cảnh. (Đừng đẩy ảnh board nhiều panel — gây nhân đôi vật thể & sai mặt.)"
+                  : "Two clean single-subject images — this is how Veo 3.1 keeps the character & setting consistent. In Veo/Flow pick Reference/Ingredients mode, upload these two, then paste a shot's motion prompt. (Don't feed the multi-panel board — it causes duplicated objects & wrong faces.)"}
+              </p>
             </CardHeader>
             <CardContent>
-              <div className="overflow-hidden rounded-lg border">
-                <img src={result.characterRefSheetUrl!} alt="Character Reference Sheet" className="w-full" />
+              <div className="grid gap-3 sm:grid-cols-2">
+                {hasCharSheet && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold">{lang === "vi" ? "① Nhân vật (cận mặt)" : "① Character (close-up)"}</p>
+                      <Button variant="outline" size="sm" className="h-7 gap-1.5 text-[11px]" onClick={() => downloadImage(result.characterRefSheetUrl!, `ref-character-${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.jpg`)}>
+                        <Download className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <div className="overflow-hidden rounded-lg border">
+                      <img src={result.characterRefSheetUrl!} alt="Character reference" className="w-full" />
+                    </div>
+                  </div>
+                )}
+                {hasSceneRef && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold">{lang === "vi" ? "② Bối cảnh (tổng quát)" : "② Scene (establishing)"}</p>
+                      <Button variant="outline" size="sm" className="h-7 gap-1.5 text-[11px]" onClick={() => downloadImage(result.sceneRefUrl!, `ref-scene-${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.jpg`)}>
+                        <Download className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <div className="overflow-hidden rounded-lg border">
+                      <img src={result.sceneRefUrl!} alt="Scene reference" className="w-full" />
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
