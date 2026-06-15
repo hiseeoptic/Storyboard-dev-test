@@ -38,7 +38,7 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
-async function resizeImage(file: File, maxSize = 1280): Promise<File> {
+async function resizeImage(file: File, maxSize = 1024): Promise<File> {
   return new Promise((resolve) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -64,7 +64,7 @@ async function resizeImage(file: File, maxSize = 1280): Promise<File> {
           resolve(new File([blob], name, { type: "image/jpeg" }));
         },
         "image/jpeg",
-        0.9
+        0.85
       );
     };
     img.src = url;

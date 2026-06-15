@@ -948,11 +948,53 @@ export function GenerateClient() {
       .filter((g) => g.images.length > 0)
       .map((g) => ({ name: g.name, description: g.description, images: g.images.map((i) => i.base64) }));
 
+    // Vercel caps each serverless request body at ~4.5 MB. Keep the combined
+    // reference-image payload safely under that — otherwise the platform
+    // rejects the whole request before our code runs, surfacing as the opaque
+    // "Server Components render" error. We always keep the FIRST character image
+    // (primary face lock) and then add more references only while under budget,
+    // dropping the rest. (The board generation only needs 1-2 angles anyway.)
+    const PAYLOAD_BUDGET = 3_600_000; // ~3.6 MB of base64, leaves headroom for the JSON
+    const b64Bytes = (s: string) => Math.ceil((s.length * 3) / 4);
+    let payloadUsed = 0;
+    let droppedImages = 0;
+    const fitRefs = (refs: ImageReference[], alwaysKeepFirst: boolean): ImageReference[] => {
+      const out: ImageReference[] = [];
+      let isFirst = alwaysKeepFirst;
+      for (const ref of refs) {
+        const keep: string[] = [];
+        for (const b64 of ref.images) {
+          const bytes = b64Bytes(b64);
+          if (isFirst || payloadUsed + bytes <= PAYLOAD_BUDGET) {
+            payloadUsed += bytes;
+            keep.push(b64);
+          } else {
+            droppedImages++;
+          }
+          isFirst = false;
+        }
+        if (keep.length > 0) out.push({ ...ref, images: keep });
+      }
+      return out;
+    };
+    const cappedCharacterImages = fitRefs(characterImages, true);
+    const cappedProductImages = fitRefs(productImages, false);
+    const cappedBackgroundImages = fitRefs(backgroundImages, false);
+    const cappedIngredientImages = fitRefs(ingredientImages, false);
+    const payloadWarnings: string[] =
+      droppedImages > 0
+        ? [
+            lang === "vi"
+              ? `Đã bỏ bớt ${droppedImages} ảnh tham chiếu để tránh vượt giới hạn dung lượng máy chủ (giữ lại ảnh quan trọng nhất).`
+              : `Dropped ${droppedImages} reference image(s) to stay under the server size limit (kept the most important ones).`,
+          ]
+        : [];
+
     const hasUploads =
-      characterImages.length > 0 ||
-      productImages.length > 0 ||
-      ingredientImages.length > 0 ||
-      backgroundImages.length > 0;
+      cappedCharacterImages.length > 0 ||
+      cappedProductImages.length > 0 ||
+      cappedIngredientImages.length > 0 ||
+      cappedBackgroundImages.length > 0;
 
     if (hasUploads) {
       setProgressPercent(10);
@@ -972,10 +1014,10 @@ export function GenerateClient() {
       character_descriptions: effectiveCharacters.length > 0
         ? effectiveCharacters.map((c) => ({ name: c.name, appearance: c.appearance, personality: "", role: c.role }))
         : undefined,
-      character_images: characterImages.length > 0 ? characterImages : undefined,
-      product_images: productImages.length > 0 ? productImages : undefined,
-      ingredient_images: ingredientImages.length > 0 ? ingredientImages : undefined,
-      background_images: backgroundImages.length > 0 ? backgroundImages : undefined,
+      character_images: cappedCharacterImages.length > 0 ? cappedCharacterImages : undefined,
+      product_images: cappedProductImages.length > 0 ? cappedProductImages : undefined,
+      ingredient_images: cappedIngredientImages.length > 0 ? cappedIngredientImages : undefined,
+      background_images: cappedBackgroundImages.length > 0 ? cappedBackgroundImages : undefined,
       setting: effectiveSetting || undefined,
       tone: effectiveTone || undefined,
       // Ad genres send the product brief; narrative genres send the story brief.
@@ -1009,7 +1051,7 @@ export function GenerateClient() {
       setGenInput(input);
       setGenAnalysis(plan.data.analysis);
       setDraft(plan.data.breakdown);
-      setPlanWarnings(plan.data.warnings);
+      setPlanWarnings([...payloadWarnings, ...plan.data.warnings]);
       setPhase("script");
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred");

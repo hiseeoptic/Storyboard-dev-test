@@ -59,7 +59,7 @@ function dataUriToBase64(uri: string): string {
 // Generated images come back at up to 2K — downscale to a reference-friendly
 // size (JPEG) before handing off, so the storyboard request stays well under
 // the server-action body limit and analysis is fast.
-function downscaleToBase64(uri: string, max = 1024, quality = 0.88): Promise<string> {
+function downscaleToBase64(uri: string, max = 1024, quality = 0.82): Promise<string> {
   return new Promise((resolve) => {
     let settled = false;
     const done = (v: string) => {
