@@ -232,7 +232,7 @@ function renderDirective(style: string, preserveRealFace: boolean): string {
   }`;
 }
 
-export type RefRole = "face" | "product" | "setting" | "character_sheet";
+export type RefRole = "face" | "product" | "setting" | "character_sheet" | "anchor";
 
 export interface RefDescriptor {
   role: RefRole;
@@ -260,6 +260,8 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
         return `• THE PRODUCT — feature the EXACT product shown in the attached product photo${d}. Keep its EXACT shape, silhouette, colour, material, proportions, handle/parts and branding identical in every single shot. Do NOT redesign, recolour, distort, resize, age, damage or swap it for a different object.`;
       case "setting":
         return `• THE LOCATION — keep every scene in the same location shown in the attached interior photo${d}. Match its layout, colours, furniture and key props; keep it consistent across all shots.`;
+      case "anchor":
+        return `• WARDROBE & LOOK ANCHOR — the attached already-approved storyboard frame shows the main character in the EXACT outfit, hairstyle and accessories to use. Copy the clothing (type, cut and colours) and every accessory (watch, glasses if any, etc.) EXACTLY in this board. Do NOT change the outfit — never switch to a suit, jacket, apron or a different shirt unless it appears in this anchor. It is the SAME person as the portrait photo.`;
       default:
         return `• Reference — keep it consistent.`;
     }
@@ -388,7 +390,7 @@ ${params.productDna ? `PRODUCT DNA (identical in every panel, with exact colours
 ${continuity}
 ${directive}
 
-RULES: ONE cohesive board image; the SAME individual (identical face, hair and outfit) AND the SAME product appear in the character-ref block, the scene overview and all ${target} action panels;${params.preserveRealFace ? " match the man's eyewear to his reference portrait EXACTLY — if he is NOT wearing glasses in the photo, do NOT add glasses anywhere; if he is, keep the same ones;" : ""} ${hasSetting ? "the SAME exact kitchen/location from the interior reference photo" : "one single consistent location"} for this whole board; thin clean dividers and small numbered badges; captions short and legible. ${SHARED_NEGATIVE}`;
+RULES: ONE cohesive board image; the SAME individual (identical face, hair, and the EXACT SAME outfit + accessories — same shirt, trousers, watch; NEVER a suit, jacket, apron or different clothes) AND the SAME product appear in the character-ref block, the scene overview and all ${target} action panels;${params.preserveRealFace ? " match the man's eyewear to his reference portrait EXACTLY — if he is NOT wearing glasses in the photo, do NOT add glasses anywhere; if he is, keep the same ones;" : ""} ${hasSetting ? "the SAME exact kitchen/location from the interior reference photo" : "one single consistent location"} for this whole board; thin clean dividers and small numbered badges; captions short and legible. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Clean single KEYFRAME (veoflow handoff format) ─────────────────────────

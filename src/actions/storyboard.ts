@@ -522,6 +522,8 @@ export async function generateBoardImage(params: {
   kind: BoardKind;
   segmentIndex?: number;
   provider?: AIProvider;
+  /** Base64 of a previously-rendered board, used to pin wardrobe/look across boards. */
+  anchorImage?: string;
 }): Promise<ActionResult<{ url: string }>> {
   const provider = params.provider ?? "gemini";
   const { input, breakdown, analysis } = params;
@@ -549,7 +551,12 @@ export async function generateBoardImage(params: {
         provider,
         aspectRatio: ctx.boardAspect,
         quality: ctx.quality,
-        referenceImages: ctx.canChain && images.length > 0 ? [images[0]!] : undefined,
+        referenceImages:
+          params.anchorImage && ctx.canChain
+            ? [{ base64: params.anchorImage, mimeType: "image/jpeg" }]
+            : ctx.canChain && images.length > 0
+              ? [images[0]!]
+              : undefined,
       });
       return { success: true, data: { url: r.url } };
     }
@@ -579,6 +586,17 @@ export async function generateBoardImage(params: {
       return { success: true, data: { url: r.url } };
     }
 
+    // WARDROBE/LOOK PIN: feed the first approved board back in as an anchor so
+    // every later board copies the EXACT same outfit + accessories (stops the
+    // wardrobe drifting into a suit on one board, etc.). The anchor goes FIRST
+    // so it's the dominant reference.
+    let segImages = ctx.canChain && images.length > 0 ? images : [];
+    let segDescriptors = ctx.canChain && descriptors.length > 0 ? descriptors : [];
+    if (params.anchorImage && ctx.canChain) {
+      segImages = [{ base64: params.anchorImage, mimeType: "image/jpeg" }, ...segImages];
+      segDescriptors = [{ role: "anchor" as const }, ...segDescriptors];
+    }
+
     const r = await generateSegmentFrame({
       segmentNumber: seg.segment_number,
       firstFramePrompt: seg.first_frame_prompt,
@@ -591,8 +609,8 @@ export async function generateBoardImage(params: {
       style: input.style,
       isFirst: i === 0,
       preserveRealFace: ctx.preserveRealFace,
-      referenceImages: ctx.canChain && images.length > 0 ? images : undefined,
-      references: ctx.canChain && descriptors.length > 0 ? descriptors : undefined,
+      referenceImages: segImages.length > 0 ? segImages : undefined,
+      references: segDescriptors.length > 0 ? segDescriptors : undefined,
       referenceExpressions: ctx.referenceExpressions,
       provider,
       aspectRatio: ctx.boardAspect,

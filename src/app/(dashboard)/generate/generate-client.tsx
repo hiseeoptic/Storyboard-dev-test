@@ -619,6 +619,46 @@ const BG_DESC_PROMPT: Record<string, string> = {
 };
 
 // Resolve a description dropdown selection into the text fed to the AI.
+// Downscale a rendered board (data URI) to a compact JPEG base64 so it can be
+// sent back to the server as a wardrobe/look ANCHOR without bloating the request
+// body. Returns null on any failure (we then just skip the anchor — the text
+// wardrobe lock still applies). Never hangs.
+function toAnchorBase64(uri: string, max = 1024, quality = 0.8): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (typeof document === "undefined") return resolve(null);
+    let settled = false;
+    const done = (v: string | null) => {
+      if (!settled) {
+        settled = true;
+        resolve(v);
+      }
+    };
+    const img = new Image();
+    const timer = setTimeout(() => done(null), 10000);
+    img.onload = () => {
+      clearTimeout(timer);
+      try {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const cx = canvas.getContext("2d");
+        if (!cx) return done(null);
+        cx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const out = canvas.toDataURL("image/jpeg", quality);
+        done(out.split(",")[1] ?? null);
+      } catch {
+        done(null);
+      }
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+    img.src = uri;
+  });
+}
+
 function resolveDesc(
   sel: string,
   custom: string,
@@ -1103,15 +1143,19 @@ export function GenerateClient() {
       return null;
     };
 
+    // The first successful board sets the canonical wardrobe/look; every later
+    // board receives it as an anchor so the outfit + accessories stay identical.
+    let anchorB64: string | null = null;
     for (let i = 0; i < segCount; i++) {
       setProgressMessage(lang === "vi" ? `Đang vẽ cảnh ${i + 1}/${segCount}` : `Drawing board ${i + 1}/${segCount}`);
       const url = await genBoard(
-        { input, breakdown, analysis, kind: "segment", segmentIndex: i, provider },
+        { input, breakdown, analysis, kind: "segment", segmentIndex: i, provider, anchorImage: anchorB64 ?? undefined },
         lang === "vi" ? `Cảnh ${i + 1}` : `Board ${i + 1}`,
         `seg-${i}`
       );
       const seg = breakdown.segments[i];
       if (seg) seg.first_frame_url = url;
+      if (url && !anchorB64) anchorB64 = await toAnchorBase64(url);
       bump();
       if (i < segCount - 1) await sleep(1500);
     }
@@ -1119,7 +1163,7 @@ export function GenerateClient() {
     setProgressMessage(lang === "vi" ? "Đang vẽ bảng tổng" : "Drawing master board");
     await sleep(1500);
     const posterUrl = await genBoard(
-      { input, breakdown, analysis, kind: "master", provider },
+      { input, breakdown, analysis, kind: "master", provider, anchorImage: anchorB64 ?? undefined },
       lang === "vi" ? "Bảng tổng" : "Master board",
       "master"
     );
@@ -1182,6 +1226,15 @@ export function GenerateClient() {
     if (!genInput || !genAnalysis || !result || regenTarget !== null) return;
     setRegenTarget(target);
     try {
+      // Pin wardrobe on regenerate too: use an existing OTHER board as the
+      // look anchor so the redo matches the rest (e.g. fixing the one that
+      // drifted into a suit).
+      const anchorSeg = result.breakdown.segments.find(
+        (s, idx) => idx !== target && !!s.first_frame_url
+      );
+      const anchorImage = anchorSeg?.first_frame_url
+        ? await toAnchorBase64(anchorSeg.first_frame_url)
+        : null;
       const r = await generateBoardImage({
         input: genInput,
         breakdown: result.breakdown,
@@ -1189,6 +1242,7 @@ export function GenerateClient() {
         kind: target === "master" ? "master" : "segment",
         segmentIndex: target === "master" ? undefined : target,
         provider,
+        anchorImage: anchorImage ?? undefined,
       });
       const key = target === "master" ? "master" : `seg-${target}`;
       if (r.success) {
