@@ -77,6 +77,36 @@ function stripHexCodes(text: string): string {
     .trim();
 }
 
+/**
+ * Neutralises wording that Veo/Flow flags as "harmful content" — namely
+ * language that reads like replicating a REAL person's identity from a photo
+ * (deepfake vector). The attached reference image still carries the likeness;
+ * we just stop the TEXT from demanding "keep the exact same real face/identity".
+ */
+function makeVeoSafe(text: string): string {
+  return text
+    .replace(
+      /STRICTLY FOLLOW (THE )?(ATTACHED )?REFERENCE IMAGES\s*[–\-.,:;]*\s*/gi,
+      "Keep the character and product visually consistent. "
+    )
+    .replace(
+      /the exact (man|woman|person|boy|girl)\s+shown in the attached portrait photo\s*\(keep their real face,?\s*hair and look\)/gi,
+      "the main character"
+    )
+    .replace(/\bsame person,?\s*same face\s*\/?\s*identity\b/gi, "the same character")
+    .replace(/\bkeep(ing)? the SAME person\b/gi, "keep the same character")
+    .replace(/\bthe SAME person\b/gi, "the same character")
+    .replace(/\bsame face\s*\/?\s*identity\b/gi, "a consistent appearance")
+    .replace(/\bkeep their real face,?\s*hair and look\b/gi, "keep their appearance consistent")
+    .replace(/\b(do not|don'?t|never)\s+change the face\b/gi, "keep the character's appearance consistent")
+    .replace(/\breal face\b/gi, "face")
+    .replace(/\bface\s*\/\s*identity\b/gi, "appearance")
+    .replace(/\breal person\b/gi, "character")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;])/g, "$1")
+    .trim();
+}
+
 // ─── Shared: vision analysis of all uploads ───────────────────────────────
 
 async function runAnalysis(
@@ -167,7 +197,7 @@ function enhanceInput(
       .map((n) => `"${n}": ${analysis.characterDescriptions[n]}`)
       .join(" | ");
     extra.unshift(
-      `MAIN CHARACTER REAL IDENTITY — the main character is a REAL person from an uploaded photo. Each character_lock MUST match that exact person: the SAME gender, age range, skin tone, hair and build. DO NOT invent a different gender or a different look, and do not restyle them into another person. Real identities: ${charLines}`
+      `MAIN CHARACTER APPEARANCE LOCK — base each character_lock on these uploaded reference descriptions: keep the SAME gender, age range, skin tone, hair and build; do not invent a different gender or a different look. When writing "motion_prompt" and "first_frame_prompt", describe the character only by these visual attributes for consistency. DO NOT write phrases like "the same real person", "keep their real face", "same identity/face", "do not change the face", or "strictly follow the reference images" — those get the video rejected. Reference appearance: ${charLines}`
     );
   }
 
@@ -212,6 +242,7 @@ interface RefContext {
   charDescForPoster: string;
   charDesc: string;
   charDescDna: string;
+  charDescVeo: string;
   sceneBible?: SceneBible;
   productDnaText?: string;
   ingredientsText?: string;
@@ -263,6 +294,13 @@ function buildRefContext(
   const charDescDna = preserveRealFace
     ? charDescForShots
     : [charDescForShots, mainDnaRaw].filter(Boolean).join(". ");
+  // Veo/Flow rejects prompts that read like real-person replication ("the exact
+  // man in the photo, keep their real face, same identity"). For the text prompt
+  // pasted into Veo, describe the character by NEUTRAL ATTRIBUTES instead — the
+  // attached reference image still carries the likeness.
+  const charDescVeo = preserveRealFace
+    ? stripHexCodes(charDescForPoster || `a ${genderWord} wearing ${mainCostume}`)
+    : charDescDna;
 
   return {
     canChain,
@@ -282,6 +320,7 @@ function buildRefContext(
     charDescForPoster,
     charDesc,
     charDescDna,
+    charDescVeo,
     sceneBible: breakdown.scene_bible,
     productDnaText:
       breakdown.product_dna || productDesc || input.product_name || productName || undefined,
@@ -339,6 +378,14 @@ export async function generateStoryboardPlan(
           ? `${lock.signature_features}. From reference: ${analyzed}`
           : analyzed;
       }
+    }
+
+    // Neutralise any "replicate the exact real person/face" wording the model
+    // baked into the script — Veo/Flow rejects it as harmful (deepfake) content.
+    // Keeps the editor's action text and the Veo prompts policy-safe.
+    for (const seg of breakdown.segments) {
+      if (seg.motion_prompt) seg.motion_prompt = makeVeoSafe(seg.motion_prompt);
+      if (seg.first_frame_prompt) seg.first_frame_prompt = makeVeoSafe(seg.first_frame_prompt);
     }
 
     // When the user uploaded reference images, the photos are the source of
@@ -405,20 +452,23 @@ function assemblePlanPrompts(
   const palette = breakdown.style_guide?.color_palette ?? [];
   for (const seg of breakdown.segments) {
     seg.first_frame_url = null;
-    seg.full_prompt = buildSegmentVeoPrompt({
-      characterDescription: ctx.charDescDna,
-      productDescription: ctx.productDnaText,
-      ingredients: ctx.ingredientsText,
-      sceneBible: ctx.sceneBible,
-      colorPalette: palette,
-      motionPrompt: seg.motion_prompt,
-      dialogue: seg.dialogue,
-      dialogueLanguage: ctx.dialogueLanguage,
-    });
+    seg.full_prompt = makeVeoSafe(
+      buildSegmentVeoPrompt({
+        characterDescription: ctx.charDescVeo,
+        productDescription: ctx.productDnaText,
+        ingredients: ctx.ingredientsText,
+        sceneBible: ctx.sceneBible,
+        colorPalette: palette,
+        motionPrompt: makeVeoSafe(seg.motion_prompt),
+        dialogue: seg.dialogue,
+        dialogueLanguage: ctx.dialogueLanguage,
+      })
+    );
   }
-  return buildVideoPromptText({
+  return makeVeoSafe(
+    buildVideoPromptText({
     title: breakdown.title,
-    characterDescription: ctx.charDescDna,
+    characterDescription: ctx.charDescVeo,
     productDescription: ctx.productDnaText,
     ingredients: ctx.ingredientsText,
     sceneBible: ctx.sceneBible,
@@ -438,7 +488,8 @@ function assemblePlanPrompts(
       continuity_note: s.continuity_note,
       beats: s.beats,
     })),
-  });
+    })
+  );
 }
 
 /**

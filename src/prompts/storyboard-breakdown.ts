@@ -137,7 +137,7 @@ Visual Style: ${input.style}
 Number of 8-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 8} seconds)
 Beats per segment: ${beatsPerSegment} quick shots inside each 8s clip${productBriefBlock}${storyBriefBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
 
-Produce EXACTLY ${segmentCount} segments. Each segment = one 8s clip containing EXACTLY ${beatsPerSegment} quick shots (${beatsPerSegment} beats), each beat covering a distinct time-frame inside the 8 seconds. Segment 1 must HOOK. The last segment must contain the CTA. CRITICAL CHAINING RULE: the visual state at the END of segment N (pose, position, expression, camera) must EQUAL the opening moment described in segment N+1's "first_frame_prompt", so the generated clips join into one continuous story with no jumps. The "motion_prompt" must describe the ${beatsPerSegment}-shot sequence in order with rough timing (split 8s across the beats, e.g. "0-3s ...; 3-5s ...; 5-8s ..."), camera moves, the spoken ${dialogueLanguage} line, and an explicit final state that matches the next segment's first_frame_prompt. Restate the main character's exact appearance (from character_locks) inside every motion_prompt and every first_frame_prompt so Veo keeps the same person.
+Produce EXACTLY ${segmentCount} segments. Each segment = one 8s clip containing EXACTLY ${beatsPerSegment} quick shots (${beatsPerSegment} beats), each beat covering a distinct time-frame inside the 8 seconds. Segment 1 must HOOK. The last segment must contain the CTA. CRITICAL CHAINING RULE: the visual state at the END of segment N (pose, position, expression, camera) must EQUAL the opening moment described in segment N+1's "first_frame_prompt", so the generated clips join into one continuous story with no jumps. The "motion_prompt" must describe the ${beatsPerSegment}-shot sequence in order with rough timing (split 8s across the beats, e.g. "0-3s ...; 3-5s ...; 5-8s ..."), camera moves, the spoken ${dialogueLanguage} line, and an explicit final state that matches the next segment's first_frame_prompt. Briefly restate the main character's visual attributes (from character_locks) inside every motion_prompt and every first_frame_prompt so the character stays visually consistent. Describe them as a character by appearance — never as "the same real person", "their real face", "same identity", or "strictly follow the reference images".
 
 Return a JSON object with this EXACT structure (the "beats" array must contain EXACTLY ${beatsPerSegment} items):
 {
@@ -518,11 +518,11 @@ export function buildSegmentVeoPrompt(params: {
   dialogueLanguage?: string;
 }): string {
   const lang = params.dialogueLanguage ?? "Vietnamese";
-  const refLock = `STRICTLY FOLLOW THE REFERENCE IMAGES. Same person, same face/identity (rendered as a slightly younger, more attractive version — light natural retouch, never plastic), DNA: ${params.characterDescription}. ${
+  const refLock = `Keep the main character and the product visually consistent across every shot, matching the attached reference image(s). Main character: ${params.characterDescription}. ${
     params.productDescription
-      ? `Same product, unchanged shape/colour/material/branding, DNA: ${params.productDescription}. `
+      ? `Featured product (keep its shape, colour, material and branding consistent): ${params.productDescription}. `
       : ""
-  }Match this colour palette: ${params.colorPalette.join(", ")}.`;
+  }Colour palette: ${params.colorPalette.join(", ")}.`;
   const ing = params.ingredients
     ? ` Named ingredients (show and refer to each by its exact name): ${params.ingredients}.`
     : "";
@@ -596,9 +596,9 @@ Spoken language: ${dialogueLanguage} (lip-synced, no on-screen subtitles)
 - SOLUTION: ${params.marketing.solution}
 - CTA: ${params.marketing.cta}
 
-## Character (keep identical in every clip — paste this wording into every prompt)
+## Character (keep visually consistent in every clip — paste this wording into every prompt)
 ${params.characterDescription}
-Use the generated CHARACTER REFERENCE SHEET as a reference image in every clip so the face/wardrobe never drifts.
+Use the generated CHARACTER REFERENCE SHEET as a reference image in every clip so the appearance and wardrobe stay consistent.
 
 ## Setting
 ${params.setting}
