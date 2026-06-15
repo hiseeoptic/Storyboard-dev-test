@@ -1112,7 +1112,9 @@ export function GenerateClient() {
     setProgressPercent(12);
 
     const segCount = breakdown.segments.length;
-    const total = segCount + 1;
+    // Per clip we render the review BOARD + the clean KEYFRAME (the actual Veo
+    // input), plus the master board at the end.
+    const total = segCount * 2 + 1;
     let done = 0;
     const bump = () => {
       done++;
@@ -1156,6 +1158,19 @@ export function GenerateClient() {
       const seg = breakdown.segments[i];
       if (seg) seg.first_frame_url = url;
       if (url && !anchorB64) anchorB64 = await toAnchorBase64(url);
+      bump();
+      await sleep(1200);
+
+      // Clean KEYFRAME — the single-scene first frame the user actually feeds
+      // into Veo (the multi-panel board is review-only). Auto-generated so the
+      // Veo-ready image is always there, anchored to the same wardrobe/look.
+      setProgressMessage(lang === "vi" ? `Đang vẽ keyframe ${i + 1}/${segCount}` : `Drawing keyframe ${i + 1}/${segCount}`);
+      const kfUrl = await genBoard(
+        { input, breakdown, analysis, kind: "keyframe", segmentIndex: i, provider, anchorImage: anchorB64 ?? undefined },
+        lang === "vi" ? `Keyframe ${i + 1}` : `Keyframe ${i + 1}`,
+        `kf-${i}`
+      );
+      if (seg) seg.keyframe_url = kfUrl;
       bump();
       if (i < segCount - 1) await sleep(1500);
     }
@@ -1753,6 +1768,9 @@ export function GenerateClient() {
                   )}
                   <Badge className="absolute left-2 top-2">#{seg.segment_number}</Badge>
                   <Badge variant="secondary" className="absolute right-2 top-2 uppercase">{seg.marketing_role}</Badge>
+                  <Badge variant="outline" className="absolute bottom-2 left-2 bg-background/80 text-[10px]">
+                    {lang === "vi" ? "Board · chỉ để xem" : "Board · review only"}
+                  </Badge>
                   <Badge variant="outline" className="absolute bottom-2 right-2 bg-background/80">{seg.duration_seconds}s</Badge>
                 </div>
                 <CardContent className="space-y-3 p-3">
@@ -1821,18 +1839,18 @@ export function GenerateClient() {
                         variant="outline"
                         size="sm"
                         className="gap-1.5"
-                        onClick={() => downloadImage(seg.first_frame_url!, `frame_${String(seg.segment_number).padStart(2, "0")}.png`)}
+                        onClick={() => downloadImage(seg.first_frame_url!, `board_${String(seg.segment_number).padStart(2, "0")}.png`)}
                       >
                         <Download className="h-3.5 w-3.5" />
                       </Button>
                     )}
                   </div>
 
-                  {/* Clean keyframe (veoflow first-frame for Veo image-to-video) */}
-                  <div className="rounded-md border border-dashed p-2">
+                  {/* Clean keyframe — THE image to feed Veo (the multi-panel board above is review-only) */}
+                  <div className="rounded-md border-2 border-primary/50 bg-primary/5 p-2">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] font-semibold uppercase text-muted-foreground">
-                        {lang === "vi" ? "Keyframe sạch (ảnh đầu cho Veo)" : "Clean keyframe (Veo first-frame)"}
+                      <p className="text-[11px] font-bold uppercase text-primary">
+                        {lang === "vi" ? "✅ Ảnh đầu để ĐẨY VÀO VEO" : "✅ Veo input (start frame)"}
                       </p>
                       <div className="flex gap-1.5">
                         <Button
@@ -1845,11 +1863,9 @@ export function GenerateClient() {
                           {keyframeBusy === result.breakdown.segments.indexOf(seg) ? (
                             <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
-                            <ImageIcon className="h-3 w-3" />
+                            <RotateCw className="h-3 w-3" />
                           )}
-                          {seg.keyframe_url
-                            ? lang === "vi" ? "Tạo lại" : "Redo"
-                            : lang === "vi" ? "Tạo keyframe" : "Make keyframe"}
+                          {lang === "vi" ? "Tạo lại" : "Redo"}
                         </Button>
                         {seg.keyframe_url && (
                           <Button
@@ -1863,13 +1879,21 @@ export function GenerateClient() {
                         )}
                       </div>
                     </div>
-                    {seg.keyframe_url && (
+                    {seg.keyframe_url ? (
                       <img src={seg.keyframe_url} alt={`Keyframe ${seg.segment_number}`} className="mt-2 w-full rounded border" />
+                    ) : (
+                      <div className="mt-2 flex aspect-video items-center justify-center gap-1.5 rounded border border-dashed text-[10px] text-muted-foreground">
+                        {keyframeBusy === result.breakdown.segments.indexOf(seg) ? (
+                          <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {lang === "vi" ? "Đang tạo..." : "Generating..."}</>
+                        ) : (
+                          <span>{lang === "vi" ? "Chưa có — bấm Tạo lại" : "Missing — press Redo"}</span>
+                        )}
+                      </div>
                     )}
-                    <p className="mt-1 text-[10px] text-muted-foreground">
+                    <p className="mt-1 text-[10px] font-medium text-primary/80">
                       {lang === "vi"
-                        ? "Ảnh tĩnh 1 cảnh, đúng DNA/scene-bible — đẩy vào Veo (image-to-video) làm ảnh đầu."
-                        : "Single static frame with locked DNA/scene-bible — feed into Veo (image-to-video) as the first frame."}
+                        ? "⬆️ Đẩy ẢNH NÀY vào Veo (image-to-video) làm ảnh đầu. ĐỪNG đẩy ảnh board nhiều panel ở trên — Veo sẽ làm hỏng video."
+                        : "⬆️ Feed THIS into Veo (image-to-video) as the start frame. Do NOT use the multi-panel board above — Veo will break the video."}
                     </p>
                   </div>
                 </CardContent>
