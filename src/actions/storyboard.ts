@@ -61,6 +61,22 @@ function stripEyewear(text: string): string {
     .trim();
 }
 
+/**
+ * Removes RGB hex colour codes (e.g. "#C8956A") from text. Used when the user
+ * has uploaded reference images — the photo is the source of truth for colour,
+ * so the invented hex codes in the script only add noise and risk contradicting
+ * the photo. Leaves the surrounding colour words (e.g. "warm tan skin") intact.
+ */
+function stripHexCodes(text: string): string {
+  return text
+    .replace(/\s*\(#[0-9A-Fa-f]{6}\)/g, "") // "(#C8956A)"
+    .replace(/\s*#[0-9A-Fa-f]{6}\b/g, "") // bare "#C8956A"
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;)])/g, "$1")
+    .replace(/\(\s+/g, "(")
+    .trim();
+}
+
 // ─── Shared: vision analysis of all uploads ───────────────────────────────
 
 async function runAnalysis(
@@ -323,6 +339,31 @@ export async function generateStoryboardPlan(
           ? `${lock.signature_features}. From reference: ${analyzed}`
           : analyzed;
       }
+    }
+
+    // When the user uploaded reference images, the photos are the source of
+    // truth — strip the AI-invented RGB hex colour codes out of the script so
+    // they can't contradict the references (and so the editor stays clean).
+    const hasRefImages =
+      (input.character_images?.length ?? 0) > 0 || (input.product_images?.length ?? 0) > 0;
+    if (hasRefImages) {
+      for (const seg of breakdown.segments) {
+        if (seg.motion_prompt) seg.motion_prompt = stripHexCodes(seg.motion_prompt);
+        if (seg.first_frame_prompt) seg.first_frame_prompt = stripHexCodes(seg.first_frame_prompt);
+      }
+      for (const lock of breakdown.character_locks) {
+        if (lock.dna) lock.dna = stripHexCodes(lock.dna);
+        if (lock.signature_features) lock.signature_features = stripHexCodes(lock.signature_features);
+      }
+      if (breakdown.product_dna) breakdown.product_dna = stripHexCodes(breakdown.product_dna);
+    }
+    // A backdrop photo makes the scene-bible hex redundant too — strip it so the
+    // uploaded location stays the single source of truth.
+    if ((input.background_images?.length ?? 0) > 0 && breakdown.scene_bible) {
+      const sb = breakdown.scene_bible;
+      sb.backdrop = stripHexCodes(sb.backdrop ?? "");
+      sb.color_grade = stripHexCodes(sb.color_grade ?? "");
+      sb.lighting = stripHexCodes(sb.lighting ?? "");
     }
 
     const videoPrompt = assemblePlanPrompts(input, breakdown, analysis, provider);
