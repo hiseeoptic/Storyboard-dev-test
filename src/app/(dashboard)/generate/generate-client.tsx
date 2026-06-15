@@ -39,6 +39,7 @@ import {
   type StoryboardAnalysis,
 } from "@/actions";
 import { CharacterStudio } from "./character-studio";
+import { loadHandoff } from "@/lib/handoff";
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
@@ -802,11 +803,10 @@ export function GenerateClient() {
   // Hydrate approved images handed off from the Image Studio (/studio).
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const raw = window.sessionStorage.getItem("sb_studio_handoff");
-    if (!raw) return;
-    window.sessionStorage.removeItem("sb_studio_handoff");
-    try {
-      const h = JSON.parse(raw) as { characterImages?: string[]; productImages?: string[] };
+    let cancelled = false;
+    (async () => {
+      const h = await loadHandoff<{ characterImages?: string[]; productImages?: string[] }>();
+      if (!h || cancelled) return;
       const toUploaded = (b64: string): UploadedImage => ({
         id: Math.random().toString(36).slice(2, 10),
         preview: `data:image/jpeg;base64,${b64}`,
@@ -827,9 +827,10 @@ export function GenerateClient() {
       }
       setFromStudio(true);
       setStep(1);
-    } catch {
-      /* ignore malformed handoff */
-    }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Step 5: Style

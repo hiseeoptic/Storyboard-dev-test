@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploader";
 import { generateStudioImage } from "@/actions";
+import { saveHandoff } from "@/lib/handoff";
 import { DEFAULT_CONFIG, type PhotoConfig, type SubjectType } from "@/lib/studio/types";
 import {
   SPECIAL_STYLES,
@@ -60,21 +61,40 @@ function dataUriToBase64(uri: string): string {
 // the server-action body limit and analysis is fast.
 function downscaleToBase64(uri: string, max = 1024, quality = 0.88): Promise<string> {
   return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, max / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return resolve(dataUriToBase64(uri));
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const out = canvas.toDataURL("image/jpeg", quality);
-      resolve(out.split(",")[1] ?? out);
+    let settled = false;
+    const done = (v: string) => {
+      if (!settled) {
+        settled = true;
+        resolve(v);
+      }
     };
-    img.onerror = () => resolve(dataUriToBase64(uri));
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    // Never hang the handoff: if the image can't decode in time, keep the original.
+    const timer = setTimeout(() => done(dataUriToBase64(uri)), 12000);
+    img.onload = () => {
+      clearTimeout(timer);
+      try {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return done(dataUriToBase64(uri));
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const out = canvas.toDataURL("image/jpeg", quality);
+        done(out.split(",")[1] ?? out);
+      } catch {
+        // Tainted canvas / iOS memory failure → fall back to the original.
+        done(dataUriToBase64(uri));
+      }
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      done(dataUriToBase64(uri));
+    };
     img.src = uri;
   });
 }
@@ -187,16 +207,24 @@ export function StudioClient() {
     setBusy(true);
     setProgress("Đang chuẩn bị ảnh cho Storyboard...");
     try {
-      const characterImages = await Promise.all(approved.map((r) => downscaleToBase64(r.url)));
+      // Downscale SEQUENTIALLY — decoding several 2K images at once exhausts
+      // mobile-Safari memory and makes the downscale silently fall back to the
+      // full-size original.
+      const characterImages: string[] = [];
+      for (let i = 0; i < approved.length; i++) {
+        setProgress(`Đang chuẩn bị ảnh ${i + 1}/${approved.length}...`);
+        characterImages.push(await downscaleToBase64(approved[i]!.url));
+      }
       const handoff = {
         studio: true,
         characterImages,
         productImages: [...productImages, ...outfitImage].map((i) => i.base64),
       };
-      window.sessionStorage.setItem(STUDIO_HANDOFF_KEY, JSON.stringify(handoff));
+      // IndexedDB-backed store (reliable on mobile, unlike sessionStorage).
+      await saveHandoff(handoff);
       router.push("/generate");
     } catch {
-      setError("Ảnh quá lớn để chuyển sang Storyboard. Hãy duyệt ít ảnh hơn.");
+      setError("Không chuyển được ảnh sang Storyboard. Hãy thử lại hoặc duyệt ít ảnh hơn.");
       setBusy(false);
       setProgress(null);
     }
