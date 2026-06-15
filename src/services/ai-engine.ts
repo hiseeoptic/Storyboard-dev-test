@@ -138,9 +138,14 @@ export async function generateStoryboardBreakdown(
       }
 
       // Ensure character_locks have defaults
-      if (!parsed.character_locks) {
+      if (!Array.isArray(parsed.character_locks)) {
         parsed.character_locks = [];
       }
+      // Drop any malformed (non-object) entries the model may have returned so
+      // the gender backfill and downstream mapping never crash on them.
+      parsed.character_locks = parsed.character_locks.filter(
+        (l): l is NonNullable<typeof l> => !!l && typeof l === "object"
+      );
       // Backfill the explicit gender lock from gender_age text when the model
       // forgot the dedicated field (so downstream always has a hard male/female).
       for (const lock of parsed.character_locks) {

@@ -366,11 +366,26 @@ export async function generateStoryboardPlan(
       sb.lighting = stripHexCodes(sb.lighting ?? "");
     }
 
-    const videoPrompt = assemblePlanPrompts(input, breakdown, analysis, provider);
+    // Prompt assembly is best-effort: if it fails, still return the script so
+    // the user can review/edit it (the prompts get rebuilt on finalize anyway).
+    let videoPrompt = "";
+    try {
+      videoPrompt = assemblePlanPrompts(input, breakdown, analysis, provider);
+    } catch (e) {
+      console.error("[Storyboard] prompt assembly failed:", e);
+      warnings.push("Một số prompt chưa dựng được, sẽ tạo lại khi bạn duyệt kịch bản.");
+    }
 
     return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "AI generation failed" };
+    console.error("[Storyboard] plan generation failed:", err);
+    const raw = err instanceof Error ? err.message : "AI generation failed";
+    // In production Next.js hides the real message behind a generic
+    // "Server Components render" digest — show a clear, actionable message.
+    const friendly = /server components render|digest/i.test(raw)
+      ? "Máy chủ gặp lỗi tạm thời khi tạo kịch bản (có thể do AI quá tải hoặc ảnh quá lớn). Vui lòng bấm Tạo Storyboard lại sau vài giây."
+      : `Tạo kịch bản thất bại: ${raw}`;
+    return { success: false, error: friendly };
   }
 }
 
