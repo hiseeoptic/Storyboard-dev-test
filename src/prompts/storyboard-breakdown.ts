@@ -2,7 +2,7 @@ import type { StoryboardGenerationInput, VideoGoal, SceneBible, AspectRatio } fr
 
 // Forbidden in every generated image/clip (the brief's negative list).
 const SHARED_NEGATIVE =
-  "NEGATIVE (must avoid): warped or altered label/logo text, logo change, brand-colour change, extra products, DUPLICATED OR DOUBLED objects (e.g. two pans/two of the same item), floating or levitating objects, physically impossible actions (e.g. lifting a pan with a spatula), extra people, changed hair/wardrobe/accessories, human hands when the action does not require them, on-screen text overlays, captions, subtitles, watermark, object/container morphing, duplicate subject, plastic/CGI skin.";
+  "NEGATIVE (must avoid): warped or altered label/logo text, logo change, brand-colour change, extra products, DUPLICATED OR DOUBLED objects (e.g. two pans / two of the same item), floating or levitating objects, physically impossible actions (e.g. lifting/holding a pan with a spatula), extra people, changed hair/wardrobe/accessories, human hands when the action does not require them, on-screen text overlays, captions, subtitles, watermark, object/container morphing, duplicate subject, plastic/CGI skin.";
 
 /** One-line "Scene Bible" style tokens, reproduced verbatim in every image. */
 function sceneBibleTokens(sb?: SceneBible): string {
@@ -423,47 +423,6 @@ SUBJECT — keep this exact forensic identity: ${params.characterDescription}
 ${params.productDna ? `PRODUCT (exact, unchanged, with colours): ${params.productDna}\n` : ""}${params.ingredients ? `PROPS / INGREDIENTS (show clearly by name): ${params.ingredients}\n` : ""}${tokens ? tokens + "\n" : ""}${directive}
 
 RENDER RULES: a SINGLE static frame; the subject is sharp and frozen in the STARTING posture for the upcoming action (no motion blur, no camera-movement effect); ${ratioWord} aspect ratio, 1080p quality. Do NOT include timeline markers, multiple panels, split-screens, reference thumbnails, captions, subtitles, on-screen text or speech bubbles. Photoreal premium commercial look. ${SHARED_NEGATIVE}`;
-}
-
-// ─── Clean Veo "ingredient" references (single subject, clean background) ───
-// Veo 3.1 reference/ingredients-to-video works best with separate, clean,
-// single-subject images (Google's own guidance). We expose two: a close-up
-// CHARACTER portrait and an empty SCENE plate.
-
-export function buildCharacterPortraitPrompt(params: {
-  characterDescription: string;
-  style: string;
-  aspectRatio: AspectRatio;
-  preserveRealFace?: boolean;
-  references?: RefDescriptor[];
-}): string {
-  const directive = renderDirective(params.style, params.preserveRealFace ?? false);
-  const refBlock = buildReferenceInstructions(params.references ?? []);
-  const ratioWord = params.aspectRatio === "9:16" ? "vertical 9:16 portrait" : "horizontal 16:9";
-  return `${refBlock}A SINGLE clean CHARACTER REFERENCE photo of ONE person — a sharp, well-lit head-and-shoulders portrait with the FACE LARGE and clearly visible, plus the upper body, facing the camera with a neutral relaxed expression, on a plain seamless light-grey studio background. This image exists only to lock the character's identity for an AI video model.
-
-PERSON: ${params.characterDescription}
-
-${directive}
-
-RENDER: photoreal, razor-sharp focus on the face, even soft studio lighting, ${ratioWord}. EXACTLY ONE person, centered, no other people. Do NOT add a second person or duplicate, no props, no text, no logos, no captions, no panels, no borders. ${SHARED_NEGATIVE}`;
-}
-
-export function buildScenePlatePrompt(params: {
-  setting: string;
-  sceneBible?: SceneBible;
-  style: string;
-  aspectRatio: AspectRatio;
-  references?: RefDescriptor[];
-}): string {
-  const refBlock = buildReferenceInstructions(params.references ?? []);
-  const tokens = sceneBibleTokens(params.sceneBible);
-  const ratioWord = params.aspectRatio === "9:16" ? "vertical 9:16" : "horizontal 16:9";
-  return `${refBlock}A SINGLE clean ESTABLISHING SHOT of the LOCATION ONLY — a wide-angle view of the empty setting with NO people and NO featured product. This image exists only to lock the background/scene for an AI video model.
-
-LOCATION: ${params.setting}
-${tokens ? tokens + "\n" : ""}
-RENDER: photoreal, wide establishing angle, natural depth and lighting, ${ratioWord}. NO people, NO characters, NO hands, NO featured product, NO text, NO captions; ONE single coherent space. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 4: Master Board (Character Sheet + captioned storyboard grid) ─────
