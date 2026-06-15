@@ -1769,7 +1769,7 @@ export function GenerateClient() {
                   <Badge className="absolute left-2 top-2">#{seg.segment_number}</Badge>
                   <Badge variant="secondary" className="absolute right-2 top-2 uppercase">{seg.marketing_role}</Badge>
                   <Badge variant="outline" className="absolute bottom-2 left-2 bg-background/80 text-[10px]">
-                    {lang === "vi" ? "Board · chỉ để xem" : "Board · review only"}
+                    {lang === "vi" ? "Board (storyboard)" : "Board (storyboard)"}
                   </Badge>
                   <Badge variant="outline" className="absolute bottom-2 right-2 bg-background/80">{seg.duration_seconds}s</Badge>
                 </div>
@@ -1850,7 +1850,7 @@ export function GenerateClient() {
                   <div className="rounded-md border-2 border-primary/50 bg-primary/5 p-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[11px] font-bold uppercase text-primary">
-                        {lang === "vi" ? "✅ Ảnh đầu để ĐẨY VÀO VEO" : "✅ Veo input (start frame)"}
+                        {lang === "vi" ? "✅ Keyframe — nhân vật nét nhất cho Veo" : "✅ Keyframe — sharpest character for Veo"}
                       </p>
                       <div className="flex gap-1.5">
                         <Button
@@ -1892,8 +1892,8 @@ export function GenerateClient() {
                     )}
                     <p className="mt-1 text-[10px] font-medium text-primary/80">
                       {lang === "vi"
-                        ? "⬆️ Đẩy ẢNH NÀY vào Veo (image-to-video) làm ảnh đầu. ĐỪNG đẩy ảnh board nhiều panel ở trên — Veo sẽ làm hỏng video."
-                        : "⬆️ Feed THIS into Veo (image-to-video) as the start frame. Do NOT use the multi-panel board above — Veo will break the video."}
+                        ? "⬆️ Đẩy ảnh này vào Veo (image-to-video) để nhân vật nét & giống nhất. Board ở trên cũng dùng được, nhưng mặt thường mềm hơn."
+                        : "⬆️ Feed this into Veo (image-to-video) for the sharpest, most on-model character. The board above also works, but faces tend to come out softer."}
                     </p>
                   </div>
                 </CardContent>

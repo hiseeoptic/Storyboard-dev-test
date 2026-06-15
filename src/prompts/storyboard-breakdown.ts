@@ -607,9 +607,9 @@ ${params.setting}
 Color palette: ${params.colorPalette.join(", ")}
 
 ## HOW TO BUILD THE VIDEO (seamless chaining)
-Each shot has TWO images: (a) a CLEAN KEYFRAME — one single photographic scene, no panels or text — and (b) a multi-panel STORYBOARD BOARD (character angles + scene + captioned action sequence).
-⚠️ IMPORTANT: feed Veo the CLEAN KEYFRAME, NOT the multi-panel board. The board is only for your own review/planning. If you upload the multi-panel board into Veo it will try to animate the whole collage (panels, labels, tiny repeated faces) and the result looks broken and off-model — it will NOT follow the scene.
-1. For each shot, upload its CLEAN KEYFRAME to Veo/Seedance (image-to-video) as the START frame, then paste that shot's motion prompt. Set aspect ratio ${params.aspectRatio}.
+Each shot has TWO images: (a) a CLEAN KEYFRAME — one single photographic scene — and (b) a multi-panel STORYBOARD BOARD (character angles + scene + captioned action sequence).
+TIP: for the SHARPEST, most on-model character, feed Veo the CLEAN KEYFRAME as the start frame. The multi-panel board also works as a storyboard reference, but because the character appears small and repeated across panels the face can come out softer.
+1. For each shot, upload its image (the clean keyframe is recommended) to Veo/Seedance (image-to-video) as the START frame, then paste that shot's motion prompt. Set aspect ratio ${params.aspectRatio}.
 2. The clips chain: shot N is written to END exactly where shot N+1 begins. For the tightest joins (Veo 3.1) use the LAST frame of clip N as the start image of clip N+1, or Veo "Extend".
 3. Keep the spoken ${dialogueLanguage} line exactly as written so the lip-sync matches. Generate all ${params.segments.length} clips in order, then stitch them (CapCut/ffmpeg) and add the CTA end card.
 

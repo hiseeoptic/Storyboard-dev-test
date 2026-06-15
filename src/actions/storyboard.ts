@@ -16,6 +16,7 @@ import type {
   ActionResult,
   AIProvider,
   AspectRatio,
+  CharacterLock,
   ImageQuality,
   SceneBible,
   StoryboardGenerationInput,
@@ -107,8 +108,27 @@ function makeVeoSafe(text: string): string {
     .trim();
 }
 
-// ─── Shared: vision analysis of all uploads ───────────────────────────────
+/**
+ * Builds ONE clean, concise character line for the Veo prompt from the
+ * structured lock fields. Avoids the bloat that confused the model: duplicated
+ * field nouns ("skin warm tan skin"), the truncated vision "From reference: …"
+ * fragment, and the verbose "Additional: ABSOLUTE source of truth …" text.
+ */
+function buildCleanCharLine(lock?: CharacterLock): string {
+  if (!lock) return "";
+  // Keep only the human-written signature, not the appended vision/force text.
+  const sig = ((lock.signature_features || "").split(/\.\s*(?:from reference|additional)\b/i)[0] ?? "").trim();
+  const attrs = [lock.gender_age, lock.build, lock.skin_tone, lock.hair, lock.eyes]
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+  const head = [lock.name, attrs, lock.costume ? `wearing ${lock.costume}` : ""]
+    .filter(Boolean)
+    .join(", ");
+  return sig ? `${head}. ${sig}` : head;
+}
 
+// ─── Shared: vision analysis of all uploads ───────────────────────────────
 async function runAnalysis(
   input: StoryboardGenerationInput,
   provider: AIProvider,
@@ -270,7 +290,13 @@ function buildRefContext(
   const charDescForPosterRaw = (breakdown.character_locks ?? [])
     .map(
       (c) =>
-        `${c.name}: ${c.gender_age}, ${c.build}, skin ${c.skin_tone}, hair ${c.hair}, eyes ${c.eyes}, wearing ${c.costume}. ${c.signature_features}`
+        // NOTE: skin_tone/hair/eyes values already include the noun (e.g. "warm
+        // tan skin", "dark brown eyes"), so we do NOT prefix "skin/hair/eyes"
+        // again — that produced "skin warm tan skin", "eyes dark brown eyes".
+        `${c.name}: ${[c.gender_age, c.build, c.skin_tone, c.hair, c.eyes]
+          .map((s) => (s ?? "").trim())
+          .filter(Boolean)
+          .join(", ")}, wearing ${c.costume}. ${c.signature_features}`
     )
     .join(". ");
   // When a real face photo governs identity, strip any LLM-invented eyewear
@@ -299,7 +325,7 @@ function buildRefContext(
   // pasted into Veo, describe the character by NEUTRAL ATTRIBUTES instead — the
   // attached reference image still carries the likeness.
   const charDescVeo = preserveRealFace
-    ? stripHexCodes(charDescForPoster || `a ${genderWord} wearing ${mainCostume}`)
+    ? stripHexCodes(stripEyewear(buildCleanCharLine(breakdown.character_locks[0])) || `a ${genderWord} wearing ${mainCostume}`)
     : charDescDna;
 
   return {
