@@ -845,7 +845,15 @@ export function GenerateClient() {
     if (typeof window === "undefined") return;
     let cancelled = false;
     (async () => {
-      const h = await loadHandoff<{ characterImages?: string[]; productImages?: string[] }>();
+      const h = await loadHandoff<{
+        characterImages?: string[];
+        productImages?: string[];
+        // Optional seed from the Video Analyzer (/analyze)
+        storyIdea?: string;
+        productName?: string;
+        segmentCount?: number;
+        forceDialogue?: boolean;
+      }>();
       if (!h || cancelled) return;
       const toUploaded = (b64: string): UploadedImage => ({
         id: Math.random().toString(36).slice(2, 10),
@@ -865,8 +873,17 @@ export function GenerateClient() {
         setProdName("Sản phẩm");
         setProdImages(h.productImages.slice(0, 3).map(toUploaded));
       }
+      // Seed from the Video Analyzer: prefill the brief so the user just reviews.
+      const fromAnalyze = typeof h.storyIdea === "string" && h.storyIdea.length > 0;
+      if (fromAnalyze) {
+        setStoryIdea(h.storyIdea!);
+        if (h.productName) setProductName(h.productName);
+        if (typeof h.segmentCount === "number")
+          setSegmentCount(Math.min(10, Math.max(3, h.segmentCount)));
+        if (typeof h.forceDialogue === "boolean") setForceVietnameseDialogue(h.forceDialogue);
+      }
       setFromStudio(true);
-      setStep(1);
+      setStep(fromAnalyze ? 0 : 1);
     })();
     return () => {
       cancelled = true;

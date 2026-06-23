@@ -1,7 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import JSZip from "jszip";
+import { saveHandoff } from "@/lib/handoff";
 import {
   Video,
   Loader2,
@@ -18,6 +20,7 @@ import {
   Sparkles,
   Package,
   FileArchive,
+  ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -203,7 +206,9 @@ export function AnalyzeClient() {
   const [error, setError] = useState<string | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [pushing, setPushing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
 
   // ── Keyframe generation (Nano Banana + product/face photos) ──
   const [productImages, setProductImages] = useState<string[]>([]);
@@ -367,6 +372,39 @@ export function AnalyzeClient() {
     URL.revokeObjectURL(url);
   };
 
+  // Hand the analysis (brief + per-scene structure + product/face images) over
+  // to /generate to build a full cinematic storyboard.
+  const pushToStoryboard = async () => {
+    if (!result) return;
+    setPushing(true);
+    try {
+      const sceneLines = result.scenes
+        .map(
+          (s) =>
+            `Cảnh ${s.index} (${s.continuity === "continuous" ? "tiếp nối" : "cắt mới"}): ${s.action}` +
+            (s.dialogue ? ` Thoại: "${s.dialogue}".` : "")
+        )
+        .join("\n");
+      const storyIdea =
+        `${result.summary}${result.product ? `\nSản phẩm: ${result.product}.` : ""}\n\n` +
+        `Dựng lại theo cấu trúc video tham khảo (mỗi cảnh = 1 đoạn 10s):\n${sceneLines}`;
+
+      const strip = (arr: string[]) => arr.map((b) => b.split(",")[1] ?? "").filter(Boolean);
+
+      await saveHandoff({
+        storyIdea,
+        productName: productName || result.product || "",
+        segmentCount: Math.min(10, Math.max(3, result.scenes.length)),
+        forceDialogue: result.scenes.some((s) => s.dialogue),
+        productImages: strip(productImages),
+        characterImages: strip(faceImages),
+      });
+      router.push("/generate");
+    } finally {
+      setPushing(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -447,7 +485,11 @@ export function AnalyzeClient() {
                 {result.product && <Badge variant="secondary" className="mt-2">Sản phẩm: {result.product}</Badge>}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => download(fullText, "storyboard-day-du.txt")} className="gap-2">
+                <Button size="sm" onClick={pushToStoryboard} disabled={pushing} className="gap-2 bg-indigo-600 hover:bg-indigo-500">
+                  {pushing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                  Đẩy sang Storyboard
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => download(fullText, "storyboard-day-du.txt")} className="gap-2">
                   <Download className="h-4 w-4" /> Tải storyboard đầy đủ
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => download(allPrompts, "prompts.txt")} className="gap-2">
