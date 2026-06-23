@@ -64,6 +64,8 @@ export async function geminiGenerateText(params: {
   userPrompt: string;
   jsonMode?: boolean;
   images?: { base64: string; mimeType?: string }[];
+  /** Audio clips (e.g. extracted video soundtrack) for speech transcription. */
+  audio?: { base64: string; mimeType?: string }[];
   temperature?: number;
   maxOutputTokens?: number;
 }): Promise<string> {
@@ -76,6 +78,16 @@ export async function geminiGenerateText(params: {
         inlineData: {
           mimeType: img.mimeType ?? "image/jpeg",
           data: img.base64,
+        },
+      });
+    }
+  }
+  if (params.audio) {
+    for (const a of params.audio) {
+      parts.push({
+        inlineData: {
+          mimeType: a.mimeType ?? "audio/wav",
+          data: a.base64,
         },
       });
     }

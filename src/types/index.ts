@@ -319,6 +319,14 @@ export interface VideoAnalysisScene {
   productNote: string;
   /** English prompt to recreate a similar scene with Veo / Omni Flash. */
   generationPrompt: string;
+  /** "cut" = a new shot, "continuous" = seamless continuation of the previous shot. */
+  continuity: "cut" | "continuous";
+  /** Spoken line during this scene, transcribed verbatim ("" if none). */
+  dialogue: string;
+  /** Speaking tone / emotion ("" if no speech). */
+  dialogueTone: string;
+  /** For continuous scenes: short English prompt to type into Veo "Extend". */
+  extendPrompt: string;
 }
 
 export interface VideoAnalysisOutput {

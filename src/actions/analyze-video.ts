@@ -50,11 +50,15 @@ function normalize(raw: unknown): VideoAnalysisOutput {
     return {
       index: typeof o.index === "number" ? o.index : i + 1,
       durationSec: typeof o.durationSec === "number" ? o.durationSec : 0,
+      continuity: o.continuity === "continuous" && i > 0 ? "continuous" : "cut",
       shot: String(o.shot ?? ""),
       cameraMotion: String(o.cameraMotion ?? ""),
       action: String(o.action ?? ""),
       productNote: String(o.productNote ?? ""),
+      dialogue: String(o.dialogue ?? ""),
+      dialogueTone: String(o.dialogueTone ?? ""),
       generationPrompt: String(o.generationPrompt ?? ""),
+      extendPrompt: String(o.extendPrompt ?? ""),
     };
   });
   return {
@@ -73,6 +77,9 @@ function normalize(raw: unknown): VideoAnalysisOutput {
  */
 export async function analyzeVideoFrames(input: {
   frames: string[];
+  /** Optional extracted audio (base64 WAV) for dialogue transcription. */
+  audioBase64?: string;
+  audioMimeType?: string;
   productName?: string;
   notes?: string;
   lang?: "vi" | "en";
@@ -88,15 +95,27 @@ export async function analyzeVideoFrames(input: {
       mimeType: "image/jpeg",
     }));
 
+    const hasAudio = !!input.audioBase64;
+    const audio = hasAudio
+      ? [
+          {
+            base64: input.audioBase64!.replace(/^data:[^,]+,/, ""),
+            mimeType: input.audioMimeType ?? "audio/wav",
+          },
+        ]
+      : undefined;
+
     const raw = await geminiGenerateText({
       systemPrompt: buildVideoAnalysisSystemPrompt(),
       userPrompt: buildVideoAnalysisUserPrompt({
         frameCount: images.length,
+        hasAudio,
         productName: input.productName,
         notes: input.notes,
         lang: input.lang,
       }),
       images,
+      audio,
       jsonMode: true,
       temperature: 0.4,
       maxOutputTokens: 8192,
