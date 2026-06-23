@@ -135,6 +135,31 @@ async function extractAudioWav(file: File, targetRate = 16000, maxSec = 120): Pr
   }
 }
 
+// ─── Full storyboard export (everything in one file) ────────────────────────
+
+function buildFullText(r: VideoAnalysisOutput): string {
+  const lines: string[] = [];
+  lines.push(`STORYBOARD: ${r.title}`);
+  if (r.summary) lines.push(`Tóm tắt: ${r.summary}`);
+  if (r.product) lines.push(`Sản phẩm: ${r.product}`);
+  lines.push(`Tổng số cảnh: ${r.scenes.length}`);
+  lines.push("");
+  for (const s of r.scenes) {
+    lines.push(`========== CẢNH ${s.index} ==========`);
+    lines.push(`Loại: ${s.continuity === "continuous" ? "🔗 Tiếp nối (Veo Extend)" : "✂️ Cảnh mới (Cut)"}`);
+    if (s.durationSec) lines.push(`Thời lượng: ~${s.durationSec}s`);
+    if (s.shot) lines.push(`Khung hình: ${s.shot}`);
+    if (s.cameraMotion) lines.push(`Camera: ${s.cameraMotion}`);
+    if (s.action) lines.push(`Hành động: ${s.action}`);
+    if (s.productNote) lines.push(`Sản phẩm: ${s.productNote}`);
+    if (s.dialogue) lines.push(`Thoại: "${s.dialogue}"${s.dialogueTone ? ` (${s.dialogueTone})` : ""}`);
+    if (s.generationPrompt) lines.push(`Prompt tạo cảnh (EN): ${s.generationPrompt}`);
+    if (s.extendPrompt) lines.push(`Prompt tiếp nối / Veo Extend (EN): ${s.extendPrompt}`);
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
 export function AnalyzeClient() {
   const [fileName, setFileName] = useState("");
   const [frames, setFrames] = useState<string[]>([]);
@@ -188,13 +213,20 @@ export function AnalyzeClient() {
     setAnalyzing(false);
   };
 
-  const allPrompts = result ? result.scenes.map((s) => s.generationPrompt).join("\n") : "";
+  // One usable prompt per scene (Extend scenes fall back to extendPrompt so no blank lines).
+  const allPrompts = result
+    ? result.scenes
+        .map((s) => s.generationPrompt || s.extendPrompt)
+        .filter(Boolean)
+        .join("\n")
+    : "";
   const scriptText = result
     ? result.scenes
         .filter((s) => s.dialogue)
         .map((s) => `Cảnh ${s.index}: ${s.dialogue}`)
         .join("\n")
     : "";
+  const fullText = result ? buildFullText(result) : "";
 
   const copyText = async (text: string, key: string) => {
     await navigator.clipboard.writeText(text);
@@ -298,11 +330,10 @@ export function AnalyzeClient() {
                 {result.product && <Badge variant="secondary" className="mt-2">Sản phẩm: {result.product}</Badge>}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={copyAll} className="gap-2">
-                  {copiedAll ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  {copiedAll ? "Đã copy" : "Copy tất cả prompt"}
+                <Button size="sm" onClick={() => download(fullText, "storyboard-day-du.txt")} className="gap-2">
+                  <Download className="h-4 w-4" /> Tải storyboard đầy đủ
                 </Button>
-                <Button size="sm" onClick={() => download(allPrompts, "prompts.txt")} className="gap-2">
+                <Button size="sm" variant="outline" onClick={() => download(allPrompts, "prompts.txt")} className="gap-2">
                   <Download className="h-4 w-4" /> prompts.txt
                 </Button>
                 {scriptText && (
@@ -310,6 +341,10 @@ export function AnalyzeClient() {
                     <MessageSquare className="h-4 w-4" /> Lời thoại
                   </Button>
                 )}
+                <Button size="sm" variant="outline" onClick={copyAll} className="gap-2">
+                  {copiedAll ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copiedAll ? "Đã copy" : "Copy prompt"}
+                </Button>
               </div>
             </div>
           </CardHeader>
