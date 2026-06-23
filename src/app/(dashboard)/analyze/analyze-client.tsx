@@ -520,8 +520,8 @@ export function AnalyzeClient() {
                 Tạo keyframe cho từng cảnh (có sản phẩm của bạn)
               </div>
               <p className="text-xs text-muted-foreground">
-                Tải ảnh sản phẩm (bắt buộc) và <b>ảnh mặt của bạn</b> (tuỳ chọn — để bạn làm người mẫu) → bấm tạo →
-                mỗi cảnh ra 1 keyframe có sản phẩm + mặt bạn. Tải ZIP rồi thả vào extension (Storyboard) chạy Omni Flash.
+                Tải <b>ảnh sản phẩm</b> + <b>ảnh của bạn</b> (mặt rõ, hoặc nửa người). App sẽ <b>giữ đúng mặt bạn</b> rồi
+                <b> mặc sản phẩm vào chính bạn</b> theo từng cảnh đã phân tích — không tạo người lạ. Tải ZIP → thả vào extension chạy Omni Flash.
               </p>
 
               <input ref={productRef} type="file" accept="image/*" multiple className="hidden" onChange={onPickProducts} />
@@ -549,7 +549,7 @@ export function AnalyzeClient() {
               {/* Face images (optional — appear as the model) */}
               <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="outline" onClick={() => faceRef.current?.click()} className="gap-2">
-                  <ImagePlus className="h-4 w-4" /> Ảnh mặt của tôi
+                  <ImagePlus className="h-4 w-4" /> Ảnh của tôi (mặt/nửa người)
                 </Button>
                 {faceImages.map((p, i) => (
                   <span key={i} className="relative">

@@ -42,16 +42,20 @@ export async function generateSceneKeyframe(input: {
 
     let finalPrompt: string;
     if (faceRefs.length) {
-      // The first attached image(s) are the user's portrait. Force identity and
-      // explicitly OVERRIDE any generic/other-person description in the scene text.
+      // IMAGE-EDIT MODE: the FIRST attached image(s) are a REAL photo of the
+      // user. We edit THAT person (keep their face exactly), re-dress them in
+      // the product, and place them in the analyzed scene — instead of
+      // generating a brand-new generic person from the text.
       finalPrompt =
-        `IDENTITY LOCK: The on-camera person MUST be the exact same individual shown in the FIRST attached portrait reference image(s). ` +
-        `Replicate their face, facial features, face shape, skin tone, hairstyle and approximate age PRECISELY. ` +
-        `Do NOT generate a different, generic or younger face. The person's face must be clearly visible and recognizable ` +
-        `(do not cover it with sunglasses or masks). If the scene description mentions any other or generic person, ` +
-        `it refers to THIS person.\n\n` +
-        `SCENE: ${input.prompt}${productLine}\n\n` +
-        `Keep the person's identity from the portrait above all else.`;
+        `EDIT THIS PHOTO. The FIRST attached image is a real photograph of a specific person — the subject. ` +
+        `Keep this person's FACE, facial features, face shape, skin tone, hairstyle and identity EXACTLY as in that photo. ` +
+        `Do NOT beautify, slim, age, stylise or replace the face — it must clearly be the SAME real person, face fully visible ` +
+        `and recognizable (do NOT add sunglasses, masks or anything covering the face). ` +
+        `Re-dress this same person in the product shown in the product reference image(s)` +
+        (input.productName?.trim() ? ` ("${input.productName.trim()}")` : "") +
+        `, keeping the product accurate. Then place this person into the following scene/action: ${input.prompt}${productLine} ` +
+        `IMPORTANT: the subject is ALWAYS the person from the first photo — ignore any other or generic person described in the scene text. ` +
+        `Preserve their real identity above everything else.`;
     } else {
       finalPrompt = input.prompt + productLine;
     }
