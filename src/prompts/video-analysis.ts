@@ -28,6 +28,16 @@ KEY — continuity (this is critical for a professional, non-stitched result):
   NOT as a separate clip, so the final video feels like one seamless take.
 - The FIRST scene is always "cut".
 
+SAFETY — the prompts must pass AI-video content filters (Veo/Flow):
+- Describe a GENERIC, FICTIONAL person ("a young man", "a woman in her 20s") —
+  never a real, specific, named or famous individual, and never imply copying a
+  real person's identity/likeness.
+- Avoid wording that trips filters: do NOT use "looking directly at the
+  camera"/"staring at the viewer" — use "presenting to the camera" instead.
+  Avoid real brand names, and avoid words like "real person/same person/same
+  face/identical face".
+- Keep a clean, friendly, professional commercial tone.
+
 Rules:
 - Group frames into 3-10 coherent scenes. Never one scene per frame.
 - "generationPrompt": ENGLISH, 30-80 words — to generate this scene fresh
