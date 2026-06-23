@@ -22,7 +22,24 @@ function sanitizeJson(text: string): string {
   if (first !== -1 && last !== -1 && last > first) {
     cleaned = cleaned.slice(first, last + 1);
   }
+  // Gemini sometimes emits trailing commas (`...,}` / `...,]`) which break
+  // JSON.parse — strip them. Also strip JS-style comments just in case.
+  cleaned = cleaned
+    .replace(/\/\/[^\n\r]*/g, "")
+    .replace(/,(\s*[}\]])/g, "$1");
   return cleaned;
+}
+
+/** Parse Gemini JSON robustly: try as-is, then a trailing-comma-stripped pass. */
+function parseLenient(text: string): unknown {
+  try {
+    return JSON.parse(sanitizeJson(text));
+  } catch {
+    // Last resort: aggressively remove anything after the final closing brace
+    // and retry once more.
+    const cut = text.slice(0, text.lastIndexOf("}") + 1);
+    return JSON.parse(sanitizeJson(cut));
+  }
 }
 
 function normalize(raw: unknown): VideoAnalysisOutput {
@@ -85,7 +102,7 @@ export async function analyzeVideoFrames(input: {
       maxOutputTokens: 8192,
     });
 
-    const parsed = JSON.parse(sanitizeJson(raw));
+    const parsed = parseLenient(raw);
     const data = normalize(parsed);
     if (data.scenes.length === 0) {
       return { success: false, error: "Không phân tích được cảnh nào từ video." };
