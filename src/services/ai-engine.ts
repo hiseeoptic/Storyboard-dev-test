@@ -100,7 +100,7 @@ export async function generateStoryboardBreakdown(
       }
       parsed.segments.forEach((seg, i) => {
         seg.segment_number = i + 1;
-        if (!seg.duration_seconds) seg.duration_seconds = 8;
+        if (!seg.duration_seconds) seg.duration_seconds = 10;
         if (!Array.isArray(seg.beats)) seg.beats = [];
         if (!seg.marketing_role) {
           seg.marketing_role =

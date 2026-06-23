@@ -186,15 +186,15 @@ const t = {
   // Step 5: Style
   visualStyle: { vi: "Phong cách hình ảnh *", en: "Visual Style *" },
   sceneCount: { vi: "Số lượng cảnh", en: "Number of Scenes" },
-  segmentCount: { vi: "Số đoạn 8 giây (ghép thành video)", en: "Number of 8s segments (chained into video)" },
+  segmentCount: { vi: "Số đoạn 10 giây (ghép thành video)", en: "Number of 10s segments (chained into video)" },
   segmentCountHint: {
-    vi: "Mỗi đoạn = 1 clip 8s trên Veo/Seedance. Các đoạn được nối liền mạch (frame cuối → frame đầu) để video không bị khựng.",
-    en: "Each segment = one 8s clip on Veo/Seedance. Segments are chained (last frame → next first frame) for seamless playback.",
+    vi: "Mỗi đoạn = 1 clip 10s trên Omni Flash. Các đoạn được nối liền mạch (frame cuối → frame đầu) để video không bị khựng.",
+    en: "Each segment = one 10s clip on Omni Flash. Segments are chained (last frame → next first frame) for seamless playback.",
   },
   beatsLabel: { vi: "Số cảnh nhỏ trong mỗi đoạn", en: "Shots per segment" },
   beatsHint: {
-    vi: "Mỗi đoạn 8s được chia thành nhiều cảnh nhỏ theo từng mốc thời gian (3-5 cảnh).",
-    en: "Each 8s segment is split into several quick shots across time frames (3-5).",
+    vi: "Mỗi đoạn 10s được chia thành nhiều cảnh nhỏ theo từng mốc thời gian (3-5 cảnh).",
+    en: "Each 10s segment is split into several quick shots across time frames (3-5).",
   },
   forceDialogueLabel: { vi: "Bắt buộc lời thoại tiếng Việt", en: "Force Vietnamese dialogue" },
   forceDialogueHint: {
@@ -237,8 +237,8 @@ const t = {
     en: "Step 2/5 — AI creating script, characters, scene breakdown...",
   },
   generatingCharSheet: {
-    vi: "Đang tạo Character Sheet + từng frame 8s (nối liền mạch)...",
-    en: "Generating Character Sheet + each 8s frame (chained)...",
+    vi: "Đang tạo Character Sheet + từng frame 10s (nối liền mạch)...",
+    en: "Generating Character Sheet + each 10s frame (chained)...",
   },
   generatingDone: {
     vi: "Sắp xong — đang tạo poster & hướng dẫn ghép video...",
@@ -248,8 +248,8 @@ const t = {
   // How-to-use guide
   howToTitle: { vi: "Cách dùng (làm từng shot một)", en: "How to use (one shot at a time)" },
   howToStep1: {
-    vi: "Mỗi shot làm RIÊNG 1 clip 8s. KHÔNG dán cả bảng lớn vào Veo.",
-    en: "Each shot is its OWN 8s clip. Do NOT paste the big guide into Veo.",
+    vi: "Mỗi shot làm RIÊNG 1 clip 10s. KHÔNG dán cả bảng lớn vào Veo.",
+    en: "Each shot is its OWN 10s clip. Do NOT paste the big guide into Veo.",
   },
   howToStep2: {
     vi: "Với mỗi thẻ shot bên dưới: tải ảnh board của shot đó + đính kèm Character Sheet → đưa vào Veo (image-to-video).",
@@ -270,10 +270,10 @@ const t = {
   newStoryboard: { vi: "Tạo mới", en: "New" },
   segments: { vi: "đoạn", en: "segments" },
   downloadAll: { vi: "Tải tất cả (ZIP)", en: "Download all (ZIP)" },
-  segmentsTitle: { vi: "Các shot ảnh (mỗi shot = 1 board cho Veo)", en: "Shot boards (one board per 8s clip)" },
+  segmentsTitle: { vi: "Các shot ảnh (mỗi shot = 1 board cho Veo)", en: "Shot boards (one board per 10s clip)" },
   segmentsHint: {
-    vi: "Mỗi thẻ = 1 BOARD của clip 8s gồm: dải tham chiếu nhân vật (các góc + biểu cảm), ảnh tổng quan cảnh/sản phẩm, và 3-5 ô hành động theo mốc thời gian. Tải board → đưa vào Veo làm ảnh tham chiếu + dán motion prompt. Board N kết thúc đúng nơi board N+1 bắt đầu nên các clip nối liền thành câu chuyện.",
-    en: "Each card = a BOARD for the 8s clip: a character reference strip (angles + expressions), a scene/product overview, and 3-5 time-frame action panels. Send the board to Veo as the reference + paste the motion prompt. Board N ends where board N+1 begins so the clips chain into one story.",
+    vi: "Mỗi thẻ = 1 BOARD của clip 10s gồm: dải tham chiếu nhân vật (các góc + biểu cảm), ảnh tổng quan cảnh/sản phẩm, và 3-5 ô hành động theo mốc thời gian. Tải board → đưa vào Veo làm ảnh tham chiếu + dán motion prompt. Board N kết thúc đúng nơi board N+1 bắt đầu nên các clip nối liền thành câu chuyện.",
+    en: "Each card = a BOARD for the 10s clip: a character reference strip (angles + expressions), a scene/product overview, and 3-5 time-frame action panels. Send the board to Veo as the reference + paste the motion prompt. Board N ends where board N+1 begins so the clips chain into one story.",
   },
   dialogueLabel: { vi: "Lời thoại", en: "Dialogue" },
   actionLabel: { vi: "Hành động", en: "Action" },
@@ -487,16 +487,16 @@ const SETTING_PROMPT: Record<string, string> = {
   night_city: "a city at night with neon lights",
 };
 
-// Number of 8-second segments to chain into the final video.
+// Number of 10-second segments to chain into the final video (Omni Flash = 10s/clip).
 const SEGMENT_OPTIONS = [
-  { value: "3", label: "3 (~24s)" },
-  { value: "4", label: "4 (~32s)" },
-  { value: "5", label: "5 (~40s)" },
-  { value: "7", label: "7 (~56s)" },
-  { value: "10", label: "10 (~80s)" },
+  { value: "3", label: "3 (~30s)" },
+  { value: "4", label: "4 (~40s)" },
+  { value: "5", label: "5 (~50s)" },
+  { value: "7", label: "7 (~70s)" },
+  { value: "10", label: "10 (~100s)" },
 ];
 
-// Number of quick shots (mini-frames) inside each 8s segment.
+// Number of quick shots (mini-frames) inside each 10s segment.
 const BEATS_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
   vi: [
     { value: "3", label: "3 cảnh / đoạn" },
@@ -2541,7 +2541,7 @@ export function GenerateClient() {
               <div className="rounded-lg border bg-muted/50 p-4 text-sm space-y-1">
                 <p className="font-medium">{L("summary")}</p>
                 <p className="text-muted-foreground">
-                  <strong>{segmentCount}</strong> {L("segments")} (~{segmentCount * 8}s) · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong> · <strong>{imageQuality === "pro" ? "Pro" : "Standard"}</strong>
+                  <strong>{segmentCount}</strong> {L("segments")} (~{segmentCount * 10}s) · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong> · <strong>{imageQuality === "pro" ? "Pro" : "Standard"}</strong>
                   {characters.length > 0 && <> · {characters.length} {L("characters")}</>}
                   {products.length > 0 && <> · {products.length} {L("products")}</>}
                   {backgrounds.length > 0 && <> · {backgrounds.length} {L("locations")}</>}

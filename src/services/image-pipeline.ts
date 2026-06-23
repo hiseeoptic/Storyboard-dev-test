@@ -135,7 +135,7 @@ export async function generateCharacterRefSheet(params: {
   return { url };
 }
 
-// ─── Generate a Segment Storyboard Strip (3-shot 8s clip) ───────────────────
+// ─── Generate a Segment Storyboard Strip (3-shot 10s clip) ──────────────────
 
 export async function generateSegmentFrame(params: {
   segmentNumber: number;

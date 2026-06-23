@@ -90,9 +90,9 @@ export interface StoryboardGenerationInput {
   genre: Genre;
   style: StoryboardStyle;
   scene_count: number;
-  /** Number of 8-second segments to chain into the final video. */
+  /** Number of 10-second segments (Omni Flash clip = 10s) to chain into the final video. */
   segment_count?: number;
-  /** Number of quick shots (beats) inside each 8s segment (3-5). */
+  /** Number of quick shots (beats) inside each 10s segment (3-5). */
   beats_per_segment?: number;
   /** Marketing goal/template for the script structure. */
   video_goal?: VideoGoal;
@@ -211,27 +211,27 @@ export interface SceneBreakdown {
   continuity_notes: string;
 }
 
-// ─── Video Segment (8s clip unit for Veo/Seedance) ──────────────────────────
+// ─── Video Segment (10s clip unit for Omni Flash / Veo) ─────────────────────
 
 /** Marketing role of a segment in the Hook→Problem→Solution→CTA arc. */
 export type MarketingRole = "hook" | "problem" | "solution" | "body" | "cta";
 
-/** A single action beat inside an 8s segment (3-5 per segment). */
+/** A single action beat inside a 10s segment (3-5 per segment). */
 export interface ShotBeat {
   beat: string; // short action description
   camera: string; // camera note, e.g. [CLOSE] slow push-in
 }
 
 /**
- * One ~8s segment = exactly one Veo/Seedance image-to-video generation.
+ * One ~10s segment = exactly one Omni Flash / Veo image-to-video generation.
  * Segments are chained: the start frame of N+1 continues from N's end.
  */
 export interface VideoSegment {
   segment_number: number;
-  duration_seconds: number; // ~8
+  duration_seconds: number; // ~10
   title: string;
   marketing_role: MarketingRole;
-  beats: ShotBeat[]; // 3-5 beats within the 8s
+  beats: ShotBeat[]; // 3-5 beats within the 10s
   /** Prompt used to generate this segment's start (first) frame image. */
   first_frame_prompt: string;
   /** Image-to-video motion prompt (30-80 words) for Veo/Seedance. */
