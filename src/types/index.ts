@@ -307,3 +307,24 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
 export type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string; code?: string };
+
+// ─── Video → Storyboard (reverse-engineer a reference video) ────────────────
+
+export interface VideoAnalysisScene {
+  index: number;
+  durationSec: number;
+  shot: string;
+  cameraMotion: string;
+  action: string;
+  productNote: string;
+  /** English prompt to recreate a similar scene with Veo / Omni Flash. */
+  generationPrompt: string;
+}
+
+export interface VideoAnalysisOutput {
+  title: string;
+  summary: string;
+  product: string;
+  totalScenes: number;
+  scenes: VideoAnalysisScene[];
+}

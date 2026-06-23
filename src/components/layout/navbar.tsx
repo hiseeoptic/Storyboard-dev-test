@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Film, Sparkles, Wand2, Menu, X } from "lucide-react";
+import { Film, Sparkles, Wand2, Video, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/studio", label: "Image Studio", icon: Wand2 },
   { href: "/generate", label: "Storyboard", icon: Sparkles },
+  { href: "/analyze", label: "Phân tích Video", icon: Video },
 ];
 
 export function Navbar() {

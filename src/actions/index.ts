@@ -11,3 +11,4 @@ export {
   type StoryboardAnalysis,
   type StoryboardPlan,
 } from "./storyboard";
+export { analyzeVideoFrames, type VideoAnalysisResult } from "./analyze-video";
