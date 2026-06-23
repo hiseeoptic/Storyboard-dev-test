@@ -31,24 +31,39 @@ export async function generateSceneKeyframe(input: {
     const toRef = (b: string) => ({ base64: b.replace(/^data:[^,]+,/, ""), mimeType: "image/jpeg" });
     const faceRefs = (input.faceImages || []).filter(Boolean).map(toRef);
     const productRefs = (input.productImages || []).filter(Boolean).map(toRef);
-    // Face references first so identity is anchored, then the product.
+    // Face references FIRST so identity is anchored, then the product.
     const refs = [...faceRefs, ...productRefs];
 
-    const faceLine = faceRefs.length
-      ? " Feature the SAME person shown in the attached portrait reference(s) as the on-camera presenter — keep their facial identity, hairstyle and build consistent across the scene. Render them as a friendly, natural commercial presenter."
+    const productLine = input.productName?.trim()
+      ? ` Render the product ("${input.productName.trim()}") EXACTLY as in the attached product reference image(s): same shape, colour, material, logo and label placement. Do NOT redesign or distort the product.`
+      : productRefs.length
+      ? " Render the product EXACTLY as in the attached product reference image(s) — same shape, colour, logo and label. Do NOT redesign or distort it."
       : "";
 
-    const productLine = input.productName?.trim()
-      ? ` The product is "${input.productName.trim()}" — render it EXACTLY as in the attached product reference images: same shape, colour, material, logo and label placement. Do NOT redesign or distort the product.`
-      : productRefs.length
-      ? " Render the product EXACTLY as in the attached product reference images — same shape, colour, logo and label. Do NOT redesign or distort it."
-      : "";
+    let finalPrompt: string;
+    if (faceRefs.length) {
+      // The first attached image(s) are the user's portrait. Force identity and
+      // explicitly OVERRIDE any generic/other-person description in the scene text.
+      finalPrompt =
+        `IDENTITY LOCK: The on-camera person MUST be the exact same individual shown in the FIRST attached portrait reference image(s). ` +
+        `Replicate their face, facial features, face shape, skin tone, hairstyle and approximate age PRECISELY. ` +
+        `Do NOT generate a different, generic or younger face. The person's face must be clearly visible and recognizable ` +
+        `(do not cover it with sunglasses or masks). If the scene description mentions any other or generic person, ` +
+        `it refers to THIS person.\n\n` +
+        `SCENE: ${input.prompt}${productLine}\n\n` +
+        `Keep the person's identity from the portrait above all else.`;
+    } else {
+      finalPrompt = input.prompt + productLine;
+    }
+
+    // Identity fidelity needs Nano Banana Pro; force it when a face is provided.
+    const quality: ImageQuality = input.quality ?? (faceRefs.length ? "pro" : "standard");
 
     const image = await geminiGenerateImage({
-      prompt: input.prompt + faceLine + productLine,
+      prompt: finalPrompt,
       referenceImages: refs.length ? refs : undefined,
       aspectRatio: input.aspectRatio ?? "9:16",
-      quality: input.quality ?? "standard",
+      quality,
     });
 
     return { success: true, image };

@@ -240,7 +240,6 @@ export function AnalyzeClient() {
         productImages,
         productName: productName || result.product,
         aspectRatio: aspect,
-        quality: "standard",
       });
       setKeyframes((k) => ({
         ...k,
@@ -260,7 +259,6 @@ export function AnalyzeClient() {
       productImages,
       productName: productName || result?.product,
       aspectRatio: aspect,
-      quality: "standard",
     });
     setKeyframes((k) => ({
       ...k,
