@@ -205,23 +205,29 @@ export function AnalyzeClient() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // ── Keyframe generation (Nano Banana + product photos) ──
+  // ── Keyframe generation (Nano Banana + product/face photos) ──
   const [productImages, setProductImages] = useState<string[]>([]);
+  const [faceImages, setFaceImages] = useState<string[]>([]);
   const [aspect, setAspect] = useState<AspectRatio>("9:16");
   const [keyframes, setKeyframes] = useState<Record<number, KfState>>({});
   const [kfRunning, setKfRunning] = useState(false);
   const productRef = useRef<HTMLInputElement>(null);
+  const faceRef = useRef<HTMLInputElement>(null);
 
-  const onPickProducts = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-    try {
-      const imgs = await Promise.all(files.map((f) => fileToScaledDataUrl(f)));
-      setProductImages((prev) => [...prev, ...imgs].slice(0, 6));
-    } catch {
-      setError("Không đọc được ảnh sản phẩm.");
-    }
-  };
+  const onPickImages =
+    (setter: React.Dispatch<React.SetStateAction<string[]>>, max: number) =>
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      if (!files.length) return;
+      try {
+        const imgs = await Promise.all(files.map((f) => fileToScaledDataUrl(f)));
+        setter((prev) => [...prev, ...imgs].slice(0, max));
+      } catch {
+        setError("Không đọc được ảnh.");
+      }
+    };
+  const onPickProducts = onPickImages(setProductImages, 6);
+  const onPickFaces = onPickImages(setFaceImages, 3);
 
   const generateAllKeyframes = async () => {
     if (!result) return;
@@ -230,6 +236,7 @@ export function AnalyzeClient() {
       setKeyframes((k) => ({ ...k, [s.index]: { status: "loading" } }));
       const res = await generateSceneKeyframe({
         prompt: s.generationPrompt || s.extendPrompt,
+        faceImages,
         productImages,
         productName: productName || result.product,
         aspectRatio: aspect,
@@ -249,6 +256,7 @@ export function AnalyzeClient() {
     setKeyframes((k) => ({ ...k, [index]: { status: "loading" } }));
     const res = await generateSceneKeyframe({
       prompt,
+      faceImages,
       productImages,
       productName: productName || result?.product,
       aspectRatio: aspect,
@@ -472,14 +480,17 @@ export function AnalyzeClient() {
                 Tạo keyframe cho từng cảnh (có sản phẩm của bạn)
               </div>
               <p className="text-xs text-muted-foreground">
-                Tải ảnh sản phẩm nhiều góc (nét, đủ sáng) → bấm tạo → mỗi cảnh ra 1 keyframe có sản phẩm.
-                Tải ZIP rồi thả vào extension (Storyboard) để chạy Omni Flash.
+                Tải ảnh sản phẩm (bắt buộc) và <b>ảnh mặt của bạn</b> (tuỳ chọn — để bạn làm người mẫu) → bấm tạo →
+                mỗi cảnh ra 1 keyframe có sản phẩm + mặt bạn. Tải ZIP rồi thả vào extension (Storyboard) chạy Omni Flash.
               </p>
 
               <input ref={productRef} type="file" accept="image/*" multiple className="hidden" onChange={onPickProducts} />
+              <input ref={faceRef} type="file" accept="image/*" multiple className="hidden" onChange={onPickFaces} />
+
+              {/* Product images */}
               <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="outline" onClick={() => productRef.current?.click()} className="gap-2">
-                  <ImagePlus className="h-4 w-4" /> Thêm ảnh sản phẩm
+                  <Package className="h-4 w-4" /> Ảnh sản phẩm
                 </Button>
                 {productImages.map((p, i) => (
                   <span key={i} className="relative">
@@ -487,6 +498,25 @@ export function AnalyzeClient() {
                     <img src={p} alt={`sp ${i + 1}`} className="h-12 w-12 rounded border object-cover" />
                     <button
                       onClick={() => setProductImages((prev) => prev.filter((_, j) => j !== i))}
+                      className="absolute -right-1 -top-1 rounded-full bg-destructive px-1 text-[10px] text-white"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              {/* Face images (optional — appear as the model) */}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="outline" onClick={() => faceRef.current?.click()} className="gap-2">
+                  <ImagePlus className="h-4 w-4" /> Ảnh mặt của tôi
+                </Button>
+                {faceImages.map((p, i) => (
+                  <span key={i} className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={p} alt={`mặt ${i + 1}`} className="h-12 w-12 rounded-full border object-cover" />
+                    <button
+                      onClick={() => setFaceImages((prev) => prev.filter((_, j) => j !== i))}
                       className="absolute -right-1 -top-1 rounded-full bg-destructive px-1 text-[10px] text-white"
                     >
                       ✕
@@ -507,6 +537,12 @@ export function AnalyzeClient() {
                   ))}
                 </div>
               </div>
+              {faceImages.length > 0 && (
+                <p className="text-[11px] text-amber-400/90">
+                  ⚠️ Chỉ dùng khuôn mặt của <b>chính bạn</b> hoặc người đã <b>đồng ý</b>. Không dùng mặt người khác /
+                  người nổi tiếng. Bạn nên dùng <b>keyframe do app tạo</b> (nhân vật của bạn), không dùng frame gốc của đối thủ.
+                </p>
+              )}
 
               <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" onClick={generateAllKeyframes} disabled={kfRunning} className="gap-2">
