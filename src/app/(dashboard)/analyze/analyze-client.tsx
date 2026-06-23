@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import JSZip from "jszip";
 import {
   Video,
   Loader2,
@@ -13,13 +14,43 @@ import {
   Link2,
   Scissors,
   MessageSquare,
+  ImagePlus,
+  Sparkles,
+  Package,
+  FileArchive,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { analyzeVideoFrames } from "@/actions";
-import type { VideoAnalysisOutput } from "@/types";
+import { analyzeVideoFrames, generateSceneKeyframe } from "@/actions";
+import type { VideoAnalysisOutput, AspectRatio } from "@/types";
+
+// Read a file and downscale to a JPEG data URL (keeps product refs small).
+function fileToScaledDataUrl(file: File, maxW = 768): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const ratio = img.width ? Math.min(1, maxW / img.width) : 1;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * ratio) || maxW;
+      canvas.height = Math.round(img.height * ratio) || maxW;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return reject(new Error("canvas"));
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Không đọc được ảnh."));
+    };
+    img.src = url;
+  });
+}
+
+type KfState = { status: "idle" | "loading" | "done" | "error"; image?: string; error?: string };
 
 // ─── Client-side frame sampling (keeps big video off the server) ────────────
 
@@ -174,6 +205,61 @@ export function AnalyzeClient() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // ── Keyframe generation (Nano Banana + product photos) ──
+  const [productImages, setProductImages] = useState<string[]>([]);
+  const [aspect, setAspect] = useState<AspectRatio>("9:16");
+  const [keyframes, setKeyframes] = useState<Record<number, KfState>>({});
+  const [kfRunning, setKfRunning] = useState(false);
+  const productRef = useRef<HTMLInputElement>(null);
+
+  const onPickProducts = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    try {
+      const imgs = await Promise.all(files.map((f) => fileToScaledDataUrl(f)));
+      setProductImages((prev) => [...prev, ...imgs].slice(0, 6));
+    } catch {
+      setError("Không đọc được ảnh sản phẩm.");
+    }
+  };
+
+  const generateAllKeyframes = async () => {
+    if (!result) return;
+    setKfRunning(true);
+    for (const s of result.scenes) {
+      setKeyframes((k) => ({ ...k, [s.index]: { status: "loading" } }));
+      const res = await generateSceneKeyframe({
+        prompt: s.generationPrompt || s.extendPrompt,
+        productImages,
+        productName: productName || result.product,
+        aspectRatio: aspect,
+        quality: "standard",
+      });
+      setKeyframes((k) => ({
+        ...k,
+        [s.index]: res.success
+          ? { status: "done", image: res.image }
+          : { status: "error", error: res.error },
+      }));
+    }
+    setKfRunning(false);
+  };
+
+  const regenOne = async (index: number, prompt: string) => {
+    setKeyframes((k) => ({ ...k, [index]: { status: "loading" } }));
+    const res = await generateSceneKeyframe({
+      prompt,
+      productImages,
+      productName: productName || result?.product,
+      aspectRatio: aspect,
+      quality: "standard",
+    });
+    setKeyframes((k) => ({
+      ...k,
+      [index]: res.success ? { status: "done", image: res.image } : { status: "error", error: res.error },
+    }));
+  };
+
   const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -246,6 +332,31 @@ export function AnalyzeClient() {
     const a = document.createElement("a");
     a.href = url;
     a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const kfDoneCount = Object.values(keyframes).filter((k) => k.status === "done").length;
+
+  // Bundle keyframes + prompts.txt + full storyboard into one ZIP for the extension.
+  const downloadBundle = async () => {
+    if (!result) return;
+    const zip = new JSZip();
+    zip.file("prompts.txt", allPrompts);
+    zip.file("storyboard-day-du.txt", fullText);
+    if (scriptText) zip.file("loi-thoai.txt", scriptText);
+    for (const s of result.scenes) {
+      const img = keyframes[s.index]?.image;
+      if (img) {
+        const b64 = img.split(",")[1] ?? "";
+        zip.file(`keyframe-${String(s.index).padStart(2, "0")}.png`, b64, { base64: true });
+      }
+    }
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "storyboard-bundle.zip";
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -353,6 +464,70 @@ export function AnalyzeClient() {
               {result.scenes.length} cảnh. <Link2 className="inline h-3 w-3" /> = liền mạch (dùng nút{" "}
               <b>Extend</b> trong Flow, không tạo clip mới); <Scissors className="inline h-3 w-3" /> = cảnh cắt mới.
             </p>
+
+            {/* ── Keyframe generator (Nano Banana + product photos) ── */}
+            <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/[0.04] p-4 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Package className="h-4 w-4 text-indigo-400" />
+                Tạo keyframe cho từng cảnh (có sản phẩm của bạn)
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Tải ảnh sản phẩm nhiều góc (nét, đủ sáng) → bấm tạo → mỗi cảnh ra 1 keyframe có sản phẩm.
+                Tải ZIP rồi thả vào extension (Storyboard) để chạy Omni Flash.
+              </p>
+
+              <input ref={productRef} type="file" accept="image/*" multiple className="hidden" onChange={onPickProducts} />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="outline" onClick={() => productRef.current?.click()} className="gap-2">
+                  <ImagePlus className="h-4 w-4" /> Thêm ảnh sản phẩm
+                </Button>
+                {productImages.map((p, i) => (
+                  <span key={i} className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={p} alt={`sp ${i + 1}`} className="h-12 w-12 rounded border object-cover" />
+                    <button
+                      onClick={() => setProductImages((prev) => prev.filter((_, j) => j !== i))}
+                      className="absolute -right-1 -top-1 rounded-full bg-destructive px-1 text-[10px] text-white"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+                <div className="ml-auto flex items-center gap-1">
+                  {(["9:16", "16:9"] as AspectRatio[]).map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setAspect(r)}
+                      className={`rounded-md border px-2 py-1 text-xs font-semibold ${
+                        aspect === r ? "border-indigo-500 bg-indigo-500/20 text-indigo-300" : "text-muted-foreground"
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" onClick={generateAllKeyframes} disabled={kfRunning} className="gap-2">
+                  {kfRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  {kfRunning
+                    ? `Đang tạo ${kfDoneCount}/${result.scenes.length}...`
+                    : kfDoneCount > 0
+                    ? "Tạo lại tất cả keyframe"
+                    : "Tạo keyframe cho từng cảnh"}
+                </Button>
+                {kfDoneCount > 0 && (
+                  <Button size="sm" variant="outline" onClick={downloadBundle} className="gap-2">
+                    <FileArchive className="h-4 w-4" /> Tải ZIP ({kfDoneCount} keyframe + prompt)
+                  </Button>
+                )}
+                {productImages.length === 0 && (
+                  <span className="text-[11px] text-amber-400">Mẹo: thêm ảnh sản phẩm trước để keyframe đúng sản phẩm.</span>
+                )}
+              </div>
+            </div>
+
             {result.scenes.map((s) => {
               const continuous = s.continuity === "continuous";
               return (
@@ -399,6 +574,47 @@ export function AnalyzeClient() {
                       onCopy={() => copyText(s.extendPrompt, `e${s.index}`)}
                     />
                   )}
+
+                  {/* Keyframe preview */}
+                  {(() => {
+                    const kf = keyframes[s.index];
+                    if (!kf) return null;
+                    if (kf.status === "loading")
+                      return (
+                        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Đang tạo keyframe...
+                        </div>
+                      );
+                    if (kf.status === "error")
+                      return (
+                        <div className="mt-2 flex items-center gap-2 text-xs text-destructive">
+                          <AlertTriangle className="h-4 w-4" /> {kf.error}
+                          <button
+                            onClick={() => regenOne(s.index, s.generationPrompt || s.extendPrompt)}
+                            className="text-primary hover:underline"
+                          >
+                            Thử lại
+                          </button>
+                        </div>
+                      );
+                    if (kf.status === "done" && kf.image)
+                      return (
+                        <div className="mt-2">
+                          <div className="mb-1 flex items-center justify-between">
+                            <span className="text-[11px] font-semibold uppercase text-muted-foreground">Keyframe</span>
+                            <button
+                              onClick={() => regenOne(s.index, s.generationPrompt || s.extendPrompt)}
+                              className="text-[11px] text-primary hover:underline"
+                            >
+                              Tạo lại
+                            </button>
+                          </div>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={kf.image} alt={`keyframe ${s.index}`} className="max-h-64 rounded-lg border" />
+                        </div>
+                      );
+                    return null;
+                  })()}
                 </div>
               );
             })}
