@@ -425,7 +425,12 @@ export async function generateStoryboardPlan(
     const analysis = await runAnalysis(input, provider, warnings);
     const enhanced = enhanceInput(input, analysis);
 
-    const breakdown = await generateStoryboardBreakdown(enhanced, provider);
+    // Script text can use a different model (e.g. Claude Opus 4.8) than the
+    // image provider — the hidden admin panel sets input.script_provider.
+    const breakdown = await generateStoryboardBreakdown(
+      enhanced,
+      input.script_provider ?? provider
+    );
 
     // Defensive: the model can occasionally return JSON missing whole sections.
     // Guard so a malformed breakdown returns a clean error instead of throwing

@@ -785,6 +785,13 @@ export function GenerateClient() {
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState(false);
 
+  // ─── Hidden script-model switcher (double-click the title, passcode 2502) ──
+  const [scriptProvider, setScriptProvider] = useState<AIProvider>("gemini");
+  const [modelPanelOpen, setModelPanelOpen] = useState(false);
+  const [modelUnlocked, setModelUnlocked] = useState(false);
+  const [modelPw, setModelPw] = useState("");
+  const [modelPwError, setModelPwError] = useState(false);
+
   // Load saved provider choice on mount
   useEffect(() => {
     const saved =
@@ -794,12 +801,36 @@ export function GenerateClient() {
     if (saved === "gemini" || saved === "openai") {
       setProvider(saved);
     }
+    const savedScript =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("sb_script_provider")
+        : null;
+    if (savedScript === "gemini" || savedScript === "openai" || savedScript === "claude") {
+      setScriptProvider(savedScript);
+    }
   }, []);
+
+  const switchScriptProvider = (p: AIProvider) => {
+    setScriptProvider(p);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("sb_script_provider", p);
+    }
+  };
 
   const switchProvider = (p: AIProvider) => {
     setProvider(p);
     if (typeof window !== "undefined") {
       window.localStorage.setItem("sb_ai_provider", p);
+    }
+  };
+
+  const checkModelPassword = () => {
+    if (modelPw === "2502") {
+      setModelUnlocked(true);
+      setModelPwError(false);
+      setModelPw("");
+    } else {
+      setModelPwError(true);
     }
   };
 
@@ -1139,6 +1170,7 @@ export function GenerateClient() {
       segment_count: segmentCount,
       beats_per_segment: beatsPerSegment,
       video_goal: videoGoal,
+      script_provider: scriptProvider,
       dialogue_language: forceVietnameseDialogue ? "Vietnamese" : undefined,
       force_dialogue: forceVietnameseDialogue,
       character_descriptions: effectiveCharacters.length > 0
@@ -2131,11 +2163,92 @@ export function GenerateClient() {
     <div className="mx-auto max-w-2xl">
       {hiddenTrigger}
       {adminModal}
+
+      {/* Hidden script-model switcher — double-click the title, passcode 2502 */}
+      {modelPanelOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setModelPanelOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm space-y-3 rounded-lg border bg-background p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {!modelUnlocked ? (
+              <>
+                <p className="text-sm font-medium">Nhập mã để đổi model API</p>
+                <Input
+                  type="password"
+                  value={modelPw}
+                  onChange={(e) => {
+                    setModelPw(e.target.value);
+                    setModelPwError(false);
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && checkModelPassword()}
+                  placeholder="••••"
+                  autoFocus
+                />
+                {modelPwError && <p className="text-xs text-destructive">Sai mã.</p>}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setModelPanelOpen(false)}>
+                    Đóng
+                  </Button>
+                  <Button size="sm" onClick={checkModelPassword}>
+                    Mở
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium">Model viết kịch bản</p>
+                <p className="text-xs text-muted-foreground">
+                  Chỉ đổi model VIẾT KỊCH BẢN. Ảnh vẫn dùng Gemini (Nano Banana).
+                </p>
+                <div className="space-y-1.5">
+                  {([
+                    { v: "gemini" as AIProvider, label: "Gemini 2.5 Pro (mặc định)" },
+                    { v: "claude" as AIProvider, label: "Claude Opus 4.8 (chất lượng cao nhất)" },
+                    { v: "openai" as AIProvider, label: "GPT-4o (OpenAI)" },
+                  ]).map((o) => (
+                    <button
+                      key={o.v}
+                      type="button"
+                      onClick={() => switchScriptProvider(o.v)}
+                      className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                        scriptProvider === o.v
+                          ? "border-primary bg-primary/10 font-medium"
+                          : "border-input hover:border-primary/50"
+                      }`}
+                    >
+                      {o.label}
+                      {scriptProvider === o.v && <Check className="h-4 w-4 text-primary" />}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Claude cần <code>ANTHROPIC_API_KEY</code> trong Vercel. GPT-4o cần <code>OPENAI_API_KEY</code>.
+                </p>
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={() => setModelPanelOpen(false)}>
+                    Xong
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       <div className="mb-6 text-center">
         <div className="mb-3 flex justify-center">
           <LangToggle />
         </div>
-        <h1 className="text-3xl font-bold">{L("pageTitle")}</h1>
+        <h1
+          className="text-3xl font-bold select-none"
+          onDoubleClick={() => setModelPanelOpen(true)}
+          title=""
+        >
+          {L("pageTitle")}
+        </h1>
         <p className="mt-1 text-muted-foreground">{L("pageSubtitle")}</p>
       </div>
 

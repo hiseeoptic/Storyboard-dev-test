@@ -4,7 +4,7 @@ export type Plan = "free" | "pro" | "enterprise";
 
 // ─── AI Provider ──────────────────────────────────────────────────────────────
 
-export type AIProvider = "openai" | "gemini";
+export type AIProvider = "openai" | "gemini" | "claude";
 
 /** Image quality tier — maps to different image models / cost. */
 export type ImageQuality = "standard" | "pro";
@@ -99,6 +99,9 @@ export interface StoryboardGenerationInput {
   beats_per_segment?: number;
   /** Marketing goal/template for the script structure. */
   video_goal?: VideoGoal;
+  /** Which model writes the SCRIPT (text). Images always stay on Gemini.
+   * Defaults to the main provider. Switchable from the hidden admin panel. */
+  script_provider?: AIProvider;
   /** Spoken-line language for every segment (ISO-ish name, e.g. "Vietnamese"). */
   dialogue_language?: string;
   /** When true, every segment MUST carry a spoken line in dialogue_language. */

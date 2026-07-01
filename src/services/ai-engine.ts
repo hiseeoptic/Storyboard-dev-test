@@ -1,5 +1,6 @@
 import { getOpenAIClient } from "@/lib/openai/client";
 import { geminiGenerateText } from "@/lib/gemini/client";
+import { claudeGenerateText } from "@/lib/anthropic/client";
 import {
   buildStoryboardSystemPrompt,
   buildStoryboardUserPrompt,
@@ -58,7 +59,17 @@ export async function generateStoryboardBreakdown(
     try {
       let rawContent: string | null = null;
 
-      if (provider === "gemini") {
+      if (provider === "claude") {
+        // Claude Opus 4.8 writes the best scripts. It returns text; the JSON is
+        // extracted by sanitizeJsonResponse below (no responseMimeType on Claude).
+        rawContent = await claudeGenerateText({
+          systemPrompt: buildStoryboardSystemPrompt(),
+          userPrompt:
+            buildStoryboardUserPrompt(input) +
+            "\n\nReturn ONLY the JSON object described above — no markdown, no code fences, no prose before or after.",
+          maxTokens: 16000,
+        });
+      } else if (provider === "gemini") {
         rawContent = await geminiGenerateText({
           systemPrompt: buildStoryboardSystemPrompt(),
           userPrompt: buildStoryboardUserPrompt(input),
