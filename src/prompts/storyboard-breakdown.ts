@@ -55,17 +55,25 @@ const GOAL_GUIDANCE: Record<VideoGoal, string> = {
 // video_goal is "numerology" so the AI writes in this exact winning structure.
 const NUMEROLOGY_FRAMEWORK = `
 NUMEROLOGY SCRIPT FRAMEWORK (follow this EXACTLY — it is the proven winning shape):
-- SUBJECT: a numerology profile (e.g. "Số Chủ Đạo 5, Sứ Mệnh 9"). Use the topic content provided as the source of truth for meanings; do NOT invent contradictory numerology.
+- SUBJECT: a numerology profile (e.g. "Số Chủ Đạo 5, Sứ Mệnh 9"). Use the topic content provided as the source of truth for meanings; NEVER invent contradictory numerology.
 - NGŨ HÀNH (Five-Elements): if the numbers map to elements, state the relationship (tương sinh / tương khắc) and derive ONE clear CORE MESSAGE from it (e.g. "tự do của bạn không phải để chạy trốn — mà để mang cảm hứng đi cho đời"). Put this core message in "synopsis".
-- CHARACTER: invent ONE relatable persona (name, age, a signature look/prop) who EMBODIES the number, and keep them identical across all segments so the clips chain seamlessly. Cinematic, warm tone (e.g. golden-hour, 35mm film look).
-- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count, but keep this emotional order):
-  1) HOOK — talk directly to the viewer, name their number, tease a "phũ phàng/uncomfortable truth". Close-up to camera.
-  2) PAIN / NỖI ĐAU — dramatize the misunderstood struggle of this number (fast montage of the restless/painful pattern) and voice the viewer's self-doubt as a question.
-  3) INSIGHT / GIẢI MÃ — the reframe: "Không phải bạn [flaw]… mà là [deeper truth]." A contemplative, spacious shot.
-  4) PAYOFF / SỨ MỆNH — reveal the gift/mission of the number; a warm, human, giving moment; the character looks "at home".
-  5) CTA — a one-line takeaway + a loop-friendly comment prompt (e.g. "thả số chủ đạo của bạn ở comment"). Open, walk-away framing.
-- DIALOGUE: warm, second-person Vietnamese, ~5-12 words per segment, ~110-120 words total across the video. Emotional, inspiring, conversational — NOT a product ad.
-- Also fill "marketing_structure" as: hook = beat 1 idea, problem = beat 2 pain, solution = beat 3 insight, cta = beat 5 line. Put a ready-to-post social caption + 4-6 hashtags at the END of "synopsis".`;
+
+- CHARACTER = THE NUMBER MADE HUMAN: invent ONE persona whose name, age, wardrobe, signature prop, posture, energy AND colour tone ALL express this number's archetype, and keep this EXACT character_lock identical across every segment. Derive the look from THIS number's traits in the topic content. (Archetype→look examples: Số 1 leader/pioneer = decisive stance, worn leather jacket, cool steel-blue grade; Số 5 freedom/adventure = faded backpack, warm golden 35mm, restless eyes; Số 9 humanitarian = soft warm light, giving hands.)
+
+- CHARACTER ↔ SETTING SYNCHRONISATION (this is what makes it feel "chuẩn" — DO NOT skip):
+  · Every scene's SETTING, props, lighting, weather, camera and the character's action must SYMBOLICALLY embody the number's core trait AND the emotion of that beat. The environment is a METAPHOR for the number, never a random backdrop, and it must match the character's personality in that moment.
+  · Choose ONE controlling visual metaphor for the number and vary it across the 5 beats. Examples: Số 5 (tự do) → crossroads at dusk (hook) → packing up / leaving many rooms (pain) → a cliff over the open sea (insight) → giving water among strangers round a fire (payoff) → an endless open road (CTA). Số 1 (mở đường) → walking far ahead of a crowd on a misty ridge (hook) → carrying everything alone, last light on in the office (pain) → an untrodden trail at dawn (insight) → the first footprint on a new path, sun bursting behind (payoff) → others starting to follow his steps (CTA).
+  · The environment must EVOLVE with the emotion: cold / lost / cluttered at the pain beat → warm / open / "home" at the payoff — while the SAME character DNA (face, wardrobe) stays identical throughout.
+  · Write each segment's setting + lighting explicitly in "first_frame_prompt", and keep the lens/grade in "scene_bible" consistent so the clips chain seamlessly.
+
+- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count; each beat's SETTING follows the metaphor above):
+  1) HOOK — talk to the viewer, name their number, tease an uncomfortable truth ("sự thật phũ phàng"). Close-up to camera, in a location that instantly signals the number's essence.
+  2) PAIN / NỖI ĐAU — dramatize the misunderstood struggle (a montage of the painful pattern) in a setting that embodies that struggle; voice the viewer's self-doubt as a question.
+  3) INSIGHT / GIẢI MÃ — the reframe "Không phải bạn [flaw]… mà là [deeper truth]", in a spacious, contemplative setting that visually opens up (a reveal, slow camera pull-back).
+  4) PAYOFF / SỨ MỆNH — reveal the gift/mission; a warm, human, giving moment; the character finally looks "at home" in a setting that rewards the number's nature.
+  5) CTA — a one-line takeaway + a loop-friendly comment prompt (e.g. "thả số chủ đạo của bạn ở comment"). Open, walk-away framing that loops back to the hook.
+- DIALOGUE: warm, second-person Vietnamese, ~5-12 words per segment. Emotional, inspiring, conversational — NOT a product ad.
+- Fill "marketing_structure" (hook = beat 1, problem = beat 2, solution = beat 3, cta = beat 5). Put a ready-to-post social caption + 4-6 hashtags at the END of "synopsis".`;
 
 // Health / wellness education framework (same 5-beat shape, health-flavoured).
 const HEALTH_FRAMEWORK = `

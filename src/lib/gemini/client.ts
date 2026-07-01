@@ -11,7 +11,9 @@ import type { AspectRatio, ImageQuality } from "@/types";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 // Model names — change here if Google updates model identifiers.
-const TEXT_MODEL = "gemini-2.5-flash";
+// gemini-2.5-pro = stronger reasoning/creative writing for scripts (better
+// "nội dung chuẩn") than -flash. Overridable via GEMINI_TEXT_MODEL.
+const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-pro";
 
 // Image model fallback chains (newest first). If the API key doesn't have
 // access to a model (404 / not found), we automatically try the next one.
