@@ -115,6 +115,12 @@ export async function generateStoryboardBreakdown(
           const line = typeof seg.dialogue === "string" ? seg.dialogue.trim() : "";
           if (!line) seg.dialogue = seg.title;
         }
+        // Speaker (one per clip). Default to the main character when the model
+        // omits it but there is a spoken line, so multi-character prompts still
+        // name a speaker.
+        if (seg.speaker === undefined || seg.speaker === null) {
+          seg.speaker = parsed.character_locks?.[0]?.name ?? "";
+        }
         if (!seg.continuity_note) {
           seg.continuity_note = i === 0 ? "opening shot" : "continues from previous segment";
         }

@@ -17,6 +17,7 @@ import {
   Film,
   Image as ImageIcon,
   AlertTriangle,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,9 +36,11 @@ import {
   generateStoryboardPlan,
   generateBoardImage,
   finalizeScript,
+  getTopicLibrary,
   type StoryboardResult,
   type StoryboardAnalysis,
 } from "@/actions";
+import type { TopicCategory } from "@/services/topics";
 import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
 import type {
@@ -352,6 +355,8 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "thriller", label: "Giật gân" },
     { value: "animation", label: "Hoạt hình" },
     { value: "documentary", label: "Tài liệu" },
+    { value: "numerology", label: "Thần số học" },
+    { value: "health", label: "Sức khoẻ" },
   ],
   en: [
     { value: "advertising", label: "Advertising / TVC" },
@@ -368,6 +373,8 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "thriller", label: "Thriller" },
     { value: "animation", label: "Animation" },
     { value: "documentary", label: "Documentary" },
+    { value: "numerology", label: "Numerology" },
+    { value: "health", label: "Health" },
   ],
 };
 
@@ -379,6 +386,10 @@ const AD_GENRES = new Set([
   "promo",
   "unboxing",
 ]);
+
+// Topic-library genres (numerology / health) → drive the 5-beat framework and
+// hide the product/story brief (their content comes from the topic library).
+const TOPIC_GENRES = new Set(["numerology", "health"]);
 
 const CUSTOM = "__custom__";
 
@@ -521,6 +532,7 @@ const VIDEO_GOAL_OPTIONS: Record<Lang, { value: VideoGoal; label: string }[]> = 
     { value: "storytelling", label: "Kể chuyện" },
     { value: "review", label: "Review / Đánh giá" },
     { value: "educational", label: "Giáo dục / Hướng dẫn" },
+    { value: "numerology", label: "Thần số học (Hook→Giải mã→CTA)" },
   ],
   en: [
     { value: "marketing_general", label: "General marketing" },
@@ -532,6 +544,7 @@ const VIDEO_GOAL_OPTIONS: Record<Lang, { value: VideoGoal; label: string }[]> = 
     { value: "storytelling", label: "Storytelling" },
     { value: "review", label: "Review / Testimonial" },
     { value: "educational", label: "Educational / How-to" },
+    { value: "numerology", label: "Numerology (Hook→Insight→CTA)" },
   ],
 };
 
@@ -644,6 +657,8 @@ function toAnchorBase64(uri: string, max = 1024, quality = 0.8): Promise<string 
         canvas.height = Math.round(img.height * scale);
         const cx = canvas.getContext("2d");
         if (!cx) return done(null);
+        cx.imageSmoothingEnabled = true;
+        cx.imageSmoothingQuality = "high";
         cx.drawImage(img, 0, 0, canvas.width, canvas.height);
         const out = canvas.toDataURL("image/jpeg", quality);
         done(out.split(",")[1] ?? null);
@@ -657,6 +672,30 @@ function toAnchorBase64(uri: string, max = 1024, quality = 0.8): Promise<string 
     };
     img.src = uri;
   });
+}
+
+/**
+ * Normalise every reference image to a small JPEG before it travels to the
+ * server. Uploaded photos are already ~1024px, but studio-generated portraits
+ * come back full size (up to 2048px, quality 93) and are used raw — three of
+ * them blow past Vercel's hard ~4.5 MB request-body cap, so the platform
+ * rejects the whole Server Action before our code runs (the opaque "Server
+ * Components render" error). Downscaling here keeps every reference tiny so all
+ * of them fit, instead of silently dropping some. Never hangs (toAnchorBase64
+ * has an onerror + 10s timeout); on failure it keeps the original.
+ */
+async function downscaleRefImages(refs: ImageReference[]): Promise<ImageReference[]> {
+  const out: ImageReference[] = [];
+  for (const ref of refs) {
+    const imgs: string[] = [];
+    for (const b64 of ref.images) {
+      const uri = b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`;
+      const small = await toAnchorBase64(uri, 1024, 0.82);
+      imgs.push(small ?? b64);
+    }
+    if (imgs.length > 0) out.push({ ...ref, images: imgs });
+  }
+  return out;
 }
 
 function resolveDesc(
@@ -717,6 +756,23 @@ export function GenerateClient() {
   // Script-review phase: the editable breakdown + carried plan data.
   const [draft, setDraft] = useState<StoryboardGenerationOutput | null>(null);
   const [planWarnings, setPlanWarnings] = useState<string[]>([]);
+
+  // ─── Topic library (Google Sheet: numerology / health scripts) ──
+  const [topicCats, setTopicCats] = useState<TopicCategory[]>([]);
+  const [topicType, setTopicType] = useState("");
+  const [topicItemId, setTopicItemId] = useState("");
+  const [topicError, setTopicError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getTopicLibrary().then((r) => {
+      if (!alive) return;
+      if (r.success) setTopicCats(r.data.categories);
+      else setTopicError(r.error);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Set when reference images were handed off from the Image Studio.
   const [fromStudio, setFromStudio] = useState(false);
@@ -983,15 +1039,15 @@ export function GenerateClient() {
         : []),
     ];
 
-    const characterImages: ImageReference[] = effectiveCharacters
+    const rawCharacterImages: ImageReference[] = effectiveCharacters
       .filter((c) => c.images.length > 0)
       .map((c) => ({ name: c.name, images: c.images.map((i) => i.base64) }));
 
-    const productImages: ImageReference[] = effectiveProducts
+    const rawProductImages: ImageReference[] = effectiveProducts
       .filter((p) => p.images.length > 0)
       .map((p) => ({ name: p.name, description: p.description, images: p.images.map((i) => i.base64) }));
 
-    const backgroundImages: ImageReference[] = effectiveBackgrounds
+    const rawBackgroundImages: ImageReference[] = effectiveBackgrounds
       .filter((b) => b.images.length > 0)
       .map((b) => ({ name: b.name, description: b.description, images: b.images.map((i) => i.base64) }));
 
@@ -1001,18 +1057,35 @@ export function GenerateClient() {
         ? [{ name: ingName.trim(), description: ingDesc, images: ingImages }]
         : []),
     ];
-    const ingredientImages: ImageReference[] = effectiveIngredients
+    const rawIngredientImages: ImageReference[] = effectiveIngredients
       .filter((g) => g.images.length > 0)
       .map((g) => ({ name: g.name, description: g.description, images: g.images.map((i) => i.base64) }));
 
-    // Vercel caps each serverless request body at ~4.5 MB. Keep the combined
-    // reference-image payload safely under that — otherwise the platform
-    // rejects the whole request before our code runs, surfacing as the opaque
-    // "Server Components render" error. We always keep the FIRST character image
-    // (primary face lock) and then add more references only while under budget,
-    // dropping the rest. (The board generation only needs 1-2 angles anyway.)
-    const PAYLOAD_BUDGET = 3_600_000; // ~3.6 MB of base64, leaves headroom for the JSON
-    const b64Bytes = (s: string) => Math.ceil((s.length * 3) / 4);
+    // Downscale ALL references (incl. full-size studio-generated portraits) to
+    // ~1024px BEFORE measuring/sending, so 3+ images comfortably fit under
+    // Vercel's 4.5 MB body cap instead of overflowing or being dropped.
+    if (rawCharacterImages.length + rawProductImages.length + rawBackgroundImages.length + rawIngredientImages.length > 0) {
+      setProgressPercent(8);
+      setProgressMessage(L("analyzingImages"));
+    }
+    const [characterImages, productImages, backgroundImages, ingredientImages] = await Promise.all([
+      downscaleRefImages(rawCharacterImages),
+      downscaleRefImages(rawProductImages),
+      downscaleRefImages(rawBackgroundImages),
+      downscaleRefImages(rawIngredientImages),
+    ]);
+
+    // FINAL SAFETY NET. Images are already downscaled above, so all the usual
+    // references (3+ uploads or studio portraits) now fit easily. This budget
+    // only ever trips on a pathological case (e.g. a downscale that failed and
+    // fell back to a huge original): keep the FIRST character image (primary
+    // face lock) and add more only while under budget, dropping the rest, so
+    // the request can never exceed Vercel's ~4.5 MB body cap (which would
+    // surface as the opaque "Server Components render" error).
+    // NOTE: budget by the base64 STRING length — that is what actually travels
+    // over the wire (one base64 char ≈ one transmitted byte).
+    const PAYLOAD_BUDGET = 3_900_000; // base64 chars sent; leaves headroom under ~4.5 MB for the rest of the JSON
+    const b64Bytes = (s: string) => s.length;
     let payloadUsed = 0;
     let droppedImages = 0;
     const fitRefs = (refs: ImageReference[], alwaysKeepFirst: boolean): ImageReference[] => {
@@ -1577,6 +1650,28 @@ export function GenerateClient() {
                     placeholder={lang === "vi" ? "(không có thoại)" : "(no dialogue)"}
                   />
                 </div>
+                {draft.character_locks.length > 1 && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      {lang === "vi" ? "Người nói (chỉ 1 người / cảnh)" : "Speaker (one per scene)"}
+                    </label>
+                    <Select
+                      value={s.speaker ?? ""}
+                      onChange={(e) => updateSeg(i, "speaker", e.target.value)}
+                      options={[
+                        { value: "", label: lang === "vi" ? "— Lồng tiếng / không ai nói —" : "— Voiceover / none —" },
+                        ...draft.character_locks
+                          .filter((c) => c.name)
+                          .map((c) => ({ value: c.name, label: c.name })),
+                      ]}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      {lang === "vi"
+                        ? "Mỗi cảnh chỉ 1 người nói; người còn lại im lặng. Hội thoại thì đổi người nói qua từng cảnh."
+                        : "One speaker per scene; the others stay silent. For a dialogue, alternate the speaker across scenes."}
+                    </p>
+                  </div>
+                )}
               </div>
             ))}
           </CardContent>
@@ -2065,6 +2160,66 @@ export function GenerateClient() {
           {/* ── Step 1: Story ─────────────────────────────────────── */}
           {step === 0 && (
             <>
+              <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                  <BookOpen className="h-4 w-4" />
+                  {lang === "vi" ? "Kho chủ đề (thần số học / sức khoẻ)" : "Topic library"}
+                </div>
+                {topicCats.length > 0 ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      {lang === "vi"
+                        ? "Chọn loại nội dung → chọn chủ đề. Nội dung sẽ đổ vào ô ý tưởng bên dưới để AI dựng kịch bản (bạn vẫn sửa được)."
+                        : "Pick a category → a topic. Its content fills the idea below; you can still edit it."}
+                    </p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <Select
+                        value={topicType}
+                        onChange={(e) => {
+                          setTopicType(e.target.value);
+                          setTopicItemId("");
+                        }}
+                        options={[
+                          { value: "", label: lang === "vi" ? "— Loại nội dung —" : "— Category —" },
+                          ...topicCats.map((c) => ({ value: c.key, label: c.label })),
+                        ]}
+                      />
+                      <Select
+                        value={topicItemId}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setTopicItemId(id);
+                          const cat = topicCats.find((c) => c.key === topicType);
+                          const item = cat?.items.find((it) => it.id === id);
+                          if (item) setStoryIdea(item.content);
+                          // Numerology topics → drive the dedicated 5-beat
+                          // Hook→Insight→CTA framework automatically.
+                          if (cat && /thần số|than so|numerolog/i.test(`${cat.label} ${cat.key}`)) {
+                            setVideoGoal("numerology");
+                          }
+                        }}
+                        options={[
+                          { value: "", label: lang === "vi" ? "— Chọn chủ đề —" : "— Choose topic —" },
+                          ...(topicCats.find((c) => c.key === topicType)?.items.map((it) => ({
+                            value: it.id,
+                            label: it.label,
+                          })) ?? []),
+                        ]}
+                      />
+                    </div>
+                  </>
+                ) : topicError ? (
+                  <p className="text-xs text-destructive">
+                    {lang === "vi" ? "⚠️ Không tải được kho chủ đề: " : "⚠️ Topic library failed: "}
+                    {topicError}
+                  </p>
+                ) : (
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {lang === "vi" ? "Đang tải kho chủ đề..." : "Loading topics..."}
+                  </p>
+                )}
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("storyIdea")}</label>
                 <Textarea
@@ -2078,7 +2233,13 @@ export function GenerateClient() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">{L("genre")}</label>
-                  <Select value={genre} onChange={(e) => setGenre(e.target.value)} options={GENRE_OPTIONS[lang]} />
+                  <Select value={genre} onChange={(e) => {
+                    const g = e.target.value;
+                    setGenre(g);
+                    // Topic genres drive the matching 5-beat framework goal.
+                    if (g === "numerology") setVideoGoal("numerology");
+                    else if (g === "health") setVideoGoal("health");
+                  }} options={GENRE_OPTIONS[lang]} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">{L("setting")}</label>
@@ -2106,8 +2267,22 @@ export function GenerateClient() {
                 )}
               </div>
 
-              {/* Brief — product (ad genres) vs story (narrative genres) */}
-              {isAdGenre ? (
+              {/* Brief — topic (numerology/health) vs product (ad) vs story */}
+              {TOPIC_GENRES.has(genre) ? (
+                <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                    <BookOpen className="h-4 w-4" />
+                    {genre === "numerology"
+                      ? (lang === "vi" ? "Nội dung Thần số học" : "Numerology content")
+                      : (lang === "vi" ? "Nội dung Sức khoẻ" : "Health content")}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {lang === "vi"
+                      ? 'Loại này lấy nội dung từ "Kho chủ đề" ở Bước 1 (chọn chủ đề → nội dung đổ vào ô ý tưởng). AI sẽ viết theo khung 5 nhịp Hook → Giải mã → CTA.'
+                      : 'This type pulls content from the Topic Library in Step 1. The AI writes it in the 5-beat Hook → Insight → CTA framework.'}
+                  </p>
+                </div>
+              ) : isAdGenre ? (
                 <div className="space-y-3 rounded-lg border border-dashed p-4">
                   <div className="flex items-center gap-2">
                     <Package className="h-4 w-4 shrink-0 text-primary" />

@@ -31,15 +31,19 @@ export function buildPrompt(
     if (config.customSubjectCount) subject += ` (${config.customSubjectCount})`;
   }
 
+  // Reference-GUIDED wording (not "replicate this exact real individual"):
+  // aggressive identity-replication language trips Google's face-safety filter,
+  // which returns a blurred/degraded face. The attached photo carries the
+  // likeness; we ask the model to stay consistent with it.
   const hasLockFace = config.faceEnhancements?.includes("lock_face");
   const faceId = ctx.hasFaces
     ? hasLockFace
-      ? "CRITICAL FACE IDENTITY: Exactly preserve and precisely recreate every single facial feature from the uploaded reference photo — same face shape, bone structure, skin tone, eye shape, nose, lips, and complete identity. The person in the output must be unmistakably and identically the same individual as in the reference. Do not alter the face under any circumstance."
-      : "CRITICAL FACE IDENTITY: You must precisely match the uploaded reference face photo — preserve every facial feature, bone structure, skin tone, eye shape, nose, and complete identity. The person in the output must be unmistakably the same individual as in the reference."
+      ? "FACE REFERENCE: render the character to closely match the attached reference photo — keep the same face shape, bone structure, skin tone, eye shape, nose and lips so the character stays visually consistent with the reference. Sharp, in-focus face."
+      : "FACE REFERENCE: render the character to match the attached reference photo — keep the same facial features, skin tone and overall look so the character stays visually consistent. Sharp, in-focus face."
     : "";
 
   const enhMap: Record<string, string> = {
-    lock_face: "CRITICAL — Exactly preserve ALL facial features from reference photo. Same face, same identity.",
+    lock_face: "Keep the character's face consistent with the attached reference photo, sharp and in focus.",
     smooth_skin: "flawlessly smooth natural skin texture, professional beauty retouching",
     bright_skin: "naturally brightened luminous skin, healthy inner glow",
     younger: "naturally de-aged 5-10 years younger, realistic and convincing",

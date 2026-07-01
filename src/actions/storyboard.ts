@@ -263,6 +263,10 @@ interface RefContext {
   charDesc: string;
   charDescDna: string;
   charDescVeo: string;
+  /** One reference per named character (multi-character binding). */
+  characterRefs: { img: string; name: string; desc?: string }[];
+  /** All character names in the project (to silence non-speakers). */
+  characterNames: string[];
   sceneBible?: SceneBible;
   productDnaText?: string;
   ingredientsText?: string;
@@ -328,6 +332,26 @@ function buildRefContext(
     ? stripHexCodes(stripEyewear(buildCleanCharLine(breakdown.character_locks[0])) || `a ${genderWord} wearing ${mainCostume}`)
     : charDescDna;
 
+  // Multi-character binding: pair each uploaded character photo with its named
+  // lock (match by name, else by index) so each face is bound to the right
+  // person in a 2-3 character scene. The vision description reinforces the photo.
+  const characterRefs = (input.character_images ?? [])
+    .map((grp) => {
+      const img = grp.images?.[0];
+      if (!img) return null;
+      const lock =
+        breakdown.character_locks?.find((l) => l.name === grp.name) ??
+        breakdown.character_locks?.[(input.character_images ?? []).indexOf(grp)];
+      const desc =
+        analysis.characterDescriptions[grp.name] ??
+        (lock ? buildCleanCharLine(lock) : undefined);
+      return { img, name: lock?.name ?? grp.name, desc };
+    })
+    .filter((x) => x !== null) as { img: string; name: string; desc?: string }[];
+  const characterNames = (breakdown.character_locks ?? [])
+    .map((l) => l.name)
+    .filter(Boolean);
+
   return {
     canChain,
     aspectRatio: input.aspect_ratio ?? "16:9",
@@ -347,6 +371,8 @@ function buildRefContext(
     charDesc,
     charDescDna,
     charDescVeo,
+    characterRefs,
+    characterNames,
     sceneBible: breakdown.scene_bible,
     productDnaText:
       breakdown.product_dna || productDesc || input.product_name || productName || undefined,
@@ -361,15 +387,27 @@ function buildBoardRefs(ctx: RefContext): {
 } {
   const images: { base64: string; mimeType?: string }[] = [];
   const descriptors: RefDescriptor[] = [];
-  if (ctx.faceImg) {
+  // Cap total references so the image request stays small (Nano Banana handles
+  // a handful of subjects; more than this hurts both payload and consistency).
+  const MAX_REFS = 5;
+  if (ctx.characterRefs.length > 1) {
+    // MULTI-CHARACTER: bind each uploaded photo to its named character so Veo
+    // never swaps faces between the 2-3 people in the scene.
+    for (const c of ctx.characterRefs) {
+      if (images.length >= MAX_REFS) break;
+      images.push({ base64: c.img, mimeType: "image/jpeg" });
+      descriptors.push({ role: "character", name: c.name, description: c.desc });
+    }
+  } else if (ctx.faceImg) {
+    // SINGLE CHARACTER (unchanged behaviour).
     images.push({ base64: ctx.faceImg, mimeType: "image/jpeg" });
     descriptors.push({ role: "face", description: ctx.faceDesc ?? ctx.charDescForPoster });
   }
-  if (ctx.productImg && images.length < 3) {
+  if (ctx.productImg && images.length < MAX_REFS) {
     images.push({ base64: ctx.productImg, mimeType: "image/jpeg" });
     descriptors.push({ role: "product", description: ctx.productDesc });
   }
-  if (ctx.bgImg && images.length < 3) {
+  if (ctx.bgImg && images.length < MAX_REFS) {
     images.push({ base64: ctx.bgImg, mimeType: "image/jpeg" });
     descriptors.push({ role: "setting", description: ctx.bgDesc });
   }
@@ -488,6 +526,8 @@ function assemblePlanPrompts(
         motionPrompt: makeVeoSafe(seg.motion_prompt),
         dialogue: seg.dialogue,
         dialogueLanguage: ctx.dialogueLanguage,
+        speaker: seg.speaker,
+        characterNames: ctx.characterNames,
       })
     );
   }
@@ -503,6 +543,7 @@ function assemblePlanPrompts(
     aspectRatio: ctx.aspectRatio,
     colorPalette: palette,
     dialogueLanguage: ctx.dialogueLanguage,
+    characterNames: ctx.characterNames,
     marketing: breakdown.marketing_structure,
     segments: breakdown.segments.map((s) => ({
       segment_number: s.segment_number,
@@ -511,6 +552,7 @@ function assemblePlanPrompts(
       duration_seconds: s.duration_seconds,
       motion_prompt: s.motion_prompt,
       dialogue: s.dialogue,
+      speaker: s.speaker,
       continuity_note: s.continuity_note,
       beats: s.beats,
     })),
@@ -597,12 +639,16 @@ export async function generateBoardImage(params: {
         segmentNumber: seg.segment_number,
         sceneDescription: seg.first_frame_prompt || seg.title,
         shot: seg.beats?.[0]?.camera || "[EYE]",
-        characterDescription: ctx.charDescDna,
+        // Multi-character scene → describe ALL named characters; single → the
+        // identity-locked main description.
+        characterDescription: ctx.characterRefs.length > 1 ? ctx.charDescForPoster : ctx.charDescDna,
         productDna: ctx.productDnaText,
         ingredients: ctx.ingredientsText,
         sceneBible: ctx.sceneBible,
         style: input.style,
         preserveRealFace: ctx.preserveRealFace,
+        hasDialogue: !!(seg.dialogue && seg.dialogue.trim()),
+        speakerName: seg.speaker,
         referenceImages: ctx.canChain && images.length > 0 ? images : undefined,
         references: ctx.canChain && descriptors.length > 0 ? descriptors : undefined,
         provider,

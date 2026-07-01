@@ -1,8 +1,21 @@
 import type { StoryboardGenerationInput, VideoGoal, SceneBible, AspectRatio } from "@/types";
 
 // Forbidden in every generated image/clip (the brief's negative list).
+// Phrased as plain descriptors (no instructive "no/don't") — Veo/Kling read the
+// negative list as nouns/adjectives to avoid, and "no X" phrasing can backfire.
 const SHARED_NEGATIVE =
-  "NEGATIVE (must avoid): warped or altered label/logo text, logo change, brand-colour change, extra products, DUPLICATED OR DOUBLED objects (e.g. two pans / two of the same item), floating or levitating objects, physically impossible actions (e.g. lifting/holding a pan with a spatula), extra people, changed hair/wardrobe/accessories, human hands when the action does not require them, on-screen text overlays, captions, subtitles, watermark, object/container morphing, duplicate subject, plastic/CGI skin.";
+  "NEGATIVE (avoid — plain descriptors): warped or altered label/logo text, logo change, brand-colour change, extra products, duplicated or doubled objects (e.g. two pans / two of the same item), floating or levitating objects, objects passing through solid surfaces, physically impossible actions (e.g. lifting/holding a pan with a spatula), sudden appearing or disappearing objects, teleporting, morphing, warping, melting, distorting, deforming, object/container morphing, inconsistent physics, unnatural motion, jittery or stuttering movement, frame skipping, mid-clip jump cuts, extra people, changed hair/wardrobe/accessories, identity drift, face morphing, changing facial features, age shifting, extra or missing limbs, extra or fused fingers, mutated or malformed hands, human hands when the action does not require them, deformed liquid, floating ingredients, melted food, warping plate, liquid flowing upward, on-screen text overlays, captions, subtitles, watermark, duplicate subject, plastic/CGI skin.";
+
+// Positive realism directive — reproduced in every motion/video prompt. Models
+// respond better to explicit positive physics cues than to negatives alone, so
+// we state what the clip MUST do, not only what to avoid.
+// Concise anti-artifact tail for IMAGE-LED Veo prompts. When a clean keyframe
+// is attached as the start frame it already carries the identity, wardrobe,
+// setting, lens and colour — so the prompt must NOT re-describe them (that
+// bloat is exactly what makes Veo drift/morph). We keep only the motion plus a
+// short physics + negative cue.
+const VEO_CONCISE_TAIL =
+  "Natural, physically realistic motion — real weight, gravity and momentum; one continuous shot, no hard cuts. Avoid: morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, on-screen text, subtitles, watermark, plastic/CGI skin.";
 
 /** One-line "Scene Bible" style tokens, reproduced verbatim in every image. */
 function sceneBibleTokens(sb?: SceneBible): string {
@@ -31,7 +44,42 @@ const GOAL_GUIDANCE: Record<VideoGoal, string> = {
     "Customer testimonial. A real person talks to camera: their before-pain, the turning point with the product, the after-result, a sincere recommendation CTA.",
   promo_sale:
     "Promo / sale push. Bold offer hook (discount/deadline), show the value, create urgency (limited time/stock), end with a strong shop-now CTA.",
+  numerology:
+    "Numerology / self-development insight short. ONE relatable character embodying the number(s). 5-beat emotional arc: Hook (call out the viewer) → Pain (the misunderstood struggle) → Insight (reframe: 'not X, but Y') → Payoff (the mission/gift) → CTA (loop-friendly, comment prompt). Warm, cinematic, inspiring — never a hard product sell.",
+  health:
+    "Health / wellness education short. ONE relatable character living the health problem. 5-beat arc: Hook (name the symptom/fear) → Problem (how it disrupts daily life) → Insight (the real root cause, explained simply) → Solution (the habit/remedy/product that helps) → CTA (save/follow/try). Trustworthy, empathetic, clear — evidence-based, not alarmist.",
 };
+
+// Rich framework for topic-driven numerology / self-development shorts, modelled
+// on the proven "Số Chủ Đạo" script shape. Injected into the user prompt when
+// video_goal is "numerology" so the AI writes in this exact winning structure.
+const NUMEROLOGY_FRAMEWORK = `
+NUMEROLOGY SCRIPT FRAMEWORK (follow this EXACTLY — it is the proven winning shape):
+- SUBJECT: a numerology profile (e.g. "Số Chủ Đạo 5, Sứ Mệnh 9"). Use the topic content provided as the source of truth for meanings; do NOT invent contradictory numerology.
+- NGŨ HÀNH (Five-Elements): if the numbers map to elements, state the relationship (tương sinh / tương khắc) and derive ONE clear CORE MESSAGE from it (e.g. "tự do của bạn không phải để chạy trốn — mà để mang cảm hứng đi cho đời"). Put this core message in "synopsis".
+- CHARACTER: invent ONE relatable persona (name, age, a signature look/prop) who EMBODIES the number, and keep them identical across all segments so the clips chain seamlessly. Cinematic, warm tone (e.g. golden-hour, 35mm film look).
+- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count, but keep this emotional order):
+  1) HOOK — talk directly to the viewer, name their number, tease a "phũ phàng/uncomfortable truth". Close-up to camera.
+  2) PAIN / NỖI ĐAU — dramatize the misunderstood struggle of this number (fast montage of the restless/painful pattern) and voice the viewer's self-doubt as a question.
+  3) INSIGHT / GIẢI MÃ — the reframe: "Không phải bạn [flaw]… mà là [deeper truth]." A contemplative, spacious shot.
+  4) PAYOFF / SỨ MỆNH — reveal the gift/mission of the number; a warm, human, giving moment; the character looks "at home".
+  5) CTA — a one-line takeaway + a loop-friendly comment prompt (e.g. "thả số chủ đạo của bạn ở comment"). Open, walk-away framing.
+- DIALOGUE: warm, second-person Vietnamese, ~5-12 words per segment, ~110-120 words total across the video. Emotional, inspiring, conversational — NOT a product ad.
+- Also fill "marketing_structure" as: hook = beat 1 idea, problem = beat 2 pain, solution = beat 3 insight, cta = beat 5 line. Put a ready-to-post social caption + 4-6 hashtags at the END of "synopsis".`;
+
+// Health / wellness education framework (same 5-beat shape, health-flavoured).
+const HEALTH_FRAMEWORK = `
+HEALTH / WELLNESS SCRIPT FRAMEWORK (follow this EXACTLY):
+- SUBJECT: a specific health topic (e.g. "gan nhiễm mỡ", "mất ngủ"). Use the topic content provided as the source of truth; be accurate and empathetic, NOT alarmist, and avoid over-claiming cures.
+- CHARACTER: ONE relatable persona living this problem (name, age, everyday setting), kept identical across all segments so the clips chain seamlessly. Warm, trustworthy, real-life tone.
+- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count):
+  1) HOOK — name the symptom/worry directly to the viewer ("Bạn hay [triệu chứng]?"). Close-up.
+  2) PROBLEM — show how it quietly disrupts daily life (a relatable everyday moment).
+  3) INSIGHT — explain the REAL root cause simply and correctly (one clear idea).
+  4) SOLUTION — the habit / remedy / product that helps, shown in use (if a product is provided, feature it accurately).
+  5) CTA — save/follow/try line, gentle and caring.
+- Put ONE clear takeaway/core message in "synopsis". Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Add a ready-to-post caption + 4-6 hashtags at the END of "synopsis".
+- DIALOGUE: warm, second-person Vietnamese, ~5-12 words per segment. Clear and caring — not a hard sell.`;
 
 // ─── Step 1: Segment Breakdown + Character Lock ─────────────────────────────
 
@@ -39,11 +87,11 @@ export function buildStoryboardSystemPrompt(): string {
   return `You are a world-class short-form video director and marketing strategist. You design storyboards that are turned into REAL videos using AI image-to-video tools (Google Veo 3 / Veo 3.1, Seedance, Kling).
 
 CRITICAL PRODUCTION MODEL — how the final video is actually made:
-- The video is assembled from multiple ~10-second CLIPS ("segments") generated by Omni Flash (10s per clip).
-- Each 10s segment contains a FAST MULTI-SHOT SEQUENCE (several distinct shots that cut quickly within the 10 seconds) — never a single static scene dragging for 10s. This keeps pacing tight, saves cost (multiple scenes in one generation), and works with Omni Flash / Veo multi-shot.
-- Each segment is generated by feeding its multi-shot storyboard + ONE multi-shot motion prompt into Omni Flash / Veo.
+- The video is assembled from multiple ~10-second CLIPS ("segments") generated by Omni Flash / Veo.
+- Each 10s segment is ONE CONTINUOUS TAKE: a SINGLE primary action filmed in one unbroken shot — never a static scene dragging for 10s, but also NEVER several hard cuts jammed into 10s. AI video models CANNOT "cut"; if you order multiple separate shots inside one clip they MORPH and TELEPORT between them (objects warp, hands pass through props, items appear/vanish). So the "beats" are SMOOTH CAMERA REFRAMINGS of that SAME ongoing action (a slow push-in, a pan, an angle change that reveals more of the one continuous moment) — the subject, props and physics stay continuous for the whole 10s.
+- Each segment is generated by feeding its keyframe + ONE motion prompt into Veo/Seedance.
 - Segments are CHAINED for seamless playback: the visual state at the END of segment N must flow naturally into the START of segment N+1 (same character, location, lighting, continuous action). No jarring cuts between segments.
-- So "beats" = the quick shots inside a 10s segment. Provide the EXACT number of beats requested in the user message.
+- So "beats" = the progressive camera framings of the ONE continuous action inside a 10s segment (not separate scenes). Provide the EXACT number of beats requested in the user message.
 
 MARKETING STRUCTURE (always apply):
 - HOOK in the first segment (grab attention in 3 seconds).
@@ -58,12 +106,20 @@ FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's vid
 - One single set/location per segment; only camera framing and the action change.
 - A generated CHARACTER REFERENCE SHEET image (front / 3-4 / side / back + expressions) is attached as a reference to every shot — match it precisely.
 
-NEGATIVE (forbidden in every image/clip): warped/changed label or logo text, brand-colour change, extra products or extra people, changed hair/wardrobe/accessories, human hands when the script does not call for them, on-screen text overlays, object/container morphing, plastic/CGI skin.
+PHYSICAL REALISM (every clip must look real, not "AI" — this is what eliminates the broken, impossible-motion look):
+- ONE primary physical action per 10s clip, performed SLOWLY and DELIBERATELY. Never stack multiple simultaneous or sequential actions into one clip — that is the #1 cause of morphing, teleporting, duplicated limbs and objects passing through each other.
+- Write SPECIFIC motion: name the body part + the verb + the manner (e.g. "her right hand slowly lifts the pan by its handle"), never vague verbs like "moving", "doing" or "interacting".
+- State physics explicitly in the motion_prompt: real-world weight, gravity, momentum and balance; objects keep one solid form (object permanence); hands make real contact with props and never pass through them; liquids and food obey gravity.
+- Every motion_prompt must include a positive realism clause, e.g.: "single continuous motion, natural movement obeying real-world physics, consistent weight and gravity, stable identity, object permanence".
+- Camera moves are smooth and minimal (a slow push-in or gentle pan). Avoid combining a big camera move with big subject motion — that compounding warps the image.
+
+NEGATIVE (forbidden in every image/clip — plain descriptors): warped/changed label or logo text, brand-colour change, extra products or extra people, changed hair/wardrobe/accessories, human hands when the script does not call for them, on-screen text overlays, object/container morphing, teleporting, floating or levitating objects, objects passing through surfaces, deformed liquid, melted food, extra or fused fingers, malformed hands, face morphing, identity drift, plastic/CGI skin.
 
 DIALOGUE (spoken audio in Veo 3):
 - Veo 3 generates real spoken audio. Each segment's "dialogue" is the exact line the on-screen character (or voiceover) speaks.
 - Write dialogue in the language requested by the user. Keep each line SHORT (about 5-12 words, ~3-6 seconds) so lip-sync stays natural.
-- The "motion_prompt" must embed the spoken line using Veo format — e.g. He says in Vietnamese: "..." — and end with "(no subtitles)".
+- Put the spoken line ONLY in the "dialogue" field. Do NOT quote or embed the spoken line inside the "motion_prompt" — the system appends it automatically exactly once, so repeating it makes the character say it twice. In the motion_prompt just note WHEN the character speaks and that the lips move naturally (e.g. "around 6-10s he speaks his line with natural lip movement"), without quoting the words.
+- SPEAKER (critical when there are 2+ characters): ONLY ONE character may speak per 10s segment. Set "speaker" to that character's EXACT name from character_locks. The other characters stay silent and listen (mouths closed) in that clip. For a conversation, ALTERNATE the speaker across consecutive segments (character A speaks in one clip, character B replies in the next) — never have two people talk in the same clip, because the video model cannot reliably lip-sync two speakers at once. If the line is a voiceover with no on-screen speaker, set "speaker" to "".
 
 Camera codes: [EYE] eye-level, [LOW] low, [HIGH] high, [OVH] overhead, [DUTCH] dutch, [OTS] over-shoulder, [POV] first-person, [CLOSE] close-up, [SIDE] side profile.
 
@@ -115,17 +171,27 @@ export function buildStoryboardUserPrompt(
   const beatsPerSegment = Math.min(5, Math.max(3, input.beats_per_segment ?? 3));
   const goal = input.video_goal ?? "marketing_general";
   const goalGuidance = GOAL_GUIDANCE[goal];
+  // Topic-driven numerology / health content follows a dedicated, proven
+  // 5-beat framework instead of the product/story brief. Triggered by the goal
+  // OR the genre (whichever the user set).
+  const isNumerology = goal === "numerology" || input.genre === "numerology";
+  const isHealth = goal === "health" || input.genre === "health";
+  const numerologyBlock = isNumerology
+    ? `\n${NUMEROLOGY_FRAMEWORK}`
+    : isHealth
+      ? `\n${HEALTH_FRAMEWORK}`
+      : "";
 
   const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
   const dialogueBlock =
     input.force_dialogue === false
       ? `\nDialogue: optional. When a segment has a spoken line, write it in ${dialogueLanguage}.`
-      : `\nDialogue: REQUIRED. EVERY segment MUST have a non-empty "dialogue" line spoken in ${dialogueLanguage} (natural, conversational ${dialogueLanguage} — not translated word-for-word). Keep each line short (about 5-12 words). The spoken line must also be embedded inside that segment's "motion_prompt" using Veo format, e.g.: the character says in ${dialogueLanguage}: "<line>" (no subtitles).`;
+      : `\nDialogue: REQUIRED. EVERY segment MUST have a non-empty "dialogue" line spoken in ${dialogueLanguage} (natural, conversational ${dialogueLanguage} — not translated word-for-word). Keep each line short (about 5-12 words). Put the line ONLY in the "dialogue" field — do NOT quote it inside the "motion_prompt" (the system appends it once; repeating it makes the character say it twice).`;
 
   // Example beat list sized to the requested count.
   const beatExample = Array.from({ length: beatsPerSegment }, (_, i) => {
     const cams = ["[WIDE] ...", "[CLOSE] ...", "[OTS] ...", "[LOW] ...", "[POV] ..."];
-    return `        { "beat": "shot ${i + 1} action", "camera": "${cams[i] ?? "[EYE] ..."}" }`;
+    return `        { "beat": "framing ${i + 1}: the camera reframes the SAME continuous action", "camera": "${cams[i] ?? "[EYE] ..."}" }`;
   }).join(",\n");
 
   return `Create a chained-segment storyboard for this short video.
@@ -135,9 +201,9 @@ Video Goal: ${goal} — ${goalGuidance}
 Genre: ${input.genre}
 Visual Style: ${input.style}
 Number of 10-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 10} seconds)
-Beats per segment: ${beatsPerSegment} quick shots inside each 10s clip${productBriefBlock}${storyBriefBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
+Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
 
-Produce EXACTLY ${segmentCount} segments. Each segment = one 10s clip containing EXACTLY ${beatsPerSegment} quick shots (${beatsPerSegment} beats), each beat covering a distinct time-frame inside the 10 seconds. Segment 1 must HOOK. The last segment must contain the CTA. CRITICAL CHAINING RULE: the visual state at the END of segment N (pose, position, expression, camera) must EQUAL the opening moment described in segment N+1's "first_frame_prompt", so the generated clips join into one continuous story with no jumps. The "motion_prompt" must describe the ${beatsPerSegment}-shot sequence in order with rough timing (split 10s across the beats, e.g. "0-3s ...; 3-6s ...; 6-10s ..."), camera moves, the spoken ${dialogueLanguage} line, and an explicit final state that matches the next segment's first_frame_prompt. Briefly restate the main character's visual attributes (from character_locks) inside every motion_prompt and every first_frame_prompt so the character stays visually consistent. Describe them as a character by appearance — never as "the same real person", "their real face", "same identity", or "strictly follow the reference images".
+Produce EXACTLY ${segmentCount} segments. Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Each beat covers a distinct time-frame inside the unbroken 10 seconds while the subject, props and physics stay continuous. Segment 1 must HOOK. The last segment must contain the CTA. CRITICAL CHAINING RULE: the visual state at the END of segment N (pose, position, expression, camera) must EQUAL the opening moment described in segment N+1's "first_frame_prompt", so the generated clips join into one continuous story with no jumps. The "motion_prompt" must describe that ONE continuous action across the 10s with rough timing (split 10s across the beats, e.g. "0-3s ...; 3-6s ...; 6-10s ..."), using slow, deliberate, specific motion verbs (body part + verb + manner) and SMOOTH, minimal camera moves only, plus an explicit final state that matches the next segment's first_frame_prompt. Keep ONE primary action per clip — never stack multiple or simultaneous actions, which causes morphing and teleporting. NOTE: the system auto-wraps each motion_prompt with the full character + product description, the style tokens, a physics directive, the spoken line and a negative list — so do NOT repeat identity details, a physics clause, the dialogue text or a negative list inside the motion_prompt. Restate the main character's visual attributes (from character_locks) inside every first_frame_prompt so the keyframe stays on-model; inside the motion_prompt use only a SHORT one-phrase anchor that it is the same character. Describe them as a character by appearance — never as "the same real person", "their real face", "same identity", or "strictly follow the reference images".
 
 Return a JSON object with this EXACT structure (the "beats" array must contain EXACTLY ${beatsPerSegment} items):
 {
@@ -177,15 +243,16 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
   "segments": [
     {
       "segment_number": 1,
-      "duration_seconds": 10,
+      "duration_seconds": 8,
       "title": "string — short segment title",
       "marketing_role": "hook|problem|solution|body|cta",
       "beats": [
 ${beatExample}
       ],
       "first_frame_prompt": "string — describe the SHARED scene/setting of this 10s segment (location, lighting, EXACT character appearance from character_locks, product if any). It is used as the scene-overview context for the shot board, so describe the environment and the character clearly.",
-      "motion_prompt": "string — a LONG, highly detailed 110-160 word image-to-video prompt for Omni Flash / Veo covering all ${beatsPerSegment} shots. Structure it in this order: (1) START by ordering the model to STRICTLY FOLLOW THE ATTACHED REFERENCE IMAGES — keep the SAME person (restate his exact face, hair, glasses, wardrobe word-for-word from character_locks, as a slightly younger/more attractive version) and the SAME product (restate its exact shape, colour, material, branding); (2) the action across the 10s with rough timing ('0-3s ...; 3-6s ...; 6-10s ...') using slow, single, clear motion verbs; (3) camera (shot size + movement) and lens; (4) lighting + colour palette + mood; (5) setting details; (6) audio: ambient sound + the spoken line in Veo format — the character says in ${dialogueLanguage}: \\"...\\"; (7) end with a NEGATIVE list: 'No subtitles, no on-screen text, no watermark, do not change the face, do not distort or change the product, no extra fingers, no morphing.'; (8) finish with the exact final state so it leads into the next segment.",
+      "motion_prompt": "string — a focused 70-110 word image-to-video ACTION prompt for Omni Flash / Veo describing ONE continuous take. IMPORTANT: the system automatically wraps this text with the full character + product description, the style tokens (lens/light/backdrop/grade), a physics directive and a negative list — so DO NOT repeat identity attributes, style tokens, a physics clause or a negative list here; describe only what HAPPENS. Order: (1) a SHORT anchor that it is the same man and same product from the attached references, rendered as a slightly younger, more attractive version (one phrase — do NOT re-list every attribute); (2) ONE single continuous primary action across the 10s with rough timing ('0-3s ...; 3-6s ...; 6-10s ...') using slow, deliberate, specific motion verbs (body part + verb + manner) — no hard cuts, no second simultaneous action; (3) camera (shot size + SMOOTH minimal movement); (4) a brief mood/light accent only if it changes; (5) note WHEN the character speaks with natural lip movement, but DO NOT quote the spoken words (the dialogue line is appended automatically exactly once); (6) finish with the exact final state so it leads into the next segment.",
       "dialogue": "string — the spoken line in ${dialogueLanguage} (short, natural)",
+      "speaker": "string — the EXACT character_locks name of who speaks this line. ONE speaker per segment; the others stay silent. Empty string \\"\\" if it is a voiceover with no on-screen speaker.",
       "continuity_note": "string — how this segment visually continues from the previous segment (for segment 1 write 'opening shot')"
     }
   ],
@@ -232,12 +299,15 @@ function renderDirective(style: string, preserveRealFace: boolean): string {
   }`;
 }
 
-export type RefRole = "face" | "product" | "setting" | "character_sheet" | "anchor";
+export type RefRole = "face" | "product" | "setting" | "character_sheet" | "anchor" | "character";
 
 export interface RefDescriptor {
   role: RefRole;
   /** Optional vision-derived description that reinforces the photo. */
   description?: string;
+  /** For role "character": the exact name of the person in this photo, so the
+   * model binds the right face to the right named character in a 2-3 person scene. */
+  name?: string;
 }
 
 /**
@@ -256,6 +326,8 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
         return `• THE CHARACTER — the attached CHARACTER REFERENCE SHEET (turnaround + expressions)${d} defines the main character's exact face, hair, body and costume. Reproduce the SAME individual identically in every shot — same face, same wardrobe, same proportions — rendered as a slightly younger, more attractive version of himself. Do NOT invent a different person.`;
       case "face":
         return `• THE PERSON — use the exact man shown in the attached portrait photo${d}. Keep his real face, hairstyle, facial hair and skin tone CLEARLY recognizable and identical in every shot; render him as a tasteful, slightly younger and more handsome version of himself (light natural retouch, same identity). Match his eyewear EXACTLY to the photo — if he is NOT wearing glasses in the photo, do NOT add glasses; if he IS, keep the same glasses — and keep this consistent across every shot. He is the main character. Do NOT invent a different face.`;
+      case "character":
+        return `• CHARACTER "${r.name ?? "person"}" — one of the attached portrait photos shows ${r.name ?? "this person"}${d}. Keep ${r.name ?? "their"} real face, hair and skin tone clearly recognizable and identical in every shot, rendered as a tasteful slightly younger version of themselves. Bind this face to ${r.name ?? "this character"} ONLY — do NOT swap, merge or blend it with the other character(s) in the scene.`;
       case "product":
         return `• THE PRODUCT — feature the EXACT product shown in the attached product photo${d}. Keep its EXACT shape, silhouette, colour, material, proportions, handle/parts and branding identical in every single shot. Do NOT redesign, recolour, distort, resize, age, damage or swap it for a different object.`;
       case "setting":
@@ -318,7 +390,7 @@ ${directive}
 RULES: it must be the SAME individual in every zone with identical face; small bold labels; one cohesive image. ${SHARED_NEGATIVE}`;
 }
 
-// ─── Step 3: Per-Segment Storyboard Strip (3 shots in one 10s clip) ─────────
+// ─── Step 3: Per-Segment Storyboard Strip (3 shots in one 10s clip) ──────────
 
 export function buildSegmentFirstFramePrompt(params: {
   segmentNumber: number;
@@ -374,7 +446,7 @@ export function buildSegmentFirstFramePrompt(params: {
   const refStrip =
     `LARGE, clearly-visible reference portraits of THE SAME main character — big enough that the face and clothing read clearly, NOT small distant thumbnails: (1) one FULL-BODY FRONT view, head to toe, standing naturally; and (2) two WAIST-UP (half-body) views — a 3/4 angle and a side profile — each showing the face sharply and at good size.${expClause}`;
 
-  return `${refBlock}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for ONE ~10 second video clip, presented as ONE single horizontal image. This board gives an image-to-video model (Omni Flash / Veo) full context: who the character is (from every angle), what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions that happen across the 10 seconds. ${params.style} style.
+  return `${refBlock}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for ONE ~10 second video clip, presented as ONE single horizontal image. This board gives an image-to-video model (Veo) full context: who the character is (from every angle), what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions that happen across the 10 seconds. ${params.style} style.
 
 THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 
@@ -411,18 +483,45 @@ export function buildKeyframePrompt(params: {
   aspectRatio: AspectRatio;
   preserveRealFace?: boolean;
   references?: RefDescriptor[];
+  /** When this clip has a spoken line, frame the keyframe for clean lip-sync:
+   * the character faces the camera with the mouth clearly visible. */
+  hasDialogue?: boolean;
+  /** Name of who speaks this clip — in a 2-3 person scene we frame THIS person
+   * toward camera (the others listen). */
+  speakerName?: string | null;
 }): string {
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
   const refBlock = buildReferenceInstructions(params.references ?? []);
   const tokens = sceneBibleTokens(params.sceneBible);
   const ratioWord = params.aspectRatio === "9:16" ? "vertical 9:16 portrait" : "horizontal 16:9 landscape";
+  // Identity lock comes from a LARGE, sharp, well-lit hero — that is what lets
+  // an image-to-video model read the face off one start frame (the lesson from
+  // boards that animate cleanly & on-model in Veo). Push the character forward
+  // and grade it like a premium frame, while still honouring an explicit wide.
+  const isWide = /\b(WIDE|EXTREME_WIDE|AERIAL|ESTABLISH)/i.test(params.shot || "");
+  const prominence = isWide
+    ? "CHARACTER PROMINENCE — this is an establishing/wide shot, but still place the main character clearly in frame with the face readable and in sharp focus; do NOT shrink them to an unrecognizable distant speck."
+    : "CHARACTER PROMINENCE — render the main character LARGE and dominant in the frame, the face clearly legible and in tack-sharp focus, well-lit and cleanly separated from the background (shallow depth of field), so the image-to-video model can lock the identity from this single frame. Favour a medium / medium-close framing; do NOT render the subject small, distant, out-of-focus, back-turned or with the face hidden.";
+  const grade = isPhotoStyle(params.style)
+    ? "Premium cinematic colour grade, soft directional key light, natural skin texture and pores, filmic editorial polish — never flat, never cartoon, never plastic/CGI/wax skin."
+    : `Premium, polished, richly detailed ${params.style} rendering with cinematic lighting and depth.`;
+  // This clip has spoken audio in Veo, so the start frame should be lip-sync
+  // friendly: face toward camera, mouth visible. (The words go in the Veo
+  // prompt, never as text in this image.)
+  const speaker = (params.speakerName ?? "").trim();
+  const who = speaker ? `${speaker} (the speaker of this clip)` : "the character";
+  const lipSync =
+    params.hasDialogue && !isWide
+      ? ` LIP-SYNC FRAMING — ${who} faces the camera with the head up and the mouth clearly visible (relaxed, about to speak), so the video model can animate natural talking and lip-sync; do not hide the mouth or turn the face away.${speaker ? " Any other characters present are turned slightly toward the speaker, mouths closed (listening)." : ""}`
+      : "";
   return `${refBlock}SINGLE STATIC KEYFRAME for shot ${params.segmentNumber} — ONE clean photographic first-frame image used as the STARTING frame for an image-to-video model (Veo). This is NOT a storyboard board: render ONE single cohesive scene only, no panels, no reference strip.
 
 COMPOSITION (${params.shot || "[EYE]"}): ${params.sceneDescription}
 SUBJECT — keep this exact forensic identity: ${params.characterDescription}
+${prominence}${lipSync}
 ${params.productDna ? `PRODUCT (exact, unchanged, with colours): ${params.productDna}\n` : ""}${params.ingredients ? `PROPS / INGREDIENTS (show clearly by name): ${params.ingredients}\n` : ""}${tokens ? tokens + "\n" : ""}${directive}
 
-RENDER RULES: a SINGLE static frame; the subject is sharp and frozen in the STARTING posture for the upcoming action (no motion blur, no camera-movement effect); ${ratioWord} aspect ratio, 1080p quality. Do NOT include timeline markers, multiple panels, split-screens, reference thumbnails, captions, subtitles, on-screen text or speech bubbles. Photoreal premium commercial look. ${SHARED_NEGATIVE}`;
+RENDER RULES: a SINGLE static frame; the subject is sharp and frozen in the STARTING posture for the upcoming action (no motion blur, no camera-movement effect); ${ratioWord} aspect ratio, 1080p quality. Do NOT include timeline markers, multiple panels, split-screens, reference thumbnails, captions, subtitles, on-screen text or speech bubbles. ${grade} ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 4: Master Board (Character Sheet + captioned storyboard grid) ─────
@@ -518,21 +617,36 @@ export function buildSegmentVeoPrompt(params: {
   motionPrompt: string;
   dialogue?: string | null;
   dialogueLanguage?: string;
+  /** Who speaks this clip (one speaker per clip). */
+  speaker?: string | null;
+  /** All character names in the project — used to silence the non-speakers. */
+  characterNames?: string[];
 }): string {
   const lang = params.dialogueLanguage ?? "Vietnamese";
-  const refLock = `Keep the main character and the product visually consistent across every shot, matching the attached reference image(s). Main character: ${params.characterDescription}. ${
-    params.productDescription
-      ? `Featured product (keep its shape, colour, material and branding consistent): ${params.productDescription}. `
-      : ""
-  }Colour palette: ${params.colorPalette.join(", ")}.`;
-  const ing = params.ingredients
-    ? ` Named ingredients (show and refer to each by its exact name): ${params.ingredients}.`
+  // IMAGE-LED: the attached keyframe carries the face, wardrobe, setting, lens
+  // and colour, so we do NOT re-describe them — we just tell Veo to follow the
+  // image, then give the motion, the spoken line and a short physics+negative
+  // cue. (Re-describing the scene is what made Veo morph/drift.)
+  const lead =
+    "Animate the ATTACHED start image into one continuous 10-second shot, following the storyboard. Keep the same person, wardrobe, setting, lens and colours exactly as in the image — do not redesign or restyle them; keep the face sharp, clearly visible and unchanged.";
+  const product = params.productDescription
+    ? " Keep the featured product identical to the image (same shape, colour, material and branding)."
     : "";
-  const tokens = params.sceneBible ? ` ${sceneBibleTokens(params.sceneBible)}` : "";
+  // Multi-character: name WHO speaks and keep everyone else silent, so Veo
+  // never lip-syncs the line on the wrong person.
+  const speaker = (params.speaker ?? "").trim();
+  const others = (params.characterNames ?? []).filter(
+    (n) => n && n.trim() && n.trim() !== speaker
+  );
+  const speakerLabel = speaker || "The character";
+  const silence =
+    speaker && others.length > 0
+      ? ` Only ${speaker} speaks; the other character${others.length > 1 ? "s" : ""} (${others.join(", ")}) stay silent and listen with mouths closed.`
+      : "";
   const spoken = params.dialogue
-    ? ` The character says in ${lang}: "${params.dialogue}" (lip-synced, no subtitles).`
+    ? ` ${speakerLabel} speaks to camera with natural mouth movement and accurate lip-sync, saying in ${lang}: "${params.dialogue}" — spoken audio only, no on-screen subtitles or captions.${silence}`
     : "";
-  return `${refLock}${ing}${tokens} ${params.motionPrompt}${spoken} ${SHARED_NEGATIVE}`;
+  return `${lead}${product} ${params.motionPrompt}${spoken} ${VEO_CONCISE_TAIL}`;
 }
 
 export function buildVideoPromptText(params: {
@@ -546,6 +660,8 @@ export function buildVideoPromptText(params: {
   aspectRatio: string;
   colorPalette: string[];
   dialogueLanguage?: string;
+  /** All character names in the project — used to silence non-speakers. */
+  characterNames?: string[];
   marketing: { hook: string; problem: string; solution: string; cta: string };
   segments: {
     segment_number: number;
@@ -554,6 +670,7 @@ export function buildVideoPromptText(params: {
     duration_seconds: number;
     motion_prompt: string;
     dialogue?: string | null;
+    speaker?: string | null;
     continuity_note: string;
     beats: { beat: string; camera: string }[];
   }[];
@@ -578,6 +695,8 @@ export function buildVideoPromptText(params: {
         motionPrompt: s.motion_prompt,
         dialogue: s.dialogue,
         dialogueLanguage,
+        speaker: s.speaker,
+        characterNames: params.characterNames,
       });
       return `SEGMENT ${s.segment_number} — "${s.title}" [${s.role.toUpperCase()}] (${s.duration_seconds}s)
   Beats:

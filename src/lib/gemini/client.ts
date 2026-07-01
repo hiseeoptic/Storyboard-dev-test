@@ -164,7 +164,11 @@ async function compressImage(dataUri: string, maxDim: number, quality: number): 
     const out = await sharp(Buffer.from(m[2], "base64"))
       .rotate()
       .resize({ width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality, mozjpeg: true })
+      // Baseline (non-progressive) + full 4:4:4 chroma: a truncated PROGRESSIVE
+      // JPEG renders as a full-frame BLUR (only the low-frequency pass loads),
+      // and chroma subsampling softens fine facial detail. Baseline + 4:4:4
+      // keeps the portrait crisp.
+      .jpeg({ quality, mozjpeg: true, progressive: false, chromaSubsampling: "4:4:4" })
       .toBuffer();
     return `data:image/jpeg;base64,${out.toString("base64")}`;
   } catch {
@@ -304,7 +308,14 @@ export async function geminiGenerateImage(params: {
         // Studio portraits keep ~2048px at high quality (q93) so the reference
         // images stay crisp and flattering — better refs = better video.
         const isBoard = imageSize === "1K";
-        return await compressImage(image, isBoard ? 1280 : 2048, isBoard ? 86 : 93);
+        const compressed = await compressImage(image, isBoard ? 1280 : 2048, isBoard ? 86 : 93);
+        // Diagnostic: which model actually served, and how big the result is.
+        // If a portrait comes back blurry, this reveals a silent fallback to a
+        // low-res model (e.g. gemini-2.5-flash-image) or a tiny/degraded output.
+        console.warn(
+          `[Gemini image] served by ${model} (requested ${imageSize ?? "default"} ${params.aspectRatio ?? ""}); result ${(compressed.length / 1024).toFixed(0)}KB`
+        );
+        return compressed;
       }
       lastErr = `Model ${model} returned no image`;
       continue; // try next model

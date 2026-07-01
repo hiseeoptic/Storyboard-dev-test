@@ -38,22 +38,77 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
-async function resizeImage(file: File, maxSize = 1024): Promise<File> {
+async function resizeImage(file: File, maxSize = 1536): Promise<File> {
+  // IMPORTANT: decode with createImageBitmap, NOT `new Image()` + drawImage.
+  // On iOS Safari, drawing a large HTMLImageElement onto a smaller canvas
+  // triggers the well-known image-subsampling bug that smears big photos into
+  // a blur (small photos look fine, large ones come out fuzzy — exactly the
+  // reported symptom). An ImageBitmap is not subsampled, so the downscale stays
+  // sharp. We also request a high-quality resize when the browser supports it.
+  const encode = async (bitmap: ImageBitmap): Promise<File | null> => {
+    const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    // Flatten any transparency on white so the JPEG mime always matches.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const blob: Blob | null = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.92));
+    if (!blob) return null;
+    const name = file.name.replace(/\.\w+$/, "") + ".jpg";
+    return new File([blob], name, { type: "image/jpeg" });
+  };
+
+  if (typeof createImageBitmap === "function") {
+    try {
+      // First decode to read the natural size, then (when supported) re-decode
+      // with a high-quality resize that avoids any canvas subsampling entirely.
+      const probe = await createImageBitmap(file);
+      const scale = Math.min(1, maxSize / Math.max(probe.width, probe.height));
+      let bitmap = probe;
+      if (scale < 1) {
+        try {
+          bitmap = await createImageBitmap(file, {
+            resizeWidth: Math.round(probe.width * scale),
+            resizeHeight: Math.round(probe.height * scale),
+            resizeQuality: "high",
+          } as ImageBitmapOptions);
+        } catch {
+          /* options unsupported (older Safari) — fall back to the probe bitmap */
+        }
+      }
+      const out = await encode(bitmap);
+      probe.close?.();
+      if (bitmap !== probe) bitmap.close?.();
+      if (out) return out;
+    } catch {
+      /* createImageBitmap failed (e.g. unsupported format) — fall through */
+    }
+  }
+
+  // Fallback path: <img> + canvas (used only when createImageBitmap is missing
+  // or throws). Still re-encodes to JPEG; never hangs.
   return new Promise((resolve) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(url);
       const { width, height } = img;
-      // Always re-encode to JPEG (flattening transparency on white) so the
-      // base64 data and the declared mime type always match — required for
-      // the Gemini reference-image API to accept the photos reliably.
       const scale = Math.min(1, maxSize / Math.max(width, height));
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(width * scale);
       canvas.height = Math.round(height * scale);
       const ctx = canvas.getContext("2d");
       if (!ctx) { resolve(file); return; }
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -64,8 +119,15 @@ async function resizeImage(file: File, maxSize = 1024): Promise<File> {
           resolve(new File([blob], name, { type: "image/jpeg" }));
         },
         "image/jpeg",
-        0.85
+        0.92
       );
+    };
+    // If the image can't be decoded (e.g. an iOS HEIC quirk), don't hang the
+    // upload — fall back to the original file (the send-time downscale will
+    // still shrink it before it reaches the server).
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(file);
     };
     img.src = url;
   });
