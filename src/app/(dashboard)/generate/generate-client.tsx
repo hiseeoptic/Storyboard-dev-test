@@ -1509,6 +1509,64 @@ export function GenerateClient() {
       // Assembly guide / prompts
       zip.file(`video_assembly_guide.txt`, result.videoPrompt);
 
+      // ── Master prompt (line-based, one paste-ready prompt per clip) ──
+      const bd = result.breakdown;
+      const aspect = genInput?.aspect_ratio ?? "9:16";
+      const oneLine = (s: string) => (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+      const kf = (n: number) => `keyframe_${String(n).padStart(2, "0")}.jpg`;
+
+      const masterLines: string[] = [
+        `# ${bd.title}`,
+        bd.synopsis ? `# ${oneLine(bd.synopsis)}` : "",
+        `# ${bd.segments.length} clips · ${aspect} · Omni Flash / Veo (10s per clip)`,
+        `# For each clip: attach the KEYFRAME as the start frame, paste the PROMPT.`,
+        "",
+      ];
+      for (const seg of bd.segments) {
+        masterLines.push(
+          `[SEGMENT ${seg.segment_number} — ${(seg.marketing_role || "").toUpperCase()} — ${seg.duration_seconds ?? 10}s]`,
+          `KEYFRAME: ${kf(seg.segment_number)}`,
+          `PROMPT: ${oneLine(seg.full_prompt ?? seg.motion_prompt ?? "")}`,
+        );
+        if (seg.dialogue) {
+          masterLines.push(`DIALOGUE${seg.speaker ? ` (${seg.speaker})` : ""}: "${oneLine(seg.dialogue)}"`);
+        }
+        masterLines.push("");
+      }
+      zip.file(`master_prompt.txt`, masterLines.join("\n"));
+
+      // ── Full JSON conversion (structured — easiest for a Veo flow) ──
+      const promptsJson = {
+        title: bd.title,
+        synopsis: bd.synopsis ?? "",
+        aspect_ratio: aspect,
+        clip_seconds: 10,
+        total_segments: bd.segments.length,
+        character_locks: bd.character_locks ?? [],
+        scene_bible: bd.scene_bible ?? null,
+        product_dna: bd.product_dna ?? null,
+        style_guide: bd.style_guide ?? null,
+        marketing_structure: bd.marketing_structure ?? null,
+        segments: bd.segments.map((seg) => ({
+          segment: seg.segment_number,
+          title: seg.title,
+          role: seg.marketing_role,
+          duration_seconds: seg.duration_seconds ?? 10,
+          keyframe: kf(seg.segment_number),
+          beats: seg.beats ?? [],
+          action: seg.motion_prompt ?? "",
+          dialogue: seg.dialogue ? { speaker: seg.speaker ?? "", line: seg.dialogue } : null,
+          continuity: seg.continuity_note ?? "",
+          prompt: seg.full_prompt ?? seg.motion_prompt ?? "",
+        })),
+      };
+      zip.file(`veo_prompts.json`, JSON.stringify(promptsJson, null, 2));
+      // JSON Lines: one clip's JSON per line — drop straight into a Veo batch flow.
+      zip.file(
+        `veo_prompts.jsonl`,
+        promptsJson.segments.map((s) => JSON.stringify(s)).join("\n")
+      );
+
       const out = await zip.generateAsync({ type: "blob" });
       const objectUrl = URL.createObjectURL(out);
       const a = document.createElement("a");
