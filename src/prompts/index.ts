@@ -1,4 +1,6 @@
 export {
+  buildScriptWriterSystemPrompt,
+  buildScriptWriterUserPrompt,
   buildStoryboardSystemPrompt,
   buildStoryboardUserPrompt,
   buildCharacterRefSheetPrompt,

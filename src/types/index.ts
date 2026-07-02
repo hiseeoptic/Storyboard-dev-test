@@ -118,6 +118,9 @@ export interface StoryboardGenerationInput {
   tone?: string;
   setting?: string;
   custom_instructions?: string;
+  /** Stage-1 script (written by script_provider, e.g. Claude). When present,
+   * the storyboard model must expand THIS script into the JSON verbatim. */
+  source_script?: string;
   // ─── Product / TVC brief (drives a product-advertising script) ───────
   product_name?: string;
   /** Key selling points / USP, free text. */

@@ -91,6 +91,59 @@ HEALTH / WELLNESS SCRIPT FRAMEWORK (follow this EXACTLY):
 - Put ONE clear takeaway/core message in "synopsis". Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Add a ready-to-post caption + 4-6 hashtags at the END of "synopsis".
 - DIALOGUE: warm, second-person Vietnamese, ~5-12 words per segment. Clear and caring — not a hard sell.`;
 
+// ─── Stage 1: Script writer (Claude) — creative script ONLY ─────────────────
+// When the user splits the pipeline (e.g. Claude writes the script, Gemini
+// builds the storyboard), Claude produces just the creative script text; the
+// storyboard model then expands it into the full JSON verbatim.
+
+export function buildScriptWriterSystemPrompt(): string {
+  return `You are a world-class short-form video SCRIPTWRITER for viral social media (TikTok / Reels / YouTube Shorts). You write ONLY the creative script — NOT the technical storyboard or JSON (a separate tool turns your script into the visual storyboard).
+
+Write in the language the user asks for. Nail a 3-second HOOK, build emotion, and end with a CTA. Dialogue must be SHORT, punchy, natural spoken lines (not literary), about 8-16 words each — ONE "đắt giá" line per segment.
+
+Output PLAIN TEXT in EXACTLY this shape (no markdown, no JSON):
+TITLE: <catchy title>
+CORE MESSAGE: <one-line takeaway>
+CHARACTER: <ONE consistent persona — name, age, signature look/prop, tone — that embodies the topic; keep the SAME person across all segments>
+SEGMENT 1 [HOOK]:
+  ACTION: <one vivid thing we SEE — a visual metaphor for this beat>
+  DIALOGUE: "<the exact spoken line>"
+SEGMENT 2 [PROBLEM]:
+  ACTION: ...
+  DIALOGUE: "..."
+(continue for EXACTLY the requested number of segments, following the emotional arc)
+CAPTION: <ready-to-post caption + 4-6 hashtags>
+
+No camera directions, no image prompts, no JSON — only the creative script above.`;
+}
+
+export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): string {
+  const segmentCount = input.segment_count ?? 5;
+  const goal = input.video_goal ?? "marketing_general";
+  const lang = input.dialogue_language ?? "Vietnamese";
+  const isNumerology = goal === "numerology" || input.genre === "numerology";
+  const isHealth = goal === "health" || input.genre === "health";
+  const framework = isNumerology ? NUMEROLOGY_FRAMEWORK : isHealth ? HEALTH_FRAMEWORK : "";
+
+  const brief: string[] = [];
+  if (input.product_name) brief.push(`- Product/Service: ${input.product_name}`);
+  if (input.selling_points) brief.push(`- Selling points: ${input.selling_points}`);
+  if (input.target_audience) brief.push(`- Audience: ${input.target_audience}`);
+  if (input.key_message) brief.push(`- Key message: ${input.key_message}`);
+  if (input.call_to_action) brief.push(`- CTA: ${input.call_to_action}`);
+  if (input.main_character) brief.push(`- Main character: ${input.main_character}`);
+  if (input.central_conflict) brief.push(`- Conflict: ${input.central_conflict}`);
+  const briefBlock = brief.length ? `\nBrief:\n${brief.join("\n")}` : "";
+
+  return `Write a ${segmentCount}-segment short-video script.
+
+Idea / Topic: ${input.story_idea}
+Genre: ${input.genre} · Goal: ${goal} — ${GOAL_GUIDANCE[goal]}
+Dialogue language: ${lang} (write ALL dialogue in ${lang}, natural and conversational).${briefBlock}${framework ? `\n${framework}` : ""}
+
+Write the ${segmentCount}-segment script now in the exact output shape from the system prompt. Keep the emotional arc and one short, punchy ${lang} line per segment.`;
+}
+
 // ─── Step 1: Segment Breakdown + Character Lock ─────────────────────────────
 
 export function buildStoryboardSystemPrompt(): string {
@@ -177,6 +230,12 @@ export function buildStoryboardUserPrompt(
     ? `\nAdditional Instructions: ${input.custom_instructions}`
     : "";
 
+  // Stage-1 approved script (written by Claude). When present, the storyboard
+  // model must EXPAND this exact script into the JSON — not invent a new story.
+  const scriptBlock = input.source_script
+    ? `\n\n=== APPROVED SCRIPT (Stage 1) — EXPAND THIS VERBATIM ===\nA scriptwriter already wrote the creative script below. Your job is ONLY to turn it into the technical storyboard JSON. Follow it FAITHFULLY:\n- Keep the SAME character (name, look, persona) across every segment.\n- Map each SEGMENT in the script to one 10s storyboard segment IN ORDER (same count, same beats/roles).\n- Use each segment's DIALOGUE line VERBATIM as that segment's "dialogue" (do not rewrite, translate, or shorten it beyond natural lip-sync length).\n- Turn each segment's ACTION into the first_frame_prompt + motion_prompt (one continuous action per clip).\n- Do NOT add, drop, reorder, or invent segments or lines. This script is final.\n\n${input.source_script}\n=== END APPROVED SCRIPT ===`
+    : "";
+
   const segmentCount = input.segment_count ?? 5;
   const beatsPerSegment = Math.min(5, Math.max(3, input.beats_per_segment ?? 3));
   const goal = input.video_goal ?? "marketing_general";
@@ -211,7 +270,7 @@ Video Goal: ${goal} — ${goalGuidance}
 Genre: ${input.genre}
 Visual Style: ${input.style}
 Number of 10-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 10} seconds)
-Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
+Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
 
 Produce EXACTLY ${segmentCount} segments. Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Each beat covers a distinct time-frame inside the unbroken 10 seconds while the subject, props and physics stay continuous. Segment 1 must HOOK. The last segment must contain the CTA. CRITICAL CHAINING RULE: the visual state at the END of segment N (pose, position, expression, camera) must EQUAL the opening moment described in segment N+1's "first_frame_prompt", so the generated clips join into one continuous story with no jumps. The "motion_prompt" must describe that ONE continuous action across the 10s with rough timing (split 10s across the beats, e.g. "0-3s ...; 3-6s ...; 6-10s ..."), using slow, deliberate, specific motion verbs (body part + verb + manner) and SMOOTH, minimal camera moves only, plus an explicit final state that matches the next segment's first_frame_prompt. Keep ONE primary action per clip — never stack multiple or simultaneous actions, which causes morphing and teleporting. NOTE: the system auto-wraps each motion_prompt with the full character + product description, the style tokens, a physics directive, the spoken line and a negative list — so do NOT repeat identity details, a physics clause, the dialogue text or a negative list inside the motion_prompt. Restate the main character's visual attributes (from character_locks) inside every first_frame_prompt so the keyframe stays on-model; inside the motion_prompt use only a SHORT one-phrase anchor that it is the same character. Describe them as a character by appearance — never as "the same real person", "their real face", "same identity", or "strictly follow the reference images".
 

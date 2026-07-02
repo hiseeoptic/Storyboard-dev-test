@@ -2,6 +2,8 @@ import { getOpenAIClient } from "@/lib/openai/client";
 import { geminiGenerateText } from "@/lib/gemini/client";
 import { claudeGenerateText } from "@/lib/anthropic/client";
 import {
+  buildScriptWriterSystemPrompt,
+  buildScriptWriterUserPrompt,
   buildStoryboardSystemPrompt,
   buildStoryboardUserPrompt,
 } from "@/prompts";
@@ -47,6 +49,72 @@ function sanitizeJsonResponse(text: string): string {
   }
 
   return cleaned;
+}
+
+/**
+ * Stage 1 — write ONLY the creative script (plain text) with the chosen model
+ * (e.g. Claude Opus). A separate model then expands this into the storyboard
+ * JSON (Stage 2). Returns the raw script text, or throws on failure.
+ */
+export async function generateScript(
+  input: StoryboardGenerationInput,
+  provider: AIProvider = "claude"
+): Promise<string> {
+  const systemPrompt = buildScriptWriterSystemPrompt();
+  const userPrompt = buildScriptWriterUserPrompt(input);
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      let text: string | null = null;
+
+      if (provider === "claude") {
+        text = await claudeGenerateText({
+          systemPrompt,
+          userPrompt,
+          maxTokens: 8000,
+        });
+      } else if (provider === "gemini") {
+        text = await geminiGenerateText({
+          systemPrompt,
+          userPrompt,
+          temperature: 0.85,
+          maxOutputTokens: 4096,
+        });
+      } else {
+        const openai = getOpenAIClient();
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.85,
+          max_tokens: 4000,
+        });
+        text = completion.choices[0]?.message?.content ?? null;
+      }
+
+      const script = (text ?? "").trim();
+      if (script.length < 40) {
+        throw new Error(`Empty/short script from ${provider}`);
+      }
+      return script;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        `[AI Engine] Script attempt ${attempt + 1}/${MAX_RETRIES} failed:`,
+        lastError.message
+      );
+      if (attempt < MAX_RETRIES - 1) {
+        await sleep(RETRY_DELAY_MS * (attempt + 1));
+      }
+    }
+  }
+
+  throw new Error(
+    `Script generation failed after ${MAX_RETRIES} attempts: ${lastError?.message}`
+  );
 }
 
 export async function generateStoryboardBreakdown(
