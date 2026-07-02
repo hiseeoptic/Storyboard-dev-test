@@ -620,6 +620,8 @@ RULES: ONE cohesive document image; same character everywhere; ${params.style} s
  */
 export function buildSegmentVeoPrompt(params: {
   characterDescription: string;
+  /** This clip's scene/setting (from the segment's first_frame_prompt). */
+  setting?: string;
   productDescription?: string;
   ingredients?: string;
   sceneBible?: SceneBible;
@@ -633,15 +635,24 @@ export function buildSegmentVeoPrompt(params: {
   characterNames?: string[];
 }): string {
   const lang = params.dialogueLanguage ?? "Vietnamese";
-  // IMAGE-LED: the attached keyframe carries the face, wardrobe, setting, lens
-  // and colour, so we do NOT re-describe them — we just tell Veo to follow the
-  // image, then give the motion, the spoken line and a short physics+negative
-  // cue. (Re-describing the scene is what made Veo morph/drift.)
+  const clean = (s?: string) => (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+  // SELF-CONTAINED prompt: repeat the FULL character + scene + style in EVERY
+  // clip so Veo renders correctly from the uploaded character PHOTO — no need to
+  // pre-generate a per-scene keyframe. The attached photo only locks the
+  // face/wardrobe; the scene is built from the text below.
   const lead =
-    "Animate the ATTACHED start image into one continuous 10-second shot, following the storyboard. Keep the same person, wardrobe, setting, lens and colours exactly as in the image — do not redesign or restyle them; keep the face sharp, clearly visible and unchanged.";
+    "Use the ATTACHED photo as the reference for the main character — keep the SAME face, hair and wardrobe identical. Create ONE continuous, cinematic 10-second shot of that same person in the scene described below; do NOT copy the photo's own background — build the new setting.";
+  const character = ` CHARACTER (keep identical every clip): ${clean(params.characterDescription)}.`;
+  const setting = params.setting ? ` SCENE: ${clean(params.setting)}.` : "";
   const product = params.productDescription
-    ? " Keep the featured product identical to the image (same shape, colour, material and branding)."
+    ? ` PRODUCT (keep its exact shape, colour, material and branding): ${clean(params.productDescription)}.`
     : "";
+  const ing = params.ingredients ? ` INGREDIENTS (show and name each): ${clean(params.ingredients)}.` : "";
+  const tokens = params.sceneBible ? ` ${sceneBibleTokens(params.sceneBible)}` : "";
+  const palette =
+    params.colorPalette && params.colorPalette.length > 0
+      ? ` Colour palette: ${params.colorPalette.join(", ")}.`
+      : "";
   // Multi-character: name WHO speaks and keep everyone else silent, so Veo
   // never lip-syncs the line on the wrong person.
   const speaker = (params.speaker ?? "").trim();
@@ -656,7 +667,7 @@ export function buildSegmentVeoPrompt(params: {
   const spoken = params.dialogue
     ? ` ${speakerLabel} speaks to camera with natural mouth movement and accurate lip-sync, saying in ${lang}: "${params.dialogue}" — spoken audio only, no on-screen subtitles or captions.${silence}`
     : "";
-  return `${lead}${product} ${params.motionPrompt}${spoken} ${VEO_CONCISE_TAIL}`;
+  return `${lead}${character}${setting}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken} ${VEO_CONCISE_TAIL}`;
 }
 
 export function buildVideoPromptText(params: {
@@ -681,6 +692,7 @@ export function buildVideoPromptText(params: {
     motion_prompt: string;
     dialogue?: string | null;
     speaker?: string | null;
+    setting?: string;
     continuity_note: string;
     beats: { beat: string; camera: string }[];
   }[];
@@ -698,6 +710,7 @@ export function buildVideoPromptText(params: {
         .join("\n");
       const fullPrompt = buildSegmentVeoPrompt({
         characterDescription: params.characterDescription,
+        setting: s.setting,
         productDescription: params.productDescription,
         ingredients: params.ingredients,
         sceneBible: params.sceneBible,
@@ -711,7 +724,7 @@ export function buildVideoPromptText(params: {
       return `SEGMENT ${s.segment_number} — "${s.title}" [${s.role.toUpperCase()}] (${s.duration_seconds}s)
   Beats:
 ${beats}
-  ▶ FULL PROMPT TO PASTE into Veo/Seedance image-to-video (attach the board + character sheet):
+  ▶ FULL PROMPT TO PASTE into Veo/Seedance image-to-video (attach your CHARACTER PHOTO as the reference):
     ${fullPrompt}
   Continuity: ${s.continuity_note}`;
     })

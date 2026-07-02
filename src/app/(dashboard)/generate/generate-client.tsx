@@ -1235,9 +1235,12 @@ export function GenerateClient() {
     setProgressPercent(12);
 
     const segCount = breakdown.segments.length;
-    // Per clip we render the review BOARD + the clean KEYFRAME (the actual Veo
-    // input), plus the master board at the end.
-    const total = segCount * 2 + 1;
+    // Per clip we render ONE review BOARD (shows the scene), plus the master
+    // board at the end. Clean keyframes are NOT auto-generated anymore — feed
+    // Veo your uploaded character photo + the self-contained prompt instead
+    // (saves tokens and avoids inconsistent AI faces). A per-clip keyframe can
+    // still be generated on demand from the result screen.
+    const total = segCount + 1;
     let done = 0;
     const bump = () => {
       done++;
@@ -1282,20 +1285,7 @@ export function GenerateClient() {
       if (seg) seg.first_frame_url = url;
       if (url && !anchorB64) anchorB64 = await toAnchorBase64(url);
       bump();
-      await sleep(1200);
-
-      // Clean KEYFRAME — the single-scene first frame the user actually feeds
-      // into Veo (the multi-panel board is review-only). Auto-generated so the
-      // Veo-ready image is always there, anchored to the same wardrobe/look.
-      setProgressMessage(lang === "vi" ? `Đang vẽ keyframe ${i + 1}/${segCount}` : `Drawing keyframe ${i + 1}/${segCount}`);
-      const kfUrl = await genBoard(
-        { input, breakdown, analysis, kind: "keyframe", segmentIndex: i, provider, anchorImage: anchorB64 ?? undefined },
-        lang === "vi" ? `Keyframe ${i + 1}` : `Keyframe ${i + 1}`,
-        `kf-${i}`
-      );
-      if (seg) seg.keyframe_url = kfUrl;
-      bump();
-      if (i < segCount - 1) await sleep(1500);
+      if (i < segCount - 1) await sleep(1200);
     }
 
     setProgressMessage(lang === "vi" ? "Đang vẽ bảng tổng" : "Drawing master board");
@@ -1520,13 +1510,13 @@ export function GenerateClient() {
         `# ${bd.title}`,
         bd.synopsis ? `# ${oneLine(bd.synopsis)}` : "",
         `# ${bd.segments.length} clips · ${aspect} · Omni Flash / Veo (10s per clip)`,
-        `# For each clip: attach the KEYFRAME as the start frame, paste the PROMPT.`,
+        `# For each clip: attach your CHARACTER PHOTO as the reference, then paste the PROMPT.`,
         "",
       ];
       for (const seg of bd.segments) {
         masterLines.push(
           `[SEGMENT ${seg.segment_number} — ${(seg.marketing_role || "").toUpperCase()} — ${seg.duration_seconds ?? 10}s]`,
-          `KEYFRAME: ${kf(seg.segment_number)}`,
+          `REFERENCE: ${seg.keyframe_url ? kf(seg.segment_number) : "ảnh nhân vật bạn tải lên (character photo)"}`,
           `PROMPT: ${oneLine(seg.full_prompt ?? seg.motion_prompt ?? "")}`,
         );
         if (seg.dialogue) {
@@ -1539,7 +1529,7 @@ export function GenerateClient() {
       // ── Full JSON conversion (structured — easiest for a Veo flow) ──
       const promptsJson = {
         how_to_use:
-          "For EACH 10s clip: open Veo (image-to-video), attach that segment's `keyframe` as the START frame, then paste ONLY that segment's `prompt`. Do NOT paste this meta block (title/character_locks/scene_bible/style_guide) — it was only used to generate the keyframes; each `prompt` is self-contained and relies on the attached keyframe. `continuity` is a note for you (how the clip links to the previous one), NOT for pasting into Veo.",
+          "For EACH 10s clip: open Veo (image-to-video), attach YOUR character photo as the reference (the same one you uploaded), then paste ONLY that segment's `prompt`. Each `prompt` is fully self-contained — it already repeats the character, scene and style — so you do NOT paste this meta block. `continuity` is a note for you (how the clip links to the previous one), NOT for pasting into Veo.",
         title: bd.title,
         synopsis: bd.synopsis ?? "",
         aspect_ratio: aspect,
@@ -1576,14 +1566,14 @@ export function GenerateClient() {
         "=============================================",
         "",
         "Mỗi clip 10s làm ĐỘC LẬP. Với TỪNG clip:",
-        "  1) Mở Veo (image-to-video), tải ảnh keyframe_0X.jpg làm KHUNG HÌNH ĐẦU.",
+        "  1) Mở Veo (image-to-video), tải ẢNH NHÂN VẬT của bạn (ảnh bạn đã upload) làm ảnh tham chiếu.",
         "  2) Dán ĐÚNG phần prompt của clip đó (dòng PROMPT trong master_prompt.txt,",
         "     hoặc trường \"prompt\" của segment trong veo_prompts.json).",
         "  3) Đặt tỉ lệ " + aspect + ", tạo clip. Lặp cho " + bd.segments.length + " clip rồi ghép (CapCut/ffmpeg).",
         "",
         "KHÔNG cần copy phần đầu JSON (title / character_locks / scene_bible / style_guide)",
-        "vào Veo — đó chỉ là dữ liệu đã dùng để TẠO keyframe. Ảnh keyframe đã chứa nhân vật +",
-        "bối cảnh, nên prompt mỗi segment (đã ghi 'keep the same character as in the image') là ĐỦ.",
+        "vào Veo — mỗi prompt segment đã TỰ CHỨA đầy đủ nhân vật + bối cảnh + phong cách,",
+        "nên chỉ cần ảnh nhân vật của bạn + prompt là ĐỦ. Không cần tạo keyframe riêng.",
         "",
         "\"continuity\" / \"Nối tiếp\": chỉ là GHI CHÚ cho bạn biết clip này nối với clip trước thế nào",
         "(để ghép mượt) — KHÔNG dán vào Veo. Segment 1 ghi 'opening shot' vì là cảnh mở đầu.",
@@ -2294,7 +2284,7 @@ export function GenerateClient() {
                 <div className="space-y-1.5">
                   {([
                     { v: "claude" as AIProvider, label: "Claude Opus 4.8 (mặc định — viết kịch bản)" },
-                    { v: "gemini" as AIProvider, label: "Gemini 2.5 Pro" },
+                    { v: "gemini" as AIProvider, label: "Gemini 2.5 Flash (rẻ)" },
                     { v: "openai" as AIProvider, label: "GPT-4o (OpenAI)" },
                   ]).map((o) => (
                     <button

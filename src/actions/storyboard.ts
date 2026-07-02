@@ -536,6 +536,7 @@ function assemblePlanPrompts(
     seg.full_prompt = makeVeoSafe(
       buildSegmentVeoPrompt({
         characterDescription: ctx.charDescVeo,
+        setting: makeVeoSafe(seg.first_frame_prompt ?? ""),
         productDescription: ctx.productDnaText,
         ingredients: ctx.ingredientsText,
         sceneBible: ctx.sceneBible,
@@ -570,6 +571,7 @@ function assemblePlanPrompts(
       motion_prompt: s.motion_prompt,
       dialogue: s.dialogue,
       speaker: s.speaker,
+      setting: s.first_frame_prompt,
       continuity_note: s.continuity_note,
       beats: s.beats,
     })),
