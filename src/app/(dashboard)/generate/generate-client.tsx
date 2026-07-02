@@ -785,8 +785,9 @@ export function GenerateClient() {
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState(false);
 
-  // ─── Hidden script-model switcher (double-click the title, passcode 2502) ──
-  const [scriptProvider, setScriptProvider] = useState<AIProvider>("gemini");
+  // ─── Script model (default Claude Opus 4.8) — images always use Gemini.
+  // Switchable via the hidden panel (double-click the title, passcode 2502). ──
+  const [scriptProvider, setScriptProvider] = useState<AIProvider>("claude");
   const [modelPanelOpen, setModelPanelOpen] = useState(false);
   const [modelUnlocked, setModelUnlocked] = useState(false);
   const [modelPw, setModelPw] = useState("");
@@ -2264,8 +2265,8 @@ export function GenerateClient() {
                 </p>
                 <div className="space-y-1.5">
                   {([
-                    { v: "gemini" as AIProvider, label: "Gemini 2.5 Pro (mặc định)" },
-                    { v: "claude" as AIProvider, label: "Claude Opus 4.8 (chất lượng cao nhất)" },
+                    { v: "claude" as AIProvider, label: "Claude Opus 4.8 (mặc định — viết kịch bản)" },
+                    { v: "gemini" as AIProvider, label: "Gemini 2.5 Pro" },
                     { v: "openai" as AIProvider, label: "GPT-4o (OpenAI)" },
                   ]).map((o) => (
                     <button
