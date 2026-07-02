@@ -41,6 +41,7 @@ import {
   type StoryboardAnalysis,
 } from "@/actions";
 import type { TopicCategory } from "@/services/topics";
+import { buildVeoJson } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
 import type {
@@ -1526,38 +1527,23 @@ export function GenerateClient() {
       }
       zip.file(`master_prompt.txt`, masterLines.join("\n"));
 
-      // ── Full JSON conversion (structured — easiest for a Veo flow) ──
-      const promptsJson = {
-        how_to_use:
-          "For EACH 10s clip: open Veo (image-to-video), attach YOUR character photo as the reference (the same one you uploaded), then paste ONLY that segment's `prompt`. Each `prompt` is fully self-contained — it already repeats the character, scene and style — so you do NOT paste this meta block. `continuity` is a note for you (how the clip links to the previous one), NOT for pasting into Veo.",
-        title: bd.title,
-        synopsis: bd.synopsis ?? "",
-        aspect_ratio: aspect,
-        clip_seconds: 10,
-        total_segments: bd.segments.length,
-        character_locks: bd.character_locks ?? [],
-        scene_bible: bd.scene_bible ?? null,
-        product_dna: bd.product_dna ?? null,
-        style_guide: bd.style_guide ?? null,
-        marketing_structure: bd.marketing_structure ?? null,
-        segments: bd.segments.map((seg) => ({
-          segment: seg.segment_number,
-          title: seg.title,
-          role: seg.marketing_role,
-          duration_seconds: seg.duration_seconds ?? 10,
-          keyframe: kf(seg.segment_number),
-          beats: seg.beats ?? [],
-          action: seg.motion_prompt ?? "",
-          dialogue: seg.dialogue ? { speaker: seg.speaker ?? "", line: seg.dialogue } : null,
-          continuity: seg.continuity_note ?? "",
-          prompt: seg.full_prompt ?? seg.motion_prompt ?? "",
-        })),
-      };
-      zip.file(`veo_prompts.json`, JSON.stringify(promptsJson, null, 2));
-      // JSON Lines: one clip's JSON per line — drop straight into a Veo batch flow.
+      // ── Structured Veo 3.1 JSON (veoflow-style) — the primary deliverable ──
+      // A shared header (style / continuity / negative) + one STRUCTURED object
+      // per clip (scene / subject / shot / timeline / dialogue / negative). Veo
+      // Flow parses this far more reliably than a flat paragraph. Each clip also
+      // keeps a flattened self-contained `prompt` for text-mode users.
+      const veoJson = buildVeoJson(bd, {
+        aspectRatio: aspect,
+        dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+      });
+      zip.file(`veo_prompts.json`, JSON.stringify(veoJson, null, 2));
+      // JSON Lines: one clip object per line — drop straight into a Veo batch flow.
+      const clipArr = Array.isArray((veoJson as { clips?: unknown[] }).clips)
+        ? ((veoJson as { clips: unknown[] }).clips as unknown[])
+        : [];
       zip.file(
         `veo_prompts.jsonl`,
-        promptsJson.segments.map((s) => JSON.stringify(s)).join("\n")
+        clipArr.map((c) => JSON.stringify(c)).join("\n")
       );
 
       // ── Plain how-to-use guide (so the files are self-explanatory) ──
@@ -1579,9 +1565,18 @@ export function GenerateClient() {
         "(để ghép mượt) — KHÔNG dán vào Veo. Segment 1 ghi 'opening shot' vì là cảnh mở đầu.",
         "",
         "FILE NÀO DÙNG GÌ:",
-        "  - master_prompt.txt  → dán tay từng clip (mỗi clip có KEYFRAME + PROMPT). Dễ nhất.",
-        "  - veo_prompts.jsonl  → mỗi dòng = 1 clip (JSON), cho tự động / batch.",
-        "  - veo_prompts.json   → cả bộ (meta + segments), để tham khảo / tích hợp.",
+        "  - veo_prompts.json   → CHUẨN cho Veo Flow (JSON mode). Có phần đầu dùng chung",
+        "      (global_style / continuity / negative_prompt) + mảng \"clips\": mỗi clip là 1",
+        "      object có cấu trúc rõ ràng (scene / subject / shot / timeline / dialogue /",
+        "      negative_prompt). Dán cả object của clip vào ô JSON của Veo Flow — Veo hiểu",
+        "      từng trường nên ảnh ổn định, ÍT bị morphing/warping/teleport.",
+        "  - veo_prompts.jsonl  → mỗi dòng = 1 clip (JSON) — cho batch / tự động.",
+        "  - master_prompt.txt  → nếu Veo dùng chế độ TEXT: mỗi clip dán trường \"prompt\"",
+        "      (đã tự chứa đủ nhân vật + bối cảnh + phong cách + negative).",
+        "",
+        "MẸO: mỗi clip đều có \"negative_prompt\" liệt kê rõ những thứ phải tránh",
+        "(morphing, warping, teleporting, floating/duplicated objects, tay/ngón lỗi,",
+        "đổi mặt, chữ/sub trên màn hình, da nhựa CGI…). Giữ nguyên trường này khi dán.",
         "",
       ].join("\n");
       zip.file(`README_HUONG_DAN.txt`, readme);

@@ -1,4 +1,10 @@
-import type { StoryboardGenerationInput, VideoGoal, SceneBible, AspectRatio } from "@/types";
+import type {
+  StoryboardGenerationInput,
+  StoryboardGenerationOutput,
+  VideoGoal,
+  SceneBible,
+  AspectRatio,
+} from "@/types";
 
 // Forbidden in every generated image/clip (the brief's negative list).
 // Phrased as plain descriptors (no instructive "no/don't") — Veo/Kling read the
@@ -819,4 +825,124 @@ ${segLines}
 
 ---
 Compatible with: Google Veo 3.1, Seedance 2.0, Kling, Runway, Pika`;
+}
+
+// ─── Structured Veo 3.1 JSON export ─────────────────────────────────────────
+// Veo Flow (and Kling/Seedance JSON modes) parse a STRUCTURED prompt far more
+// reliably than one flat paragraph. We emit a canonical Veo-3.1 JSON: a shared
+// header (style / continuity / negative) + one structured object per clip. The
+// self-contained flat `prompt` is ALSO kept per clip for text-mode users.
+
+/** The one comprehensive negative list, reused at project + clip level. */
+export const VEO_NEGATIVE_LIST =
+  "morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, extra or missing limbs, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, on-screen text, captions, subtitles, watermark, plastic or CGI skin";
+
+interface VeoJsonOptions {
+  aspectRatio: string;
+  dialogueLanguage?: string;
+}
+
+/**
+ * Build a structured Veo-3.1 JSON project from a finished breakdown. Returns a
+ * plain object (caller serialises it). Every clip carries structured fields
+ * (scene / subject / shot / timeline / dialogue / negative) PLUS a flattened
+ * self-contained `prompt` string for users who paste plain text.
+ */
+export function buildVeoJson(
+  breakdown: StoryboardGenerationOutput,
+  opts: VeoJsonOptions
+): Record<string, unknown> {
+  const oneLine = (s?: string | null) =>
+    (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+  const lang = opts.dialogueLanguage ?? "Vietnamese";
+  const locks = breakdown.character_locks ?? [];
+  const clipSeconds = 10;
+
+  const characters = locks.map((l) => ({
+    name: l.name,
+    gender: l.gender ?? "",
+    appearance: [l.gender_age, l.build, l.skin_tone, l.hair, l.eyes]
+      .map((x) => oneLine(x))
+      .filter(Boolean)
+      .join(", "),
+    wardrobe: oneLine(l.costume),
+    signature_features: oneLine(l.signature_features),
+    default_expression: oneLine(l.default_expression),
+    dna: oneLine(l.dna),
+  }));
+
+  const sb = breakdown.scene_bible;
+
+  const clips = breakdown.segments.map((seg) => {
+    const beats = Array.isArray(seg.beats) ? seg.beats : [];
+    const n = Math.max(1, beats.length);
+    // Split the 10s clip evenly across the beats so each gets a timecode.
+    const timeline = beats.map((b, i) => {
+      const start = Math.round((i * clipSeconds) / n);
+      const end = Math.round(((i + 1) * clipSeconds) / n);
+      return {
+        time: `${start}-${end}s`,
+        camera: oneLine(b.camera),
+        action: oneLine(b.beat),
+      };
+    });
+    const speaker = oneLine(seg.speaker) || characters[0]?.name || "";
+    return {
+      id: seg.segment_number,
+      role: seg.marketing_role,
+      duration_seconds: seg.duration_seconds ?? clipSeconds,
+      scene: oneLine(seg.first_frame_prompt),
+      subject: speaker ? `${speaker} (keep identical to continuity.characters)` : "the main character",
+      shot: {
+        camera_motion: "one continuous take — a single slow, smooth camera move (push-in / pan / orbit); no hard cuts",
+        framing: timeline.length ? timeline.map((t) => t.camera).filter(Boolean).join(" → ") : "",
+      },
+      timeline,
+      action: oneLine(seg.motion_prompt),
+      dialogue: seg.dialogue
+        ? {
+            speaker,
+            language: lang,
+            line: oneLine(seg.dialogue),
+            lip_sync: true,
+            subtitles: false,
+          }
+        : null,
+      audio: "spoken dialogue only with natural ambient sound; no music unless noted; no on-screen text",
+      continuity_from_previous: oneLine(seg.continuity_note),
+      negative_prompt: VEO_NEGATIVE_LIST,
+      // Flattened, fully self-contained prompt (text mode fallback).
+      prompt: oneLine(seg.full_prompt ?? seg.motion_prompt ?? ""),
+    };
+  });
+
+  return {
+    version: "veo-3.1",
+    output: {
+      aspect_ratio: opts.aspectRatio,
+      duration_seconds_per_clip: clipSeconds,
+      fps: 24,
+      total_clips: clips.length,
+    },
+    reference_image:
+      "Attach the SAME uploaded character photo as the identity reference in EVERY clip. Do NOT copy the photo's own background — build each clip's scene from its `scene` field.",
+    global_style: {
+      look: oneLine(breakdown.style_guide?.art_direction) || "cinematic realistic",
+      lens: oneLine(sb?.lens),
+      lighting: oneLine(sb?.lighting),
+      backdrop: oneLine(sb?.backdrop),
+      color_grade: oneLine(sb?.color_grade),
+      color_palette: breakdown.style_guide?.color_palette ?? [],
+      mood: breakdown.mood_tags ?? [],
+    },
+    continuity: {
+      characters,
+      product_dna: breakdown.product_dna ? oneLine(breakdown.product_dna) : null,
+    },
+    negative_prompt: VEO_NEGATIVE_LIST,
+    title: breakdown.title,
+    synopsis: oneLine(breakdown.synopsis),
+    marketing_structure: breakdown.marketing_structure ?? null,
+    clips,
+  };
 }
