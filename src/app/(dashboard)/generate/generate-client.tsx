@@ -1538,6 +1538,8 @@ export function GenerateClient() {
 
       // ── Full JSON conversion (structured — easiest for a Veo flow) ──
       const promptsJson = {
+        how_to_use:
+          "For EACH 10s clip: open Veo (image-to-video), attach that segment's `keyframe` as the START frame, then paste ONLY that segment's `prompt`. Do NOT paste this meta block (title/character_locks/scene_bible/style_guide) — it was only used to generate the keyframes; each `prompt` is self-contained and relies on the attached keyframe. `continuity` is a note for you (how the clip links to the previous one), NOT for pasting into Veo.",
         title: bd.title,
         synopsis: bd.synopsis ?? "",
         aspect_ratio: aspect,
@@ -1567,6 +1569,32 @@ export function GenerateClient() {
         `veo_prompts.jsonl`,
         promptsJson.segments.map((s) => JSON.stringify(s)).join("\n")
       );
+
+      // ── Plain how-to-use guide (so the files are self-explanatory) ──
+      const readme = [
+        "CÁCH DÙNG BỘ PROMPT NÀY VỚI VEO / OMNI FLASH",
+        "=============================================",
+        "",
+        "Mỗi clip 10s làm ĐỘC LẬP. Với TỪNG clip:",
+        "  1) Mở Veo (image-to-video), tải ảnh keyframe_0X.jpg làm KHUNG HÌNH ĐẦU.",
+        "  2) Dán ĐÚNG phần prompt của clip đó (dòng PROMPT trong master_prompt.txt,",
+        "     hoặc trường \"prompt\" của segment trong veo_prompts.json).",
+        "  3) Đặt tỉ lệ " + aspect + ", tạo clip. Lặp cho " + bd.segments.length + " clip rồi ghép (CapCut/ffmpeg).",
+        "",
+        "KHÔNG cần copy phần đầu JSON (title / character_locks / scene_bible / style_guide)",
+        "vào Veo — đó chỉ là dữ liệu đã dùng để TẠO keyframe. Ảnh keyframe đã chứa nhân vật +",
+        "bối cảnh, nên prompt mỗi segment (đã ghi 'keep the same character as in the image') là ĐỦ.",
+        "",
+        "\"continuity\" / \"Nối tiếp\": chỉ là GHI CHÚ cho bạn biết clip này nối với clip trước thế nào",
+        "(để ghép mượt) — KHÔNG dán vào Veo. Segment 1 ghi 'opening shot' vì là cảnh mở đầu.",
+        "",
+        "FILE NÀO DÙNG GÌ:",
+        "  - master_prompt.txt  → dán tay từng clip (mỗi clip có KEYFRAME + PROMPT). Dễ nhất.",
+        "  - veo_prompts.jsonl  → mỗi dòng = 1 clip (JSON), cho tự động / batch.",
+        "  - veo_prompts.json   → cả bộ (meta + segments), để tham khảo / tích hợp.",
+        "",
+      ].join("\n");
+      zip.file(`README_HUONG_DAN.txt`, readme);
 
       const out = await zip.generateAsync({ type: "blob" });
       const objectUrl = URL.createObjectURL(out);
