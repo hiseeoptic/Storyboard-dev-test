@@ -56,13 +56,40 @@ const GOAL_GUIDANCE: Record<VideoGoal, string> = {
     "Health / wellness education short. ONE relatable character living the health problem. 5-beat arc: Hook (name the symptom/fear) → Problem (how it disrupts daily life) → Insight (the real root cause, explained simply) → Solution (the habit/remedy/product that helps) → CTA (save/follow/try). Trustworthy, empathetic, clear — evidence-based, not alarmist.",
 };
 
+// Per-number archetype reference (Pythagorean + Vietnamese thần số học, Lo Shu
+// ngũ hành convention). This is a CHARACTERISATION aid — the live TOPIC CONTENT
+// pulled from the Google Sheet is the source of truth for the actual meaning;
+// this table just guarantees the model always has the number's element, core
+// trait, shadow ("bóng tối") and mission ("sứ mệnh") to derive look + setting.
+const NUMEROLOGY_ARCHETYPES = `
+NUMBER ARCHETYPE REFERENCE (element · core trait · SHADOW/bóng tối · MISSION/sứ mệnh):
+1 · Thủy (Water) · người mở đường, lãnh đạo, độc lập · độc đoán, kiêu ngạo, cô độc, sợ thất bại · dẫn dắt bằng tự tin, tự đứng trên đôi chân mình
+2 · Thổ (Earth) · người hòa giải, kết nối, nhạy cảm · phụ thuộc, cả nể, thụ động, lo âu · kiến tạo hòa hợp, cân bằng cho–nhận
+3 · Mộc (Wood) · người sáng tạo, biểu đạt, lạc quan · hời hợt, phân tán, drama, nói nhiều làm ít · lan tỏa niềm vui & cảm hứng qua sáng tạo
+4 · Mộc (Wood) · người xây nền móng, kỷ luật, thực tế · cứng nhắc, bảo thủ, ngại đổi thay, làm quá sức · dựng giá trị bền vững bằng trật tự
+5 · Thổ (Earth) · người tự do, phiêu lưu, linh hoạt · bốc đồng, thiếu kiên định, cả thèm chóng chán · trải nghiệm & lan tỏa tự do có trách nhiệm
+6 · Kim (Metal) · người chăm sóc, chữa lành, trách nhiệm · kiểm soát, hy sinh quá mức, ôm đồm, phán xét · nuôi dưỡng & chữa lành bằng yêu thương
+7 · Kim (Metal) · người trí tuệ, tâm linh, chiều sâu · cô lập, hoài nghi, lạnh lùng, xa cách · tìm chân lý, nối vật chất với tâm linh
+8 · Thổ (Earth) · người quyền lực, tham vọng, quản trị · tham lam, cuồng công việc, ám ảnh vật chất · làm chủ thế giới vật chất một cách chính trực
+9 · Hỏa (Fire) · người nhân đạo, vị tha, lý tưởng · bi lụy, ôm nỗi đau thế gian, khó buông · phụng sự nhân loại, cho đi không mong cầu
+11 · Master của 2 · trực giác bậc thầy, truyền cảm hứng · lo âu cực độ, mất phương hướng, cực đoan cảm xúc · sứ giả ánh sáng, khai sáng tinh thần người khác
+22 · Master của 4 · kiến trúc sư bậc thầy, hiện thực hóa giấc mơ lớn · áp lực khổng lồ, tự hủy hoặc lãng phí tiềm năng · xây di sản lớn phục vụ nhân loại
+33 · Master của 6 · người thầy của yêu thương, chữa lành · gánh trách nhiệm đến kiệt sức · nâng nhân loại bằng lòng trắc ẩn thuần khiết
+NGŨ HÀNH → MÔI TRƯỜNG & MÀU (dùng để dựng bối cảnh/ánh sáng cho ĐÚNG chất số):
+· Thủy (Water): sông/mưa/mặt nước phản chiếu, dòng chảy; grade xanh lam–teal mát, ẩm, chuyển động mềm.
+· Thổ (Earth): núi/đất/đá, không gian vững chãi, bám rễ; tông đất ấm ochre/nâu, ổn định, tĩnh.
+· Mộc (Wood): rừng/cây/mầm xanh, sự sinh trưởng; sắc xanh lá, nắng sớm, sức sống vươn lên.
+· Kim (Metal): kim loại/kính/tối giản, đường nét sắc, chính xác; xám–trắng lạnh, tĩnh, sạch.
+· Hỏa (Fire): hoàng hôn/lửa/nến, ánh sáng rực; đỏ–cam ấm, đam mê, quầng sáng phát ra.`;
+
 // Rich framework for topic-driven numerology / self-development shorts, modelled
 // on the proven "Số Chủ Đạo" script shape. Injected into the user prompt when
 // video_goal is "numerology" so the AI writes in this exact winning structure.
 const NUMEROLOGY_FRAMEWORK = `
 NUMEROLOGY SCRIPT FRAMEWORK (follow this EXACTLY — it is the proven winning shape):
-- SUBJECT: a numerology profile (e.g. "Số Chủ Đạo 5, Sứ Mệnh 9"). Use the topic content provided as the source of truth for meanings; NEVER invent contradictory numerology.
-- NGŨ HÀNH (Five-Elements): if the numbers map to elements, state the relationship (tương sinh / tương khắc) and derive ONE clear CORE MESSAGE from it (e.g. "tự do của bạn không phải để chạy trốn — mà để mang cảm hứng đi cho đời"). Put this core message in "synopsis".
+- SUBJECT: a numerology profile (e.g. "Số Chủ Đạo 5, Sứ Mệnh 9"). SOURCE OF TRUTH = the TOPIC CONTENT injected below (pulled from the numerology database) + the archetype reference table below; NEVER invent contradictory numerology. Read the topic content and pull out the number's real strengths, SHADOW and MISSION before writing.
+${NUMEROLOGY_ARCHETYPES}
+- NGŨ HÀNH (Five-Elements): map each number to its element from the table, state the relationship (tương sinh / tương khắc) between the numbers, and derive ONE clear CORE MESSAGE from it (e.g. "tự do của bạn không phải để chạy trốn — mà để mang cảm hứng đi cho đời"). Put this core message in "synopsis". Use the element's MÔI TRƯỜNG & MÀU row to choose the dominant environment + colour grade so the whole video literally LOOKS like that number's element.
 
 - CHARACTER = THE NUMBER MADE HUMAN: invent ONE persona whose name, age, wardrobe, signature prop, posture, energy AND colour tone ALL express this number's archetype, and keep this EXACT character_lock identical across every segment. Derive the look from THIS number's traits in the topic content. (Archetype→look examples: Số 1 leader/pioneer = decisive stance, worn leather jacket, cool steel-blue grade; Số 5 freedom/adventure = faded backpack, warm golden 35mm, restless eyes; Số 9 humanitarian = soft warm light, giving hands.) LOCK a signature PROP that symbolises the number (e.g. Số 5 = backpack/map) and never introduce new unrelated props. Source the pain in beats 1-2 from this number's SHADOW ("bóng tối"), and the payoff in beat 4 from its MISSION line.
 
@@ -74,28 +101,39 @@ NUMEROLOGY SCRIPT FRAMEWORK (follow this EXACTLY — it is the proven winning sh
   · Add ONE relatable, lightly humorous everyday detail so it feels human (e.g. a Số 5 who swears "lần này nghiêm túc" then grabs the backpack 3 seconds later; a Số 1 who directs the whole team then carries every box himself "để tao làm cho nhanh").
   · Write each segment's setting + lighting explicitly in "first_frame_prompt". The BACKDROP changes per scene (the metaphor), but keep the lens + colour grade in "scene_bible" cinematic and coherent so the clips still feel like one film.
 
-- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count; each beat's SETTING follows the metaphor above):
-  1) HOOK — talk to the viewer, name their number, tease an uncomfortable truth ("sự thật phũ phàng"). Close-up to camera, in a location that instantly signals the number's essence.
-  2) PAIN / NỖI ĐAU — dramatize the misunderstood struggle drawn from the number's SHADOW ("bóng tối") as a metaphor scene; voice the viewer's self-doubt as a question.
-  3) INSIGHT / GIẢI MÃ — the reframe "Không phải bạn [flaw]… mà là [deeper truth]", in a spacious, contemplative setting that visually opens up (a reveal, slow camera pull-back).
-  4) PAYOFF / SỨ MỆNH — land the number's MISSION as the gift; a warm, human, giving moment; the character finally looks "at home" in a setting that rewards the number's nature.
-  5) CTA — a one-line takeaway + a loop-friendly comment prompt (e.g. "thả số chủ đạo của bạn ở comment"). Open, walk-away framing that loops back to the hook.
-- DIALOGUE = SHORT VOICEOVER: warm second-person Vietnamese, ONE punchy "đắt giá" line per scene, MAX 16 words (ideal 8-14) — show, don't tell; let the image carry the rest. BAD (long, dull): "Bạn khao khát được công nhận, được dẫn dắt, nhưng lại sợ cô đơn…". GOOD (short, sharp): "Đứng đầu thì oai. Nhưng đỉnh núi nào mà chẳng lạnh." Never lecture or list.
-- Fill "marketing_structure" (hook = beat 1, problem = beat 2, solution = beat 3, cta = beat 5). Put a ready-to-post social caption + 4-6 hashtags at the END of "synopsis".`;
+- THE HOOK IS 80% OF THE VIDEO. The first 2-3 seconds decide everything. The opening SHOT + the opening LINE must both stop the scroll. Write the hook LAST, after you know the payoff, so it can promise exactly what the video delivers. Pick ONE of these proven hook formulas for beat 1 (vary it across videos — do not always use the same one):
+  · CALL-OUT + STOP: name the exact viewer and freeze them — "Nếu bạn là Số [X], khoan lướt đã." / "Video này chỉ dành cho Số [X]."
+  · UNCOMFORTABLE TRUTH: expose a hidden flaw they secretly feel — "Số [X], sự thật là bạn đang tự làm khổ mình."
+  · CONTRADICTION / PATTERN-INTERRUPT: two clashing ideas — "Càng [strength], bạn càng [pain]. Vì sao?"
+  · CURIOSITY GAP / OPEN LOOP: promise a reveal held to the end — "99% Số [X] hiểu sai về chính mình. Xem hết sẽ rõ."
+  · WARNING / NEGATIVITY BIAS: "Đây là cái bẫy lớn nhất của Số [X]."
+  · MIND-READING: say the thing they never told anyone — "Bạn cười với cả thế giới, nhưng về nhà thì im lặng, đúng không?"
+  · BOLD CLAIM: "Số [X] sinh ra không phải để [common assumption]."
+  The hook line MUST contain the number and speak to "bạn". No slow throat-clearing, no "Hôm nay mình sẽ nói về…", no logo/intro card.
+- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count; each beat's SETTING follows the metaphor above). Every beat also opens an OPEN LOOP that the next beat pays off, so viewers cannot stop:
+  1) HOOK (0-3s) — fire one hook formula above straight to camera, in a location that instantly signals the number's element/essence. End on a question or a promise that beat 2 will answer.
+  2) PAIN / NỖI ĐAU — dramatize the misunderstood struggle from the number's SHADOW as a metaphor scene; name the pain so precisely the viewer thinks "sao biết rõ mình vậy". Voice their self-doubt as a question, then tease that "nhưng đó chưa phải điều tệ nhất / lý do thật sự là…".
+  3) INSIGHT / GIẢI MÃ — the turn. The reframe "Không phải bạn [flaw]… mà là [deeper truth from the MISSION]", in a spacious setting that visually opens up (a reveal, slow pull-back). This is the "aha" they'll want to share.
+  4) PAYOFF / SỨ MỆNH — land the number's MISSION as a gift; a warm, human, giving moment; the character finally looks "at home" in a setting that rewards the number's nature. Deliver on the hook's promise.
+  5) CTA — a one-line takeaway that LOOPS back to the exact hook wording, + a low-effort comment/save bait ("Thả số chủ đạo của bạn ở comment", "Lưu lại kẻo quên"). Open, walk-away framing whose last frame could cut straight back to frame 1 (seamless loop).
+- DIALOGUE = SHORT VOICEOVER, second-person Vietnamese, ONE punchy "đắt giá" line per scene, MAX 16 words (ideal 8-14). Rules: talk to "bạn", be SPECIFIC not generic, use "không phải X mà là Y" reframes, pick emotional concrete words, and let the image carry the rest — SHOW don't tell. Never lecture, never list traits, never explain the theory. BAD (long, dull, listy): "Bạn khao khát được công nhận, được dẫn dắt, nhưng lại sợ cô đơn…". GOOD (short, sharp, visual): "Đứng đầu thì oai. Nhưng đỉnh núi nào mà chẳng lạnh."
+- RETENTION KILLERS TO AVOID: slow or generic openers, intro/logo cards, on-screen text walls, more than one idea per line, a payoff that doesn't match the hook's promise, and a flat ending with no loop or CTA.
+- Fill "marketing_structure" (hook = beat 1, problem = beat 2, solution = beat 3, cta = beat 5). Put a ready-to-post social caption (with a scroll-stopping first line) + 4-6 hashtags at the END of "synopsis".`;
 
 // Health / wellness education framework (same 5-beat shape, health-flavoured).
 const HEALTH_FRAMEWORK = `
 HEALTH / WELLNESS SCRIPT FRAMEWORK (follow this EXACTLY):
 - SUBJECT: a specific health topic (e.g. "gan nhiễm mỡ", "mất ngủ"). Use the topic content provided as the source of truth; be accurate and empathetic, NOT alarmist, and avoid over-claiming cures.
 - CHARACTER: ONE relatable persona living this problem (name, age, everyday setting), kept identical across all segments so the clips chain seamlessly. Warm, trustworthy, real-life tone.
-- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count):
-  1) HOOK — name the symptom/worry directly to the viewer ("Bạn hay [triệu chứng]?"). Close-up.
-  2) PROBLEM — show how it quietly disrupts daily life (a relatable everyday moment).
-  3) INSIGHT — explain the REAL root cause simply and correctly (one clear idea).
+- THE HOOK (0-3s) decides retention. Open with a scroll-stopper (vary it): symptom call-out ("Bạn hay [triệu chứng] mà không rõ vì sao?"), a common myth to bust ("Uống [X] KHÔNG chữa được [Y] đâu"), a gentle warning ("Dấu hiệu này đừng bỏ qua"), or a mind-reading line. No slow intro, no logo card.
+- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count). Each beat opens a small OPEN LOOP the next beat closes so viewers stay:
+  1) HOOK (0-3s) — fire the hook above straight to camera, close-up, tease that beat 2 shows why.
+  2) PROBLEM — show how it quietly disrupts daily life (a relatable everyday moment); "nhưng gốc rễ mới bất ngờ…".
+  3) INSIGHT — explain the REAL root cause simply and correctly (one clear idea) — the "aha".
   4) SOLUTION — the habit / remedy / product that helps, shown in use (if a product is provided, feature it accurately).
-  5) CTA — save/follow/try line, gentle and caring.
-- Put ONE clear takeaway/core message in "synopsis". Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Add a ready-to-post caption + 4-6 hashtags at the END of "synopsis".
-- DIALOGUE: warm, second-person Vietnamese, ~5-12 words per segment. Clear and caring — not a hard sell.`;
+  5) CTA — save/follow/try line, gentle and caring, that loops back to the opening symptom ("Lưu lại phòng khi cần").
+- Put ONE clear takeaway/core message in "synopsis". Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Add a ready-to-post caption (scroll-stopping first line) + 4-6 hashtags at the END of "synopsis".
+- DIALOGUE: warm, second-person Vietnamese, ~8-12 words per segment, ONE idea each. Specific, clear and caring — SHOW don't lecture, not a hard sell.`;
 
 // ─── Stage 1: Script writer (Claude) — creative script ONLY ─────────────────
 // When the user splits the pipeline (e.g. Claude writes the script, Gemini
@@ -105,7 +143,11 @@ HEALTH / WELLNESS SCRIPT FRAMEWORK (follow this EXACTLY):
 export function buildScriptWriterSystemPrompt(): string {
   return `You are a world-class short-form video SCRIPTWRITER for viral social media (TikTok / Reels / YouTube Shorts). You write ONLY the creative script — NOT the technical storyboard or JSON (a separate tool turns your script into the visual storyboard).
 
-Write in the language the user asks for. Nail a 3-second HOOK, build emotion, and end with a CTA. Dialogue must be SHORT, punchy, natural spoken lines (not literary), about 8-16 words each — ONE "đắt giá" line per segment.
+Write in the language the user asks for. Your job is RETENTION: make people watch to the last second and comment.
+
+THE HOOK (first 2-3s) IS 80% OF THE JOB — write it LAST, after you know the payoff, so it promises exactly what you deliver. Beat 1's opening line must stop the scroll. Use ONE proven hook formula (vary across scripts): CALL-OUT + STOP ("Nếu bạn là [X], khoan lướt đã"); UNCOMFORTABLE TRUTH; CONTRADICTION ("Càng [strength], càng [pain]"); CURIOSITY GAP / OPEN LOOP ("Xem hết sẽ rõ"); WARNING; MIND-READING ("Đúng không?"); or BOLD CLAIM. No slow intros, no "Hôm nay mình nói về…", no logo card.
+RETENTION SPINE: every segment ends on a mini open-loop the next one pays off; each beat re-hooks. Escalate tension to an "aha" reframe, then deliver the promised payoff, then a CTA that LOOPS back to the hook wording + low-effort comment/save bait.
+DIALOGUE: SHORT, punchy, natural spoken lines (not literary), ~8-14 words — ONE "đắt giá" line per segment. Talk to "bạn", be SPECIFIC not generic, prefer "không phải X mà là Y" reframes, SHOW don't tell (let the ACTION carry meaning), never lecture or list.
 
 Output PLAIN TEXT in EXACTLY this shape (no markdown, no JSON):
 TITLE: <catchy title>
