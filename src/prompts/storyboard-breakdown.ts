@@ -160,20 +160,61 @@ ${NUMEROLOGY_ARCHETYPES}
 - RETENTION KILLERS TO AVOID: slow or generic openers, intro/logo cards, on-screen text walls, more than one idea per line, a payoff that doesn't match the hook's promise, and a flat ending with no loop or CTA.
 - Fill "marketing_structure" (hook = beat 1, problem = beat 2, solution = beat 3, cta = beat 5). Put a ready-to-post social caption (with a scroll-stopping first line) + 4-6 hashtags at the END of "synopsis".`;
 
-// Health / wellness education framework (same 5-beat shape, health-flavoured).
+// Health / wellness STORYTELLING framework — problem → gentle warning →
+// companion solution → CTA. Same 5-beat spine as numerology but health-voiced:
+// warm, lightly cautionary, empathetic, compliance-safe (no cure claims).
 const HEALTH_FRAMEWORK = `
-HEALTH / WELLNESS SCRIPT FRAMEWORK (follow this EXACTLY):
-- SUBJECT: a specific health topic (e.g. "gan nhiễm mỡ", "mất ngủ"). Use the topic content provided as the source of truth; be accurate and empathetic, NOT alarmist, and avoid over-claiming cures.
-- CHARACTER: ONE relatable persona living this problem (name, age, everyday setting), kept identical across all segments so the clips chain seamlessly. Warm, trustworthy, real-life tone.
-- THE HOOK (0-3s) decides retention. Open with a scroll-stopper (vary it): symptom call-out ("Bạn hay [triệu chứng] mà không rõ vì sao?"), a common myth to bust ("Uống [X] KHÔNG chữa được [Y] đâu"), a gentle warning ("Dấu hiệu này đừng bỏ qua"), or a mind-reading line. No slow intro, no logo card.
-- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count). Each beat opens a small OPEN LOOP the next beat closes so viewers stay:
-  1) HOOK (0-3s) — fire the hook above straight to camera, close-up, tease that beat 2 shows why.
-  2) PROBLEM — show how it quietly disrupts daily life (a relatable everyday moment); "nhưng gốc rễ mới bất ngờ…".
-  3) INSIGHT — explain the REAL root cause simply and correctly (one clear idea) — the "aha".
-  4) SOLUTION — the habit / remedy / product that helps, shown in use (if a product is provided, feature it accurately).
-  5) CTA — save/follow/try line, gentle and caring, that loops back to the opening symptom ("Lưu lại phòng khi cần").
-- Put ONE clear takeaway/core message in "synopsis". Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Add a ready-to-post caption (scroll-stopping first line) + 4-6 hashtags at the END of "synopsis".
-- DIALOGUE: warm, second-person Vietnamese, ~8-12 words per segment, ONE idea each. Specific, clear and caring — SHOW don't lecture, not a hard sell.`;
+HEALTH / WELLNESS STORYTELLING FRAMEWORK (follow this EXACTLY — kể chuyện: nêu vấn đề → cảnh báo nhẹ → giải pháp ĐỒNG HÀNH → CTA):
+- SUBJECT: a specific health topic (e.g. "gan nhiễm mỡ", "mất ngủ", "đau dạ dày"). SOURCE OF TRUTH = the TOPIC CONTENT injected below; be accurate & empathetic, NEVER alarmist, NEVER over-claim cures.
+- CHARACTER = "người thật việc thật": ONE relatable persona LIVING this problem (name, age, everyday Vietnamese setting — văn phòng, căn bếp, phòng ngủ), kept identical across every segment. Warm, trustworthy, real-life. The viewer must see THEMSELVES in this person.
+
+- PICK ONE CONTENT STYLE for the video (vary across videos), then tell it as a STORY, not a lecture:
+  · Đồng cảm "người thật" (một ngày của người đang khổ vì bệnh) — dễ đồng cảm nhất.
+  · Cảnh báo nhẹ "đừng bỏ qua dấu hiệu này" — gentle warning.
+  · Giải mã gốc rễ "Vì sao bạn mãi không khỏi [bệnh]" — root-cause explainer.
+  · Đập tan lầm tưởng "Hóa ra [điều ai cũng tin] là sai" — myth-busting.
+  · "3 dấu hiệu..." (dấu hiệu cuối bất ngờ nhất) — listicle.
+  · Ẩn dụ dễ hiểu — giải thích cơ thể bằng một hình ảnh đơn giản (lá gan như tấm lọc, giấc ngủ như sạc pin).
+  · Đổi 1 thói quen nhỏ — habit-swap.
+  · Câu chuyện người thật (testimonial) — kể như một câu chuyện, TRÁNH "khỏi hẳn nhờ sản phẩm X".
+  · Một ngày của người bệnh — "7 giờ sáng, bạn dậy mà người vẫn nặng như chưa ngủ. Nghe quen không?"
+  · Bác sĩ / dược sĩ chia sẻ — talking-head tạo niềm tin; GIÁO DỤC, không phải quảng cáo endorsement sản phẩm.
+  · Before → After (hành trình thay đổi) — thực tế, KHÔNG khung "phép màu".
+  · Hỏi & Đáp Đúng/Sai — binary mời người xem comment.
+  (Chọn theo mục tiêu: phủ sóng → gọi tên triệu chứng / listicle / một ngày; niềm tin → đập lầm tưởng / ẩn dụ / bác sĩ; lưu về → cảnh báo nhẹ / đổi thói quen; chia sẻ → người thật / một ngày; comment → Hỏi-Đáp.)
+
+- TONE = CẢNH BÁO NHẸ, KHÔNG HÙ DỌA (đây là RANH GIỚI phải giữ):
+  · THÚC ĐẨY chứ không dọa: nêu hệ quả đời thường có thật, KHÔNG vẽ kịch bản chết chóc. TỐT: "Cơ thể đang gửi tín hiệu, chỉ là bạn chưa để ý." XẤU (dọa/quá lời): "Không chữa ngay là ung thư / là chết."
+  · QUY TẮC VÀNG — LUÔN GHÉP CẢNH BÁO VỚI LỐI RA: mỗi câu cảnh báo phải đi kèm NGAY một bước làm được + trấn an ("nhưng hoàn toàn cải thiện được", "chỉ cần bắt đầu từ việc nhỏ"). Cảnh báo mà KHÔNG có lối ra → người xem sợ rồi lướt/chối bỏ, phản tác dụng (fear control). Kết thúc phải để người xem BÌNH TĨNH hơn lúc mở đầu.
+  · Dùng từ giảm nhẹ, không chẩn đoán: "có thể", "một số trường hợp", "nên tham khảo". CẤM tuyệt đối: "chết dần", "quá muộn", "tự hại mình", "100%".
+  · Đồng cảm, xưng "bạn", bình tĩnh — như một người bạn quan tâm tình cờ biết, KHÔNG phải bác sĩ mắng.
+
+- SOLUTION = ĐỒNG HÀNH, không bán hàng cứng: trình bày giải pháp như đi CÙNG người xem — bước nhỏ, làm được ngay. Câu mẫu: "Bắt đầu từ một việc nhỏ thôi…", "Mình đi cùng bạn từng bước." Nếu có sản phẩm, giới thiệu TRUNG THỰC như một hỗ trợ, không phải thần dược.
+
+- THE 5-BEAT ARC (map onto the segments in order; each beat opens an OPEN LOOP the next beat closes). The SETTING/lighting evolves with emotion: mệt/tối/bừa bộn ở beat vấn đề → sáng/gọn/nhẹ nhõm ở beat giải pháp, cùng NHÂN VẬT giữ nguyên:
+  1) HOOK (0-3s) — symptom call-out / cảnh báo nhẹ thẳng vào camera, cận mặt; hé rằng beat 2 sẽ cho biết "vì sao".
+  2) VẤN ĐỀ — show how it quietly disrupts daily life (một khoảnh khắc đời thường ai cũng thấy mình trong đó); "nhưng gốc rễ mới bất ngờ…".
+  3) GIẢI MÃ GỐC RỄ — explain the REAL root cause simply & correctly, ONE clear idea (một ẩn dụ đơn giản giúp dễ hiểu) — khoảnh khắc "à, hóa ra".
+  4) GIẢI PHÁP ĐỒNG HÀNH — the habit/remedy/product shown in use as a supportive FIRST step, làm được ngay hôm nay.
+  5) CTA — nhẹ nhàng, quan tâm: save-bait ("Lưu lại phòng khi cần"), tag người thân ("Gửi cho người bạn thương hay [triệu chứng]"), hoặc "hỏi bác sĩ của bạn". Loop back to the opening symptom.
+
+- COMPLIANCE GUARDRAILS (BẮT BUỘC — an toàn nền tảng & niềm tin):
+  · KHÔNG hứa "chữa khỏi 100%", KHÔNG "thay thế thuốc", KHÔNG chẩn đoán người xem ("bạn đang bị [bệnh]").
+  · Diễn đạt là "hỗ trợ", "giúp cải thiện", KHÔNG "chữa khỏi / đặc trị / khỏi hẳn". Khi khuyên về triệu chứng/điều trị, thêm "nên tham khảo ý kiến bác sĩ".
+  · Nếu có nhắc SẢN PHẨM (TPCN / thực phẩm bảo vệ sức khoẻ): BẮT BUỘC kèm câu miễn trừ hiển thị trên màn hình (và đọc nếu video > 15s): "Thực phẩm này không phải là thuốc và không có tác dụng thay thế thuốc chữa bệnh." (Nghị định 15/2018). Bác sĩ/dược sĩ chỉ GIÁO DỤC, không endorse sản phẩm để mua.
+  · Chỉ dùng cơ chế đơn giản, được chấp nhận rộng rãi; KHÔNG bịa số liệu gây sợ.
+  · TỰ KIỂM trước khi trả về: có từ "chữa khỏi"? có chẩn đoán? có tuyệt đối/phép màu? cảnh báo đã ghép lối ra chưa? có nhắc bác sĩ khi cần chưa? có câu miễn trừ khi nhắc sản phẩm chưa?
+
+- COPYWRITING (làm mỗi câu "đắt"): RULE OF THREE cho triệu chứng ("Mệt mỏi, đầy bụng, da xỉn màu — cả ba đều chỉ về một chỗ: lá gan."); "không phải X mà là Y" reframe; triệu chứng CỤ THỂ người xem thầm có; đập lầm tưởng "Hóa ra không phải [tin đồn]…"; nhịp ngắn–ngắn–dài.
+- DIALOGUE: warm, second-person Vietnamese, ~8-14 words each, ONE idea. Specific, clear, caring — SHOW don't lecture, không bán hàng cứng.
+- 🏆 GOLD-STANDARD EXAMPLE (topic "mất ngủ" — learn the voice & techniques; do NOT copy, write fresh for the actual topic):
+  HOOK: "Bạn nằm xuống là não lại bật đèn sáng trưng? Không phải bạn khó ngủ đâu." (triệu chứng cụ thể + reframe)
+  VẤN ĐỀ: "3 giờ sáng còn thức, sáng dậy như chưa hề ngủ. Cà phê cũng chẳng cứu nổi." (hệ quả đời thường, không dọa)
+  GIẢI MÃ: "Hóa ra không phải tại suy nghĩ nhiều. Đồng hồ sinh học của bạn đang lệch giờ." (đập lầm tưởng + gốc rễ đơn giản)
+  GIẢI PHÁP: "Bắt đầu từ một việc nhỏ: tắt đèn trắng một tiếng trước khi ngủ. Mình đi cùng bạn nha." (đồng hành, bước nhỏ làm được)
+  CTA: "Lưu lại, tối nay thử liền. Bạn hay trằn trọc lúc mấy giờ? Comment nhé." (save-bait + comment bait, loop về hook)
+  Notice: nhẹ nhàng, cụ thể, KHÔNG hù dọa, giải pháp nhỏ-dễ-làm, kết mở để tương tác. HIT THIS LEVEL. If a line sounds like a lecture or a hard sell, rewrite it warmer and more concrete.
+- Put ONE clear takeaway/core message in "synopsis". Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Add a ready-to-post caption (scroll-stopping first line) + 4-6 hashtags at the END of "synopsis".`;
 
 // ─── Stage 1: Script writer (Claude) — creative script ONLY ─────────────────
 // When the user splits the pipeline (e.g. Claude writes the script, Gemini
