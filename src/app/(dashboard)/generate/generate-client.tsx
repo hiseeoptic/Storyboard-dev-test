@@ -358,6 +358,8 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "documentary", label: "Tài liệu" },
     { value: "numerology", label: "Thần số học" },
     { value: "health", label: "Sức khoẻ" },
+    { value: "cooking", label: "Món ăn / Nấu ăn" },
+    { value: "fitness", label: "Thể hình / Tập luyện" },
   ],
   en: [
     { value: "advertising", label: "Advertising / TVC" },
@@ -376,6 +378,8 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "documentary", label: "Documentary" },
     { value: "numerology", label: "Numerology" },
     { value: "health", label: "Health" },
+    { value: "cooking", label: "Food / Cooking" },
+    { value: "fitness", label: "Fitness / Workout" },
   ],
 };
 
@@ -391,6 +395,10 @@ const AD_GENRES = new Set([
 // Topic-library genres (numerology / health) → drive the 5-beat framework and
 // hide the product/story brief (their content comes from the topic library).
 const TOPIC_GENRES = new Set(["numerology", "health"]);
+
+// Demonstration genres (cooking / fitness) → drive their own framework from the
+// idea box (dish name / workout goal); no product or story brief needed.
+const DEMO_GENRES = new Set(["cooking", "fitness"]);
 
 const CUSTOM = "__custom__";
 
@@ -534,6 +542,9 @@ const VIDEO_GOAL_OPTIONS: Record<Lang, { value: VideoGoal; label: string }[]> = 
     { value: "review", label: "Review / Đánh giá" },
     { value: "educational", label: "Giáo dục / Hướng dẫn" },
     { value: "numerology", label: "Thần số học (Hook→Giải mã→CTA)" },
+    { value: "health", label: "Sức khoẻ (Vấn đề→Đồng hành→CTA)" },
+    { value: "cooking", label: "Món ăn (Money shot→Các bước→Lưu)" },
+    { value: "fitness", label: "Thể hình (Mục tiêu→Động tác→Lưu)" },
   ],
   en: [
     { value: "marketing_general", label: "General marketing" },
@@ -546,6 +557,9 @@ const VIDEO_GOAL_OPTIONS: Record<Lang, { value: VideoGoal; label: string }[]> = 
     { value: "review", label: "Review / Testimonial" },
     { value: "educational", label: "Educational / How-to" },
     { value: "numerology", label: "Numerology (Hook→Insight→CTA)" },
+    { value: "health", label: "Health (Problem→Companion→CTA)" },
+    { value: "cooking", label: "Food (Money shot→Steps→Save)" },
+    { value: "fitness", label: "Fitness (Goal→Moves→Save)" },
   ],
 };
 
@@ -2442,9 +2456,11 @@ export function GenerateClient() {
                   <Select value={genre} onChange={(e) => {
                     const g = e.target.value;
                     setGenre(g);
-                    // Topic genres drive the matching 5-beat framework goal.
+                    // Topic/demonstration genres drive the matching framework goal.
                     if (g === "numerology") setVideoGoal("numerology");
                     else if (g === "health") setVideoGoal("health");
+                    else if (g === "cooking") setVideoGoal("cooking");
+                    else if (g === "fitness") setVideoGoal("fitness");
                   }} options={GENRE_OPTIONS[lang]} />
                 </div>
                 <div className="space-y-2">
@@ -2532,6 +2548,24 @@ export function GenerateClient() {
                       </div>
                     </div>
                   )}
+                </div>
+              ) : DEMO_GENRES.has(genre) ? (
+                <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                    <BookOpen className="h-4 w-4" />
+                    {genre === "cooking"
+                      ? (lang === "vi" ? "Nội dung Món ăn" : "Food content")
+                      : (lang === "vi" ? "Nội dung Thể hình" : "Fitness content")}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {genre === "cooking"
+                      ? (lang === "vi"
+                          ? 'Gõ TÊN MÓN vào ô ý tưởng ở trên (vd "cơm chiên trứng", "bánh mì chảo"). AI dựng theo: Money shot → Nguyên liệu → Các bước → Thành phẩm → Lưu công thức. Món ăn là "ngôi sao" hình ảnh.'
+                          : 'Type the DISH in the idea box above (e.g. "egg fried rice"). The AI builds: money shot → ingredients → steps → reveal → save. The food is the star.')
+                      : (lang === "vi"
+                          ? 'Gõ MỤC TIÊU/BÀI TẬP vào ô ý tưởng ở trên (vd "giảm mỡ bụng", "3 động tác cho mông"). AI dựng theo: Mục tiêu/lỗi sai → Động tác đúng → Kết quả → Lưu tập theo. Đúng form, an toàn.'
+                          : 'Type the GOAL/workout in the idea box above (e.g. "lose belly fat"). The AI builds: goal/mistake → correct moves → result → save. Correct form, safe.')}
+                  </p>
                 </div>
               ) : isAdGenre ? (
                 <div className="space-y-3 rounded-lg border border-dashed p-4">

@@ -84,6 +84,9 @@ export type Genre =
   // ─── Knowledge/topic content (from the topic library) ────────────────
   | "numerology"
   | "health"
+  // ─── Demonstration content (recipe / workout) ────────────────────────
+  | "cooking"
+  | "fitness"
   | "other";
 
 // ─── AI Engine ──────────────────────────────────────────────────────────────
@@ -158,7 +161,10 @@ export type VideoGoal =
   | "promo_sale"
   // ─── Knowledge/topic content (numerology, health, self-development) ──
   | "numerology"
-  | "health";
+  | "health"
+  // ─── Demonstration content (recipe / workout) ────────────────────────
+  | "cooking"
+  | "fitness";
 
 export interface CharacterDescription {
   name: string;

@@ -54,6 +54,10 @@ const GOAL_GUIDANCE: Record<VideoGoal, string> = {
     "Numerology / self-development insight short. ONE relatable character embodying the number(s). 5-beat emotional arc: Hook (call out the viewer) → Pain (the misunderstood struggle) → Insight (reframe: 'not X, but Y') → Payoff (the mission/gift) → CTA (loop-friendly, comment prompt). Warm, cinematic, inspiring — never a hard product sell.",
   health:
     "Health / wellness education short. ONE relatable character living the health problem. 5-beat arc: Hook (name the symptom/fear) → Problem (how it disrupts daily life) → Insight (the real root cause, explained simply) → Solution (the habit/remedy/product that helps) → CTA (save/follow/try). Trustworthy, empathetic, clear — evidence-based, not alarmist.",
+  cooking:
+    "Recipe / food short. THE FOOD IS THE STAR. Open on an irresistible finished-dish 'money shot', then show the make in clean steps, end on the reveal + a save-worthy CTA. Appetising, sensory (sizzle, steam, texture), fast and satisfying.",
+  fitness:
+    "Fitness / workout short. Call out the goal (fat loss, abs, glutes) or a common mistake, demonstrate the movement/tip with correct form, show the payoff, end with a save/tag CTA. Motivating, clear coaching cues, safe — never a hard sell or unsafe claim.",
 };
 
 // Per-number archetype reference — ALIGNED VERBATIM with the thần số học app
@@ -216,6 +220,64 @@ HEALTH / WELLNESS STORYTELLING FRAMEWORK (follow this EXACTLY — kể chuyện:
   Notice: nhẹ nhàng, cụ thể, KHÔNG hù dọa, giải pháp nhỏ-dễ-làm, kết mở để tương tác. HIT THIS LEVEL. If a line sounds like a lecture or a hard sell, rewrite it warmer and more concrete.
 - Put ONE clear takeaway/core message in "synopsis". Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Add a ready-to-post caption (scroll-stopping first line) + 4-6 hashtags at the END of "synopsis".`;
 
+// Cooking / recipe short — THE FOOD is the hero. Demonstration content: each
+// clip = one continuous cooking action, ending on an irresistible reveal.
+const COOKING_FRAMEWORK = `
+COOKING / RECIPE SHORT FRAMEWORK (follow this EXACTLY — THE FOOD IS THE STAR):
+- SUBJECT: one dish/recipe (e.g. "cơm chiên trứng", "bánh mì chảo", "trà sữa nhà làm"). Keep it to ONE dish, doable, with a satisfying finish.
+- HERO = THE FOOD, not the person: the camera loves the ingredients, the sizzle, the steam, the texture, the pour, the cheese-pull, the final plating. The cook is usually HANDS + voice (POV) or a warm host; identity matters less than appetite appeal.
+- PICK ONE CONTENT STYLE (vary across videos):
+  · Công thức nhanh (recipe-in-60s) — từng bước gọn gàng.
+  · ASMR / tiếng xèo (sizzle & sound) — cận cảnh, âm thanh nấu nướng.
+  · POV nấu ăn (chỉ có bàn tay) — người xem như đang tự nấu.
+  · "Món này làm 5 phút" — nhanh, tiện, ai cũng làm được.
+  · Mẹo bếp bất ngờ — 1 mẹo khiến món ngon/đẹp hơn hẳn.
+  · Trước → Sau — nguyên liệu thô → thành phẩm long lanh.
+  · Câu chuyện món ăn — kỷ niệm/quê hương gói trong món ăn.
+- THE 5-BEAT ARC (each beat = ONE continuous cooking action for one 10s clip):
+  1) HOOK (0-3s) — open on the FINISHED-DISH "money shot" (or the most dramatic step: cheese pull, sizzling pour) + a line that promises the payoff. NO slow intro.
+  2) NGUYÊN LIỆU — quick, appetising layout of what you need (few, accessible ingredients); tease the tastiest part.
+  3-4) CÁC BƯỚC CHÍNH — the key cooking actions, ONE per clip (đảo, chiên, rưới sốt, rắc topping), each shown close and satisfying; keep momentum, hold curiosity toward the result.
+  5) THÀNH PHẨM + CTA — the hero reveal (steam, cut-open, first bite/pull) + a save-worthy CTA ("Lưu công thức lại làm cuối tuần nhé", "Tag đứa bạn nấu ăn dở 😆").
+- SENSORY LANGUAGE: name taste/sound/texture ("giòn rụm", "thơm nức", "xèo xèo", "kéo phô mai", "nóng hổi"). Make the viewer HUNGRY.
+- DIALOGUE = SHORT voiceover narrating the step, second-person, ~8-14 words ("Đầu tiên, phi tỏi cho thơm…"). Warm, easy, encouraging — never a dry recipe read-out.
+- 🏆 GOLD-STANDARD EXAMPLE (món "cơm chiên trứng" — learn the voice, don't copy):
+  HOOK: "Cơm nguội đừng bỏ — 5 phút nữa nó thành đĩa cơm chiên vàng ươm này." (money shot + promise)
+  NGUYÊN LIỆU: "Chỉ cần cơm nguội, hai quả trứng, chút hành lá. Có vậy thôi." (few, accessible)
+  BƯỚC 1: "Đánh tan trứng, đổ vào chảo nóng, cho cơm vào đảo thật nhanh tay." (one clear action)
+  BƯỚC 2: "Nêm chút nước tương, đảo đều tới khi từng hạt cơm tơi và bóng." (sensory)
+  THÀNH PHẨM + CTA: "Vàng ươm, thơm nức mũi. Lưu lại làm bữa tối nay nhé!" (reveal + save-bait)
+- Fill "marketing_structure" (hook = the money shot promise, problem = the craving/need, solution = the make, cta = save). Ready-to-post caption + 4-6 hashtags at END of "synopsis".`;
+
+// Fitness / workout short — demonstration + coaching. Motivating, correct form,
+// safe. Each clip = one exercise/movement performed with clean form.
+const FITNESS_FRAMEWORK = `
+FITNESS / WORKOUT SHORT FRAMEWORK (follow this EXACTLY — motivate, demonstrate, keep it safe):
+- SUBJECT: one clear goal or move (e.g. "giảm mỡ bụng", "3 động tác cho mông", "sửa lỗi squat"). ONE focus per video.
+- CHARACTER = a fit, relatable trainer/practitioner in workout gear, kept identical across segments; the BODY MOVEMENT is the star (clean form, full range, real effort).
+- PICK ONE CONTENT STYLE (vary across videos):
+  · "Bạn đang tập sai" (sửa form) — chỉ ra lỗi phổ biến + cách đúng.
+  · Bài tập theo nhóm cơ ("X động tác cho [bụng/mông/tay]") — listicle, giữ chân người xem.
+  · Đập tan lầm tưởng ("Gập bụng KHÔNG làm giảm mỡ bụng").
+  · Transformation / hành trình — trước→sau, thực tế.
+  · POV tập cùng — "tập theo mình 30 giây".
+  · 1 điều chỉnh nhỏ — một tinh chỉnh khiến bài tập hiệu quả hơn.
+  · Động lực (motivation) — cú hích tinh thần ngắn.
+- THE 5-BEAT ARC (each beat = ONE exercise/movement for one 10s clip):
+  1) HOOK (0-3s) — call out the goal or the mistake straight to camera ("Muốn giảm mỡ bụng mà gập bụng mãi không xuống? Vì bạn đang bỏ qua điều này."). NO slow intro.
+  2) VẤN ĐỀ / LỖI SAI — show the common wrong way or the pain point (relatable).
+  3-4) ĐỘNG TÁC ĐÚNG — demonstrate the movement/tip with CLEAN FORM, one exercise per clip, clear coaching cues (nhịp thở, tư thế, số rep). Show the range of motion fully.
+  5) KẾT QUẢ + CTA — the payoff (correct form / result) + a save/tag CTA ("Lưu lại tập theo cả tuần", "Tag đứa bạn tập cùng").
+- SAFETY (must follow): correct form first, cue warm-up, avoid injury-risk claims, no "giảm X kg trong Y ngày" miracle promises; add "khởi động trước" and "nếu có bệnh nền/chấn thương, hỏi HLV hoặc bác sĩ" when relevant.
+- COACHING CUES = SHORT, second-person, ~8-14 words ("Siết cơ bụng, lưng thẳng, thở ra khi lên."). Motivating, not preachy.
+- 🏆 GOLD-STANDARD EXAMPLE (chủ đề "giảm mỡ bụng" — learn the voice, don't copy):
+  HOOK: "Gập bụng 100 cái mỗi ngày mà bụng vẫn còn? Vấn đề không nằm ở số lần." (call-out + reframe)
+  LỖI SAI: "Bạn tập đúng một nhóm cơ, nhưng mỡ thì không giảm theo kiểu đó." (myth-bust)
+  ĐỘNG TÁC 1: "Thử plank: siết bụng, lưng thẳng như tấm ván, giữ 30 giây." (clean cue)
+  ĐỘNG TÁC 2: "Thêm leo núi tại chỗ, giữ nhịp thở đều, đốt calo toàn thân." (cue + benefit)
+  KẾT QUẢ + CTA: "Kết hợp với ăn uống là bụng xẹp dần. Lưu lại tập theo nhé!" (realistic payoff + save)
+- Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Ready-to-post caption + 4-6 hashtags at END of "synopsis".`;
+
 // ─── Stage 1: Script writer (Claude) — creative script ONLY ─────────────────
 // When the user splits the pipeline (e.g. Claude writes the script, Gemini
 // builds the storyboard), Claude produces just the creative script text; the
@@ -253,11 +315,17 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   const lang = input.dialogue_language ?? "Vietnamese";
   const isNumerology = goal === "numerology" || input.genre === "numerology";
   const isHealth = goal === "health" || input.genre === "health";
+  const isCooking = goal === "cooking" || input.genre === "cooking";
+  const isFitness = goal === "fitness" || input.genre === "fitness";
   const framework = isNumerology
     ? NUMEROLOGY_FRAMEWORK + numerologyToneDirective(input.numerology_style)
     : isHealth
       ? HEALTH_FRAMEWORK
-      : "";
+      : isCooking
+        ? COOKING_FRAMEWORK
+        : isFitness
+          ? FITNESS_FRAMEWORK
+          : "";
 
   const brief: string[] = [];
   if (input.product_name) brief.push(`- Product/Service: ${input.product_name}`);
@@ -379,11 +447,17 @@ export function buildStoryboardUserPrompt(
   // OR the genre (whichever the user set).
   const isNumerology = goal === "numerology" || input.genre === "numerology";
   const isHealth = goal === "health" || input.genre === "health";
+  const isCooking = goal === "cooking" || input.genre === "cooking";
+  const isFitness = goal === "fitness" || input.genre === "fitness";
   const numerologyBlock = isNumerology
     ? `\n${NUMEROLOGY_FRAMEWORK}${numerologyToneDirective(input.numerology_style)}`
     : isHealth
       ? `\n${HEALTH_FRAMEWORK}`
-      : "";
+      : isCooking
+        ? `\n${COOKING_FRAMEWORK}`
+        : isFitness
+          ? `\n${FITNESS_FRAMEWORK}`
+          : "";
 
   const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
   const dialogueBlock =
