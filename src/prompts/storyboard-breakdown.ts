@@ -56,25 +56,27 @@ const GOAL_GUIDANCE: Record<VideoGoal, string> = {
     "Health / wellness education short. ONE relatable character living the health problem. 5-beat arc: Hook (name the symptom/fear) → Problem (how it disrupts daily life) → Insight (the real root cause, explained simply) → Solution (the habit/remedy/product that helps) → CTA (save/follow/try). Trustworthy, empathetic, clear — evidence-based, not alarmist.",
 };
 
-// Per-number archetype reference (Pythagorean + Vietnamese thần số học, Lo Shu
-// ngũ hành convention). This is a CHARACTERISATION aid — the live TOPIC CONTENT
-// pulled from the Google Sheet is the source of truth for the actual meaning;
-// this table just guarantees the model always has the number's element, core
-// trait, shadow ("bóng tối") and mission ("sứ mệnh") to derive look + setting.
+// Per-number archetype reference — ALIGNED VERBATIM with the thần số học app
+// (hiseeoptic/thansohoc-next, src/utils/deepNumberKnowledge.ts + numerologyAnalysis.ts):
+// archetype name, ruling planet, ngũ hành and core message are the repo's own.
+// This is a CHARACTERISATION aid — the live TOPIC CONTENT from the shared Google
+// Sheet is the source of truth for the detailed meaning; this table guarantees
+// the model always has the number's identity, element, shadow and mission.
 const NUMEROLOGY_ARCHETYPES = `
-NUMBER ARCHETYPE REFERENCE (element · core trait · SHADOW/bóng tối · MISSION/sứ mệnh):
-1 · Thủy (Water) · người mở đường, lãnh đạo, độc lập · độc đoán, kiêu ngạo, cô độc, sợ thất bại · dẫn dắt bằng tự tin, tự đứng trên đôi chân mình
-2 · Thổ (Earth) · người hòa giải, kết nối, nhạy cảm · phụ thuộc, cả nể, thụ động, lo âu · kiến tạo hòa hợp, cân bằng cho–nhận
-3 · Mộc (Wood) · người sáng tạo, biểu đạt, lạc quan · hời hợt, phân tán, drama, nói nhiều làm ít · lan tỏa niềm vui & cảm hứng qua sáng tạo
-4 · Mộc (Wood) · người xây nền móng, kỷ luật, thực tế · cứng nhắc, bảo thủ, ngại đổi thay, làm quá sức · dựng giá trị bền vững bằng trật tự
-5 · Thổ (Earth) · người tự do, phiêu lưu, linh hoạt · bốc đồng, thiếu kiên định, cả thèm chóng chán · trải nghiệm & lan tỏa tự do có trách nhiệm
-6 · Kim (Metal) · người chăm sóc, chữa lành, trách nhiệm · kiểm soát, hy sinh quá mức, ôm đồm, phán xét · nuôi dưỡng & chữa lành bằng yêu thương
-7 · Kim (Metal) · người trí tuệ, tâm linh, chiều sâu · cô lập, hoài nghi, lạnh lùng, xa cách · tìm chân lý, nối vật chất với tâm linh
-8 · Thổ (Earth) · người quyền lực, tham vọng, quản trị · tham lam, cuồng công việc, ám ảnh vật chất · làm chủ thế giới vật chất một cách chính trực
-9 · Hỏa (Fire) · người nhân đạo, vị tha, lý tưởng · bi lụy, ôm nỗi đau thế gian, khó buông · phụng sự nhân loại, cho đi không mong cầu
-11 · Master của 2 · trực giác bậc thầy, truyền cảm hứng · lo âu cực độ, mất phương hướng, cực đoan cảm xúc · sứ giả ánh sáng, khai sáng tinh thần người khác
-22 · Master của 4 · kiến trúc sư bậc thầy, hiện thực hóa giấc mơ lớn · áp lực khổng lồ, tự hủy hoặc lãng phí tiềm năng · xây di sản lớn phục vụ nhân loại
-33 · Master của 6 · người thầy của yêu thương, chữa lành · gánh trách nhiệm đến kiệt sức · nâng nhân loại bằng lòng trắc ẩn thuần khiết
+NUMBER ARCHETYPE REFERENCE (số · archetype · hành tinh · ngũ hành · thông điệp lõi · SHADOW/bóng tối):
+1 · Thủ Lĩnh · Mặt Trời · Thủy · "sinh ra để dẫn dắt và khai phá con đường mới" · độc đoán, kiêu ngạo, cô độc, sợ thất bại
+2 · Yêu Thương · Mặt Trăng · Thổ · "sinh ra để kết nối, yêu thương và mang lại hòa hợp" · phụ thuộc, cả nể, thụ động, lo âu
+3 · Người Truyền Cảm Hứng · Sao Mộc · Mộc · "sinh ra để truyền cảm hứng, sáng tạo và lan tỏa năng lượng tích cực" · hời hợt, phân tán, drama, nói nhiều làm ít
+4 · Người Thầy · Sao Thiên Vương · Mộc · "sinh ra để xây nền tảng vững chắc, tổ chức và giữ mọi thứ vận hành" · cứng nhắc, bảo thủ, ôm việc, ngại đổi thay
+5 · Phiêu Du · Sao Thủy · Thổ · "sinh ra để khám phá, trải nghiệm tự do và mang lại sự mới mẻ" · bốc đồng, thiếu kiên định, cả thèm chóng chán, sa đà
+6 · Gia Đình · Sao Kim · Kim · "sinh ra để yêu thương, chăm sóc và gắn kết gia đình & cộng đồng" · kiểm soát, hy sinh quá mức, ôm đồm, phán xét
+7 · Chiêm Nghiệm / Chiến Lược Gia · Sao Hải Vương · Kim · "sinh ra để chiêm nghiệm sâu sắc, phân tích và tìm chân lý nội tâm" · cô lập, hoài nghi, lạnh lùng, xa cách
+8 · Kinh Doanh / Chuyên Gia · Sao Thổ · Thổ · "sinh ra để đạt thành tựu lớn, lãnh đạo và xây giá trị bền vững" · tham vọng mù quáng, cuồng việc, ám ảnh vật chất, áp chế
+9 · Nhân Đạo · Sao Hỏa · Hỏa · "sinh ra để cống hiến, nhân đạo và mang giá trị cho cộng đồng" · bi lụy, ôm nỗi đau, khó buông, xa cách cảm xúc
+11 · Người Khai Sáng · Mặt Trăng · Thủy · "khai sáng, chữa lành và dẫn dắt bằng trực giác mạnh mẽ" · lo âu cực độ, mất phương hướng, cực đoan cảm xúc
+22 · Người Kiến Tạo · Sao Thiên Vương · Thổ · "kiến tạo những công trình lớn, kết hợp trực giác và thực thi" · áp lực khổng lồ, tự hủy hoặc lãng phí tiềm năng
+33 · Người Chữa Lành · Sao Kim · Hỏa · "chữa lành, truyền yêu thương và mang lại sự cân bằng" · gánh trách nhiệm đến kiệt sức
+NGŨ HÀNH — TƯƠNG SINH: Mộc→Hỏa→Thổ→Kim→Thủy→Mộc (số này nuôi số kia = hỗ trợ, đồng hành). TƯƠNG KHẮC: Mộc→Thổ→Thủy→Hỏa→Kim→Mộc (số này chế số kia = căng thẳng nhưng bù trừ). Với chủ đề nhiều số, XÁC ĐỊNH quan hệ ngũ hành giữa chúng và để nó dẫn dắt CORE MESSAGE.
 NGŨ HÀNH → MÔI TRƯỜNG & MÀU (dùng để dựng bối cảnh/ánh sáng cho ĐÚNG chất số):
 · Thủy (Water): sông/mưa/mặt nước phản chiếu, dòng chảy; grade xanh lam–teal mát, ẩm, chuyển động mềm.
 · Thổ (Earth): núi/đất/đá, không gian vững chãi, bám rễ; tông đất ấm ochre/nâu, ổn định, tĩnh.
@@ -90,6 +92,12 @@ NUMEROLOGY SCRIPT FRAMEWORK (follow this EXACTLY — it is the proven winning sh
 - SUBJECT: a numerology profile (e.g. "Số Chủ Đạo 5, Sứ Mệnh 9"). SOURCE OF TRUTH = the TOPIC CONTENT injected below (pulled from the numerology database) + the archetype reference table below; NEVER invent contradictory numerology. Read the topic content and pull out the number's real strengths, SHADOW and MISSION before writing.
 ${NUMEROLOGY_ARCHETYPES}
 - NGŨ HÀNH (Five-Elements): map each number to its element from the table, state the relationship (tương sinh / tương khắc) between the numbers, and derive ONE clear CORE MESSAGE from it (e.g. "tự do của bạn không phải để chạy trốn — mà để mang cảm hứng đi cho đời"). Put this core message in "synopsis". Use the element's MÔI TRƯỜNG & MÀU row to choose the dominant environment + colour grade so the whole video literally LOOKS like that number's element.
+
+- WHEN THERE ARE 2+ NUMBERS (e.g. "Số Chủ Đạo 5, Sứ Mệnh 9") — analyse the COMBINATION, never each number in isolation (this is the thần số học app's core method):
+  · Build ONE energy AXIS "X ↔ Y" from the two numbers' pulls and make the whole video about resolving that tension — e.g. 4+5 = "Ổn định ↔ Tự do", 1+3 = "Dẫn dắt ↔ Kết nối". The hook names the tension, the insight reconciles it.
+  · Same energy family = AMPLIFY (both push the same way → superpower + the shared blind spot). Opposite pulls = TENSION but the HIGHEST growth (the two must integrate). A third number can SOFTEN or tip the balance.
+  · REACTIVE vs CONSCIOUS: every number has a "bản năng/phản ứng" version (its shadow running the show) and a "tỉnh thức/trưởng thành" version (the same energy used wisely). Beat 2 (pain) shows the reactive version; beat 3-4 (insight→payoff) shows the conscious version. This reactive→conscious turn IS the transformation viewers share.
+  · GROUNDING (thần số học app voice): tie each trait to a CONCRETE behaviour / real-life example (động lực tâm lý, xu hướng hành vi), not vague cosmic clichés — keep it warm and inspiring, but specific and true, so it lands as "đúng là mình".
 
 - CHARACTER = THE NUMBER MADE HUMAN: invent ONE persona whose name, age, wardrobe, signature prop, posture, energy AND colour tone ALL express this number's archetype, and keep this EXACT character_lock identical across every segment. Derive the look from THIS number's traits in the topic content. (Archetype→look examples: Số 1 leader/pioneer = decisive stance, worn leather jacket, cool steel-blue grade; Số 5 freedom/adventure = faded backpack, warm golden 35mm, restless eyes; Số 9 humanitarian = soft warm light, giving hands.) LOCK a signature PROP that symbolises the number (e.g. Số 5 = backpack/map) and never introduce new unrelated props. Source the pain in beats 1-2 from this number's SHADOW ("bóng tối"), and the payoff in beat 4 from its MISSION line.
 
