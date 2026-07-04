@@ -102,6 +102,9 @@ export interface StoryboardGenerationInput {
   /** Which model writes the SCRIPT (text). Images always stay on Gemini.
    * Defaults to the main provider. Switchable from the hidden admin panel. */
   script_provider?: AIProvider;
+  /** Numerology (and topic) script tone: emotional/inspiring, sharp behavioral
+   * analysis, or both blended. Defaults to "balanced". */
+  numerology_style?: "inspirational" | "analytical" | "balanced";
   /** Spoken-line language for every segment (ISO-ish name, e.g. "Vietnamese"). */
   dialogue_language?: string;
   /** When true, every segment MUST carry a spoken line in dialogue_language. */

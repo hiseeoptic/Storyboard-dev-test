@@ -84,6 +84,19 @@ NGŨ HÀNH → MÔI TRƯỜNG & MÀU (dùng để dựng bối cảnh/ánh sáng
 · Kim (Metal): kim loại/kính/tối giản, đường nét sắc, chính xác; xám–trắng lạnh, tĩnh, sạch.
 · Hỏa (Fire): hoàng hôn/lửa/nến, ánh sáng rực; đỏ–cam ấm, đam mê, quầng sáng phát ra.`;
 
+// Script tone selector for topic content. The user can keep every script both
+// inspiring AND behaviorally sharp ("balanced", default), or lean fully one way.
+function numerologyToneDirective(style?: string): string {
+  switch (style) {
+    case "inspirational":
+      return `\n- TONE = TRUYỀN CẢM HỨNG (cinematic, cảm xúc): ấm áp, nâng đỡ, giàu hình ảnh ẩn dụ. Dồn vào SỨ MỆNH của con số như nguồn cảm hứng; câu thoại nên thơ mà vẫn ngắn; khiến người xem thấy MÌNH được nhìn thấy và có hy vọng. Cảm xúc quan trọng hơn cơ chế.`;
+    case "analytical":
+      return `\n- TONE = PHÂN TÍCH HÀNH VI SẮC BÉN (giọng app thần số học): "đọc vị" chính xác. Gọi tên HÀNH VI cụ thể + cơ chế tâm lý đằng sau (động lực tâm lý, xu hướng hành vi), đối chiếu bản PHẢN ỨNG vs bản TỈNH THỨC, cho ví dụ đời thực. Có căn cứ, thật, ít huyền bí — nhưng vẫn ấm, không khô như báo cáo.`;
+    default: // "balanced"
+      return `\n- TONE = KẾT HỢP (mặc định — vừa truyền cảm hứng vừa sắc bén): MỞ và ĐÓNG bằng CẢM XÚC (hook chặn-lướt đầy cảm hứng + payoff nâng đỡ), nhưng mỗi INSIGHT ở giữa là PHÂN TÍCH HÀNH VI sắc bén — một hành vi cụ thể + cơ chế của nó + cú lật phản-ứng→tỉnh-thức. Ngoài truyền cảm hứng, trong "đọc vị" chuẩn xác. Lấy điểm mạnh của cả hai.`;
+  }
+}
+
 // Rich framework for topic-driven numerology / self-development shorts, modelled
 // on the proven "Số Chủ Đạo" script shape. Injected into the user prompt when
 // video_goal is "numerology" so the AI writes in this exact winning structure.
@@ -184,7 +197,11 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   const lang = input.dialogue_language ?? "Vietnamese";
   const isNumerology = goal === "numerology" || input.genre === "numerology";
   const isHealth = goal === "health" || input.genre === "health";
-  const framework = isNumerology ? NUMEROLOGY_FRAMEWORK : isHealth ? HEALTH_FRAMEWORK : "";
+  const framework = isNumerology
+    ? NUMEROLOGY_FRAMEWORK + numerologyToneDirective(input.numerology_style)
+    : isHealth
+      ? HEALTH_FRAMEWORK
+      : "";
 
   const brief: string[] = [];
   if (input.product_name) brief.push(`- Product/Service: ${input.product_name}`);
@@ -307,7 +324,7 @@ export function buildStoryboardUserPrompt(
   const isNumerology = goal === "numerology" || input.genre === "numerology";
   const isHealth = goal === "health" || input.genre === "health";
   const numerologyBlock = isNumerology
-    ? `\n${NUMEROLOGY_FRAMEWORK}`
+    ? `\n${NUMEROLOGY_FRAMEWORK}${numerologyToneDirective(input.numerology_style)}`
     : isHealth
       ? `\n${HEALTH_FRAMEWORK}`
       : "";

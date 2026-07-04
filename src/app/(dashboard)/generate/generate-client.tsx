@@ -786,6 +786,12 @@ export function GenerateClient() {
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState(false);
 
+  // ─── Numerology script tone: inspiring + sharp behavioral analysis (both),
+  // or lean fully one way. Default "balanced" (both). Persisted. ──
+  const [numerologyStyle, setNumerologyStyle] = useState<
+    "inspirational" | "analytical" | "balanced"
+  >("balanced");
+
   // ─── Script model (default Claude Opus 4.8) — images always use Gemini.
   // Switchable via the hidden panel (double-click the title, passcode 2502). ──
   const [scriptProvider, setScriptProvider] = useState<AIProvider>("claude");
@@ -810,7 +816,21 @@ export function GenerateClient() {
     if (savedScript === "gemini" || savedScript === "openai" || savedScript === "claude") {
       setScriptProvider(savedScript);
     }
+    const savedStyle =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("sb_numerology_style")
+        : null;
+    if (savedStyle === "inspirational" || savedStyle === "analytical" || savedStyle === "balanced") {
+      setNumerologyStyle(savedStyle);
+    }
   }, []);
+
+  const switchNumerologyStyle = (s: "inspirational" | "analytical" | "balanced") => {
+    setNumerologyStyle(s);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("sb_numerology_style", s);
+    }
+  };
 
   const switchScriptProvider = (p: AIProvider) => {
     setScriptProvider(p);
@@ -1173,6 +1193,7 @@ export function GenerateClient() {
       beats_per_segment: beatsPerSegment,
       video_goal: videoGoal,
       script_provider: scriptProvider,
+      numerology_style: numerologyStyle,
       dialogue_language: forceVietnameseDialogue ? "Vietnamese" : undefined,
       force_dialogue: forceVietnameseDialogue,
       character_descriptions: effectiveCharacters.length > 0
@@ -2466,6 +2487,51 @@ export function GenerateClient() {
                       ? 'Loại này lấy nội dung từ "Kho chủ đề" ở Bước 1 (chọn chủ đề → nội dung đổ vào ô ý tưởng). AI sẽ viết theo khung 5 nhịp Hook → Giải mã → CTA.'
                       : 'This type pulls content from the Topic Library in Step 1. The AI writes it in the 5-beat Hook → Insight → CTA framework.'}
                   </p>
+                  {genre === "numerology" && (
+                    <div className="space-y-2 pt-1">
+                      <label className="text-xs font-medium">
+                        {lang === "vi" ? "Phong cách kịch bản" : "Script style"}
+                      </label>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {(
+                          [
+                            {
+                              v: "balanced",
+                              t: lang === "vi" ? "Kết hợp" : "Balanced",
+                              d: lang === "vi" ? "Cảm hứng + phân tích sắc bén" : "Inspiring + sharp analysis",
+                            },
+                            {
+                              v: "inspirational",
+                              t: lang === "vi" ? "Truyền cảm hứng" : "Inspirational",
+                              d: lang === "vi" ? "Điện ảnh, cảm xúc, nâng đỡ" : "Cinematic, emotional, uplifting",
+                            },
+                            {
+                              v: "analytical",
+                              t: lang === "vi" ? "Phân tích sắc bén" : "Sharp analysis",
+                              d: lang === "vi" ? "Đọc vị hành vi, ví dụ thực tế" : "Behavioral, real examples",
+                            },
+                          ] as const
+                        ).map((o) => (
+                          <button
+                            key={o.v}
+                            type="button"
+                            onClick={() => switchNumerologyStyle(o.v)}
+                            className={`rounded-lg border p-2 text-left transition ${
+                              numerologyStyle === o.v
+                                ? "border-primary bg-primary/10"
+                                : "border-border hover:border-primary/50"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-medium">{o.t}</span>
+                              {numerologyStyle === o.v && <Check className="h-3.5 w-3.5 text-primary" />}
+                            </div>
+                            <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground">{o.d}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : isAdGenre ? (
                 <div className="space-y-3 rounded-lg border border-dashed p-4">
