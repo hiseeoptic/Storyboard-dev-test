@@ -52,6 +52,13 @@ export function CharacterStudio({
   const genOne = async (label: string, override?: Partial<PhotoConfig>) => {
     const config: PhotoConfig = {
       ...DEFAULT_CONFIG,
+      // This is an IDENTITY reference sheet built from the user's uploaded photo,
+      // so the photo dictates who the person is (gender/age driven by the photo
+      // via buildPrompt). Don't force the default tailored-suit look (which,
+      // together with the MALE default, swapped an uploaded woman into a man in
+      // a suit): keep the person's own natural clothing from the reference.
+      outfitCategory: "",
+      outfitDetail: "natural, well-fitted everyday clothing consistent with the reference photo",
       faceEnhancements: enhancements,
       ...override,
     };

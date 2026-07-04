@@ -16,10 +16,18 @@ export function buildPrompt(
 ): string {
   const isSpecial = config.photographyStyleCategory === "special";
 
-  // Subject description
+  // Subject description.
+  // CRITICAL: when a face reference photo is attached, that PHOTO is the source
+  // of truth for the person's gender/age/appearance. Never override it with a
+  // generic config default — that is exactly what turned an uploaded WOMAN into
+  // "a man" (the default subjectType is MALE). So for a single-person subject
+  // with a reference photo, defer to the photo instead of asserting a gender.
   let subject = "";
   if (config.subjectType === "PRODUCT") {
     subject = "a product";
+  } else if (ctx.hasFaces && (config.subjectType === "MALE" || config.subjectType === "FEMALE")) {
+    subject =
+      "the SAME person as in the attached reference photo — match their gender, age, ethnicity, face, hair and body build exactly (do not change their sex or turn them into a different person)";
   } else {
     const map: Record<string, string> = {
       MALE: "a man",
