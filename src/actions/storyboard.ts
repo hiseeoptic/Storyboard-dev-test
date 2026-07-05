@@ -88,7 +88,7 @@ function makeVeoSafe(text: string): string {
   return text
     .replace(
       /STRICTLY FOLLOW (THE )?(ATTACHED )?REFERENCE IMAGES\s*[–\-.,:;]*\s*/gi,
-      "Keep the character and product visually consistent. "
+      "Keep the character's appearance consistent. "
     )
     .replace(
       /the exact (man|woman|person|boy|girl)\s+shown in the attached portrait photo\s*\(keep their real face,?\s*hair and look\)/gi,
@@ -96,7 +96,21 @@ function makeVeoSafe(text: string): string {
     )
     .replace(/\bsame person,?\s*same face\s*\/?\s*identity\b/gi, "the same character")
     .replace(/\bkeep(ing)? the SAME person\b/gi, "keep the same character")
+    // "the SAME young woman / same older man / the same individual" → character
+    .replace(/\bthe SAME\s+(young\s+|older\s+|old\s+|middle-aged\s+)?(woman|man|girl|boy|lady|guy|individual|person|female|male)\b/gi, "the same character")
     .replace(/\bthe SAME person\b/gi, "the same character")
+    // "with her/his exact face", "her exact face", "exact face" → consistent face
+    .replace(/\bwith (her|his|their)\s+exact\s+face\b/gi, "with a consistent face")
+    .replace(/\b(her|his|their)\s+exact\s+face\b/gi, "a consistent face")
+    .replace(/\bexact\s+face\b/gi, "face")
+    // real-person / recognisability / reference-copy triggers
+    .replace(/\bmatching the attached reference images?(?:\(s\))?/gi, "consistent with the reference")
+    .replace(/\bthese real subjects\b/gi, "these characters")
+    .replace(/\breal subjects\b/gi, "characters")
+    .replace(/\b(clearly\s+)?recognizable\b/gi, "consistent")
+    .replace(/\b(clearly\s+)?recognisable\b/gi, "consistent")
+    .replace(/\b(do not|don'?t|never)\s+invent a different (face|person|individual)\b/gi, "keep the character consistent")
+    .replace(/\bkeep (his|her|their) real face\b/gi, "keep their appearance consistent")
     .replace(/\bsame face\s*\/?\s*identity\b/gi, "a consistent appearance")
     .replace(/\bkeep their real face,?\s*hair and look\b/gi, "keep their appearance consistent")
     .replace(/\b(do not|don'?t|never)\s+change the face\b/gi, "keep the character's appearance consistent")

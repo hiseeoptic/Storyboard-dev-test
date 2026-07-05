@@ -20,8 +20,14 @@ const SHARED_NEGATIVE =
 // setting, lens and colour — so the prompt must NOT re-describe them (that
 // bloat is exactly what makes Veo drift/morph). We keep only the motion plus a
 // short physics + negative cue.
-const VEO_CONCISE_TAIL =
-  "This is an ORIGINAL FICTIONAL character — a completely made-up, ordinary everyday person, NOT a real, famous or recognisable public figure/celebrity, and not resembling any real individual; any resemblance is coincidental and must be avoided. Natural, physically realistic motion — real weight, gravity and momentum; the body stays solid and anatomically stable, feet planted, hands make real contact with objects and never bend, stretch or pass through them; one continuous shot, no hard cuts. NO on-screen text of any kind: no subtitles, no captions, no burned-in dialogue words, no title cards, no watermark — spoken audio only. Avoid: resembling a real or famous person/celebrity/lookalike, morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, on-screen text, subtitles, captions, watermark, plastic/CGI skin.";
+// Concise anti-artifact tail. Product-related negatives are included ONLY when
+// the clip actually has a product, so a person-only clip never mentions products.
+function veoConciseTail(hasProduct: boolean): string {
+  const productNeg = hasProduct
+    ? "warped or altered label/logo text, brand-colour change, extra or duplicated products, "
+    : "";
+  return `This is an ORIGINAL FICTIONAL character — a completely made-up, ordinary everyday person, NOT a real, famous or recognisable public figure/celebrity, and not resembling any real individual; any resemblance is coincidental and must be avoided. Natural, physically realistic motion — real weight, gravity and momentum; the body stays solid and anatomically stable, feet planted, hands make real contact with objects and never bend, stretch or pass through them; one continuous shot, no hard cuts. NO on-screen text of any kind: no subtitles, no captions, no burned-in dialogue words, no title cards, no watermark — spoken audio only. Avoid: resembling a real or famous person/celebrity/lookalike, ${productNeg}morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, on-screen text, subtitles, captions, watermark, plastic/CGI skin.`;
+}
 
 /** One-line "Scene Bible" style tokens, reproduced verbatim in every image. */
 function sceneBibleTokens(sb?: SceneBible): string {
@@ -601,22 +607,22 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
     const d = r.description ? ` (${r.description.replace(/\s+/g, " ").slice(0, 220)})` : "";
     switch (r.role) {
       case "character_sheet":
-        return `• THE CHARACTER — the attached CHARACTER REFERENCE SHEET (turnaround + expressions)${d} defines the main character's exact face, hair, body and costume. Reproduce the SAME individual identically in every shot — same face, same wardrobe, same proportions — rendered as a slightly younger, more attractive version of himself. Do NOT invent a different person.`;
+        return `• THE CHARACTER — the attached reference sheet (turnaround + expressions)${d} defines an ORIGINAL FICTIONAL character's look — face, hair, body and costume. Keep this SAME made-up character consistent in every shot — same look, same wardrobe, same proportions, tastefully polished. This is an ordinary invented person, NOT a real, famous or recognisable public figure; do NOT drift to a different look.`;
       case "face":
-        return `• THE PERSON — use the exact man shown in the attached portrait photo${d}. Keep his real face, hairstyle, facial hair and skin tone CLEARLY recognizable and identical in every shot; render him as a tasteful, slightly younger and more handsome version of himself (light natural retouch, same identity). Match his eyewear EXACTLY to the photo — if he is NOT wearing glasses in the photo, do NOT add glasses; if he IS, keep the same glasses — and keep this consistent across every shot. He is the main character. Do NOT invent a different face.`;
+        return `• THE CHARACTER — use the attached portrait ONLY as an appearance reference for an ORIGINAL FICTIONAL character (an ordinary invented person, NOT a real, famous or recognisable individual). Keep a natural, consistent face, hairstyle and skin tone across every shot (light natural retouch). Match eyewear to the photo — if there are no glasses in the photo, do NOT add glasses; if there are, keep them — consistent across shots. This is the main character.`;
       case "character":
-        return `• CHARACTER "${r.name ?? "person"}" — one of the attached portrait photos shows ${r.name ?? "this person"}${d}. Keep ${r.name ?? "their"} real face, hair and skin tone clearly recognizable and identical in every shot, rendered as a tasteful slightly younger version of themselves. Bind this face to ${r.name ?? "this character"} ONLY — do NOT swap, merge or blend it with the other character(s) in the scene.`;
+        return `• CHARACTER "${r.name ?? "person"}" — one attached portrait references the look of ${r.name ?? "this character"}${d}. Keep ${r.name ?? "their"} face, hair and skin tone consistent across every shot as an ORIGINAL FICTIONAL character (not a real or famous person). Bind this look to ${r.name ?? "this character"} ONLY — do NOT swap, merge or blend it with the other character(s).`;
       case "product":
         return `• THE PRODUCT — feature the EXACT product shown in the attached product photo${d}. Keep its EXACT shape, silhouette, colour, material, proportions, handle/parts and branding identical in every single shot. Do NOT redesign, recolour, distort, resize, age, damage or swap it for a different object.`;
       case "setting":
         return `• THE LOCATION — keep every scene in the same location shown in the attached interior photo${d}. Match its layout, colours, furniture and key props; keep it consistent across all shots.`;
       case "anchor":
-        return `• WARDROBE & LOOK ANCHOR — the attached already-approved storyboard frame shows the main character in the EXACT outfit, hairstyle and accessories to use. Copy the clothing (type, cut and colours) and every accessory (watch, glasses if any, etc.) EXACTLY in this board. Do NOT change the outfit — never switch to a suit, jacket, apron or a different shirt unless it appears in this anchor. It is the SAME person as the portrait photo.`;
+        return `• WARDROBE & LOOK ANCHOR — the attached already-approved storyboard frame shows the character in the EXACT outfit, hairstyle and accessories to use. Copy the clothing (type, cut and colours) and every accessory (watch, glasses if any) EXACTLY in this board. Do NOT change the outfit — never switch to a suit, jacket, apron or a different shirt unless it appears in this anchor. It is the SAME character.`;
       default:
         return `• Reference — keep it consistent.`;
     }
   });
-  return `You are given reference photos. RE-CREATE new cinematic scenes using these real subjects — do NOT simply output a copy of any reference photo, but match them PRECISELY (same identity, same product, same place). Follow them exactly:\n${lines.join("\n")}\n\n`;
+  return `You are given reference photos. Use them as APPEARANCE REFERENCES to build ORIGINAL FICTIONAL characters (ordinary, made-up people — NOT real, famous or recognisable public figures). Do NOT output a copy of any reference photo; RE-CREATE new cinematic scenes with a consistent look (consistent character, same product, same place). Follow them:\n${lines.join("\n")}\n\n`;
 }
 
 // ─── Step 2: Character Reference Sheet Image Prompt ─────────────────────────
@@ -935,7 +941,7 @@ export function buildSegmentVeoPrompt(params: {
   const spoken = params.dialogue
     ? ` ${speakerLabel} speaks to camera with natural mouth movement and accurate lip-sync, saying in ${lang}: "${params.dialogue}" — delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence}`
     : "";
-  return `${lead}${character}${setting}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken} ${VEO_CONCISE_TAIL}`;
+  return `${lead}${character}${setting}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken} ${veoConciseTail(!!params.productDescription)}`;
 }
 
 export function buildVideoPromptText(params: {
