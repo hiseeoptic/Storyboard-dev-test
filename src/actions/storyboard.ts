@@ -10,6 +10,7 @@ import { analyzeReferenceImages } from "@/services/image-analyzer";
 import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
+  genreAmbientAudio,
   type RefDescriptor,
 } from "@/prompts";
 import type {
@@ -577,6 +578,9 @@ function assemblePlanPrompts(
 ): string {
   const ctx = buildRefContext(input, breakdown, analysis, provider);
   const palette = breakdown.style_guide?.color_palette ?? [];
+  // Genre-appropriate ambient sound (kitchen sizzle for cooking, gym energy for
+  // fitness, …) added to every clip's Veo prompt automatically.
+  const ambientAudio = genreAmbientAudio(input.genre, input.video_goal);
   for (const seg of breakdown.segments) {
     seg.first_frame_url = null;
     seg.full_prompt = makeVeoSafe(
@@ -592,6 +596,7 @@ function assemblePlanPrompts(
         dialogueLanguage: ctx.dialogueLanguage,
         speaker: seg.speaker,
         characterNames: ctx.characterNames,
+        ambientAudio,
       })
     );
   }
@@ -608,6 +613,7 @@ function assemblePlanPrompts(
     colorPalette: palette,
     dialogueLanguage: ctx.dialogueLanguage,
     characterNames: ctx.characterNames,
+    ambientAudio,
     marketing: breakdown.marketing_structure,
     segments: breakdown.segments.map((s) => ({
       segment_number: s.segment_number,

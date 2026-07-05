@@ -232,6 +232,10 @@ const COOKING_FRAMEWORK = `
 COOKING / RECIPE SHORT FRAMEWORK (follow this EXACTLY — THE FOOD IS THE STAR):
 - SUBJECT: one dish/recipe (e.g. "cơm chiên trứng", "bánh mì chảo", "trà sữa nhà làm"). Keep it to ONE dish, doable, with a satisfying finish.
 - HERO = THE FOOD, not the person: the camera loves the ingredients, the sizzle, the steam, the texture, the pour, the cheese-pull, the final plating. The cook is usually HANDS + voice (POV) or a warm host; identity matters less than appetite appeal.
+- SETTING = A KITCHEN, LOCKED & CONSISTENT: the whole video happens in ONE fixed kitchen (a warm, tidy home kitchen unless the idea says otherwise — stove/hob, wooden board, clean counter, natural window light). LOCK it into scene_bible.backdrop and repeat the SAME kitchen verbatim in every segment's first_frame_prompt — same counter, same stove, same props, same light. Never drift to an unrelated place; the cooking always happens on that counter/stove.
+- OVERVIEW SHOT (required): segment 1 (or its first beat) opens with a WIDE ESTABLISHING shot of the whole kitchen counter/setup — ingredients laid out, pan on the stove — so the viewer sees the space, THEN the clips move into the close-ups. (This is the "SCENE OVERVIEW" of the board.)
+- AUDIO = KITCHEN ASMR: every clip carries real cooking sound — sizzling/xèo xèo, chopping, bubbling, oil crackle, the pour, gentle kitchen ambience. Appetising, no music bed drowning it. (Veo generates this audio.)
+- VOICE = warm, friendly HOME-COOK HOST, second person, easy and inviting (like showing a friend) — never a dry TV-chef read-out.
 - PICK ONE CONTENT STYLE (vary across videos):
   · Công thức nhanh (recipe-in-60s) — từng bước gọn gàng.
   · ASMR / tiếng xèo (sizzle & sound) — cận cảnh, âm thanh nấu nướng.
@@ -261,6 +265,10 @@ const FITNESS_FRAMEWORK = `
 FITNESS / WORKOUT SHORT FRAMEWORK (follow this EXACTLY — motivate, demonstrate, keep it safe):
 - SUBJECT: one clear goal or move (e.g. "giảm mỡ bụng", "3 động tác cho mông", "sửa lỗi squat"). ONE focus per video.
 - CHARACTER = a fit, relatable trainer/practitioner in workout gear, kept identical across segments; the BODY MOVEMENT is the star (clean form, full range, real effort).
+- SETTING = A WORKOUT SPACE, LOCKED & CONSISTENT: the whole video happens in ONE fixed space (a modern gym or a clean home-workout corner with a mat, unless the idea says otherwise). LOCK it into scene_bible.backdrop and repeat the SAME space verbatim in every segment's first_frame_prompt — same floor, same equipment, same light. Never drift to an unrelated place.
+- OVERVIEW SHOT (required): segment 1 (or its first beat) opens with a WIDE ESTABLISHING shot of the whole space + the person ready to train, so the viewer sees the setup, THEN the clips move into the movement close-ups. (This is the "SCENE OVERVIEW" of the board.)
+- AUDIO = GYM ENERGY: every clip carries fitting sound — controlled breathing, feet/weights on the floor, light upbeat energy; motivating, not chaotic. (Veo generates this audio.)
+- VOICE = energetic, MOTIVATING COACH, second person, encouraging and clear — pumps the viewer up without shouting or preaching.
 - PICK ONE CONTENT STYLE (vary across videos):
   · "Bạn đang tập sai" (sửa form) — chỉ ra lỗi phổ biến + cách đúng.
   · Bài tập theo nhóm cơ ("X động tác cho [bụng/mông/tay]") — listicle, giữ chân người xem.
@@ -283,6 +291,17 @@ FITNESS / WORKOUT SHORT FRAMEWORK (follow this EXACTLY — motivate, demonstrate
   ĐỘNG TÁC 2: "Thêm leo núi tại chỗ, giữ nhịp thở đều, đốt calo toàn thân." (cue + benefit)
   KẾT QUẢ + CTA: "Kết hợp với ăn uống là bụng xẹp dần. Lưu lại tập theo nhé!" (realistic payoff + save)
 - Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Ready-to-post caption + 4-6 hashtags at END of "synopsis".`;
+
+/** Genre-appropriate ambient sound for the Veo clip (Veo generates audio). */
+export function genreAmbientAudio(genre?: string, goal?: string): string | undefined {
+  const isCooking = genre === "cooking" || goal === "cooking";
+  const isFitness = genre === "fitness" || goal === "fitness";
+  if (isCooking)
+    return "real kitchen cooking sound — sizzling/xèo xèo, chopping, bubbling, oil crackle and gentle kitchen ambience (ASMR), appetising and clear";
+  if (isFitness)
+    return "gym/workout ambience — controlled breathing, feet and light weights on the floor, subtle upbeat energy, motivating and clean";
+  return undefined;
+}
 
 // ─── Stage 1: Script writer (Claude) — creative script ONLY ─────────────────
 // When the user splits the pipeline (e.g. Claude writes the script, Gemini
@@ -907,6 +926,8 @@ export function buildSegmentVeoPrompt(params: {
   speaker?: string | null;
   /** All character names in the project — used to silence the non-speakers. */
   characterNames?: string[];
+  /** Genre-appropriate ambient sound (e.g. kitchen sizzle, gym energy). */
+  ambientAudio?: string;
 }): string {
   const lang = params.dialogueLanguage ?? "Vietnamese";
   const clean = (s?: string) => (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
@@ -941,7 +962,8 @@ export function buildSegmentVeoPrompt(params: {
   const spoken = params.dialogue
     ? ` ${speakerLabel} speaks to camera with natural mouth movement and accurate lip-sync, saying in ${lang}: "${params.dialogue}" — delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence}`
     : "";
-  return `${lead}${character}${setting}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken} ${veoConciseTail(!!params.productDescription)}`;
+  const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
+  return `${lead}${character}${setting}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription)}`;
 }
 
 export function buildVideoPromptText(params: {
@@ -957,6 +979,8 @@ export function buildVideoPromptText(params: {
   dialogueLanguage?: string;
   /** All character names in the project — used to silence non-speakers. */
   characterNames?: string[];
+  /** Genre-appropriate ambient sound, appended to every clip's Veo prompt. */
+  ambientAudio?: string;
   marketing: { hook: string; problem: string; solution: string; cta: string };
   segments: {
     segment_number: number;
@@ -994,6 +1018,7 @@ export function buildVideoPromptText(params: {
         dialogueLanguage,
         speaker: s.speaker,
         characterNames: params.characterNames,
+        ambientAudio: params.ambientAudio,
       });
       return `SEGMENT ${s.segment_number} — "${s.title}" [${s.role.toUpperCase()}] (${s.duration_seconds}s)
   Beats:
@@ -1049,6 +1074,8 @@ export const VEO_NEGATIVE_LIST =
 interface VeoJsonOptions {
   aspectRatio: string;
   dialogueLanguage?: string;
+  /** Genre-appropriate ambient sound (kitchen sizzle, gym energy, …). */
+  ambientAudio?: string;
 }
 
 /**
@@ -1117,7 +1144,9 @@ export function buildVeoJson(
             subtitles: false,
           }
         : null,
-      audio: "spoken dialogue only with natural ambient sound; no music unless noted; no on-screen text",
+      audio: opts.ambientAudio
+        ? `${opts.ambientAudio}; plus the spoken dialogue; no on-screen text`
+        : "spoken dialogue only with natural ambient sound; no music unless noted; no on-screen text",
       continuity_from_previous: oneLine(seg.continuity_note),
       negative_prompt: VEO_NEGATIVE_LIST,
       // Flattened, fully self-contained prompt (text mode fallback).

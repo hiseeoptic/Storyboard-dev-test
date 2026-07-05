@@ -41,7 +41,7 @@ import {
   type StoryboardAnalysis,
 } from "@/actions";
 import type { TopicCategory } from "@/services/topics";
-import { buildVeoJson } from "@/prompts";
+import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
 import type {
@@ -1570,6 +1570,7 @@ export function GenerateClient() {
       const veoJson = buildVeoJson(bd, {
         aspectRatio: aspect,
         dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+        ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
       });
       zip.file(`veo_prompts.json`, JSON.stringify(veoJson, null, 2));
       // JSON Lines: one clip object per line — drop straight into a Veo batch flow.
