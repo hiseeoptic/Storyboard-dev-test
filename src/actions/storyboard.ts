@@ -103,6 +103,13 @@ function makeVeoSafe(text: string): string {
     .replace(/\breal face\b/gi, "face")
     .replace(/\bface\s*\/\s*identity\b/gi, "appearance")
     .replace(/\breal person\b/gi, "character")
+    // Scrub celebrity / public-figure references — these make Veo/Flow reject
+    // the clip as a real-person likeness.
+    .replace(
+      /\b(resembl\w+|looks?\s+like|similar\s+to|reminiscent\s+of|in the style of)\s+[^.,;]*\b(celebrit\w+|famous|public figure|star|idol|actor|actress|singer|influencer)\b[^.,;]*/gi,
+      "an ordinary everyday appearance"
+    )
+    .replace(/\b(a\s+)?(celebrity|public figure|famous person|movie star|pop star|k-?pop idol|superstar)\b/gi, "an ordinary person")
     .replace(/\s{2,}/g, " ")
     .replace(/\s+([,.;])/g, "$1")
     .trim();
