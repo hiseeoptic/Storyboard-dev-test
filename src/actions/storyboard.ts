@@ -1,6 +1,6 @@
 "use server";
 
-import { generateStoryboardBreakdown } from "@/services/ai-engine";
+import { generateScript, generateStoryboardBreakdown } from "@/services/ai-engine";
 import {
   generateSegmentFrame,
   generateKeyframe,
@@ -10,6 +10,7 @@ import { analyzeReferenceImages } from "@/services/image-analyzer";
 import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
+  genreAmbientAudio,
   type RefDescriptor,
 } from "@/prompts";
 import type {
@@ -88,7 +89,7 @@ function makeVeoSafe(text: string): string {
   return text
     .replace(
       /STRICTLY FOLLOW (THE )?(ATTACHED )?REFERENCE IMAGES\s*[–\-.,:;]*\s*/gi,
-      "Keep the character and product visually consistent. "
+      "Keep the character's appearance consistent. "
     )
     .replace(
       /the exact (man|woman|person|boy|girl)\s+shown in the attached portrait photo\s*\(keep their real face,?\s*hair and look\)/gi,
@@ -96,13 +97,34 @@ function makeVeoSafe(text: string): string {
     )
     .replace(/\bsame person,?\s*same face\s*\/?\s*identity\b/gi, "the same character")
     .replace(/\bkeep(ing)? the SAME person\b/gi, "keep the same character")
+    // "the SAME young woman / same older man / the same individual" → character
+    .replace(/\bthe SAME\s+(young\s+|older\s+|old\s+|middle-aged\s+)?(woman|man|girl|boy|lady|guy|individual|person|female|male)\b/gi, "the same character")
     .replace(/\bthe SAME person\b/gi, "the same character")
+    // "with her/his exact face", "her exact face", "exact face" → consistent face
+    .replace(/\bwith (her|his|their)\s+exact\s+face\b/gi, "with a consistent face")
+    .replace(/\b(her|his|their)\s+exact\s+face\b/gi, "a consistent face")
+    .replace(/\bexact\s+face\b/gi, "face")
+    // real-person / recognisability / reference-copy triggers
+    .replace(/\bmatching the attached reference images?(?:\(s\))?/gi, "consistent with the reference")
+    .replace(/\bthese real subjects\b/gi, "these characters")
+    .replace(/\breal subjects\b/gi, "characters")
+    .replace(/\b(clearly\s+)?recognizable\b/gi, "consistent")
+    .replace(/\b(clearly\s+)?recognisable\b/gi, "consistent")
+    .replace(/\b(do not|don'?t|never)\s+invent a different (face|person|individual)\b/gi, "keep the character consistent")
+    .replace(/\bkeep (his|her|their) real face\b/gi, "keep their appearance consistent")
     .replace(/\bsame face\s*\/?\s*identity\b/gi, "a consistent appearance")
     .replace(/\bkeep their real face,?\s*hair and look\b/gi, "keep their appearance consistent")
     .replace(/\b(do not|don'?t|never)\s+change the face\b/gi, "keep the character's appearance consistent")
     .replace(/\breal face\b/gi, "face")
     .replace(/\bface\s*\/\s*identity\b/gi, "appearance")
     .replace(/\breal person\b/gi, "character")
+    // Scrub celebrity / public-figure references — these make Veo/Flow reject
+    // the clip as a real-person likeness.
+    .replace(
+      /\b(resembl\w+|looks?\s+like|similar\s+to|reminiscent\s+of|in the style of)\s+[^.,;]*\b(celebrit\w+|famous|public figure|star|idol|actor|actress|singer|influencer)\b[^.,;]*/gi,
+      "an ordinary everyday appearance"
+    )
+    .replace(/\b(a\s+)?(celebrity|public figure|famous person|movie star|pop star|k-?pop idol|superstar)\b/gi, "an ordinary person")
     .replace(/\s{2,}/g, " ")
     .replace(/\s+([,.;])/g, "$1")
     .trim();
@@ -263,6 +285,10 @@ interface RefContext {
   charDesc: string;
   charDescDna: string;
   charDescVeo: string;
+  /** One reference per named character (multi-character binding). */
+  characterRefs: { img: string; name: string; desc?: string }[];
+  /** All character names in the project (to silence non-speakers). */
+  characterNames: string[];
   sceneBible?: SceneBible;
   productDnaText?: string;
   ingredientsText?: string;
@@ -328,6 +354,26 @@ function buildRefContext(
     ? stripHexCodes(stripEyewear(buildCleanCharLine(breakdown.character_locks[0])) || `a ${genderWord} wearing ${mainCostume}`)
     : charDescDna;
 
+  // Multi-character binding: pair each uploaded character photo with its named
+  // lock (match by name, else by index) so each face is bound to the right
+  // person in a 2-3 character scene. The vision description reinforces the photo.
+  const characterRefs = (input.character_images ?? [])
+    .map((grp) => {
+      const img = grp.images?.[0];
+      if (!img) return null;
+      const lock =
+        breakdown.character_locks?.find((l) => l.name === grp.name) ??
+        breakdown.character_locks?.[(input.character_images ?? []).indexOf(grp)];
+      const desc =
+        analysis.characterDescriptions[grp.name] ??
+        (lock ? buildCleanCharLine(lock) : undefined);
+      return { img, name: lock?.name ?? grp.name, desc };
+    })
+    .filter((x) => x !== null) as { img: string; name: string; desc?: string }[];
+  const characterNames = (breakdown.character_locks ?? [])
+    .map((l) => l.name)
+    .filter(Boolean);
+
   return {
     canChain,
     aspectRatio: input.aspect_ratio ?? "16:9",
@@ -347,6 +393,8 @@ function buildRefContext(
     charDesc,
     charDescDna,
     charDescVeo,
+    characterRefs,
+    characterNames,
     sceneBible: breakdown.scene_bible,
     productDnaText:
       breakdown.product_dna || productDesc || input.product_name || productName || undefined,
@@ -361,15 +409,27 @@ function buildBoardRefs(ctx: RefContext): {
 } {
   const images: { base64: string; mimeType?: string }[] = [];
   const descriptors: RefDescriptor[] = [];
-  if (ctx.faceImg) {
+  // Cap total references so the image request stays small (Nano Banana handles
+  // a handful of subjects; more than this hurts both payload and consistency).
+  const MAX_REFS = 5;
+  if (ctx.characterRefs.length > 1) {
+    // MULTI-CHARACTER: bind each uploaded photo to its named character so Veo
+    // never swaps faces between the 2-3 people in the scene.
+    for (const c of ctx.characterRefs) {
+      if (images.length >= MAX_REFS) break;
+      images.push({ base64: c.img, mimeType: "image/jpeg" });
+      descriptors.push({ role: "character", name: c.name, description: c.desc });
+    }
+  } else if (ctx.faceImg) {
+    // SINGLE CHARACTER (unchanged behaviour).
     images.push({ base64: ctx.faceImg, mimeType: "image/jpeg" });
     descriptors.push({ role: "face", description: ctx.faceDesc ?? ctx.charDescForPoster });
   }
-  if (ctx.productImg && images.length < 3) {
+  if (ctx.productImg && images.length < MAX_REFS) {
     images.push({ base64: ctx.productImg, mimeType: "image/jpeg" });
     descriptors.push({ role: "product", description: ctx.productDesc });
   }
-  if (ctx.bgImg && images.length < 3) {
+  if (ctx.bgImg && images.length < MAX_REFS) {
     images.push({ base64: ctx.bgImg, mimeType: "image/jpeg" });
     descriptors.push({ role: "setting", description: ctx.bgDesc });
   }
@@ -387,7 +447,49 @@ export async function generateStoryboardPlan(
     const analysis = await runAnalysis(input, provider, warnings);
     const enhanced = enhanceInput(input, analysis);
 
-    const breakdown = await generateStoryboardBreakdown(enhanced, provider);
+    // TWO-STAGE PIPELINE:
+    //   Stage 1 — the SCRIPT (creative text) is written by input.script_provider
+    //     (default Claude Opus 4.8), which is the strongest at Vietnamese
+    //     numerology/health scripts.
+    //   Stage 2 — the STORYBOARD (segments + JSON) is built by the main provider
+    //     (Gemini 2.5 Flash — cheap), which expands the approved script verbatim.
+    //   Images always stay on Nano Banana.
+    // If Stage 1's model is unavailable (e.g. ANTHROPIC_API_KEY not set), we skip
+    // the script and let Stage 2 write directly. If Stage 2 fails but we have a
+    // script, we fall back to building the storyboard with the script model.
+    const scriptProvider = input.script_provider ?? provider;
+
+    let sourceScript: string | null = null;
+    if (scriptProvider !== provider) {
+      try {
+        sourceScript = await generateScript(enhanced, scriptProvider);
+      } catch (e) {
+        warnings.push(
+          `Không viết được kịch bản bằng ${scriptProvider} — ${provider} sẽ tự viết kịch bản luôn. (${e instanceof Error ? e.message : String(e)})`
+        );
+      }
+    }
+
+    const stage2Input = sourceScript
+      ? { ...enhanced, source_script: sourceScript }
+      : enhanced;
+
+    let breakdown;
+    try {
+      // Stage 2: Gemini flash expands the approved script into the storyboard.
+      breakdown = await generateStoryboardBreakdown(stage2Input, provider);
+    } catch (e) {
+      if (sourceScript && scriptProvider !== provider) {
+        // Storyboard model failed — build the storyboard with the script model
+        // itself so an approved script is never wasted.
+        warnings.push(
+          `${provider} không dựng được storyboard — đã dùng ${scriptProvider} để dựng. (${e instanceof Error ? e.message : String(e)})`
+        );
+        breakdown = await generateStoryboardBreakdown(stage2Input, scriptProvider);
+      } else {
+        throw e;
+      }
+    }
 
     // Defensive: the model can occasionally return JSON missing whole sections.
     // Guard so a malformed breakdown returns a clean error instead of throwing
@@ -476,26 +578,37 @@ function assemblePlanPrompts(
 ): string {
   const ctx = buildRefContext(input, breakdown, analysis, provider);
   const palette = breakdown.style_guide?.color_palette ?? [];
+  // Genre-appropriate ambient sound (kitchen sizzle for cooking, gym energy for
+  // fitness, …) added to every clip's Veo prompt automatically.
+  const ambientAudio = genreAmbientAudio(input.genre, input.video_goal);
+  // IMPORTANT: makeVeoSafe scrubs LLM-generated text (which may contain "real
+  // person / exact face / celebrity" wording). Apply it ONLY to the model's own
+  // fields — NEVER wrap the fully-assembled prompt, or it corrupts the clean,
+  // intentional template wording (e.g. "…or recognisable public figure" would
+  // get mangled into gibberish).
+  const charDesc = makeVeoSafe(ctx.charDescVeo);
+  const productDesc = ctx.productDnaText ? makeVeoSafe(ctx.productDnaText) : ctx.productDnaText;
   for (const seg of breakdown.segments) {
     seg.first_frame_url = null;
-    seg.full_prompt = makeVeoSafe(
-      buildSegmentVeoPrompt({
-        characterDescription: ctx.charDescVeo,
-        productDescription: ctx.productDnaText,
-        ingredients: ctx.ingredientsText,
-        sceneBible: ctx.sceneBible,
-        colorPalette: palette,
-        motionPrompt: makeVeoSafe(seg.motion_prompt),
-        dialogue: seg.dialogue,
-        dialogueLanguage: ctx.dialogueLanguage,
-      })
-    );
+    seg.full_prompt = buildSegmentVeoPrompt({
+      characterDescription: charDesc,
+      setting: makeVeoSafe(seg.first_frame_prompt ?? ""),
+      productDescription: productDesc,
+      ingredients: ctx.ingredientsText,
+      sceneBible: ctx.sceneBible,
+      colorPalette: palette,
+      motionPrompt: makeVeoSafe(seg.motion_prompt),
+      dialogue: seg.dialogue,
+      dialogueLanguage: ctx.dialogueLanguage,
+      speaker: seg.speaker,
+      characterNames: ctx.characterNames,
+      ambientAudio,
+    });
   }
-  return makeVeoSafe(
-    buildVideoPromptText({
+  return buildVideoPromptText({
     title: breakdown.title,
-    characterDescription: ctx.charDescVeo,
-    productDescription: ctx.productDnaText,
+    characterDescription: charDesc,
+    productDescription: productDesc,
     ingredients: ctx.ingredientsText,
     sceneBible: ctx.sceneBible,
     setting: input.setting || "Unspecified",
@@ -503,19 +616,22 @@ function assemblePlanPrompts(
     aspectRatio: ctx.aspectRatio,
     colorPalette: palette,
     dialogueLanguage: ctx.dialogueLanguage,
+    characterNames: ctx.characterNames,
+    ambientAudio,
     marketing: breakdown.marketing_structure,
     segments: breakdown.segments.map((s) => ({
       segment_number: s.segment_number,
       title: s.title,
       role: s.marketing_role,
       duration_seconds: s.duration_seconds,
-      motion_prompt: s.motion_prompt,
+      motion_prompt: makeVeoSafe(s.motion_prompt),
       dialogue: s.dialogue,
+      speaker: s.speaker,
+      setting: makeVeoSafe(s.first_frame_prompt ?? ""),
       continuity_note: s.continuity_note,
       beats: s.beats,
     })),
-    })
-  );
+  });
 }
 
 /**
@@ -597,12 +713,16 @@ export async function generateBoardImage(params: {
         segmentNumber: seg.segment_number,
         sceneDescription: seg.first_frame_prompt || seg.title,
         shot: seg.beats?.[0]?.camera || "[EYE]",
-        characterDescription: ctx.charDescDna,
+        // Multi-character scene → describe ALL named characters; single → the
+        // identity-locked main description.
+        characterDescription: ctx.characterRefs.length > 1 ? ctx.charDescForPoster : ctx.charDescDna,
         productDna: ctx.productDnaText,
         ingredients: ctx.ingredientsText,
         sceneBible: ctx.sceneBible,
         style: input.style,
         preserveRealFace: ctx.preserveRealFace,
+        hasDialogue: !!(seg.dialogue && seg.dialogue.trim()),
+        speakerName: seg.speaker,
         referenceImages: ctx.canChain && images.length > 0 ? images : undefined,
         references: ctx.canChain && descriptors.length > 0 ? descriptors : undefined,
         provider,

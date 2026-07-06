@@ -4,7 +4,7 @@ export type Plan = "free" | "pro" | "enterprise";
 
 // ─── AI Provider ──────────────────────────────────────────────────────────────
 
-export type AIProvider = "openai" | "gemini";
+export type AIProvider = "openai" | "gemini" | "claude";
 
 /** Image quality tier — maps to different image models / cost. */
 export type ImageQuality = "standard" | "pro";
@@ -81,6 +81,12 @@ export type Genre =
   | "brand_film"
   | "promo"
   | "unboxing"
+  // ─── Knowledge/topic content (from the topic library) ────────────────
+  | "numerology"
+  | "health"
+  // ─── Demonstration content (recipe / workout) ────────────────────────
+  | "cooking"
+  | "fitness"
   | "other";
 
 // ─── AI Engine ──────────────────────────────────────────────────────────────
@@ -96,6 +102,12 @@ export interface StoryboardGenerationInput {
   beats_per_segment?: number;
   /** Marketing goal/template for the script structure. */
   video_goal?: VideoGoal;
+  /** Which model writes the SCRIPT (text). Images always stay on Gemini.
+   * Defaults to the main provider. Switchable from the hidden admin panel. */
+  script_provider?: AIProvider;
+  /** Numerology (and topic) script tone: emotional/inspiring, sharp behavioral
+   * analysis, or both blended. Defaults to "balanced". */
+  numerology_style?: "inspirational" | "analytical" | "balanced";
   /** Spoken-line language for every segment (ISO-ish name, e.g. "Vietnamese"). */
   dialogue_language?: string;
   /** When true, every segment MUST carry a spoken line in dialogue_language. */
@@ -112,6 +124,9 @@ export interface StoryboardGenerationInput {
   tone?: string;
   setting?: string;
   custom_instructions?: string;
+  /** Stage-1 script (written by script_provider, e.g. Claude). When present,
+   * the storyboard model must expand THIS script into the JSON verbatim. */
+  source_script?: string;
   // ─── Product / TVC brief (drives a product-advertising script) ───────
   product_name?: string;
   /** Key selling points / USP, free text. */
@@ -143,7 +158,13 @@ export type VideoGoal =
   | "brand_story"
   | "social_short"
   | "testimonial"
-  | "promo_sale";
+  | "promo_sale"
+  // ─── Knowledge/topic content (numerology, health, self-development) ──
+  | "numerology"
+  | "health"
+  // ─── Demonstration content (recipe / workout) ────────────────────────
+  | "cooking"
+  | "fitness";
 
 export interface CharacterDescription {
   name: string;
@@ -237,6 +258,9 @@ export interface VideoSegment {
   /** Image-to-video motion prompt (30-80 words) for Veo/Seedance. */
   motion_prompt: string;
   dialogue: string | null;
+  /** Exact character_locks name of who speaks this segment's line (one speaker
+   * per clip). Empty/undefined = voiceover or no on-screen speaker. */
+  speaker?: string | null;
   /** How this segment visually connects to the previous one (seamless join). */
   continuity_note: string;
   /** Filled by the image pipeline — the generated start frame. */

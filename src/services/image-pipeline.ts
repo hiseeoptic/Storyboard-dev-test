@@ -195,6 +195,8 @@ export async function generateKeyframe(params: {
   sceneBible?: SceneBible;
   style: string;
   preserveRealFace?: boolean;
+  hasDialogue?: boolean;
+  speakerName?: string | null;
   referenceImages?: RefImage[];
   references?: RefDescriptor[];
   provider?: AIProvider;
@@ -212,6 +214,8 @@ export async function generateKeyframe(params: {
     style: params.style,
     aspectRatio: params.aspectRatio ?? "16:9",
     preserveRealFace: params.preserveRealFace,
+    hasDialogue: params.hasDialogue,
+    speakerName: params.speakerName,
     references: params.references,
   });
 

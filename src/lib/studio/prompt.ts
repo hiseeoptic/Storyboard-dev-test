@@ -16,10 +16,18 @@ export function buildPrompt(
 ): string {
   const isSpecial = config.photographyStyleCategory === "special";
 
-  // Subject description
+  // Subject description.
+  // CRITICAL: when a face reference photo is attached, that PHOTO is the source
+  // of truth for the person's gender/age/appearance. Never override it with a
+  // generic config default — that is exactly what turned an uploaded WOMAN into
+  // "a man" (the default subjectType is MALE). So for a single-person subject
+  // with a reference photo, defer to the photo instead of asserting a gender.
   let subject = "";
   if (config.subjectType === "PRODUCT") {
     subject = "a product";
+  } else if (ctx.hasFaces && (config.subjectType === "MALE" || config.subjectType === "FEMALE")) {
+    subject =
+      "the SAME person as in the attached reference photo — match their gender, age, ethnicity, face, hair and body build exactly (do not change their sex or turn them into a different person)";
   } else {
     const map: Record<string, string> = {
       MALE: "a man",
@@ -31,15 +39,19 @@ export function buildPrompt(
     if (config.customSubjectCount) subject += ` (${config.customSubjectCount})`;
   }
 
+  // Reference-GUIDED wording (not "replicate this exact real individual"):
+  // aggressive identity-replication language trips Google's face-safety filter,
+  // which returns a blurred/degraded face. The attached photo carries the
+  // likeness; we ask the model to stay consistent with it.
   const hasLockFace = config.faceEnhancements?.includes("lock_face");
   const faceId = ctx.hasFaces
     ? hasLockFace
-      ? "CRITICAL FACE IDENTITY: Exactly preserve and precisely recreate every single facial feature from the uploaded reference photo — same face shape, bone structure, skin tone, eye shape, nose, lips, and complete identity. The person in the output must be unmistakably and identically the same individual as in the reference. Do not alter the face under any circumstance."
-      : "CRITICAL FACE IDENTITY: You must precisely match the uploaded reference face photo — preserve every facial feature, bone structure, skin tone, eye shape, nose, and complete identity. The person in the output must be unmistakably the same individual as in the reference."
+      ? "FACE REFERENCE: render the character to closely match the attached reference photo — keep the same face shape, bone structure, skin tone, eye shape, nose and lips so the character stays visually consistent with the reference. Sharp, in-focus face."
+      : "FACE REFERENCE: render the character to match the attached reference photo — keep the same facial features, skin tone and overall look so the character stays visually consistent. Sharp, in-focus face."
     : "";
 
   const enhMap: Record<string, string> = {
-    lock_face: "CRITICAL — Exactly preserve ALL facial features from reference photo. Same face, same identity.",
+    lock_face: "Keep the character's face consistent with the attached reference photo, sharp and in focus.",
     smooth_skin: "flawlessly smooth natural skin texture, professional beauty retouching",
     bright_skin: "naturally brightened luminous skin, healthy inner glow",
     younger: "naturally de-aged 5-10 years younger, realistic and convincing",

@@ -1,4 +1,6 @@
 export {
+  buildScriptWriterSystemPrompt,
+  buildScriptWriterUserPrompt,
   buildStoryboardSystemPrompt,
   buildStoryboardUserPrompt,
   buildCharacterRefSheetPrompt,
@@ -7,6 +9,9 @@ export {
   buildMasterBoardPrompt,
   buildVideoPromptText,
   buildSegmentVeoPrompt,
+  buildVeoJson,
+  VEO_NEGATIVE_LIST,
+  genreAmbientAudio,
   buildReferenceInstructions,
 } from "./storyboard-breakdown";
 export type { RefRole, RefDescriptor } from "./storyboard-breakdown";

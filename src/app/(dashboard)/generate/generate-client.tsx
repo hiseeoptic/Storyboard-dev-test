@@ -17,6 +17,7 @@ import {
   Film,
   Image as ImageIcon,
   AlertTriangle,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,9 +36,12 @@ import {
   generateStoryboardPlan,
   generateBoardImage,
   finalizeScript,
+  getTopicLibrary,
   type StoryboardResult,
   type StoryboardAnalysis,
 } from "@/actions";
+import type { TopicCategory } from "@/services/topics";
+import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
 import type {
@@ -203,11 +207,11 @@ const t = {
   },
   videoGoalLabel: { vi: "Mục tiêu video", en: "Video Goal" },
   imageQuality: { vi: "Chất lượng ảnh", en: "Image Quality" },
-  qualityStandard: { vi: "Standard (nhanh, tiết kiệm)", en: "Standard (fast, cheaper)" },
-  qualityPro: { vi: "Pro — Nano Banana Pro (giữ mặt tốt nhất)", en: "Pro — Nano Banana Pro (best face lock)" },
+  qualityStandard: { vi: "Standard · Nano Banana (rẻ + đẹp) ✓ khuyên dùng", en: "Standard · Nano Banana (cheap + good) ✓ recommended" },
+  qualityPro: { vi: "Pro · Nano Banana Pro (giữ mặt tốt nhất, đắt hơn)", en: "Pro · Nano Banana Pro (best face lock, pricier)" },
   qualityHint: {
-    vi: "Chế độ Pro chỉ hoạt động với Gemini, giữ khuôn mặt nhân vật chính xác nhất.",
-    en: "Pro mode works with Gemini only and preserves the character's face most accurately.",
+    vi: "Cả 2 đều là Gemini Nano Banana. Board giờ chỉ để xem nên Standard là đủ đẹp mà rẻ — khuyên dùng. Pro chỉ cần khi bạn muốn giữ mặt cực gắt.",
+    en: "Both are Gemini Nano Banana. Boards are review-only now, so Standard is the sweet spot (cheap + good). Use Pro only when you need the strictest face lock.",
   },
   aspectRatio: { vi: "Tỉ lệ khung hình", en: "Aspect Ratio" },
   aspectLandscape: { vi: "Ngang 16:9 (YouTube)", en: "Landscape 16:9 (YouTube)" },
@@ -352,6 +356,10 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "thriller", label: "Giật gân" },
     { value: "animation", label: "Hoạt hình" },
     { value: "documentary", label: "Tài liệu" },
+    { value: "numerology", label: "Thần số học" },
+    { value: "health", label: "Sức khoẻ" },
+    { value: "cooking", label: "Món ăn / Nấu ăn" },
+    { value: "fitness", label: "Thể hình / Tập luyện" },
   ],
   en: [
     { value: "advertising", label: "Advertising / TVC" },
@@ -368,6 +376,10 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "thriller", label: "Thriller" },
     { value: "animation", label: "Animation" },
     { value: "documentary", label: "Documentary" },
+    { value: "numerology", label: "Numerology" },
+    { value: "health", label: "Health" },
+    { value: "cooking", label: "Food / Cooking" },
+    { value: "fitness", label: "Fitness / Workout" },
   ],
 };
 
@@ -379,6 +391,14 @@ const AD_GENRES = new Set([
   "promo",
   "unboxing",
 ]);
+
+// Topic-library genres (numerology / health) → drive the 5-beat framework and
+// hide the product/story brief (their content comes from the topic library).
+const TOPIC_GENRES = new Set(["numerology", "health"]);
+
+// Demonstration genres (cooking / fitness) → drive their own framework from the
+// idea box (dish name / workout goal); no product or story brief needed.
+const DEMO_GENRES = new Set(["cooking", "fitness"]);
 
 const CUSTOM = "__custom__";
 
@@ -521,6 +541,10 @@ const VIDEO_GOAL_OPTIONS: Record<Lang, { value: VideoGoal; label: string }[]> = 
     { value: "storytelling", label: "Kể chuyện" },
     { value: "review", label: "Review / Đánh giá" },
     { value: "educational", label: "Giáo dục / Hướng dẫn" },
+    { value: "numerology", label: "Thần số học (Hook→Giải mã→CTA)" },
+    { value: "health", label: "Sức khoẻ (Vấn đề→Đồng hành→CTA)" },
+    { value: "cooking", label: "Món ăn (Money shot→Các bước→Lưu)" },
+    { value: "fitness", label: "Thể hình (Mục tiêu→Động tác→Lưu)" },
   ],
   en: [
     { value: "marketing_general", label: "General marketing" },
@@ -532,6 +556,10 @@ const VIDEO_GOAL_OPTIONS: Record<Lang, { value: VideoGoal; label: string }[]> = 
     { value: "storytelling", label: "Storytelling" },
     { value: "review", label: "Review / Testimonial" },
     { value: "educational", label: "Educational / How-to" },
+    { value: "numerology", label: "Numerology (Hook→Insight→CTA)" },
+    { value: "health", label: "Health (Problem→Companion→CTA)" },
+    { value: "cooking", label: "Food (Money shot→Steps→Save)" },
+    { value: "fitness", label: "Fitness (Goal→Moves→Save)" },
   ],
 };
 
@@ -644,6 +672,8 @@ function toAnchorBase64(uri: string, max = 1024, quality = 0.8): Promise<string 
         canvas.height = Math.round(img.height * scale);
         const cx = canvas.getContext("2d");
         if (!cx) return done(null);
+        cx.imageSmoothingEnabled = true;
+        cx.imageSmoothingQuality = "high";
         cx.drawImage(img, 0, 0, canvas.width, canvas.height);
         const out = canvas.toDataURL("image/jpeg", quality);
         done(out.split(",")[1] ?? null);
@@ -657,6 +687,30 @@ function toAnchorBase64(uri: string, max = 1024, quality = 0.8): Promise<string 
     };
     img.src = uri;
   });
+}
+
+/**
+ * Normalise every reference image to a small JPEG before it travels to the
+ * server. Uploaded photos are already ~1024px, but studio-generated portraits
+ * come back full size (up to 2048px, quality 93) and are used raw — three of
+ * them blow past Vercel's hard ~4.5 MB request-body cap, so the platform
+ * rejects the whole Server Action before our code runs (the opaque "Server
+ * Components render" error). Downscaling here keeps every reference tiny so all
+ * of them fit, instead of silently dropping some. Never hangs (toAnchorBase64
+ * has an onerror + 10s timeout); on failure it keeps the original.
+ */
+async function downscaleRefImages(refs: ImageReference[]): Promise<ImageReference[]> {
+  const out: ImageReference[] = [];
+  for (const ref of refs) {
+    const imgs: string[] = [];
+    for (const b64 of ref.images) {
+      const uri = b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`;
+      const small = await toAnchorBase64(uri, 1024, 0.82);
+      imgs.push(small ?? b64);
+    }
+    if (imgs.length > 0) out.push({ ...ref, images: imgs });
+  }
+  return out;
 }
 
 function resolveDesc(
@@ -718,6 +772,23 @@ export function GenerateClient() {
   const [draft, setDraft] = useState<StoryboardGenerationOutput | null>(null);
   const [planWarnings, setPlanWarnings] = useState<string[]>([]);
 
+  // ─── Topic library (Google Sheet: numerology / health scripts) ──
+  const [topicCats, setTopicCats] = useState<TopicCategory[]>([]);
+  const [topicType, setTopicType] = useState("");
+  const [topicItemId, setTopicItemId] = useState("");
+  const [topicError, setTopicError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getTopicLibrary().then((r) => {
+      if (!alive) return;
+      if (r.success) setTopicCats(r.data.categories);
+      else setTopicError(r.error);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // Set when reference images were handed off from the Image Studio.
   const [fromStudio, setFromStudio] = useState(false);
 
@@ -729,6 +800,20 @@ export function GenerateClient() {
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState(false);
 
+  // ─── Numerology script tone: inspiring + sharp behavioral analysis (both),
+  // or lean fully one way. Default "balanced" (both). Persisted. ──
+  const [numerologyStyle, setNumerologyStyle] = useState<
+    "inspirational" | "analytical" | "balanced"
+  >("balanced");
+
+  // ─── Script model (default Claude Opus 4.8) — images always use Gemini.
+  // Switchable via the hidden panel (double-click the title, passcode 2502). ──
+  const [scriptProvider, setScriptProvider] = useState<AIProvider>("claude");
+  const [modelPanelOpen, setModelPanelOpen] = useState(false);
+  const [modelUnlocked, setModelUnlocked] = useState(false);
+  const [modelPw, setModelPw] = useState("");
+  const [modelPwError, setModelPwError] = useState(false);
+
   // Load saved provider choice on mount
   useEffect(() => {
     const saved =
@@ -738,12 +823,50 @@ export function GenerateClient() {
     if (saved === "gemini" || saved === "openai") {
       setProvider(saved);
     }
+    const savedScript =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("sb_script_provider")
+        : null;
+    if (savedScript === "gemini" || savedScript === "openai" || savedScript === "claude") {
+      setScriptProvider(savedScript);
+    }
+    const savedStyle =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("sb_numerology_style")
+        : null;
+    if (savedStyle === "inspirational" || savedStyle === "analytical" || savedStyle === "balanced") {
+      setNumerologyStyle(savedStyle);
+    }
   }, []);
+
+  const switchNumerologyStyle = (s: "inspirational" | "analytical" | "balanced") => {
+    setNumerologyStyle(s);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("sb_numerology_style", s);
+    }
+  };
+
+  const switchScriptProvider = (p: AIProvider) => {
+    setScriptProvider(p);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("sb_script_provider", p);
+    }
+  };
 
   const switchProvider = (p: AIProvider) => {
     setProvider(p);
     if (typeof window !== "undefined") {
       window.localStorage.setItem("sb_ai_provider", p);
+    }
+  };
+
+  const checkModelPassword = () => {
+    if (modelPw === "2502") {
+      setModelUnlocked(true);
+      setModelPwError(false);
+      setModelPw("");
+    } else {
+      setModelPwError(true);
     }
   };
 
@@ -983,15 +1106,15 @@ export function GenerateClient() {
         : []),
     ];
 
-    const characterImages: ImageReference[] = effectiveCharacters
+    const rawCharacterImages: ImageReference[] = effectiveCharacters
       .filter((c) => c.images.length > 0)
       .map((c) => ({ name: c.name, images: c.images.map((i) => i.base64) }));
 
-    const productImages: ImageReference[] = effectiveProducts
+    const rawProductImages: ImageReference[] = effectiveProducts
       .filter((p) => p.images.length > 0)
       .map((p) => ({ name: p.name, description: p.description, images: p.images.map((i) => i.base64) }));
 
-    const backgroundImages: ImageReference[] = effectiveBackgrounds
+    const rawBackgroundImages: ImageReference[] = effectiveBackgrounds
       .filter((b) => b.images.length > 0)
       .map((b) => ({ name: b.name, description: b.description, images: b.images.map((i) => i.base64) }));
 
@@ -1001,18 +1124,35 @@ export function GenerateClient() {
         ? [{ name: ingName.trim(), description: ingDesc, images: ingImages }]
         : []),
     ];
-    const ingredientImages: ImageReference[] = effectiveIngredients
+    const rawIngredientImages: ImageReference[] = effectiveIngredients
       .filter((g) => g.images.length > 0)
       .map((g) => ({ name: g.name, description: g.description, images: g.images.map((i) => i.base64) }));
 
-    // Vercel caps each serverless request body at ~4.5 MB. Keep the combined
-    // reference-image payload safely under that — otherwise the platform
-    // rejects the whole request before our code runs, surfacing as the opaque
-    // "Server Components render" error. We always keep the FIRST character image
-    // (primary face lock) and then add more references only while under budget,
-    // dropping the rest. (The board generation only needs 1-2 angles anyway.)
-    const PAYLOAD_BUDGET = 3_600_000; // ~3.6 MB of base64, leaves headroom for the JSON
-    const b64Bytes = (s: string) => Math.ceil((s.length * 3) / 4);
+    // Downscale ALL references (incl. full-size studio-generated portraits) to
+    // ~1024px BEFORE measuring/sending, so 3+ images comfortably fit under
+    // Vercel's 4.5 MB body cap instead of overflowing or being dropped.
+    if (rawCharacterImages.length + rawProductImages.length + rawBackgroundImages.length + rawIngredientImages.length > 0) {
+      setProgressPercent(8);
+      setProgressMessage(L("analyzingImages"));
+    }
+    const [characterImages, productImages, backgroundImages, ingredientImages] = await Promise.all([
+      downscaleRefImages(rawCharacterImages),
+      downscaleRefImages(rawProductImages),
+      downscaleRefImages(rawBackgroundImages),
+      downscaleRefImages(rawIngredientImages),
+    ]);
+
+    // FINAL SAFETY NET. Images are already downscaled above, so all the usual
+    // references (3+ uploads or studio portraits) now fit easily. This budget
+    // only ever trips on a pathological case (e.g. a downscale that failed and
+    // fell back to a huge original): keep the FIRST character image (primary
+    // face lock) and add more only while under budget, dropping the rest, so
+    // the request can never exceed Vercel's ~4.5 MB body cap (which would
+    // surface as the opaque "Server Components render" error).
+    // NOTE: budget by the base64 STRING length — that is what actually travels
+    // over the wire (one base64 char ≈ one transmitted byte).
+    const PAYLOAD_BUDGET = 3_900_000; // base64 chars sent; leaves headroom under ~4.5 MB for the rest of the JSON
+    const b64Bytes = (s: string) => s.length;
     let payloadUsed = 0;
     let droppedImages = 0;
     const fitRefs = (refs: ImageReference[], alwaysKeepFirst: boolean): ImageReference[] => {
@@ -1066,6 +1206,8 @@ export function GenerateClient() {
       segment_count: segmentCount,
       beats_per_segment: beatsPerSegment,
       video_goal: videoGoal,
+      script_provider: scriptProvider,
+      numerology_style: numerologyStyle,
       dialogue_language: forceVietnameseDialogue ? "Vietnamese" : undefined,
       force_dialogue: forceVietnameseDialogue,
       character_descriptions: effectiveCharacters.length > 0
@@ -1129,9 +1271,12 @@ export function GenerateClient() {
     setProgressPercent(12);
 
     const segCount = breakdown.segments.length;
-    // Per clip we render the review BOARD + the clean KEYFRAME (the actual Veo
-    // input), plus the master board at the end.
-    const total = segCount * 2 + 1;
+    // Per clip we render ONE review BOARD (shows the scene), plus the master
+    // board at the end. Clean keyframes are NOT auto-generated anymore — feed
+    // Veo your uploaded character photo + the self-contained prompt instead
+    // (saves tokens and avoids inconsistent AI faces). A per-clip keyframe can
+    // still be generated on demand from the result screen.
+    const total = segCount + 1;
     let done = 0;
     const bump = () => {
       done++;
@@ -1176,20 +1321,7 @@ export function GenerateClient() {
       if (seg) seg.first_frame_url = url;
       if (url && !anchorB64) anchorB64 = await toAnchorBase64(url);
       bump();
-      await sleep(1200);
-
-      // Clean KEYFRAME — the single-scene first frame the user actually feeds
-      // into Veo (the multi-panel board is review-only). Auto-generated so the
-      // Veo-ready image is always there, anchored to the same wardrobe/look.
-      setProgressMessage(lang === "vi" ? `Đang vẽ keyframe ${i + 1}/${segCount}` : `Drawing keyframe ${i + 1}/${segCount}`);
-      const kfUrl = await genBoard(
-        { input, breakdown, analysis, kind: "keyframe", segmentIndex: i, provider, anchorImage: anchorB64 ?? undefined },
-        lang === "vi" ? `Keyframe ${i + 1}` : `Keyframe ${i + 1}`,
-        `kf-${i}`
-      );
-      if (seg) seg.keyframe_url = kfUrl;
-      bump();
-      if (i < segCount - 1) await sleep(1500);
+      if (i < segCount - 1) await sleep(1200);
     }
 
     setProgressMessage(lang === "vi" ? "Đang vẽ bảng tổng" : "Drawing master board");
@@ -1404,6 +1536,98 @@ export function GenerateClient() {
       // Assembly guide / prompts
       zip.file(`video_assembly_guide.txt`, result.videoPrompt);
 
+      // ── Master prompt (line-based, one paste-ready prompt per clip) ──
+      const bd = result.breakdown;
+      const aspect = genInput?.aspect_ratio ?? "9:16";
+      const oneLine = (s: string) => (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+      const kf = (n: number) => `keyframe_${String(n).padStart(2, "0")}.jpg`;
+
+      const masterLines: string[] = [
+        `# ${bd.title}`,
+        bd.synopsis ? `# ${oneLine(bd.synopsis)}` : "",
+        `# ${bd.segments.length} clips · ${aspect} · Omni Flash / Veo (10s per clip)`,
+        `# For each clip: attach your CHARACTER PHOTO as the reference, then paste the PROMPT.`,
+        "",
+      ];
+      for (const seg of bd.segments) {
+        masterLines.push(
+          `[SEGMENT ${seg.segment_number} — ${(seg.marketing_role || "").toUpperCase()} — ${seg.duration_seconds ?? 10}s]`,
+          `REFERENCE: ${seg.keyframe_url ? kf(seg.segment_number) : "ảnh nhân vật bạn tải lên (character photo)"}`,
+          `PROMPT: ${oneLine(seg.full_prompt ?? seg.motion_prompt ?? "")}`,
+        );
+        if (seg.dialogue) {
+          masterLines.push(`DIALOGUE${seg.speaker ? ` (${seg.speaker})` : ""}: "${oneLine(seg.dialogue)}"`);
+        }
+        masterLines.push("");
+      }
+      zip.file(`master_prompt.txt`, masterLines.join("\n"));
+
+      // ── Clean prompts-only file — NO headers/labels, one prompt per block,
+      // blank line between prompts, ready to paste straight into a video tool. ──
+      const promptsOnly = bd.segments
+        .map((seg) => oneLine(seg.full_prompt ?? seg.motion_prompt ?? ""))
+        .filter(Boolean)
+        .join("\n\n");
+      zip.file(`prompts.txt`, promptsOnly);
+
+      // ── Structured Veo 3.1 JSON (veoflow-style) — the primary deliverable ──
+      // A shared header (style / continuity / negative) + one STRUCTURED object
+      // per clip (scene / subject / shot / timeline / dialogue / negative). Veo
+      // Flow parses this far more reliably than a flat paragraph. Each clip also
+      // keeps a flattened self-contained `prompt` for text-mode users.
+      const veoJson = buildVeoJson(bd, {
+        aspectRatio: aspect,
+        dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+        ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
+      });
+      zip.file(`veo_prompts.json`, JSON.stringify(veoJson, null, 2));
+      // JSON Lines: one clip object per line — drop straight into a Veo batch flow.
+      const clipArr = Array.isArray((veoJson as { clips?: unknown[] }).clips)
+        ? ((veoJson as { clips: unknown[] }).clips as unknown[])
+        : [];
+      zip.file(
+        `veo_prompts.jsonl`,
+        clipArr.map((c) => JSON.stringify(c)).join("\n")
+      );
+
+      // ── Plain how-to-use guide (so the files are self-explanatory) ──
+      const readme = [
+        "CÁCH DÙNG BỘ PROMPT NÀY VỚI VEO / OMNI FLASH",
+        "=============================================",
+        "",
+        "Mỗi clip 10s làm ĐỘC LẬP. Với TỪNG clip:",
+        "  1) Mở Veo (image-to-video), tải ẢNH NHÂN VẬT của bạn (ảnh bạn đã upload) làm ảnh tham chiếu.",
+        "  2) Dán ĐÚNG phần prompt của clip đó (dòng PROMPT trong master_prompt.txt,",
+        "     hoặc trường \"prompt\" của segment trong veo_prompts.json).",
+        "  3) Đặt tỉ lệ " + aspect + ", tạo clip. Lặp cho " + bd.segments.length + " clip rồi ghép (CapCut/ffmpeg).",
+        "",
+        "KHÔNG cần copy phần đầu JSON (title / character_locks / scene_bible / style_guide)",
+        "vào Veo — mỗi prompt segment đã TỰ CHỨA đầy đủ nhân vật + bối cảnh + phong cách,",
+        "nên chỉ cần ảnh nhân vật của bạn + prompt là ĐỦ. Không cần tạo keyframe riêng.",
+        "",
+        "\"continuity\" / \"Nối tiếp\": chỉ là GHI CHÚ cho bạn biết clip này nối với clip trước thế nào",
+        "(để ghép mượt) — KHÔNG dán vào Veo. Segment 1 ghi 'opening shot' vì là cảnh mở đầu.",
+        "",
+        "FILE NÀO DÙNG GÌ:",
+        "  - prompts.txt        → GỌN NHẤT: chỉ có các prompt, mỗi prompt cách nhau 1 dòng",
+        "      trống, KHÔNG tiêu đề/giới thiệu. Đưa thẳng file này vào tool tạo video, hoặc",
+        "      copy từng đoạn (mỗi đoạn = 1 clip) rồi dán vào Veo (đính kèm ảnh nhân vật).",
+        "  - veo_prompts.json   → CHUẨN cho Veo Flow (JSON mode). Có phần đầu dùng chung",
+        "      (global_style / continuity / negative_prompt) + mảng \"clips\": mỗi clip là 1",
+        "      object có cấu trúc rõ ràng (scene / subject / shot / timeline / dialogue /",
+        "      negative_prompt). Dán cả object của clip vào ô JSON của Veo Flow — Veo hiểu",
+        "      từng trường nên ảnh ổn định, ÍT bị morphing/warping/teleport.",
+        "  - veo_prompts.jsonl  → mỗi dòng = 1 clip (JSON) — cho batch / tự động.",
+        "  - master_prompt.txt  → nếu Veo dùng chế độ TEXT: mỗi clip dán trường \"prompt\"",
+        "      (đã tự chứa đủ nhân vật + bối cảnh + phong cách + negative).",
+        "",
+        "MẸO: mỗi clip đều có \"negative_prompt\" liệt kê rõ những thứ phải tránh",
+        "(morphing, warping, teleporting, floating/duplicated objects, tay/ngón lỗi,",
+        "đổi mặt, chữ/sub trên màn hình, da nhựa CGI…). Giữ nguyên trường này khi dán.",
+        "",
+      ].join("\n");
+      zip.file(`README_HUONG_DAN.txt`, readme);
+
       const out = await zip.generateAsync({ type: "blob" });
       const objectUrl = URL.createObjectURL(out);
       const a = document.createElement("a");
@@ -1577,6 +1801,28 @@ export function GenerateClient() {
                     placeholder={lang === "vi" ? "(không có thoại)" : "(no dialogue)"}
                   />
                 </div>
+                {draft.character_locks.length > 1 && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      {lang === "vi" ? "Người nói (chỉ 1 người / cảnh)" : "Speaker (one per scene)"}
+                    </label>
+                    <Select
+                      value={s.speaker ?? ""}
+                      onChange={(e) => updateSeg(i, "speaker", e.target.value)}
+                      options={[
+                        { value: "", label: lang === "vi" ? "— Lồng tiếng / không ai nói —" : "— Voiceover / none —" },
+                        ...draft.character_locks
+                          .filter((c) => c.name)
+                          .map((c) => ({ value: c.name, label: c.name })),
+                      ]}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      {lang === "vi"
+                        ? "Mỗi cảnh chỉ 1 người nói; người còn lại im lặng. Hội thoại thì đổi người nói qua từng cảnh."
+                        : "One speaker per scene; the others stay silent. For a dialogue, alternate the speaker across scenes."}
+                    </p>
+                  </div>
+                )}
               </div>
             ))}
           </CardContent>
@@ -2036,11 +2282,92 @@ export function GenerateClient() {
     <div className="mx-auto max-w-2xl">
       {hiddenTrigger}
       {adminModal}
+
+      {/* Hidden script-model switcher — double-click the title, passcode 2502 */}
+      {modelPanelOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setModelPanelOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm space-y-3 rounded-lg border bg-background p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {!modelUnlocked ? (
+              <>
+                <p className="text-sm font-medium">Nhập mã để đổi model API</p>
+                <Input
+                  type="password"
+                  value={modelPw}
+                  onChange={(e) => {
+                    setModelPw(e.target.value);
+                    setModelPwError(false);
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && checkModelPassword()}
+                  placeholder="••••"
+                  autoFocus
+                />
+                {modelPwError && <p className="text-xs text-destructive">Sai mã.</p>}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setModelPanelOpen(false)}>
+                    Đóng
+                  </Button>
+                  <Button size="sm" onClick={checkModelPassword}>
+                    Mở
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium">Model viết kịch bản</p>
+                <p className="text-xs text-muted-foreground">
+                  Chỉ đổi model VIẾT KỊCH BẢN. Ảnh vẫn dùng Gemini (Nano Banana).
+                </p>
+                <div className="space-y-1.5">
+                  {([
+                    { v: "claude" as AIProvider, label: "Claude Opus 4.8 (mặc định — viết kịch bản)" },
+                    { v: "gemini" as AIProvider, label: "Gemini 2.5 Flash (rẻ)" },
+                    { v: "openai" as AIProvider, label: "GPT-4o (OpenAI)" },
+                  ]).map((o) => (
+                    <button
+                      key={o.v}
+                      type="button"
+                      onClick={() => switchScriptProvider(o.v)}
+                      className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                        scriptProvider === o.v
+                          ? "border-primary bg-primary/10 font-medium"
+                          : "border-input hover:border-primary/50"
+                      }`}
+                    >
+                      {o.label}
+                      {scriptProvider === o.v && <Check className="h-4 w-4 text-primary" />}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Claude cần <code>ANTHROPIC_API_KEY</code> trong Vercel. GPT-4o cần <code>OPENAI_API_KEY</code>.
+                </p>
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={() => setModelPanelOpen(false)}>
+                    Xong
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       <div className="mb-6 text-center">
         <div className="mb-3 flex justify-center">
           <LangToggle />
         </div>
-        <h1 className="text-3xl font-bold">{L("pageTitle")}</h1>
+        <h1
+          className="text-3xl font-bold select-none"
+          onDoubleClick={() => setModelPanelOpen(true)}
+          title=""
+        >
+          {L("pageTitle")}
+        </h1>
         <p className="mt-1 text-muted-foreground">{L("pageSubtitle")}</p>
       </div>
 
@@ -2065,6 +2392,66 @@ export function GenerateClient() {
           {/* ── Step 1: Story ─────────────────────────────────────── */}
           {step === 0 && (
             <>
+              <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                  <BookOpen className="h-4 w-4" />
+                  {lang === "vi" ? "Kho chủ đề (thần số học / sức khoẻ)" : "Topic library"}
+                </div>
+                {topicCats.length > 0 ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      {lang === "vi"
+                        ? "Chọn loại nội dung → chọn chủ đề. Nội dung sẽ đổ vào ô ý tưởng bên dưới để AI dựng kịch bản (bạn vẫn sửa được)."
+                        : "Pick a category → a topic. Its content fills the idea below; you can still edit it."}
+                    </p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <Select
+                        value={topicType}
+                        onChange={(e) => {
+                          setTopicType(e.target.value);
+                          setTopicItemId("");
+                        }}
+                        options={[
+                          { value: "", label: lang === "vi" ? "— Loại nội dung —" : "— Category —" },
+                          ...topicCats.map((c) => ({ value: c.key, label: c.label })),
+                        ]}
+                      />
+                      <Select
+                        value={topicItemId}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setTopicItemId(id);
+                          const cat = topicCats.find((c) => c.key === topicType);
+                          const item = cat?.items.find((it) => it.id === id);
+                          if (item) setStoryIdea(item.content);
+                          // Numerology topics → drive the dedicated 5-beat
+                          // Hook→Insight→CTA framework automatically.
+                          if (cat && /thần số|than so|numerolog/i.test(`${cat.label} ${cat.key}`)) {
+                            setVideoGoal("numerology");
+                          }
+                        }}
+                        options={[
+                          { value: "", label: lang === "vi" ? "— Chọn chủ đề —" : "— Choose topic —" },
+                          ...(topicCats.find((c) => c.key === topicType)?.items.map((it) => ({
+                            value: it.id,
+                            label: it.label,
+                          })) ?? []),
+                        ]}
+                      />
+                    </div>
+                  </>
+                ) : topicError ? (
+                  <p className="text-xs text-destructive">
+                    {lang === "vi" ? "⚠️ Không tải được kho chủ đề: " : "⚠️ Topic library failed: "}
+                    {topicError}
+                  </p>
+                ) : (
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {lang === "vi" ? "Đang tải kho chủ đề..." : "Loading topics..."}
+                  </p>
+                )}
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("storyIdea")}</label>
                 <Textarea
@@ -2078,7 +2465,15 @@ export function GenerateClient() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">{L("genre")}</label>
-                  <Select value={genre} onChange={(e) => setGenre(e.target.value)} options={GENRE_OPTIONS[lang]} />
+                  <Select value={genre} onChange={(e) => {
+                    const g = e.target.value;
+                    setGenre(g);
+                    // Topic/demonstration genres drive the matching framework goal.
+                    if (g === "numerology") setVideoGoal("numerology");
+                    else if (g === "health") setVideoGoal("health");
+                    else if (g === "cooking") setVideoGoal("cooking");
+                    else if (g === "fitness") setVideoGoal("fitness");
+                  }} options={GENRE_OPTIONS[lang]} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">{L("setting")}</label>
@@ -2106,8 +2501,85 @@ export function GenerateClient() {
                 )}
               </div>
 
-              {/* Brief — product (ad genres) vs story (narrative genres) */}
-              {isAdGenre ? (
+              {/* Brief — topic (numerology/health) vs product (ad) vs story */}
+              {TOPIC_GENRES.has(genre) ? (
+                <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                    <BookOpen className="h-4 w-4" />
+                    {genre === "numerology"
+                      ? (lang === "vi" ? "Nội dung Thần số học" : "Numerology content")
+                      : (lang === "vi" ? "Nội dung Sức khoẻ" : "Health content")}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {lang === "vi"
+                      ? 'Loại này lấy nội dung từ "Kho chủ đề" ở Bước 1 (chọn chủ đề → nội dung đổ vào ô ý tưởng). AI sẽ viết theo khung 5 nhịp Hook → Giải mã → CTA.'
+                      : 'This type pulls content from the Topic Library in Step 1. The AI writes it in the 5-beat Hook → Insight → CTA framework.'}
+                  </p>
+                  {genre === "numerology" && (
+                    <div className="space-y-2 pt-1">
+                      <label className="text-xs font-medium">
+                        {lang === "vi" ? "Phong cách kịch bản" : "Script style"}
+                      </label>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {(
+                          [
+                            {
+                              v: "balanced",
+                              t: lang === "vi" ? "Kết hợp" : "Balanced",
+                              d: lang === "vi" ? "Cảm hứng + phân tích sắc bén" : "Inspiring + sharp analysis",
+                            },
+                            {
+                              v: "inspirational",
+                              t: lang === "vi" ? "Truyền cảm hứng" : "Inspirational",
+                              d: lang === "vi" ? "Điện ảnh, cảm xúc, nâng đỡ" : "Cinematic, emotional, uplifting",
+                            },
+                            {
+                              v: "analytical",
+                              t: lang === "vi" ? "Phân tích sắc bén" : "Sharp analysis",
+                              d: lang === "vi" ? "Đọc vị hành vi, ví dụ thực tế" : "Behavioral, real examples",
+                            },
+                          ] as const
+                        ).map((o) => (
+                          <button
+                            key={o.v}
+                            type="button"
+                            onClick={() => switchNumerologyStyle(o.v)}
+                            className={`rounded-lg border p-2 text-left transition ${
+                              numerologyStyle === o.v
+                                ? "border-primary bg-primary/10"
+                                : "border-border hover:border-primary/50"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-medium">{o.t}</span>
+                              {numerologyStyle === o.v && <Check className="h-3.5 w-3.5 text-primary" />}
+                            </div>
+                            <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground">{o.d}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : DEMO_GENRES.has(genre) ? (
+                <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                    <BookOpen className="h-4 w-4" />
+                    {genre === "cooking"
+                      ? (lang === "vi" ? "Nội dung Món ăn" : "Food content")
+                      : (lang === "vi" ? "Nội dung Thể hình" : "Fitness content")}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {genre === "cooking"
+                      ? (lang === "vi"
+                          ? 'Gõ TÊN MÓN vào ô ý tưởng ở trên (vd "cơm chiên trứng", "bánh mì chảo"). AI dựng theo: Money shot → Nguyên liệu → Các bước → Thành phẩm → Lưu công thức. Món ăn là "ngôi sao" hình ảnh.'
+                          : 'Type the DISH in the idea box above (e.g. "egg fried rice"). The AI builds: money shot → ingredients → steps → reveal → save. The food is the star.')
+                      : (lang === "vi"
+                          ? 'Gõ MỤC TIÊU/BÀI TẬP vào ô ý tưởng ở trên (vd "giảm mỡ bụng", "3 động tác cho mông"). AI dựng theo: Mục tiêu/lỗi sai → Động tác đúng → Kết quả → Lưu tập theo. Đúng form, an toàn.'
+                          : 'Type the GOAL/workout in the idea box above (e.g. "lose belly fat"). The AI builds: goal/mistake → correct moves → result → save. Correct form, safe.')}
+                  </p>
+                </div>
+              ) : isAdGenre ? (
                 <div className="space-y-3 rounded-lg border border-dashed p-4">
                   <div className="flex items-center gap-2">
                     <Package className="h-4 w-4 shrink-0 text-primary" />

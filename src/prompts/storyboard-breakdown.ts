@@ -1,13 +1,41 @@
-import type { StoryboardGenerationInput, VideoGoal, SceneBible, AspectRatio } from "@/types";
+import type {
+  StoryboardGenerationInput,
+  StoryboardGenerationOutput,
+  VideoGoal,
+  SceneBible,
+  AspectRatio,
+} from "@/types";
 
 // Forbidden in every generated image/clip (the brief's negative list).
+// Phrased as plain descriptors (no instructive "no/don't") — Veo/Kling read the
+// negative list as nouns/adjectives to avoid, and "no X" phrasing can backfire.
 const SHARED_NEGATIVE =
-  "NEGATIVE (must avoid): warped or altered label/logo text, logo change, brand-colour change, extra products, DUPLICATED OR DOUBLED objects (e.g. two pans / two of the same item), floating or levitating objects, physically impossible actions (e.g. lifting/holding a pan with a spatula), extra people, changed hair/wardrobe/accessories, human hands when the action does not require them, on-screen text overlays, captions, subtitles, watermark, object/container morphing, duplicate subject, plastic/CGI skin.";
+  "NEGATIVE (avoid — plain descriptors): resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, warped or altered label/logo text, logo change, brand-colour change, extra products, duplicated or doubled objects (e.g. two pans / two of the same item), floating or levitating objects, objects passing through solid surfaces, physically impossible actions (e.g. lifting/holding a pan with a spatula), sudden appearing or disappearing objects, teleporting, morphing, warping, melting, distorting, deforming, object/container morphing, inconsistent physics, unnatural motion, jittery or stuttering movement, frame skipping, mid-clip jump cuts, extra people, changed hair/wardrobe/accessories, identity drift, face morphing, changing facial features, age shifting, extra or missing limbs, extra or fused fingers, mutated or malformed hands, human hands when the action does not require them, limbs bending or passing through objects, deformed liquid, floating ingredients, melted food, warping plate, liquid flowing upward, on-screen text overlays, captions, subtitles, burned-in dialogue text, title cards, watermark, duplicate subject, plastic/CGI skin.";
 
-/** One-line "Scene Bible" style tokens, reproduced verbatim in every image. */
+// Positive realism directive — reproduced in every motion/video prompt. Models
+// respond better to explicit positive physics cues than to negatives alone, so
+// we state what the clip MUST do, not only what to avoid.
+// Concise anti-artifact tail for IMAGE-LED Veo prompts. When a clean keyframe
+// is attached as the start frame it already carries the identity, wardrobe,
+// setting, lens and colour — so the prompt must NOT re-describe them (that
+// bloat is exactly what makes Veo drift/morph). We keep only the motion plus a
+// short physics + negative cue.
+// Concise anti-artifact tail. Product-related negatives are included ONLY when
+// the clip actually has a product, so a person-only clip never mentions products.
+function veoConciseTail(hasProduct: boolean): string {
+  const productNeg = hasProduct
+    ? "warped or altered label/logo text, brand-colour change, extra or duplicated products, "
+    : "";
+  return `Natural, physically realistic motion — real weight, gravity and momentum; solid stable body, feet planted, hands make real contact and do not pass through objects; ONE continuous take, no hard cuts. Audio only — NO subtitles, captions, on-screen text or watermark. Avoid: ${productNeg}morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, plastic/CGI skin.`;
+}
+
+/** One-line "Scene Bible" style tokens. Keeps lens/lighting/grade constant so
+ * the clips feel like one film, while the LOCATION can still change per scene
+ * (the "Setting style" is a guide, not a lock — vital for narrative/numerology
+ * videos where every beat is a different metaphor location). */
 function sceneBibleTokens(sb?: SceneBible): string {
   if (!sb) return "";
-  return `STYLE TOKENS (reproduce these EXACTLY in every keyframe — same lens, light, backdrop, grade): ${sb.lens}; ${sb.lighting}; backdrop ${sb.backdrop}; ${sb.color_grade}.`;
+  return `STYLE TOKENS (keep the SAME lens, lighting mood and colour grade across every clip): ${sb.lens}; ${sb.lighting}; ${sb.color_grade}. Setting style: ${sb.backdrop}.`;
 }
 
 // ─── Marketing templates ────────────────────────────────────────────────────
@@ -31,7 +59,331 @@ const GOAL_GUIDANCE: Record<VideoGoal, string> = {
     "Customer testimonial. A real person talks to camera: their before-pain, the turning point with the product, the after-result, a sincere recommendation CTA.",
   promo_sale:
     "Promo / sale push. Bold offer hook (discount/deadline), show the value, create urgency (limited time/stock), end with a strong shop-now CTA.",
+  numerology:
+    "Numerology / self-development insight short. ONE relatable character embodying the number(s). 5-beat emotional arc: Hook (call out the viewer) → Pain (the misunderstood struggle) → Insight (reframe: 'not X, but Y') → Payoff (the mission/gift) → CTA (loop-friendly, comment prompt). Warm, cinematic, inspiring — never a hard product sell.",
+  health:
+    "Health / wellness education short. ONE relatable character living the health problem. 5-beat arc: Hook (name the symptom/fear) → Problem (how it disrupts daily life) → Insight (the real root cause, explained simply) → Solution (the habit/remedy/product that helps) → CTA (save/follow/try). Trustworthy, empathetic, clear — evidence-based, not alarmist.",
+  cooking:
+    "Recipe / food short. THE FOOD IS THE STAR. Open on an irresistible finished-dish 'money shot', then show the make in clean steps, end on the reveal + a save-worthy CTA. Appetising, sensory (sizzle, steam, texture), fast and satisfying.",
+  fitness:
+    "Fitness / workout short. Call out the goal (fat loss, abs, glutes) or a common mistake, demonstrate the movement/tip with correct form, show the payoff, end with a save/tag CTA. Motivating, clear coaching cues, safe — never a hard sell or unsafe claim.",
 };
+
+// Per-number archetype reference — ALIGNED VERBATIM with the thần số học app
+// (hiseeoptic/thansohoc-next, src/utils/deepNumberKnowledge.ts + numerologyAnalysis.ts):
+// archetype name, ruling planet, ngũ hành and core message are the repo's own.
+// This is a CHARACTERISATION aid — the live TOPIC CONTENT from the shared Google
+// Sheet is the source of truth for the detailed meaning; this table guarantees
+// the model always has the number's identity, element, shadow and mission.
+const NUMEROLOGY_ARCHETYPES = `
+NUMBER ARCHETYPE REFERENCE (số · archetype · hành tinh · ngũ hành · thông điệp lõi · SHADOW/bóng tối):
+1 · Thủ Lĩnh · Mặt Trời · Thủy · "sinh ra để dẫn dắt và khai phá con đường mới" · độc đoán, kiêu ngạo, cô độc, sợ thất bại
+2 · Yêu Thương · Mặt Trăng · Thổ · "sinh ra để kết nối, yêu thương và mang lại hòa hợp" · phụ thuộc, cả nể, thụ động, lo âu
+3 · Người Truyền Cảm Hứng · Sao Mộc · Mộc · "sinh ra để truyền cảm hứng, sáng tạo và lan tỏa năng lượng tích cực" · hời hợt, phân tán, drama, nói nhiều làm ít
+4 · Người Thầy · Sao Thiên Vương · Mộc · "sinh ra để xây nền tảng vững chắc, tổ chức và giữ mọi thứ vận hành" · cứng nhắc, bảo thủ, ôm việc, ngại đổi thay
+5 · Phiêu Du · Sao Thủy · Thổ · "sinh ra để khám phá, trải nghiệm tự do và mang lại sự mới mẻ" · bốc đồng, thiếu kiên định, cả thèm chóng chán, sa đà
+6 · Gia Đình · Sao Kim · Kim · "sinh ra để yêu thương, chăm sóc và gắn kết gia đình & cộng đồng" · kiểm soát, hy sinh quá mức, ôm đồm, phán xét
+7 · Chiêm Nghiệm / Chiến Lược Gia · Sao Hải Vương · Kim · "sinh ra để chiêm nghiệm sâu sắc, phân tích và tìm chân lý nội tâm" · cô lập, hoài nghi, lạnh lùng, xa cách
+8 · Kinh Doanh / Chuyên Gia · Sao Thổ · Thổ · "sinh ra để đạt thành tựu lớn, lãnh đạo và xây giá trị bền vững" · tham vọng mù quáng, cuồng việc, ám ảnh vật chất, áp chế
+9 · Nhân Đạo · Sao Hỏa · Hỏa · "sinh ra để cống hiến, nhân đạo và mang giá trị cho cộng đồng" · bi lụy, ôm nỗi đau, khó buông, xa cách cảm xúc
+11 · Người Khai Sáng · Mặt Trăng · Thủy · "khai sáng, chữa lành và dẫn dắt bằng trực giác mạnh mẽ" · lo âu cực độ, mất phương hướng, cực đoan cảm xúc
+22 · Người Kiến Tạo · Sao Thiên Vương · Thổ · "kiến tạo những công trình lớn, kết hợp trực giác và thực thi" · áp lực khổng lồ, tự hủy hoặc lãng phí tiềm năng
+33 · Người Chữa Lành · Sao Kim · Hỏa · "chữa lành, truyền yêu thương và mang lại sự cân bằng" · gánh trách nhiệm đến kiệt sức
+NGŨ HÀNH — TƯƠNG SINH: Mộc→Hỏa→Thổ→Kim→Thủy→Mộc (số này nuôi số kia = hỗ trợ, đồng hành). TƯƠNG KHẮC: Mộc→Thổ→Thủy→Hỏa→Kim→Mộc (số này chế số kia = căng thẳng nhưng bù trừ). Với chủ đề nhiều số, XÁC ĐỊNH quan hệ ngũ hành giữa chúng và để nó dẫn dắt CORE MESSAGE.
+NGŨ HÀNH → MÔI TRƯỜNG & MÀU (dùng để dựng bối cảnh/ánh sáng cho ĐÚNG chất số):
+· Thủy (Water): sông/mưa/mặt nước phản chiếu, dòng chảy; grade xanh lam–teal mát, ẩm, chuyển động mềm.
+· Thổ (Earth): núi/đất/đá, không gian vững chãi, bám rễ; tông đất ấm ochre/nâu, ổn định, tĩnh.
+· Mộc (Wood): rừng/cây/mầm xanh, sự sinh trưởng; sắc xanh lá, nắng sớm, sức sống vươn lên.
+· Kim (Metal): kim loại/kính/tối giản, đường nét sắc, chính xác; xám–trắng lạnh, tĩnh, sạch.
+· Hỏa (Fire): hoàng hôn/lửa/nến, ánh sáng rực; đỏ–cam ấm, đam mê, quầng sáng phát ra.`;
+
+// Script tone selector for topic content. The user can keep every script both
+// inspiring AND behaviorally sharp ("balanced", default), or lean fully one way.
+function numerologyToneDirective(style?: string): string {
+  switch (style) {
+    case "inspirational":
+      return `\n- TONE = TRUYỀN CẢM HỨNG (cinematic, cảm xúc): ấm áp, nâng đỡ, giàu hình ảnh ẩn dụ. Dồn vào SỨ MỆNH của con số như nguồn cảm hứng; câu thoại nên thơ mà vẫn ngắn; khiến người xem thấy MÌNH được nhìn thấy và có hy vọng. Cảm xúc quan trọng hơn cơ chế.`;
+    case "analytical":
+      return `\n- TONE = PHÂN TÍCH HÀNH VI SẮC BÉN (giọng app thần số học): "đọc vị" chính xác. Gọi tên HÀNH VI cụ thể + cơ chế tâm lý đằng sau (động lực tâm lý, xu hướng hành vi), đối chiếu bản PHẢN ỨNG vs bản TỈNH THỨC, cho ví dụ đời thực. Có căn cứ, thật, ít huyền bí — nhưng vẫn ấm, không khô như báo cáo.`;
+    default: // "balanced"
+      return `\n- TONE = KẾT HỢP (mặc định — vừa truyền cảm hứng vừa sắc bén): MỞ và ĐÓNG bằng CẢM XÚC (hook chặn-lướt đầy cảm hứng + payoff nâng đỡ), nhưng mỗi INSIGHT ở giữa là PHÂN TÍCH HÀNH VI sắc bén — một hành vi cụ thể + cơ chế của nó + cú lật phản-ứng→tỉnh-thức. Ngoài truyền cảm hứng, trong "đọc vị" chuẩn xác. Lấy điểm mạnh của cả hai.`;
+  }
+}
+
+// Rich framework for topic-driven numerology / self-development shorts, modelled
+// on the proven "Số Chủ Đạo" script shape. Injected into the user prompt when
+// video_goal is "numerology" so the AI writes in this exact winning structure.
+const NUMEROLOGY_FRAMEWORK = `
+NUMEROLOGY SCRIPT FRAMEWORK (follow this EXACTLY — it is the proven winning shape):
+- SUBJECT: a numerology profile (e.g. "Số Chủ Đạo 5, Sứ Mệnh 9"). SOURCE OF TRUTH = the TOPIC CONTENT injected below (pulled from the numerology database) + the archetype reference table below; NEVER invent contradictory numerology. Read the topic content and pull out the number's real strengths, SHADOW and MISSION before writing.
+${NUMEROLOGY_ARCHETYPES}
+- NGŨ HÀNH (Five-Elements): map each number to its element from the table, state the relationship (tương sinh / tương khắc) between the numbers, and derive ONE clear CORE MESSAGE from it (e.g. "tự do của bạn không phải để chạy trốn — mà để mang cảm hứng đi cho đời"). Put this core message in "synopsis". Use the element's MÔI TRƯỜNG & MÀU row to choose the dominant environment + colour grade so the whole video literally LOOKS like that number's element.
+
+- WHEN THERE ARE 2+ NUMBERS (e.g. "Số Chủ Đạo 5, Sứ Mệnh 9") — analyse the COMBINATION, never each number in isolation (this is the thần số học app's core method):
+  · Build ONE energy AXIS "X ↔ Y" from the two numbers' pulls and make the whole video about resolving that tension — e.g. 4+5 = "Ổn định ↔ Tự do", 1+3 = "Dẫn dắt ↔ Kết nối". The hook names the tension, the insight reconciles it.
+  · Same energy family = AMPLIFY (both push the same way → superpower + the shared blind spot). Opposite pulls = TENSION but the HIGHEST growth (the two must integrate). A third number can SOFTEN or tip the balance.
+  · REACTIVE vs CONSCIOUS: every number has a "bản năng/phản ứng" version (its shadow running the show) and a "tỉnh thức/trưởng thành" version (the same energy used wisely). Beat 2 (pain) shows the reactive version; beat 3-4 (insight→payoff) shows the conscious version. This reactive→conscious turn IS the transformation viewers share.
+  · GROUNDING (thần số học app voice): tie each trait to a CONCRETE behaviour / real-life example (động lực tâm lý, xu hướng hành vi), not vague cosmic clichés — keep it warm and inspiring, but specific and true, so it lands as "đúng là mình".
+
+- CHARACTER = THE NUMBER MADE HUMAN: invent ONE persona whose name, age, wardrobe, signature prop, posture, energy AND colour tone ALL express this number's archetype, and keep this EXACT character_lock identical across every segment. Derive the look from THIS number's traits in the topic content. (Archetype→look examples: Số 1 leader/pioneer = decisive stance, worn leather jacket, cool steel-blue grade; Số 5 freedom/adventure = faded backpack, warm golden 35mm, restless eyes; Số 9 humanitarian = soft warm light, giving hands.) LOCK a signature PROP that symbolises the number (e.g. Số 5 = backpack/map) and never introduce new unrelated props. Source the pain in beats 1-2 from this number's SHADOW ("bóng tối"), and the payoff in beat 4 from its MISSION line.
+
+- CHARACTER ↔ SETTING SYNCHRONISATION (this is what makes it feel "chuẩn" — DO NOT skip):
+  · Every scene's SETTING, props, lighting, weather, camera and the character's action must SYMBOLICALLY embody the number's core trait AND the emotion of that beat. The environment is a METAPHOR for the number, never a random backdrop, and it must match the character's personality in that moment.
+  · Choose ONE controlling visual metaphor for the number and vary it across the 5 beats. Examples: Số 5 (tự do) → crossroads at dusk (hook) → packing up / leaving many rooms (pain) → a cliff over the open sea (insight) → giving water among strangers round a fire (payoff) → an endless open road (CTA). Số 1 (mở đường) → walking far ahead of a crowd on a misty ridge (hook) → carrying everything alone, last light on in the office (pain) → an untrodden trail at dawn (insight) → the first footprint on a new path, sun bursting behind (payoff) → others starting to follow his steps (CTA).
+  · The environment must EVOLVE with the emotion: cold / lost / cluttered at the pain beat → warm / open / "home" at the payoff — while the SAME character DNA (face, wardrobe) stays identical throughout.
+  · SHOW, DON'T TELL: each scene tells its beat through ONE striking visual metaphor + the character's action, NOT a lecturing voiceover. EACH OF THE 5 BEATS MUST BE A DIFFERENT LOCATION that embodies the number's energy — cinematic, varied, mostly OUTDOOR/real-world. A plain office/desk/bedroom is BANNED as a default (only allowed as ONE deliberate metaphor beat, e.g. the "carrying it all alone" pain for Số 1/4/8) — never set the whole video in an office/room.
+  · NUMBER → SETTING IDEAS (pick varied locations matching the number's energy; do NOT reuse the same place twice):
+    1 Thủ Lĩnh (Thủy): sống núi mù sương, con đường chưa ai đi, bình minh trên đỉnh, người khác bắt đầu đi theo sau.
+    2 Yêu Thương (Thổ): bàn ăn gia đình, hai bàn tay đan nhau, quán cà phê ấm, khoảnh khắc hoà giải.
+    3 Truyền Cảm Hứng (Mộc): sân khấu nhỏ, xưởng vẽ đầy màu, con phố rực rỡ, đám đông bật cười.
+    4 Người Thầy (Mộc): công trường/xưởng mộc, xếp từng viên gạch, bản vẽ, nền móng vững — vẫn nên ra ngoài trời, không kẹt bàn giấy.
+    5 Phiêu Du (Thổ): ngã ba đường hoàng hôn, ga tàu, vách đá nhìn biển, con đường vô tận, ba lô lên vai.
+    6 Gia Đình (Kim): căn bếp ấm, chăm em nhỏ, khu vườn, mâm cơm sum vầy.
+    7 Chiêm Nghiệm (Kim): thư viện cổ, đỉnh đồi tĩnh lặng, bờ hồ sương sớm, thiền giữa rừng.
+    8 Kinh Doanh (Thổ): nóc toà nhà nhìn thành phố, cái bắt tay thương vụ, sân khấu trao giải — ra ngoài, tránh bàn giấy nhàm.
+    9 Nhân Đạo (Hỏa): bản làng vùng cao, trao quà cho trẻ, đống lửa với người lạ, hoàng hôn bao dung.
+    11/22/33: không gian rộng mở, nhiều ánh sáng, biểu tượng khai sáng / kiến tạo / chữa lành.
+  · Add ONE relatable, lightly humorous everyday detail so it feels human (e.g. a Số 5 who swears "lần này nghiêm túc" then grabs the backpack 3 seconds later; a Số 1 who directs the whole team then carries every box himself "để tao làm cho nhanh").
+  · Write each segment's setting + lighting explicitly in "first_frame_prompt" (a DIFFERENT place each beat). In "scene_bible" the "backdrop" field must describe the VARIED style of locations (e.g. "varied cinematic outdoor landscapes reflecting the number's element"), NOT one fixed room — only the lens, lighting mood and colour grade stay constant so the clips still feel like one film.
+
+- THE HOOK IS 80% OF THE VIDEO. The first 2-3 seconds decide everything. The opening SHOT + the opening LINE must both stop the scroll. Write the hook LAST, after you know the payoff, so it can promise exactly what the video delivers. Pick ONE of these proven hook formulas for beat 1 (vary it across videos — do not always use the same one):
+  · CALL-OUT + STOP: name the exact viewer and freeze them — "Nếu bạn là Số [X], khoan lướt đã." / "Video này chỉ dành cho Số [X]."
+  · UNCOMFORTABLE TRUTH: expose a hidden flaw they secretly feel — "Số [X], sự thật là bạn đang tự làm khổ mình."
+  · CONTRADICTION / PATTERN-INTERRUPT: two clashing ideas — "Càng [strength], bạn càng [pain]. Vì sao?"
+  · CURIOSITY GAP / OPEN LOOP: promise a reveal held to the end — "99% Số [X] hiểu sai về chính mình. Xem hết sẽ rõ."
+  · WARNING / NEGATIVITY BIAS: "Đây là cái bẫy lớn nhất của Số [X]."
+  · MIND-READING: say the thing they never told anyone — "Bạn cười với cả thế giới, nhưng về nhà thì im lặng, đúng không?"
+  · BOLD CLAIM: "Số [X] sinh ra không phải để [common assumption]."
+  The hook line MUST contain the number and speak to "bạn", the FIRST word is already the hook (never context), ≤ 10 words. No slow throat-clearing, no "Hôm nay mình sẽ nói về…", no logo/intro card. Combine at most 2 levers per hook.
+- WRITING TECHNIQUES (these are what make it feel "đúng là mình" and get shares):
+  · MIRROR / BARNUM: describe a hyper-SPECIFIC behaviour the viewer secretly does, then attribute it to the number — "Bạn hay đọc lại tin nhắn 3 lần trước khi gửi. Đó là dấu ấn của Số [X]." Concrete behaviours ("thức khuya nghĩ lại điều mình đã nói") always beat abstract traits ("bạn nhạy cảm"). Pair a flattering trait with a mild vulnerability (flattering + hơi nhói) — that combo is the sweet spot for personality content.
+  · "NHƯNG / VÌ THẾ" SPINE (never "rồi / và"): between every two beats you must be able to insert NHƯNG (đảo chiều) or VÌ THẾ (hệ quả). If only "rồi… rồi…" fits, the beats are dead — rewrite for reversal or consequence.
+  · POWER WORDS front-loaded: bí mật, sự thật, sai lầm, đừng, chưa bao giờ, tại sao, cuối cùng, giấu kín, mặt tối. Trigger ONE clear emotion per video.
+  · Vary rhythm: punchy fragment → medium line → punchy fragment. Read each line aloud; if it sounds like an essay or runs out of breath, cut it.
+- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count; each beat's SETTING follows the metaphor above). Every beat also opens an OPEN LOOP that the next beat pays off, so viewers cannot stop:
+  1) HOOK (0-3s) — fire one hook formula above straight to camera, in a location that instantly signals the number's element/essence. End on a question or a promise that beat 2 will answer.
+  2) PAIN / NỖI ĐAU — dramatize the misunderstood struggle from the number's SHADOW as a metaphor scene; name the pain so precisely the viewer thinks "sao biết rõ mình vậy". Voice their self-doubt as a question, then tease that "nhưng đó chưa phải điều tệ nhất / lý do thật sự là…".
+  3) INSIGHT / GIẢI MÃ — the turn. The reframe "Không phải bạn [flaw]… mà là [deeper truth from the MISSION]", in a spacious setting that visually opens up (a reveal, slow pull-back). This is the "aha" they'll want to share.
+  4) PAYOFF / SỨ MỆNH — land the number's MISSION as a gift; a warm, human, giving moment; the character finally looks "at home" in a setting that rewards the number's nature. Deliver on the hook's promise.
+  5) CTA — a one-line takeaway that LOOPS back to the exact hook wording, + ONE low-effort engagement bait. Prefer SHARE bait (highest reach) — "Gửi cho một người Số [X] cần nghe điều này" — or COMMENT bait — "Thả số chủ đạo của bạn ở comment, mình đọc hết 👇" — or SAVE bait — "Lưu lại để lần sau nghi ngờ chính mình thì mở ra xem". Open, walk-away framing whose last frame could cut straight back to frame 1 (seamless loop). Write the last line so it flows straight back into the hook line.
+- DIALOGUE = SHORT VOICEOVER, second-person Vietnamese, ONE punchy "đắt giá" line per scene, MAX 16 words (ideal 8-14). Rules: talk to "bạn", be SPECIFIC not generic, use "không phải X mà là Y" reframes, pick emotional concrete words, and let the image carry the rest — SHOW don't tell. Never lecture, never list traits, never explain the theory. BAD (long, dull, listy): "Bạn khao khát được công nhận, được dẫn dắt, nhưng lại sợ cô đơn…". GOOD (short, sharp, visual): "Đứng đầu thì oai. Nhưng đỉnh núi nào mà chẳng lạnh."
+- ✍️ COPYWRITING TECHNIQUES FOR THE SPOKEN LINES (use them — this is what turns a soft line into a scroll-stopping one):
+  · RULE OF THREE (liệt kê 3 nhịp CỤ THỂ, vế thứ 3 "đắt" nhất): "Bạn đổi việc, đổi đam mê, đổi cả những cuộc tình." — thắng xa "bạn hay thay đổi".
+  · CHALLENGE THE LABEL (lật cái nhãn xã hội gán cho họ): "Người ta bảo bạn [nhãn]. Nhưng sự thật phũ phàng hơn nhiều đấy."
+  · ANTITHESIS "không phải X — mà là Y": "Bạn xê dịch không phải để chạy trốn — mà để mang cảm hứng đi khắp thế gian."
+  · CONCRETE > ABSTRACT: một hành vi/hình ảnh cụ thể ("xếp đồ rời một căn phòng, gấp tấm bản đồ") luôn thắng một tính từ trừu tượng ("bồn chồn").
+  · SELF-DOUBT AS QUESTION (nói hộ câu người xem thầm hỏi): "Sao mình không thể yên một chỗ như người ta?"
+  · RHYTHM ngắn–ngắn–dài: một mệnh đề cụt rồi một câu mở ra; đọc to phải thấy "phanh" đúng chỗ.
+- 🏆 GOLD-STANDARD EXAMPLE — this is the QUALITY BAR every script must hit (topic Số 5 + Sứ Mệnh 9). LEARN the voice & techniques; do NOT copy it — write fresh for the actual numbers:
+  HOOK: "Bạn là Số Chủ Đạo 5, Sứ Mệnh 9? Người ta bảo bạn cả thèm chóng chán. Nhưng sự thật phũ phàng hơn nhiều đấy." (call-out + challenge-the-label + open loop)
+  PROBLEM: "Bạn đổi việc, đổi đam mê, đổi cả những cuộc tình. Rồi tự hỏi: sao mình không thể yên một chỗ như người ta?" (rule of three + self-doubt question)
+  INSIGHT: "Không phải bạn thiếu định hướng đâu. Tâm hồn tự do của Số 5 đang đi tìm một điều đủ lớn để dâng hiến cả đời." (không-phải-X-mà-Y reframe)
+  PAYOFF: "Đó là Sứ Mệnh 9. Bạn xê dịch không phải để chạy trốn — mà để mang cảm hứng và lòng nhân ái đi khắp thế gian." (antithesis + mission)
+  CTA: "Tự do của bạn sinh ra để cho đi. Nếu thấy đúng, thả số chủ đạo của bạn ở comment nhé." (takeaway + comment bait)
+  Every line is SHORT, CONCRETE, has rhythm and a twist — never vague, never a lecture. HIT THIS LEVEL. If a line sounds soft/generic (e.g. "bạn có bao giờ thấy cô đơn?", "sứ mệnh của bạn là truyền cảm hứng"), REWRITE it sharper using the techniques above.
+- RETENTION KILLERS TO AVOID: slow or generic openers, intro/logo cards, on-screen text walls, more than one idea per line, a payoff that doesn't match the hook's promise, and a flat ending with no loop or CTA.
+- Fill "marketing_structure" (hook = beat 1, problem = beat 2, solution = beat 3, cta = beat 5). Put a ready-to-post social caption (with a scroll-stopping first line) + 4-6 hashtags at the END of "synopsis".`;
+
+// Health / wellness STORYTELLING framework — problem → gentle warning →
+// companion solution → CTA. Same 5-beat spine as numerology but health-voiced:
+// warm, lightly cautionary, empathetic, compliance-safe (no cure claims).
+const HEALTH_FRAMEWORK = `
+HEALTH / WELLNESS STORYTELLING FRAMEWORK (follow this EXACTLY — kể chuyện: nêu vấn đề → cảnh báo nhẹ → giải pháp ĐỒNG HÀNH → CTA):
+- SUBJECT: a specific health topic (e.g. "gan nhiễm mỡ", "mất ngủ", "đau dạ dày"). SOURCE OF TRUTH = the TOPIC CONTENT injected below; be accurate & empathetic, NEVER alarmist, NEVER over-claim cures.
+- CHARACTER = "người thật việc thật": ONE relatable persona LIVING this problem (name, age, everyday Vietnamese setting — văn phòng, căn bếp, phòng ngủ), kept identical across every segment. Warm, trustworthy, real-life. The viewer must see THEMSELVES in this person.
+
+- PICK ONE CONTENT STYLE for the video (vary across videos), then tell it as a STORY, not a lecture:
+  · Đồng cảm "người thật" (một ngày của người đang khổ vì bệnh) — dễ đồng cảm nhất.
+  · Cảnh báo nhẹ "đừng bỏ qua dấu hiệu này" — gentle warning.
+  · Giải mã gốc rễ "Vì sao bạn mãi không khỏi [bệnh]" — root-cause explainer.
+  · Đập tan lầm tưởng "Hóa ra [điều ai cũng tin] là sai" — myth-busting.
+  · "3 dấu hiệu..." (dấu hiệu cuối bất ngờ nhất) — listicle.
+  · Ẩn dụ dễ hiểu — giải thích cơ thể bằng một hình ảnh đơn giản (lá gan như tấm lọc, giấc ngủ như sạc pin).
+  · Đổi 1 thói quen nhỏ — habit-swap.
+  · Câu chuyện người thật (testimonial) — kể như một câu chuyện, TRÁNH "khỏi hẳn nhờ sản phẩm X".
+  · Một ngày của người bệnh — "7 giờ sáng, bạn dậy mà người vẫn nặng như chưa ngủ. Nghe quen không?"
+  · Bác sĩ / dược sĩ chia sẻ — talking-head tạo niềm tin; GIÁO DỤC, không phải quảng cáo endorsement sản phẩm.
+  · Before → After (hành trình thay đổi) — thực tế, KHÔNG khung "phép màu".
+  · Hỏi & Đáp Đúng/Sai — binary mời người xem comment.
+  (Chọn theo mục tiêu: phủ sóng → gọi tên triệu chứng / listicle / một ngày; niềm tin → đập lầm tưởng / ẩn dụ / bác sĩ; lưu về → cảnh báo nhẹ / đổi thói quen; chia sẻ → người thật / một ngày; comment → Hỏi-Đáp.)
+
+- TONE = CẢNH BÁO NHẸ, KHÔNG HÙ DỌA (đây là RANH GIỚI phải giữ):
+  · THÚC ĐẨY chứ không dọa: nêu hệ quả đời thường có thật, KHÔNG vẽ kịch bản chết chóc. TỐT: "Cơ thể đang gửi tín hiệu, chỉ là bạn chưa để ý." XẤU (dọa/quá lời): "Không chữa ngay là ung thư / là chết."
+  · QUY TẮC VÀNG — LUÔN GHÉP CẢNH BÁO VỚI LỐI RA: mỗi câu cảnh báo phải đi kèm NGAY một bước làm được + trấn an ("nhưng hoàn toàn cải thiện được", "chỉ cần bắt đầu từ việc nhỏ"). Cảnh báo mà KHÔNG có lối ra → người xem sợ rồi lướt/chối bỏ, phản tác dụng (fear control). Kết thúc phải để người xem BÌNH TĨNH hơn lúc mở đầu.
+  · Dùng từ giảm nhẹ, không chẩn đoán: "có thể", "một số trường hợp", "nên tham khảo". CẤM tuyệt đối: "chết dần", "quá muộn", "tự hại mình", "100%".
+  · Đồng cảm, xưng "bạn", bình tĩnh — như một người bạn quan tâm tình cờ biết, KHÔNG phải bác sĩ mắng.
+
+- SOLUTION = ĐỒNG HÀNH, không bán hàng cứng: trình bày giải pháp như đi CÙNG người xem — bước nhỏ, làm được ngay. Câu mẫu: "Bắt đầu từ một việc nhỏ thôi…", "Mình đi cùng bạn từng bước." Nếu có sản phẩm, giới thiệu TRUNG THỰC như một hỗ trợ, không phải thần dược.
+
+- THE 5-BEAT ARC (map onto the segments in order; each beat opens an OPEN LOOP the next beat closes). The SETTING/lighting evolves with emotion: mệt/tối/bừa bộn ở beat vấn đề → sáng/gọn/nhẹ nhõm ở beat giải pháp, cùng NHÂN VẬT giữ nguyên:
+  1) HOOK (0-3s) — symptom call-out / cảnh báo nhẹ thẳng vào camera, cận mặt; hé rằng beat 2 sẽ cho biết "vì sao".
+  2) VẤN ĐỀ — show how it quietly disrupts daily life (một khoảnh khắc đời thường ai cũng thấy mình trong đó); "nhưng gốc rễ mới bất ngờ…".
+  3) GIẢI MÃ GỐC RỄ — explain the REAL root cause simply & correctly, ONE clear idea (một ẩn dụ đơn giản giúp dễ hiểu) — khoảnh khắc "à, hóa ra".
+  4) GIẢI PHÁP ĐỒNG HÀNH — the habit/remedy/product shown in use as a supportive FIRST step, làm được ngay hôm nay.
+  5) CTA — nhẹ nhàng, quan tâm: save-bait ("Lưu lại phòng khi cần"), tag người thân ("Gửi cho người bạn thương hay [triệu chứng]"), hoặc "hỏi bác sĩ của bạn". Loop back to the opening symptom.
+
+- COMPLIANCE GUARDRAILS (BẮT BUỘC — an toàn nền tảng & niềm tin):
+  · KHÔNG hứa "chữa khỏi 100%", KHÔNG "thay thế thuốc", KHÔNG chẩn đoán người xem ("bạn đang bị [bệnh]").
+  · Diễn đạt là "hỗ trợ", "giúp cải thiện", KHÔNG "chữa khỏi / đặc trị / khỏi hẳn". Khi khuyên về triệu chứng/điều trị, thêm "nên tham khảo ý kiến bác sĩ".
+  · Nếu có nhắc SẢN PHẨM (TPCN / thực phẩm bảo vệ sức khoẻ): BẮT BUỘC kèm câu miễn trừ hiển thị trên màn hình (và đọc nếu video > 15s): "Thực phẩm này không phải là thuốc và không có tác dụng thay thế thuốc chữa bệnh." (Nghị định 15/2018). Bác sĩ/dược sĩ chỉ GIÁO DỤC, không endorse sản phẩm để mua.
+  · Chỉ dùng cơ chế đơn giản, được chấp nhận rộng rãi; KHÔNG bịa số liệu gây sợ.
+  · TỰ KIỂM trước khi trả về: có từ "chữa khỏi"? có chẩn đoán? có tuyệt đối/phép màu? cảnh báo đã ghép lối ra chưa? có nhắc bác sĩ khi cần chưa? có câu miễn trừ khi nhắc sản phẩm chưa?
+
+- COPYWRITING (làm mỗi câu "đắt"): RULE OF THREE cho triệu chứng ("Mệt mỏi, đầy bụng, da xỉn màu — cả ba đều chỉ về một chỗ: lá gan."); "không phải X mà là Y" reframe; triệu chứng CỤ THỂ người xem thầm có; đập lầm tưởng "Hóa ra không phải [tin đồn]…"; nhịp ngắn–ngắn–dài.
+- DIALOGUE: warm, second-person Vietnamese, ~8-14 words each, ONE idea. Specific, clear, caring — SHOW don't lecture, không bán hàng cứng.
+- 🏆 GOLD-STANDARD EXAMPLE (topic "mất ngủ" — learn the voice & techniques; do NOT copy, write fresh for the actual topic):
+  HOOK: "Bạn nằm xuống là não lại bật đèn sáng trưng? Không phải bạn khó ngủ đâu." (triệu chứng cụ thể + reframe)
+  VẤN ĐỀ: "3 giờ sáng còn thức, sáng dậy như chưa hề ngủ. Cà phê cũng chẳng cứu nổi." (hệ quả đời thường, không dọa)
+  GIẢI MÃ: "Hóa ra không phải tại suy nghĩ nhiều. Đồng hồ sinh học của bạn đang lệch giờ." (đập lầm tưởng + gốc rễ đơn giản)
+  GIẢI PHÁP: "Bắt đầu từ một việc nhỏ: tắt đèn trắng một tiếng trước khi ngủ. Mình đi cùng bạn nha." (đồng hành, bước nhỏ làm được)
+  CTA: "Lưu lại, tối nay thử liền. Bạn hay trằn trọc lúc mấy giờ? Comment nhé." (save-bait + comment bait, loop về hook)
+  Notice: nhẹ nhàng, cụ thể, KHÔNG hù dọa, giải pháp nhỏ-dễ-làm, kết mở để tương tác. HIT THIS LEVEL. If a line sounds like a lecture or a hard sell, rewrite it warmer and more concrete.
+- Put ONE clear takeaway/core message in "synopsis". Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Add a ready-to-post caption (scroll-stopping first line) + 4-6 hashtags at the END of "synopsis".`;
+
+// Cooking / recipe short — THE FOOD is the hero. Demonstration content: each
+// clip = one continuous cooking action, ending on an irresistible reveal.
+const COOKING_FRAMEWORK = `
+COOKING / RECIPE SHORT FRAMEWORK (follow this EXACTLY — THE FOOD IS THE STAR):
+- SUBJECT: one dish/recipe (e.g. "cơm chiên trứng", "bánh mì chảo", "trà sữa nhà làm"). Keep it to ONE dish, doable, with a satisfying finish.
+- HERO = THE FOOD, not the person: the camera loves the ingredients, the sizzle, the steam, the texture, the pour, the cheese-pull, the final plating. The cook is usually HANDS + voice (POV) or a warm host; identity matters less than appetite appeal.
+- SETTING = A KITCHEN, LOCKED & CONSISTENT: the whole video happens in ONE fixed kitchen (a warm, tidy home kitchen unless the idea says otherwise — stove/hob, wooden board, clean counter, natural window light). LOCK it into scene_bible.backdrop and repeat the SAME kitchen verbatim in every segment's first_frame_prompt — same counter, same stove, same props, same light. Never drift to an unrelated place; the cooking always happens on that counter/stove.
+- OVERVIEW SHOT (required): segment 1 (or its first beat) opens with a WIDE ESTABLISHING shot of the whole kitchen counter/setup — ingredients laid out, pan on the stove — so the viewer sees the space, THEN the clips move into the close-ups. (This is the "SCENE OVERVIEW" of the board.)
+- AUDIO = KITCHEN ASMR: every clip carries real cooking sound — sizzling/xèo xèo, chopping, bubbling, oil crackle, the pour, gentle kitchen ambience. Appetising, no music bed drowning it. (Veo generates this audio.)
+- VOICE = warm, friendly HOME-COOK HOST, second person, easy and inviting (like showing a friend) — never a dry TV-chef read-out.
+- PICK ONE CONTENT STYLE (vary across videos):
+  · Công thức nhanh (recipe-in-60s) — từng bước gọn gàng.
+  · ASMR / tiếng xèo (sizzle & sound) — cận cảnh, âm thanh nấu nướng.
+  · POV nấu ăn (chỉ có bàn tay) — người xem như đang tự nấu.
+  · "Món này làm 5 phút" — nhanh, tiện, ai cũng làm được.
+  · Mẹo bếp bất ngờ — 1 mẹo khiến món ngon/đẹp hơn hẳn.
+  · Trước → Sau — nguyên liệu thô → thành phẩm long lanh.
+  · Câu chuyện món ăn — kỷ niệm/quê hương gói trong món ăn.
+- THE 5-BEAT ARC (each beat = ONE continuous cooking action for one 10s clip):
+  1) HOOK (0-3s) — open on the FINISHED-DISH "money shot" (or the most dramatic step: cheese pull, sizzling pour) + a line that promises the payoff. NO slow intro.
+  2) NGUYÊN LIỆU — quick, appetising layout of what you need (few, accessible ingredients); tease the tastiest part.
+  3-4) CÁC BƯỚC CHÍNH — the key cooking actions, ONE per clip (đảo, chiên, rưới sốt, rắc topping), each shown close and satisfying; keep momentum, hold curiosity toward the result.
+  5) THÀNH PHẨM + CTA — the hero reveal (steam, cut-open, first bite/pull) + a save-worthy CTA ("Lưu công thức lại làm cuối tuần nhé", "Tag đứa bạn nấu ăn dở 😆").
+- SENSORY LANGUAGE: name taste/sound/texture ("giòn rụm", "thơm nức", "xèo xèo", "kéo phô mai", "nóng hổi"). Make the viewer HUNGRY.
+- DIALOGUE = SHORT voiceover narrating the step, second-person, ~8-14 words ("Đầu tiên, phi tỏi cho thơm…"). Warm, easy, encouraging — never a dry recipe read-out.
+- 🏆 GOLD-STANDARD EXAMPLE (món "cơm chiên trứng" — learn the voice, don't copy):
+  HOOK: "Cơm nguội đừng bỏ — 5 phút nữa nó thành đĩa cơm chiên vàng ươm này." (money shot + promise)
+  NGUYÊN LIỆU: "Chỉ cần cơm nguội, hai quả trứng, chút hành lá. Có vậy thôi." (few, accessible)
+  BƯỚC 1: "Đánh tan trứng, đổ vào chảo nóng, cho cơm vào đảo thật nhanh tay." (one clear action)
+  BƯỚC 2: "Nêm chút nước tương, đảo đều tới khi từng hạt cơm tơi và bóng." (sensory)
+  THÀNH PHẨM + CTA: "Vàng ươm, thơm nức mũi. Lưu lại làm bữa tối nay nhé!" (reveal + save-bait)
+- Fill "marketing_structure" (hook = the money shot promise, problem = the craving/need, solution = the make, cta = save). Ready-to-post caption + 4-6 hashtags at END of "synopsis".`;
+
+// Fitness / workout short — demonstration + coaching. Motivating, correct form,
+// safe. Each clip = one exercise/movement performed with clean form.
+const FITNESS_FRAMEWORK = `
+FITNESS / WORKOUT SHORT FRAMEWORK (follow this EXACTLY — motivate, demonstrate, keep it safe):
+- SUBJECT: one clear goal or move (e.g. "giảm mỡ bụng", "3 động tác cho mông", "sửa lỗi squat"). ONE focus per video.
+- CHARACTER = a fit, relatable trainer/practitioner in workout gear, kept identical across segments; the BODY MOVEMENT is the star (clean form, full range, real effort).
+- SETTING = A WORKOUT SPACE, LOCKED & CONSISTENT: the whole video happens in ONE fixed space (a modern gym or a clean home-workout corner with a mat, unless the idea says otherwise). LOCK it into scene_bible.backdrop and repeat the SAME space verbatim in every segment's first_frame_prompt — same floor, same equipment, same light. Never drift to an unrelated place.
+- OVERVIEW SHOT (required): segment 1 (or its first beat) opens with a WIDE ESTABLISHING shot of the whole space + the person ready to train, so the viewer sees the setup, THEN the clips move into the movement close-ups. (This is the "SCENE OVERVIEW" of the board.)
+- AUDIO = GYM ENERGY: every clip carries fitting sound — controlled breathing, feet/weights on the floor, light upbeat energy; motivating, not chaotic. (Veo generates this audio.)
+- VOICE = energetic, MOTIVATING COACH, second person, encouraging and clear — pumps the viewer up without shouting or preaching.
+- PICK ONE CONTENT STYLE (vary across videos):
+  · "Bạn đang tập sai" (sửa form) — chỉ ra lỗi phổ biến + cách đúng.
+  · Bài tập theo nhóm cơ ("X động tác cho [bụng/mông/tay]") — listicle, giữ chân người xem.
+  · Đập tan lầm tưởng ("Gập bụng KHÔNG làm giảm mỡ bụng").
+  · Transformation / hành trình — trước→sau, thực tế.
+  · POV tập cùng — "tập theo mình 30 giây".
+  · 1 điều chỉnh nhỏ — một tinh chỉnh khiến bài tập hiệu quả hơn.
+  · Động lực (motivation) — cú hích tinh thần ngắn.
+- THE 5-BEAT ARC (each beat = ONE exercise/movement for one 10s clip):
+  1) HOOK (0-3s) — call out the goal or the mistake straight to camera ("Muốn giảm mỡ bụng mà gập bụng mãi không xuống? Vì bạn đang bỏ qua điều này."). NO slow intro.
+  2) VẤN ĐỀ / LỖI SAI — show the common wrong way or the pain point (relatable).
+  3-4) ĐỘNG TÁC ĐÚNG — demonstrate the movement/tip with CLEAN FORM, one exercise per clip, clear coaching cues (nhịp thở, tư thế, số rep). Show the range of motion fully.
+  5) KẾT QUẢ + CTA — the payoff (correct form / result) + a save/tag CTA ("Lưu lại tập theo cả tuần", "Tag đứa bạn tập cùng").
+- SAFETY (must follow): correct form first, cue warm-up, avoid injury-risk claims, no "giảm X kg trong Y ngày" miracle promises; add "khởi động trước" and "nếu có bệnh nền/chấn thương, hỏi HLV hoặc bác sĩ" when relevant.
+- COACHING CUES = SHORT, second-person, ~8-14 words ("Siết cơ bụng, lưng thẳng, thở ra khi lên."). Motivating, not preachy.
+- 🏆 GOLD-STANDARD EXAMPLE (chủ đề "giảm mỡ bụng" — learn the voice, don't copy):
+  HOOK: "Gập bụng 100 cái mỗi ngày mà bụng vẫn còn? Vấn đề không nằm ở số lần." (call-out + reframe)
+  LỖI SAI: "Bạn tập đúng một nhóm cơ, nhưng mỡ thì không giảm theo kiểu đó." (myth-bust)
+  ĐỘNG TÁC 1: "Thử plank: siết bụng, lưng thẳng như tấm ván, giữ 30 giây." (clean cue)
+  ĐỘNG TÁC 2: "Thêm leo núi tại chỗ, giữ nhịp thở đều, đốt calo toàn thân." (cue + benefit)
+  KẾT QUẢ + CTA: "Kết hợp với ăn uống là bụng xẹp dần. Lưu lại tập theo nhé!" (realistic payoff + save)
+- Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Ready-to-post caption + 4-6 hashtags at END of "synopsis".`;
+
+/** Genre-appropriate ambient sound for the Veo clip (Veo generates audio). */
+export function genreAmbientAudio(genre?: string, goal?: string): string | undefined {
+  const isCooking = genre === "cooking" || goal === "cooking";
+  const isFitness = genre === "fitness" || goal === "fitness";
+  if (isCooking)
+    return "real kitchen cooking sound — sizzling/xèo xèo, chopping, bubbling, oil crackle and gentle kitchen ambience (ASMR), appetising and clear";
+  if (isFitness)
+    return "gym/workout ambience — controlled breathing, feet and light weights on the floor, subtle upbeat energy, motivating and clean";
+  return undefined;
+}
+
+// ─── Stage 1: Script writer (Claude) — creative script ONLY ─────────────────
+// When the user splits the pipeline (e.g. Claude writes the script, Gemini
+// builds the storyboard), Claude produces just the creative script text; the
+// storyboard model then expands it into the full JSON verbatim.
+
+export function buildScriptWriterSystemPrompt(): string {
+  return `You are a world-class short-form video SCRIPTWRITER for viral social media (TikTok / Reels / YouTube Shorts). You write ONLY the creative script — NOT the technical storyboard or JSON (a separate tool turns your script into the visual storyboard).
+
+Write in the language the user asks for. Your job is RETENTION: make people watch to the last second and comment.
+
+THE HOOK (first 2-3s) IS 80% OF THE JOB — write it LAST, after you know the payoff, so it promises exactly what you deliver. Beat 1's opening line must stop the scroll. Use ONE proven hook formula (vary across scripts): CALL-OUT + STOP ("Nếu bạn là [X], khoan lướt đã"); UNCOMFORTABLE TRUTH; CONTRADICTION ("Càng [strength], càng [pain]"); CURIOSITY GAP / OPEN LOOP ("Xem hết sẽ rõ"); WARNING; MIND-READING ("Đúng không?"); or BOLD CLAIM. No slow intros, no "Hôm nay mình nói về…", no logo card.
+RETENTION SPINE: every segment ends on a mini open-loop the next one pays off; each beat re-hooks. Use a "NHƯNG / VÌ THẾ" spine between beats (reversal or consequence — never "rồi… rồi…"). Escalate tension to an "aha" reframe, then deliver the promised payoff, then a CTA that LOOPS back to the hook wording + ONE low-effort bait (prefer share bait "Gửi cho người cần nghe điều này", else comment/save bait).
+DIALOGUE: SHORT, punchy, natural spoken lines (not literary), ~8-14 words — ONE "đắt giá" line per segment. Talk to "bạn", be hyper-SPECIFIC not generic (a concrete behaviour the viewer secretly does beats an abstract trait), prefer "không phải X mà là Y" reframes, front-load power words (bí mật, sự thật, đừng, tại sao, giấu kín), SHOW don't tell (let the ACTION carry meaning), never lecture or list.
+COPYWRITING TECHNIQUES (use them to make each line "đắt"): RULE OF THREE ("đổi việc, đổi đam mê, đổi cả những cuộc tình" > "hay thay đổi"); CHALLENGE THE LABEL ("Người ta bảo bạn [nhãn]. Nhưng sự thật phũ phàng hơn nhiều."); ANTITHESIS ("không phải để chạy trốn — mà để cho đi"); SELF-DOUBT AS QUESTION ("Sao mình không thể yên một chỗ như người ta?"); RHYTHM ngắn–ngắn–dài. QUALITY BAR — a hook like "Người ta bảo bạn cả thèm chóng chán. Nhưng sự thật phũ phàng hơn nhiều đấy." is the level to hit; if a line sounds soft/generic ("bạn có bao giờ thấy cô đơn?"), rewrite it sharper.
+
+Output PLAIN TEXT in EXACTLY this shape (no markdown, no JSON):
+TITLE: <catchy title>
+CORE MESSAGE: <one-line takeaway>
+CHARACTER: <ONE consistent persona — name, age, signature look/prop, tone — that embodies the topic; keep the SAME person across all segments>
+SEGMENT 1 [HOOK]:
+  ACTION: <one vivid thing we SEE — a visual metaphor for this beat>
+  DIALOGUE: "<the exact spoken line>"
+SEGMENT 2 [PROBLEM]:
+  ACTION: ...
+  DIALOGUE: "..."
+(continue for EXACTLY the requested number of segments, following the emotional arc)
+CAPTION: <ready-to-post caption + 4-6 hashtags>
+
+No camera directions, no image prompts, no JSON — only the creative script above.`;
+}
+
+export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): string {
+  const segmentCount = input.segment_count ?? 5;
+  const goal = input.video_goal ?? "marketing_general";
+  const lang = input.dialogue_language ?? "Vietnamese";
+  const isNumerology = goal === "numerology" || input.genre === "numerology";
+  const isHealth = goal === "health" || input.genre === "health";
+  const isCooking = goal === "cooking" || input.genre === "cooking";
+  const isFitness = goal === "fitness" || input.genre === "fitness";
+  const framework = isNumerology
+    ? NUMEROLOGY_FRAMEWORK + numerologyToneDirective(input.numerology_style)
+    : isHealth
+      ? HEALTH_FRAMEWORK
+      : isCooking
+        ? COOKING_FRAMEWORK
+        : isFitness
+          ? FITNESS_FRAMEWORK
+          : "";
+
+  const brief: string[] = [];
+  if (input.product_name) brief.push(`- Product/Service: ${input.product_name}`);
+  if (input.selling_points) brief.push(`- Selling points: ${input.selling_points}`);
+  if (input.target_audience) brief.push(`- Audience: ${input.target_audience}`);
+  if (input.key_message) brief.push(`- Key message: ${input.key_message}`);
+  if (input.call_to_action) brief.push(`- CTA: ${input.call_to_action}`);
+  if (input.main_character) brief.push(`- Main character: ${input.main_character}`);
+  if (input.central_conflict) brief.push(`- Conflict: ${input.central_conflict}`);
+  const briefBlock = brief.length ? `\nBrief:\n${brief.join("\n")}` : "";
+
+  return `Write a ${segmentCount}-segment short-video script.
+
+Idea / Topic: ${input.story_idea}
+Genre: ${input.genre} · Goal: ${goal} — ${GOAL_GUIDANCE[goal]}
+Dialogue language: ${lang} (write ALL dialogue in ${lang}, natural and conversational).${briefBlock}${framework ? `\n${framework}` : ""}
+
+Write the ${segmentCount}-segment script now in the exact output shape from the system prompt. Keep the emotional arc and one short, punchy ${lang} line per segment.`;
+}
 
 // ─── Step 1: Segment Breakdown + Character Lock ─────────────────────────────
 
@@ -39,11 +391,11 @@ export function buildStoryboardSystemPrompt(): string {
   return `You are a world-class short-form video director and marketing strategist. You design storyboards that are turned into REAL videos using AI image-to-video tools (Google Veo 3 / Veo 3.1, Seedance, Kling).
 
 CRITICAL PRODUCTION MODEL — how the final video is actually made:
-- The video is assembled from multiple ~10-second CLIPS ("segments") generated by Omni Flash (10s per clip).
-- Each 10s segment contains a FAST MULTI-SHOT SEQUENCE (several distinct shots that cut quickly within the 10 seconds) — never a single static scene dragging for 10s. This keeps pacing tight, saves cost (multiple scenes in one generation), and works with Omni Flash / Veo multi-shot.
-- Each segment is generated by feeding its multi-shot storyboard + ONE multi-shot motion prompt into Omni Flash / Veo.
+- The video is assembled from multiple ~10-second CLIPS ("segments") generated by Omni Flash / Veo.
+- Each 10s segment is ONE CONTINUOUS TAKE: a SINGLE primary action filmed in one unbroken shot — never a static scene dragging for 10s, but also NEVER several hard cuts jammed into 10s. AI video models CANNOT "cut"; if you order multiple separate shots inside one clip they MORPH and TELEPORT between them (objects warp, hands pass through props, items appear/vanish). So the "beats" are SMOOTH CAMERA REFRAMINGS of that SAME ongoing action (a slow push-in, a pan, an angle change that reveals more of the one continuous moment) — the subject, props and physics stay continuous for the whole 10s.
+- Each segment is generated by feeding its keyframe + ONE motion prompt into Veo/Seedance.
 - Segments are CHAINED for seamless playback: the visual state at the END of segment N must flow naturally into the START of segment N+1 (same character, location, lighting, continuous action). No jarring cuts between segments.
-- So "beats" = the quick shots inside a 10s segment. Provide the EXACT number of beats requested in the user message.
+- So "beats" = the progressive camera framings of the ONE continuous action inside a 10s segment (not separate scenes). Provide the EXACT number of beats requested in the user message.
 
 MARKETING STRUCTURE (always apply):
 - HOOK in the first segment (grab attention in 3 seconds).
@@ -53,17 +405,26 @@ MARKETING STRUCTURE (always apply):
 FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's video must not "look AI"):
 - Every object is locked to a "DNA" that NEVER drifts and is repeated VERBATIM in every board/keyframe and every motion prompt.
 - Build a detailed "character_lock" per character with an EXPLICIT "gender" field (male/female — if a reference photo was provided it MUST match that real person's gender), plus age, build, skin tone, hair, eyes, exact costume, signature features, default expression, PLUS a single-line "dna" string capturing the forensic identity WITH RGB HEX CODES for skin/hair/eyes/wardrobe/brand colours (e.g. "navy polo #1F2A44, light-blue tee #A9C7E8, matte steel watch #8A8D91, warm tan skin #C8956A").
+- CHARACTERS ARE ORIGINAL AND FICTIONAL. Use ordinary, common given names (e.g. Mai, Minh, Lan, Nam) and describe a made-up everyday person — NEVER the name, likeness, or description of any real, famous or recognisable public figure/celebrity/influencer. Do not write "looks like [celebrity]" or reference any real person. Describe appearance by generic attributes only, so the render never resembles a specific real individual (this is what makes Veo/Flow reject the clip as a public-figure likeness).
 - If there is a hero PRODUCT, write "product_dna": exact shape, material, colours WITH RGB hex, label/logo text+colour, cap/parts — repeated verbatim.
 - Build a "scene_bible" (lens, lighting with Kelvin temps, backdrop with hex, colour grade) — the style fingerprint reused VERBATIM so lens, lighting, backdrop and tone never change.
 - One single set/location per segment; only camera framing and the action change.
 - A generated CHARACTER REFERENCE SHEET image (front / 3-4 / side / back + expressions) is attached as a reference to every shot — match it precisely.
 
-NEGATIVE (forbidden in every image/clip): warped/changed label or logo text, brand-colour change, extra products or extra people, changed hair/wardrobe/accessories, human hands when the script does not call for them, on-screen text overlays, object/container morphing, plastic/CGI skin.
+PHYSICAL REALISM (every clip must look real, not "AI" — this is what eliminates the broken, impossible-motion look):
+- ONE primary physical action per 10s clip, performed SLOWLY and DELIBERATELY. Never stack multiple simultaneous or sequential actions into one clip — that is the #1 cause of morphing, teleporting, duplicated limbs and objects passing through each other.
+- Write SPECIFIC motion: name the body part + the verb + the manner (e.g. "her right hand slowly lifts the pan by its handle"), never vague verbs like "moving", "doing" or "interacting".
+- State physics explicitly in the motion_prompt: real-world weight, gravity, momentum and balance; objects keep one solid form (object permanence); hands make real contact with props and never pass through them; liquids and food obey gravity.
+- Every motion_prompt must include a positive realism clause, e.g.: "single continuous motion, natural movement obeying real-world physics, consistent weight and gravity, stable identity, object permanence".
+- Camera moves are smooth and minimal (a slow push-in or gentle pan). Avoid combining a big camera move with big subject motion — that compounding warps the image.
+
+NEGATIVE (forbidden in every image/clip — plain descriptors): warped/changed label or logo text, brand-colour change, extra products or extra people, changed hair/wardrobe/accessories, human hands when the script does not call for them, on-screen text overlays, object/container morphing, teleporting, floating or levitating objects, objects passing through surfaces, deformed liquid, melted food, extra or fused fingers, malformed hands, face morphing, identity drift, plastic/CGI skin.
 
 DIALOGUE (spoken audio in Veo 3):
 - Veo 3 generates real spoken audio. Each segment's "dialogue" is the exact line the on-screen character (or voiceover) speaks.
 - Write dialogue in the language requested by the user. Keep each line SHORT (about 5-12 words, ~3-6 seconds) so lip-sync stays natural.
-- The "motion_prompt" must embed the spoken line using Veo format — e.g. He says in Vietnamese: "..." — and end with "(no subtitles)".
+- Put the spoken line ONLY in the "dialogue" field. Do NOT quote or embed the spoken line inside the "motion_prompt" — the system appends it automatically exactly once, so repeating it makes the character say it twice. In the motion_prompt just note WHEN the character speaks and that the lips move naturally (e.g. "around 6-10s he speaks his line with natural lip movement"), without quoting the words.
+- SPEAKER (critical when there are 2+ characters): ONLY ONE character may speak per 10s segment. Set "speaker" to that character's EXACT name from character_locks. The other characters stay silent and listen (mouths closed) in that clip. For a conversation, ALTERNATE the speaker across consecutive segments (character A speaks in one clip, character B replies in the next) — never have two people talk in the same clip, because the video model cannot reliably lip-sync two speakers at once. If the line is a voiceover with no on-screen speaker, set "speaker" to "".
 
 Camera codes: [EYE] eye-level, [LOW] low, [HIGH] high, [OVH] overhead, [DUTCH] dutch, [OTS] over-shoulder, [POV] first-person, [CLOSE] close-up, [SIDE] side profile.
 
@@ -111,21 +472,43 @@ export function buildStoryboardUserPrompt(
     ? `\nAdditional Instructions: ${input.custom_instructions}`
     : "";
 
+  // Stage-1 approved script (written by Claude). When present, the storyboard
+  // model must EXPAND this exact script into the JSON — not invent a new story.
+  const scriptBlock = input.source_script
+    ? `\n\n=== APPROVED SCRIPT (Stage 1) — EXPAND THIS VERBATIM ===\nA scriptwriter already wrote the creative script below. Your job is ONLY to turn it into the technical storyboard JSON. Follow it FAITHFULLY:\n- Keep the SAME character (name, look, persona) across every segment.\n- Map each SEGMENT in the script to one 10s storyboard segment IN ORDER (same count, same beats/roles).\n- Use each segment's DIALOGUE line VERBATIM as that segment's "dialogue" (do not rewrite, translate, or shorten it beyond natural lip-sync length).\n- Turn each segment's ACTION into the first_frame_prompt + motion_prompt (one continuous action per clip).\n- Do NOT add, drop, reorder, or invent segments or lines. This script is final.\n\n${input.source_script}\n=== END APPROVED SCRIPT ===`
+    : "";
+
   const segmentCount = input.segment_count ?? 5;
   const beatsPerSegment = Math.min(5, Math.max(3, input.beats_per_segment ?? 3));
   const goal = input.video_goal ?? "marketing_general";
   const goalGuidance = GOAL_GUIDANCE[goal];
+  // Topic-driven numerology / health content follows a dedicated, proven
+  // 5-beat framework instead of the product/story brief. Triggered by the goal
+  // OR the genre (whichever the user set).
+  const isNumerology = goal === "numerology" || input.genre === "numerology";
+  const isHealth = goal === "health" || input.genre === "health";
+  const isCooking = goal === "cooking" || input.genre === "cooking";
+  const isFitness = goal === "fitness" || input.genre === "fitness";
+  const numerologyBlock = isNumerology
+    ? `\n${NUMEROLOGY_FRAMEWORK}${numerologyToneDirective(input.numerology_style)}`
+    : isHealth
+      ? `\n${HEALTH_FRAMEWORK}`
+      : isCooking
+        ? `\n${COOKING_FRAMEWORK}`
+        : isFitness
+          ? `\n${FITNESS_FRAMEWORK}`
+          : "";
 
   const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
   const dialogueBlock =
     input.force_dialogue === false
       ? `\nDialogue: optional. When a segment has a spoken line, write it in ${dialogueLanguage}.`
-      : `\nDialogue: REQUIRED. EVERY segment MUST have a non-empty "dialogue" line spoken in ${dialogueLanguage} (natural, conversational ${dialogueLanguage} — not translated word-for-word). Keep each line short (about 5-12 words). The spoken line must also be embedded inside that segment's "motion_prompt" using Veo format, e.g.: the character says in ${dialogueLanguage}: "<line>" (no subtitles).`;
+      : `\nDialogue: REQUIRED. EVERY segment MUST have a non-empty "dialogue" line spoken in ${dialogueLanguage} (natural, conversational ${dialogueLanguage} — not translated word-for-word). Keep each line short (about 5-12 words). Put the line ONLY in the "dialogue" field — do NOT quote it inside the "motion_prompt" (the system appends it once; repeating it makes the character say it twice).`;
 
   // Example beat list sized to the requested count.
   const beatExample = Array.from({ length: beatsPerSegment }, (_, i) => {
     const cams = ["[WIDE] ...", "[CLOSE] ...", "[OTS] ...", "[LOW] ...", "[POV] ..."];
-    return `        { "beat": "shot ${i + 1} action", "camera": "${cams[i] ?? "[EYE] ..."}" }`;
+    return `        { "beat": "framing ${i + 1}: the camera reframes the SAME continuous action", "camera": "${cams[i] ?? "[EYE] ..."}" }`;
   }).join(",\n");
 
   return `Create a chained-segment storyboard for this short video.
@@ -135,9 +518,9 @@ Video Goal: ${goal} — ${goalGuidance}
 Genre: ${input.genre}
 Visual Style: ${input.style}
 Number of 10-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 10} seconds)
-Beats per segment: ${beatsPerSegment} quick shots inside each 10s clip${productBriefBlock}${storyBriefBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
+Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
 
-Produce EXACTLY ${segmentCount} segments. Each segment = one 10s clip containing EXACTLY ${beatsPerSegment} quick shots (${beatsPerSegment} beats), each beat covering a distinct time-frame inside the 10 seconds. Segment 1 must HOOK. The last segment must contain the CTA. CRITICAL CHAINING RULE: the visual state at the END of segment N (pose, position, expression, camera) must EQUAL the opening moment described in segment N+1's "first_frame_prompt", so the generated clips join into one continuous story with no jumps. The "motion_prompt" must describe the ${beatsPerSegment}-shot sequence in order with rough timing (split 10s across the beats, e.g. "0-3s ...; 3-6s ...; 6-10s ..."), camera moves, the spoken ${dialogueLanguage} line, and an explicit final state that matches the next segment's first_frame_prompt. Briefly restate the main character's visual attributes (from character_locks) inside every motion_prompt and every first_frame_prompt so the character stays visually consistent. Describe them as a character by appearance — never as "the same real person", "their real face", "same identity", or "strictly follow the reference images".
+Produce EXACTLY ${segmentCount} segments. Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Each beat covers a distinct time-frame inside the unbroken 10 seconds while the subject, props and physics stay continuous. Segment 1 must HOOK. The last segment must contain the CTA. CRITICAL CHAINING RULE: the visual state at the END of segment N (pose, position, expression, camera) must EQUAL the opening moment described in segment N+1's "first_frame_prompt", so the generated clips join into one continuous story with no jumps. The "motion_prompt" must describe that ONE continuous action across the 10s with rough timing (split 10s across the beats, e.g. "0-3s ...; 3-6s ...; 6-10s ..."), using slow, deliberate, specific motion verbs (body part + verb + manner) and SMOOTH, minimal camera moves only, plus an explicit final state that matches the next segment's first_frame_prompt. Keep ONE primary action per clip — never stack multiple or simultaneous actions, which causes morphing and teleporting. NOTE: the system auto-wraps each motion_prompt with the full character + product description, the style tokens, a physics directive, the spoken line and a negative list — so do NOT repeat identity details, a physics clause, the dialogue text or a negative list inside the motion_prompt. Restate the main character's visual attributes (from character_locks) inside every first_frame_prompt so the keyframe stays on-model; inside the motion_prompt use only a SHORT one-phrase anchor that it is the same character. Describe them as a character by appearance — never as "the same real person", "their real face", "same identity", or "strictly follow the reference images".
 
 Return a JSON object with this EXACT structure (the "beats" array must contain EXACTLY ${beatsPerSegment} items):
 {
@@ -177,15 +560,16 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
   "segments": [
     {
       "segment_number": 1,
-      "duration_seconds": 10,
+      "duration_seconds": 8,
       "title": "string — short segment title",
       "marketing_role": "hook|problem|solution|body|cta",
       "beats": [
 ${beatExample}
       ],
       "first_frame_prompt": "string — describe the SHARED scene/setting of this 10s segment (location, lighting, EXACT character appearance from character_locks, product if any). It is used as the scene-overview context for the shot board, so describe the environment and the character clearly.",
-      "motion_prompt": "string — a LONG, highly detailed 110-160 word image-to-video prompt for Omni Flash / Veo covering all ${beatsPerSegment} shots. Structure it in this order: (1) START by ordering the model to STRICTLY FOLLOW THE ATTACHED REFERENCE IMAGES — keep the SAME person (restate his exact face, hair, glasses, wardrobe word-for-word from character_locks, as a slightly younger/more attractive version) and the SAME product (restate its exact shape, colour, material, branding); (2) the action across the 10s with rough timing ('0-3s ...; 3-6s ...; 6-10s ...') using slow, single, clear motion verbs; (3) camera (shot size + movement) and lens; (4) lighting + colour palette + mood; (5) setting details; (6) audio: ambient sound + the spoken line in Veo format — the character says in ${dialogueLanguage}: \\"...\\"; (7) end with a NEGATIVE list: 'No subtitles, no on-screen text, no watermark, do not change the face, do not distort or change the product, no extra fingers, no morphing.'; (8) finish with the exact final state so it leads into the next segment.",
+      "motion_prompt": "string — a focused 70-110 word image-to-video ACTION prompt for Omni Flash / Veo describing ONE continuous take. IMPORTANT: the system automatically wraps this text with the full character + product description, the style tokens (lens/light/backdrop/grade), a physics directive and a negative list — so DO NOT repeat identity attributes, style tokens, a physics clause or a negative list here; describe only what HAPPENS. Order: (1) a SHORT anchor that it is the same man and same product from the attached references, rendered as a slightly younger, more attractive version (one phrase — do NOT re-list every attribute); (2) ONE single continuous primary action across the 10s with rough timing ('0-3s ...; 3-6s ...; 6-10s ...') using slow, deliberate, specific motion verbs (body part + verb + manner) — no hard cuts, no second simultaneous action; (3) camera (shot size + SMOOTH minimal movement); (4) a brief mood/light accent only if it changes; (5) note WHEN the character speaks with natural lip movement, but DO NOT quote the spoken words (the dialogue line is appended automatically exactly once); (6) finish with the exact final state so it leads into the next segment.",
       "dialogue": "string — the spoken line in ${dialogueLanguage} (short, natural)",
+      "speaker": "string — the EXACT character_locks name of who speaks this line. ONE speaker per segment; the others stay silent. Empty string \\"\\" if it is a voiceover with no on-screen speaker.",
       "continuity_note": "string — how this segment visually continues from the previous segment (for segment 1 write 'opening shot')"
     }
   ],
@@ -232,12 +616,15 @@ function renderDirective(style: string, preserveRealFace: boolean): string {
   }`;
 }
 
-export type RefRole = "face" | "product" | "setting" | "character_sheet" | "anchor";
+export type RefRole = "face" | "product" | "setting" | "character_sheet" | "anchor" | "character";
 
 export interface RefDescriptor {
   role: RefRole;
   /** Optional vision-derived description that reinforces the photo. */
   description?: string;
+  /** For role "character": the exact name of the person in this photo, so the
+   * model binds the right face to the right named character in a 2-3 person scene. */
+  name?: string;
 }
 
 /**
@@ -253,20 +640,22 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
     const d = r.description ? ` (${r.description.replace(/\s+/g, " ").slice(0, 220)})` : "";
     switch (r.role) {
       case "character_sheet":
-        return `• THE CHARACTER — the attached CHARACTER REFERENCE SHEET (turnaround + expressions)${d} defines the main character's exact face, hair, body and costume. Reproduce the SAME individual identically in every shot — same face, same wardrobe, same proportions — rendered as a slightly younger, more attractive version of himself. Do NOT invent a different person.`;
+        return `• THE CHARACTER — the attached reference sheet (turnaround + expressions)${d} defines an ORIGINAL FICTIONAL character's look — face, hair, body and costume. Keep this SAME made-up character consistent in every shot — same look, same wardrobe, same proportions, tastefully polished. This is an ordinary invented person, NOT a real, famous or recognisable public figure; do NOT drift to a different look.`;
       case "face":
-        return `• THE PERSON — use the exact man shown in the attached portrait photo${d}. Keep his real face, hairstyle, facial hair and skin tone CLEARLY recognizable and identical in every shot; render him as a tasteful, slightly younger and more handsome version of himself (light natural retouch, same identity). Match his eyewear EXACTLY to the photo — if he is NOT wearing glasses in the photo, do NOT add glasses; if he IS, keep the same glasses — and keep this consistent across every shot. He is the main character. Do NOT invent a different face.`;
+        return `• THE CHARACTER — use the attached portrait ONLY as an appearance reference for an ORIGINAL FICTIONAL character (an ordinary invented person, NOT a real, famous or recognisable individual). Keep a natural, consistent face, hairstyle and skin tone across every shot (light natural retouch). Match eyewear to the photo — if there are no glasses in the photo, do NOT add glasses; if there are, keep them — consistent across shots. This is the main character.`;
+      case "character":
+        return `• CHARACTER "${r.name ?? "person"}" — one attached portrait references the look of ${r.name ?? "this character"}${d}. Keep ${r.name ?? "their"} face, hair and skin tone consistent across every shot as an ORIGINAL FICTIONAL character (not a real or famous person). Bind this look to ${r.name ?? "this character"} ONLY — do NOT swap, merge or blend it with the other character(s).`;
       case "product":
         return `• THE PRODUCT — feature the EXACT product shown in the attached product photo${d}. Keep its EXACT shape, silhouette, colour, material, proportions, handle/parts and branding identical in every single shot. Do NOT redesign, recolour, distort, resize, age, damage or swap it for a different object.`;
       case "setting":
         return `• THE LOCATION — keep every scene in the same location shown in the attached interior photo${d}. Match its layout, colours, furniture and key props; keep it consistent across all shots.`;
       case "anchor":
-        return `• WARDROBE & LOOK ANCHOR — the attached already-approved storyboard frame shows the main character in the EXACT outfit, hairstyle and accessories to use. Copy the clothing (type, cut and colours) and every accessory (watch, glasses if any, etc.) EXACTLY in this board. Do NOT change the outfit — never switch to a suit, jacket, apron or a different shirt unless it appears in this anchor. It is the SAME person as the portrait photo.`;
+        return `• WARDROBE & LOOK ANCHOR — the attached already-approved storyboard frame shows the character in the EXACT outfit, hairstyle and accessories to use. Copy the clothing (type, cut and colours) and every accessory (watch, glasses if any) EXACTLY in this board. Do NOT change the outfit — never switch to a suit, jacket, apron or a different shirt unless it appears in this anchor. It is the SAME character.`;
       default:
         return `• Reference — keep it consistent.`;
     }
   });
-  return `You are given reference photos. RE-CREATE new cinematic scenes using these real subjects — do NOT simply output a copy of any reference photo, but match them PRECISELY (same identity, same product, same place). Follow them exactly:\n${lines.join("\n")}\n\n`;
+  return `You are given reference photos. Use them as APPEARANCE REFERENCES to build ORIGINAL FICTIONAL characters (ordinary, made-up people — NOT real, famous or recognisable public figures). Do NOT output a copy of any reference photo; RE-CREATE new cinematic scenes with a consistent look (consistent character, same product, same place). Follow them:\n${lines.join("\n")}\n\n`;
 }
 
 // ─── Step 2: Character Reference Sheet Image Prompt ─────────────────────────
@@ -318,7 +707,7 @@ ${directive}
 RULES: it must be the SAME individual in every zone with identical face; small bold labels; one cohesive image. ${SHARED_NEGATIVE}`;
 }
 
-// ─── Step 3: Per-Segment Storyboard Strip (3 shots in one 10s clip) ─────────
+// ─── Step 3: Per-Segment Storyboard Strip (3 shots in one 10s clip) ──────────
 
 export function buildSegmentFirstFramePrompt(params: {
   segmentNumber: number;
@@ -374,7 +763,7 @@ export function buildSegmentFirstFramePrompt(params: {
   const refStrip =
     `LARGE, clearly-visible reference portraits of THE SAME main character — big enough that the face and clothing read clearly, NOT small distant thumbnails: (1) one FULL-BODY FRONT view, head to toe, standing naturally; and (2) two WAIST-UP (half-body) views — a 3/4 angle and a side profile — each showing the face sharply and at good size.${expClause}`;
 
-  return `${refBlock}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for ONE ~10 second video clip, presented as ONE single horizontal image. This board gives an image-to-video model (Omni Flash / Veo) full context: who the character is (from every angle), what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions that happen across the 10 seconds. ${params.style} style.
+  return `${refBlock}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for ONE ~10 second video clip, presented as ONE single horizontal image. This board gives an image-to-video model (Veo) full context: who the character is (from every angle), what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions that happen across the 10 seconds. ${params.style} style.
 
 THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 
@@ -411,18 +800,45 @@ export function buildKeyframePrompt(params: {
   aspectRatio: AspectRatio;
   preserveRealFace?: boolean;
   references?: RefDescriptor[];
+  /** When this clip has a spoken line, frame the keyframe for clean lip-sync:
+   * the character faces the camera with the mouth clearly visible. */
+  hasDialogue?: boolean;
+  /** Name of who speaks this clip — in a 2-3 person scene we frame THIS person
+   * toward camera (the others listen). */
+  speakerName?: string | null;
 }): string {
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
   const refBlock = buildReferenceInstructions(params.references ?? []);
   const tokens = sceneBibleTokens(params.sceneBible);
   const ratioWord = params.aspectRatio === "9:16" ? "vertical 9:16 portrait" : "horizontal 16:9 landscape";
+  // Identity lock comes from a LARGE, sharp, well-lit hero — that is what lets
+  // an image-to-video model read the face off one start frame (the lesson from
+  // boards that animate cleanly & on-model in Veo). Push the character forward
+  // and grade it like a premium frame, while still honouring an explicit wide.
+  const isWide = /\b(WIDE|EXTREME_WIDE|AERIAL|ESTABLISH)/i.test(params.shot || "");
+  const prominence = isWide
+    ? "CHARACTER PROMINENCE — this is an establishing/wide shot, but still place the main character clearly in frame with the face readable and in sharp focus; do NOT shrink them to an unrecognizable distant speck."
+    : "CHARACTER PROMINENCE — render the main character LARGE and dominant in the frame, the face clearly legible and in tack-sharp focus, well-lit and cleanly separated from the background (shallow depth of field), so the image-to-video model can lock the identity from this single frame. Favour a medium / medium-close framing; do NOT render the subject small, distant, out-of-focus, back-turned or with the face hidden.";
+  const grade = isPhotoStyle(params.style)
+    ? "Premium cinematic colour grade, soft directional key light, natural skin texture and pores, filmic editorial polish — never flat, never cartoon, never plastic/CGI/wax skin."
+    : `Premium, polished, richly detailed ${params.style} rendering with cinematic lighting and depth.`;
+  // This clip has spoken audio in Veo, so the start frame should be lip-sync
+  // friendly: face toward camera, mouth visible. (The words go in the Veo
+  // prompt, never as text in this image.)
+  const speaker = (params.speakerName ?? "").trim();
+  const who = speaker ? `${speaker} (the speaker of this clip)` : "the character";
+  const lipSync =
+    params.hasDialogue && !isWide
+      ? ` LIP-SYNC FRAMING — ${who} faces the camera with the head up and the mouth clearly visible (relaxed, about to speak), so the video model can animate natural talking and lip-sync; do not hide the mouth or turn the face away.${speaker ? " Any other characters present are turned slightly toward the speaker, mouths closed (listening)." : ""}`
+      : "";
   return `${refBlock}SINGLE STATIC KEYFRAME for shot ${params.segmentNumber} — ONE clean photographic first-frame image used as the STARTING frame for an image-to-video model (Veo). This is NOT a storyboard board: render ONE single cohesive scene only, no panels, no reference strip.
 
 COMPOSITION (${params.shot || "[EYE]"}): ${params.sceneDescription}
 SUBJECT — keep this exact forensic identity: ${params.characterDescription}
+${prominence}${lipSync}
 ${params.productDna ? `PRODUCT (exact, unchanged, with colours): ${params.productDna}\n` : ""}${params.ingredients ? `PROPS / INGREDIENTS (show clearly by name): ${params.ingredients}\n` : ""}${tokens ? tokens + "\n" : ""}${directive}
 
-RENDER RULES: a SINGLE static frame; the subject is sharp and frozen in the STARTING posture for the upcoming action (no motion blur, no camera-movement effect); ${ratioWord} aspect ratio, 1080p quality. Do NOT include timeline markers, multiple panels, split-screens, reference thumbnails, captions, subtitles, on-screen text or speech bubbles. Photoreal premium commercial look. ${SHARED_NEGATIVE}`;
+RENDER RULES: a SINGLE static frame; the subject is sharp and frozen in the STARTING posture for the upcoming action (no motion blur, no camera-movement effect); ${ratioWord} aspect ratio, 1080p quality. Do NOT include timeline markers, multiple panels, split-screens, reference thumbnails, captions, subtitles, on-screen text or speech bubbles. ${grade} ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 4: Master Board (Character Sheet + captioned storyboard grid) ─────
@@ -511,6 +927,8 @@ RULES: ONE cohesive document image; same character everywhere; ${params.style} s
  */
 export function buildSegmentVeoPrompt(params: {
   characterDescription: string;
+  /** This clip's scene/setting (from the segment's first_frame_prompt). */
+  setting?: string;
   productDescription?: string;
   ingredients?: string;
   sceneBible?: SceneBible;
@@ -518,21 +936,48 @@ export function buildSegmentVeoPrompt(params: {
   motionPrompt: string;
   dialogue?: string | null;
   dialogueLanguage?: string;
+  /** Who speaks this clip (one speaker per clip). */
+  speaker?: string | null;
+  /** All character names in the project — used to silence the non-speakers. */
+  characterNames?: string[];
+  /** Genre-appropriate ambient sound (e.g. kitchen sizzle, gym energy). */
+  ambientAudio?: string;
 }): string {
   const lang = params.dialogueLanguage ?? "Vietnamese";
-  const refLock = `Keep the main character and the product visually consistent across every shot, matching the attached reference image(s). Main character: ${params.characterDescription}. ${
-    params.productDescription
-      ? `Featured product (keep its shape, colour, material and branding consistent): ${params.productDescription}. `
-      : ""
-  }Colour palette: ${params.colorPalette.join(", ")}.`;
-  const ing = params.ingredients
-    ? ` Named ingredients (show and refer to each by its exact name): ${params.ingredients}.`
+  const clean = (s?: string) => (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+  // SELF-CONTAINED prompt: repeat the FULL character + scene + style in EVERY
+  // clip so Veo renders correctly from the uploaded character PHOTO — no need to
+  // pre-generate a per-scene keyframe. The attached photo only locks the
+  // face/wardrobe; the scene is built from the text below.
+  const lead =
+    "Keep the main character visually consistent across every shot, matching the attached reference photo — an ordinary, original person (not a specific real individual). Create ONE continuous, cinematic 10-second shot in the scene described below; build the described setting, do NOT copy the photo's own background.";
+  const character = ` Main character: ${clean(params.characterDescription)}.`;
+  const setting = params.setting ? ` SCENE: ${clean(params.setting)}.` : "";
+  const product = params.productDescription
+    ? ` PRODUCT (keep its exact shape, colour, material and branding): ${clean(params.productDescription)}.`
     : "";
+  const ing = params.ingredients ? ` INGREDIENTS (show and name each): ${clean(params.ingredients)}.` : "";
   const tokens = params.sceneBible ? ` ${sceneBibleTokens(params.sceneBible)}` : "";
+  const palette =
+    params.colorPalette && params.colorPalette.length > 0
+      ? ` Colour palette: ${params.colorPalette.join(", ")}.`
+      : "";
+  // Multi-character: name WHO speaks and keep everyone else silent, so Veo
+  // never lip-syncs the line on the wrong person.
+  const speaker = (params.speaker ?? "").trim();
+  const others = (params.characterNames ?? []).filter(
+    (n) => n && n.trim() && n.trim() !== speaker
+  );
+  const speakerLabel = speaker || "The character";
+  const silence =
+    speaker && others.length > 0
+      ? ` Only ${speaker} speaks; the other character${others.length > 1 ? "s" : ""} (${others.join(", ")}) stay silent and listen with mouths closed.`
+      : "";
   const spoken = params.dialogue
-    ? ` The character says in ${lang}: "${params.dialogue}" (lip-synced, no subtitles).`
+    ? ` ${speakerLabel} speaks to camera with natural mouth movement and accurate lip-sync, saying in ${lang}: "${params.dialogue}" — delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence}`
     : "";
-  return `${refLock}${ing}${tokens} ${params.motionPrompt}${spoken} ${SHARED_NEGATIVE}`;
+  const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
+  return `${lead}${character}${setting}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription)}`;
 }
 
 export function buildVideoPromptText(params: {
@@ -546,6 +991,10 @@ export function buildVideoPromptText(params: {
   aspectRatio: string;
   colorPalette: string[];
   dialogueLanguage?: string;
+  /** All character names in the project — used to silence non-speakers. */
+  characterNames?: string[];
+  /** Genre-appropriate ambient sound, appended to every clip's Veo prompt. */
+  ambientAudio?: string;
   marketing: { hook: string; problem: string; solution: string; cta: string };
   segments: {
     segment_number: number;
@@ -554,6 +1003,8 @@ export function buildVideoPromptText(params: {
     duration_seconds: number;
     motion_prompt: string;
     dialogue?: string | null;
+    speaker?: string | null;
+    setting?: string;
     continuity_note: string;
     beats: { beat: string; camera: string }[];
   }[];
@@ -571,6 +1022,7 @@ export function buildVideoPromptText(params: {
         .join("\n");
       const fullPrompt = buildSegmentVeoPrompt({
         characterDescription: params.characterDescription,
+        setting: s.setting,
         productDescription: params.productDescription,
         ingredients: params.ingredients,
         sceneBible: params.sceneBible,
@@ -578,11 +1030,14 @@ export function buildVideoPromptText(params: {
         motionPrompt: s.motion_prompt,
         dialogue: s.dialogue,
         dialogueLanguage,
+        speaker: s.speaker,
+        characterNames: params.characterNames,
+        ambientAudio: params.ambientAudio,
       });
       return `SEGMENT ${s.segment_number} — "${s.title}" [${s.role.toUpperCase()}] (${s.duration_seconds}s)
   Beats:
 ${beats}
-  ▶ FULL PROMPT TO PASTE into Veo/Seedance image-to-video (attach the board + character sheet):
+  ▶ FULL PROMPT TO PASTE into Veo/Seedance image-to-video (attach your CHARACTER PHOTO as the reference):
     ${fullPrompt}
   Continuity: ${s.continuity_note}`;
     })
@@ -618,4 +1073,128 @@ ${segLines}
 
 ---
 Compatible with: Google Veo 3.1, Seedance 2.0, Kling, Runway, Pika`;
+}
+
+// ─── Structured Veo 3.1 JSON export ─────────────────────────────────────────
+// Veo Flow (and Kling/Seedance JSON modes) parse a STRUCTURED prompt far more
+// reliably than one flat paragraph. We emit a canonical Veo-3.1 JSON: a shared
+// header (style / continuity / negative) + one structured object per clip. The
+// self-contained flat `prompt` is ALSO kept per clip for text-mode users.
+
+/** The one comprehensive negative list, reused at project + clip level. */
+export const VEO_NEGATIVE_LIST =
+  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, on-screen text, captions, subtitles, burned-in dialogue text, title cards, watermark, plastic or CGI skin";
+
+interface VeoJsonOptions {
+  aspectRatio: string;
+  dialogueLanguage?: string;
+  /** Genre-appropriate ambient sound (kitchen sizzle, gym energy, …). */
+  ambientAudio?: string;
+}
+
+/**
+ * Build a structured Veo-3.1 JSON project from a finished breakdown. Returns a
+ * plain object (caller serialises it). Every clip carries structured fields
+ * (scene / subject / shot / timeline / dialogue / negative) PLUS a flattened
+ * self-contained `prompt` string for users who paste plain text.
+ */
+export function buildVeoJson(
+  breakdown: StoryboardGenerationOutput,
+  opts: VeoJsonOptions
+): Record<string, unknown> {
+  const oneLine = (s?: string | null) =>
+    (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+  const lang = opts.dialogueLanguage ?? "Vietnamese";
+  const locks = breakdown.character_locks ?? [];
+  const clipSeconds = 10;
+
+  const characters = locks.map((l) => ({
+    name: l.name,
+    gender: l.gender ?? "",
+    appearance: [l.gender_age, l.build, l.skin_tone, l.hair, l.eyes]
+      .map((x) => oneLine(x))
+      .filter(Boolean)
+      .join(", "),
+    wardrobe: oneLine(l.costume),
+    signature_features: oneLine(l.signature_features),
+    default_expression: oneLine(l.default_expression),
+    dna: oneLine(l.dna),
+  }));
+
+  const sb = breakdown.scene_bible;
+
+  const clips = breakdown.segments.map((seg) => {
+    const beats = Array.isArray(seg.beats) ? seg.beats : [];
+    const n = Math.max(1, beats.length);
+    // Split the 10s clip evenly across the beats so each gets a timecode.
+    const timeline = beats.map((b, i) => {
+      const start = Math.round((i * clipSeconds) / n);
+      const end = Math.round(((i + 1) * clipSeconds) / n);
+      return {
+        time: `${start}-${end}s`,
+        camera: oneLine(b.camera),
+        action: oneLine(b.beat),
+      };
+    });
+    const speaker = oneLine(seg.speaker) || characters[0]?.name || "";
+    return {
+      id: seg.segment_number,
+      role: seg.marketing_role,
+      duration_seconds: seg.duration_seconds ?? clipSeconds,
+      scene: oneLine(seg.first_frame_prompt),
+      subject: speaker ? `${speaker} (keep identical to continuity.characters)` : "the main character",
+      shot: {
+        camera_motion: "one continuous take — a single slow, smooth camera move (push-in / pan / orbit); no hard cuts",
+        framing: timeline.length ? timeline.map((t) => t.camera).filter(Boolean).join(" → ") : "",
+      },
+      timeline,
+      action: oneLine(seg.motion_prompt),
+      dialogue: seg.dialogue
+        ? {
+            speaker,
+            language: lang,
+            line: oneLine(seg.dialogue),
+            lip_sync: true,
+            subtitles: false,
+          }
+        : null,
+      audio: opts.ambientAudio
+        ? `${opts.ambientAudio}; plus the spoken dialogue; no on-screen text`
+        : "spoken dialogue only with natural ambient sound; no music unless noted; no on-screen text",
+      continuity_from_previous: oneLine(seg.continuity_note),
+      negative_prompt: VEO_NEGATIVE_LIST,
+      // Flattened, fully self-contained prompt (text mode fallback).
+      prompt: oneLine(seg.full_prompt ?? seg.motion_prompt ?? ""),
+    };
+  });
+
+  return {
+    version: "veo-3.1",
+    output: {
+      aspect_ratio: opts.aspectRatio,
+      duration_seconds_per_clip: clipSeconds,
+      fps: 24,
+      total_clips: clips.length,
+    },
+    reference_image:
+      "Attach the SAME uploaded character photo as the identity reference in EVERY clip. Do NOT copy the photo's own background — build each clip's scene from its `scene` field.",
+    global_style: {
+      look: oneLine(breakdown.style_guide?.art_direction) || "cinematic realistic",
+      lens: oneLine(sb?.lens),
+      lighting: oneLine(sb?.lighting),
+      backdrop: oneLine(sb?.backdrop),
+      color_grade: oneLine(sb?.color_grade),
+      color_palette: breakdown.style_guide?.color_palette ?? [],
+      mood: breakdown.mood_tags ?? [],
+    },
+    continuity: {
+      characters,
+      product_dna: breakdown.product_dna ? oneLine(breakdown.product_dna) : null,
+    },
+    negative_prompt: VEO_NEGATIVE_LIST,
+    title: breakdown.title,
+    synopsis: oneLine(breakdown.synopsis),
+    marketing_structure: breakdown.marketing_structure ?? null,
+    clips,
+  };
 }
