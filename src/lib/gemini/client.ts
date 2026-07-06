@@ -68,6 +68,7 @@ export async function geminiGenerateText(params: {
   audio?: { base64: string; mimeType?: string }[];
   temperature?: number;
   maxOutputTokens?: number;
+  responseSchema?: Record<string, unknown>;
 }): Promise<string> {
   const apiKey = getApiKey();
 
@@ -99,6 +100,7 @@ export async function geminiGenerateText(params: {
       temperature: params.temperature ?? 0.7,
       maxOutputTokens: params.maxOutputTokens ?? 8192,
       ...(params.jsonMode ? { responseMimeType: "application/json" } : {}),
+      ...(params.responseSchema ? { responseSchema: params.responseSchema } : {}),
     },
   };
 

@@ -12,6 +12,124 @@ import type {
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
+const STRING_SCHEMA = { type: "STRING" };
+const INTEGER_SCHEMA = { type: "INTEGER" };
+const STRING_ARRAY_SCHEMA = { type: "ARRAY", items: STRING_SCHEMA };
+
+// Gemini's JSON mode is much more reliable when it gets a concrete schema.
+// Keep this local to the storyboard text step so the rest of the pipeline stays unchanged.
+const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
+  type: "OBJECT",
+  properties: {
+    title: STRING_SCHEMA,
+    synopsis: STRING_SCHEMA,
+    total_duration_seconds: INTEGER_SCHEMA,
+    mood_tags: STRING_ARRAY_SCHEMA,
+    marketing_structure: {
+      type: "OBJECT",
+      properties: {
+        hook: STRING_SCHEMA,
+        problem: STRING_SCHEMA,
+        solution: STRING_SCHEMA,
+        cta: STRING_SCHEMA,
+      },
+      required: ["hook", "problem", "solution", "cta"],
+    },
+    character_locks: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          name: STRING_SCHEMA,
+          gender: STRING_SCHEMA,
+          gender_age: STRING_SCHEMA,
+          build: STRING_SCHEMA,
+          skin_tone: STRING_SCHEMA,
+          hair: STRING_SCHEMA,
+          eyes: STRING_SCHEMA,
+          costume: STRING_SCHEMA,
+          signature_features: STRING_SCHEMA,
+          default_expression: STRING_SCHEMA,
+          render_style: STRING_SCHEMA,
+          dna: STRING_SCHEMA,
+        },
+        required: [
+          "name",
+          "gender",
+          "gender_age",
+          "build",
+          "skin_tone",
+          "hair",
+          "eyes",
+          "costume",
+          "signature_features",
+          "default_expression",
+          "render_style",
+        ],
+      },
+    },
+    scene_bible: {
+      type: "OBJECT",
+      properties: {
+        lens: STRING_SCHEMA,
+        lighting: STRING_SCHEMA,
+        backdrop: STRING_SCHEMA,
+        color_grade: STRING_SCHEMA,
+      },
+      required: ["lens", "lighting", "backdrop", "color_grade"],
+    },
+    product_dna: STRING_SCHEMA,
+    segments: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          segment_number: INTEGER_SCHEMA,
+          duration_seconds: INTEGER_SCHEMA,
+          title: STRING_SCHEMA,
+          marketing_role: STRING_SCHEMA,
+          beats: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                beat: STRING_SCHEMA,
+                camera: STRING_SCHEMA,
+              },
+              required: ["beat", "camera"],
+            },
+          },
+          first_frame_prompt: STRING_SCHEMA,
+          motion_prompt: STRING_SCHEMA,
+          dialogue: STRING_SCHEMA,
+          continuity_note: STRING_SCHEMA,
+        },
+        required: [
+          "segment_number",
+          "duration_seconds",
+          "title",
+          "marketing_role",
+          "beats",
+          "first_frame_prompt",
+          "motion_prompt",
+          "dialogue",
+          "continuity_note",
+        ],
+      },
+    },
+    style_guide: {
+      type: "OBJECT",
+      properties: {
+        color_palette: STRING_ARRAY_SCHEMA,
+        art_direction: STRING_SCHEMA,
+        visual_references: STRING_SCHEMA,
+        consistency_notes: STRING_SCHEMA,
+      },
+      required: ["color_palette", "art_direction", "visual_references", "consistency_notes"],
+    },
+  },
+  required: ["title", "synopsis", "character_locks", "segments", "style_guide"],
+};
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,6 +166,63 @@ function sanitizeJsonResponse(text: string): string {
   return cleaned;
 }
 
+function stripTrailingCommasOutsideStrings(json: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < json.length; i++) {
+    const ch = json.charAt(i);
+
+    if (inString) {
+      out += ch;
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === "\"") {
+      inString = true;
+      out += ch;
+      continue;
+    }
+
+    if (ch === ",") {
+      let j = i + 1;
+      while (j < json.length && /\s/.test(json.charAt(j))) j++;
+      const next = json.charAt(j);
+      if (next === "}" || next === "]") continue;
+    }
+
+    out += ch;
+  }
+
+  return out;
+}
+
+function parseJsonResponse(text: string): unknown {
+  const sanitized = sanitizeJsonResponse(text);
+
+  try {
+    return JSON.parse(sanitized);
+  } catch (err) {
+    const repaired = stripTrailingCommasOutsideStrings(sanitized);
+    if (repaired !== sanitized) {
+      try {
+        return JSON.parse(repaired);
+      } catch {
+        // Keep the original parse error because it points at the real raw response.
+      }
+    }
+    throw err;
+  }
+}
+
 export async function generateStoryboardBreakdown(
   input: StoryboardGenerationInput,
   provider: AIProvider = "openai"
@@ -63,7 +238,8 @@ export async function generateStoryboardBreakdown(
           systemPrompt: buildStoryboardSystemPrompt(),
           userPrompt: buildStoryboardUserPrompt(input),
           jsonMode: true,
-          temperature: 0.7,
+          responseSchema: STORYBOARD_RESPONSE_SCHEMA,
+          temperature: 0.35,
           maxOutputTokens: 8192,
         });
       } else {
@@ -85,8 +261,7 @@ export async function generateStoryboardBreakdown(
         throw new Error(`Empty response from ${provider}`);
       }
 
-      const sanitized = sanitizeJsonResponse(rawContent);
-      const parsed: unknown = JSON.parse(sanitized);
+      const parsed = parseJsonResponse(rawContent);
 
       if (!validateOutput(parsed)) {
         throw new Error("Response does not match expected schema");
