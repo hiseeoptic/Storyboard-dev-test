@@ -29,10 +29,13 @@ function veoConciseTail(hasProduct: boolean): string {
   return `Natural, physically realistic motion — real weight, gravity and momentum; solid stable body, feet planted, hands make real contact and do not pass through objects; ONE continuous take, no hard cuts. Audio only — NO subtitles, captions, on-screen text or watermark. Avoid: ${productNeg}morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, plastic/CGI skin.`;
 }
 
-/** One-line "Scene Bible" style tokens, reproduced verbatim in every image. */
+/** One-line "Scene Bible" style tokens. Keeps lens/lighting/grade constant so
+ * the clips feel like one film, while the LOCATION can still change per scene
+ * (the "Setting style" is a guide, not a lock — vital for narrative/numerology
+ * videos where every beat is a different metaphor location). */
 function sceneBibleTokens(sb?: SceneBible): string {
   if (!sb) return "";
-  return `STYLE TOKENS (reproduce these EXACTLY in every keyframe — same lens, light, backdrop, grade): ${sb.lens}; ${sb.lighting}; backdrop ${sb.backdrop}; ${sb.color_grade}.`;
+  return `STYLE TOKENS (keep the SAME lens, lighting mood and colour grade across every clip): ${sb.lens}; ${sb.lighting}; ${sb.color_grade}. Setting style: ${sb.backdrop}.`;
 }
 
 // ─── Marketing templates ────────────────────────────────────────────────────
@@ -128,9 +131,20 @@ ${NUMEROLOGY_ARCHETYPES}
   · Every scene's SETTING, props, lighting, weather, camera and the character's action must SYMBOLICALLY embody the number's core trait AND the emotion of that beat. The environment is a METAPHOR for the number, never a random backdrop, and it must match the character's personality in that moment.
   · Choose ONE controlling visual metaphor for the number and vary it across the 5 beats. Examples: Số 5 (tự do) → crossroads at dusk (hook) → packing up / leaving many rooms (pain) → a cliff over the open sea (insight) → giving water among strangers round a fire (payoff) → an endless open road (CTA). Số 1 (mở đường) → walking far ahead of a crowd on a misty ridge (hook) → carrying everything alone, last light on in the office (pain) → an untrodden trail at dawn (insight) → the first footprint on a new path, sun bursting behind (payoff) → others starting to follow his steps (CTA).
   · The environment must EVOLVE with the emotion: cold / lost / cluttered at the pain beat → warm / open / "home" at the payoff — while the SAME character DNA (face, wardrobe) stays identical throughout.
-  · SHOW, DON'T TELL: each scene tells its beat through ONE striking visual metaphor + the character's action, NOT a lecturing voiceover. FREELY CHANGE the location each scene (street, cliff, rooftop, café, moving train…) to serve the metaphor — never lock everything to one office/room.
+  · SHOW, DON'T TELL: each scene tells its beat through ONE striking visual metaphor + the character's action, NOT a lecturing voiceover. EACH OF THE 5 BEATS MUST BE A DIFFERENT LOCATION that embodies the number's energy — cinematic, varied, mostly OUTDOOR/real-world. A plain office/desk/bedroom is BANNED as a default (only allowed as ONE deliberate metaphor beat, e.g. the "carrying it all alone" pain for Số 1/4/8) — never set the whole video in an office/room.
+  · NUMBER → SETTING IDEAS (pick varied locations matching the number's energy; do NOT reuse the same place twice):
+    1 Thủ Lĩnh (Thủy): sống núi mù sương, con đường chưa ai đi, bình minh trên đỉnh, người khác bắt đầu đi theo sau.
+    2 Yêu Thương (Thổ): bàn ăn gia đình, hai bàn tay đan nhau, quán cà phê ấm, khoảnh khắc hoà giải.
+    3 Truyền Cảm Hứng (Mộc): sân khấu nhỏ, xưởng vẽ đầy màu, con phố rực rỡ, đám đông bật cười.
+    4 Người Thầy (Mộc): công trường/xưởng mộc, xếp từng viên gạch, bản vẽ, nền móng vững — vẫn nên ra ngoài trời, không kẹt bàn giấy.
+    5 Phiêu Du (Thổ): ngã ba đường hoàng hôn, ga tàu, vách đá nhìn biển, con đường vô tận, ba lô lên vai.
+    6 Gia Đình (Kim): căn bếp ấm, chăm em nhỏ, khu vườn, mâm cơm sum vầy.
+    7 Chiêm Nghiệm (Kim): thư viện cổ, đỉnh đồi tĩnh lặng, bờ hồ sương sớm, thiền giữa rừng.
+    8 Kinh Doanh (Thổ): nóc toà nhà nhìn thành phố, cái bắt tay thương vụ, sân khấu trao giải — ra ngoài, tránh bàn giấy nhàm.
+    9 Nhân Đạo (Hỏa): bản làng vùng cao, trao quà cho trẻ, đống lửa với người lạ, hoàng hôn bao dung.
+    11/22/33: không gian rộng mở, nhiều ánh sáng, biểu tượng khai sáng / kiến tạo / chữa lành.
   · Add ONE relatable, lightly humorous everyday detail so it feels human (e.g. a Số 5 who swears "lần này nghiêm túc" then grabs the backpack 3 seconds later; a Số 1 who directs the whole team then carries every box himself "để tao làm cho nhanh").
-  · Write each segment's setting + lighting explicitly in "first_frame_prompt". The BACKDROP changes per scene (the metaphor), but keep the lens + colour grade in "scene_bible" cinematic and coherent so the clips still feel like one film.
+  · Write each segment's setting + lighting explicitly in "first_frame_prompt" (a DIFFERENT place each beat). In "scene_bible" the "backdrop" field must describe the VARIED style of locations (e.g. "varied cinematic outdoor landscapes reflecting the number's element"), NOT one fixed room — only the lens, lighting mood and colour grade stay constant so the clips still feel like one film.
 
 - THE HOOK IS 80% OF THE VIDEO. The first 2-3 seconds decide everything. The opening SHOT + the opening LINE must both stop the scroll. Write the hook LAST, after you know the payoff, so it can promise exactly what the video delivers. Pick ONE of these proven hook formulas for beat 1 (vary it across videos — do not always use the same one):
   · CALL-OUT + STOP: name the exact viewer and freeze them — "Nếu bạn là Số [X], khoan lướt đã." / "Video này chỉ dành cho Số [X]."
@@ -936,8 +950,8 @@ export function buildSegmentVeoPrompt(params: {
   // pre-generate a per-scene keyframe. The attached photo only locks the
   // face/wardrobe; the scene is built from the text below.
   const lead =
-    "Use the ATTACHED photo as the appearance reference for the main character — an ordinary, original everyday person (not a specific real individual). Keep the character's face, hair and wardrobe consistent across every clip. Create ONE continuous, cinematic 10-second shot of this character in the scene described below; build the described setting, do NOT copy the photo's own background.";
-  const character = ` CHARACTER (keep identical every clip): ${clean(params.characterDescription)}.`;
+    "Keep the main character visually consistent across every shot, matching the attached reference photo — an ordinary, original person (not a specific real individual). Create ONE continuous, cinematic 10-second shot in the scene described below; build the described setting, do NOT copy the photo's own background.";
+  const character = ` Main character: ${clean(params.characterDescription)}.`;
   const setting = params.setting ? ` SCENE: ${clean(params.setting)}.` : "";
   const product = params.productDescription
     ? ` PRODUCT (keep its exact shape, colour, material and branding): ${clean(params.productDescription)}.`
