@@ -581,30 +581,34 @@ function assemblePlanPrompts(
   // Genre-appropriate ambient sound (kitchen sizzle for cooking, gym energy for
   // fitness, …) added to every clip's Veo prompt automatically.
   const ambientAudio = genreAmbientAudio(input.genre, input.video_goal);
+  // IMPORTANT: makeVeoSafe scrubs LLM-generated text (which may contain "real
+  // person / exact face / celebrity" wording). Apply it ONLY to the model's own
+  // fields — NEVER wrap the fully-assembled prompt, or it corrupts the clean,
+  // intentional template wording (e.g. "…or recognisable public figure" would
+  // get mangled into gibberish).
+  const charDesc = makeVeoSafe(ctx.charDescVeo);
+  const productDesc = ctx.productDnaText ? makeVeoSafe(ctx.productDnaText) : ctx.productDnaText;
   for (const seg of breakdown.segments) {
     seg.first_frame_url = null;
-    seg.full_prompt = makeVeoSafe(
-      buildSegmentVeoPrompt({
-        characterDescription: ctx.charDescVeo,
-        setting: makeVeoSafe(seg.first_frame_prompt ?? ""),
-        productDescription: ctx.productDnaText,
-        ingredients: ctx.ingredientsText,
-        sceneBible: ctx.sceneBible,
-        colorPalette: palette,
-        motionPrompt: makeVeoSafe(seg.motion_prompt),
-        dialogue: seg.dialogue,
-        dialogueLanguage: ctx.dialogueLanguage,
-        speaker: seg.speaker,
-        characterNames: ctx.characterNames,
-        ambientAudio,
-      })
-    );
+    seg.full_prompt = buildSegmentVeoPrompt({
+      characterDescription: charDesc,
+      setting: makeVeoSafe(seg.first_frame_prompt ?? ""),
+      productDescription: productDesc,
+      ingredients: ctx.ingredientsText,
+      sceneBible: ctx.sceneBible,
+      colorPalette: palette,
+      motionPrompt: makeVeoSafe(seg.motion_prompt),
+      dialogue: seg.dialogue,
+      dialogueLanguage: ctx.dialogueLanguage,
+      speaker: seg.speaker,
+      characterNames: ctx.characterNames,
+      ambientAudio,
+    });
   }
-  return makeVeoSafe(
-    buildVideoPromptText({
+  return buildVideoPromptText({
     title: breakdown.title,
-    characterDescription: ctx.charDescVeo,
-    productDescription: ctx.productDnaText,
+    characterDescription: charDesc,
+    productDescription: productDesc,
     ingredients: ctx.ingredientsText,
     sceneBible: ctx.sceneBible,
     setting: input.setting || "Unspecified",
@@ -620,15 +624,14 @@ function assemblePlanPrompts(
       title: s.title,
       role: s.marketing_role,
       duration_seconds: s.duration_seconds,
-      motion_prompt: s.motion_prompt,
+      motion_prompt: makeVeoSafe(s.motion_prompt),
       dialogue: s.dialogue,
       speaker: s.speaker,
-      setting: s.first_frame_prompt,
+      setting: makeVeoSafe(s.first_frame_prompt ?? ""),
       continuity_note: s.continuity_note,
       beats: s.beats,
     })),
-    })
-  );
+  });
 }
 
 /**

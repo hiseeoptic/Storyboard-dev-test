@@ -26,7 +26,7 @@ function veoConciseTail(hasProduct: boolean): string {
   const productNeg = hasProduct
     ? "warped or altered label/logo text, brand-colour change, extra or duplicated products, "
     : "";
-  return `This is an ORIGINAL FICTIONAL character — a completely made-up, ordinary everyday person, NOT a real, famous or recognisable public figure/celebrity, and not resembling any real individual; any resemblance is coincidental and must be avoided. Natural, physically realistic motion — real weight, gravity and momentum; the body stays solid and anatomically stable, feet planted, hands make real contact with objects and never bend, stretch or pass through them; one continuous shot, no hard cuts. NO on-screen text of any kind: no subtitles, no captions, no burned-in dialogue words, no title cards, no watermark — spoken audio only. Avoid: resembling a real or famous person/celebrity/lookalike, ${productNeg}morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, on-screen text, subtitles, captions, watermark, plastic/CGI skin.`;
+  return `Natural, physically realistic motion — real weight, gravity and momentum; solid stable body, feet planted, hands make real contact and do not pass through objects; ONE continuous take, no hard cuts. Audio only — NO subtitles, captions, on-screen text or watermark. Avoid: ${productNeg}morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, plastic/CGI skin.`;
 }
 
 /** One-line "Scene Bible" style tokens, reproduced verbatim in every image. */
@@ -936,7 +936,7 @@ export function buildSegmentVeoPrompt(params: {
   // pre-generate a per-scene keyframe. The attached photo only locks the
   // face/wardrobe; the scene is built from the text below.
   const lead =
-    "Use the ATTACHED photo only as a general appearance reference for an ORIGINAL FICTIONAL character — a made-up, ordinary everyday person (NOT a real, famous or recognisable public figure/celebrity). Keep this character's face, hair and wardrobe consistent across clips. Create ONE continuous, cinematic 10-second shot of this character in the scene described below; do NOT copy the photo's own background — build the new setting.";
+    "Use the ATTACHED photo as the appearance reference for the main character — an ordinary, original everyday person (not a specific real individual). Keep the character's face, hair and wardrobe consistent across every clip. Create ONE continuous, cinematic 10-second shot of this character in the scene described below; build the described setting, do NOT copy the photo's own background.";
   const character = ` CHARACTER (keep identical every clip): ${clean(params.characterDescription)}.`;
   const setting = params.setting ? ` SCENE: ${clean(params.setting)}.` : "";
   const product = params.productDescription

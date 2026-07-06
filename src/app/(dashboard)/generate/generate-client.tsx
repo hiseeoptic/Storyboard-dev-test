@@ -1562,6 +1562,14 @@ export function GenerateClient() {
       }
       zip.file(`master_prompt.txt`, masterLines.join("\n"));
 
+      // ── Clean prompts-only file — NO headers/labels, one prompt per block,
+      // blank line between prompts, ready to paste straight into a video tool. ──
+      const promptsOnly = bd.segments
+        .map((seg) => oneLine(seg.full_prompt ?? seg.motion_prompt ?? ""))
+        .filter(Boolean)
+        .join("\n\n");
+      zip.file(`prompts.txt`, promptsOnly);
+
       // ── Structured Veo 3.1 JSON (veoflow-style) — the primary deliverable ──
       // A shared header (style / continuity / negative) + one STRUCTURED object
       // per clip (scene / subject / shot / timeline / dialogue / negative). Veo
@@ -1601,6 +1609,9 @@ export function GenerateClient() {
         "(để ghép mượt) — KHÔNG dán vào Veo. Segment 1 ghi 'opening shot' vì là cảnh mở đầu.",
         "",
         "FILE NÀO DÙNG GÌ:",
+        "  - prompts.txt        → GỌN NHẤT: chỉ có các prompt, mỗi prompt cách nhau 1 dòng",
+        "      trống, KHÔNG tiêu đề/giới thiệu. Đưa thẳng file này vào tool tạo video, hoặc",
+        "      copy từng đoạn (mỗi đoạn = 1 clip) rồi dán vào Veo (đính kèm ảnh nhân vật).",
         "  - veo_prompts.json   → CHUẨN cho Veo Flow (JSON mode). Có phần đầu dùng chung",
         "      (global_style / continuity / negative_prompt) + mảng \"clips\": mỗi clip là 1",
         "      object có cấu trúc rõ ràng (scene / subject / shot / timeline / dialogue /",
