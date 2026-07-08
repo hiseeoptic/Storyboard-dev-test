@@ -5,6 +5,20 @@ import type {
   SceneBible,
   AspectRatio,
 } from "@/types";
+import {
+  resolveEnvironment,
+  renderEnvironmentBlock,
+  environmentToJson,
+  environmentCatalogForPrompt,
+} from "@/lib/environment";
+import {
+  lawsSystemDigest,
+  clipMotionLawLine,
+  clipCameraLawLine,
+  clipAudioLawLine,
+  lawsForVeoJson,
+  defaultVoiceFor,
+} from "@/lib/laws";
 
 // Forbidden in every generated image/clip (the brief's negative list).
 // Phrased as plain descriptors (no instructive "no/don't") — Veo/Kling read the
@@ -20,13 +34,25 @@ const SHARED_NEGATIVE =
 // setting, lens and colour — so the prompt must NOT re-describe them (that
 // bloat is exactly what makes Veo drift/morph). We keep only the motion plus a
 // short physics + negative cue.
+// ── PHOTOREAL SPINE (ported from veoflow-web) ───────────────────────────────
+// veoflow-web's clips read as *really filmed* because it never relies on the
+// model to remember realism — it repeats a positive "Layer-1 Visual Reality"
+// directive (forensic skin_texture + physically-based materials) in every clip.
+// We bring that same spine here so EVERY character and EVERY object (leather
+// boots, denim, metal, wood, fabric, skin) renders true-to-life, not CGI/plastic.
+// One constant, reused in the motion tail, the keyframe and the Veo JSON.
+const PHOTOREAL_REALISM =
+  "PHOTOREAL REALISM (this is REAL filmed footage, physically-based rendering — NOT CGI, NOT 3D render, NOT illustration): human skin keeps real texture — visible pores, fine vellus/facial hair, natural subsurface scattering, subtle moisture/oil sheen, real catchlights and micro-imperfections; NEVER airbrushed, waxy, plastic or beauty-smoothed. Every object and material reads true-to-life: leather shows grain, creases, worn scuffs and real stitching; denim a woven twill weave; metal brushed or worn with real specular reflections; wood visible grain; fabric real thread and drape — no plastic, toy-like or CGI surfaces. Physically accurate light with soft imperfect shadow edges, natural depth of field and a fine organic film grain.";
+
 // Concise anti-artifact tail. Product-related negatives are included ONLY when
 // the clip actually has a product, so a person-only clip never mentions products.
+// The physics/camera/audio clauses are RENDERED FROM the frozen PRODUCTION_LAWS
+// manifest (src/lib/laws) — single source of truth, per the 9-layer canon.
 function veoConciseTail(hasProduct: boolean): string {
   const productNeg = hasProduct
     ? "warped or altered label/logo text, brand-colour change, extra or duplicated products, "
     : "";
-  return `Natural, physically realistic motion — real weight, gravity and momentum; solid stable body, feet planted, hands make real contact and do not pass through objects; ONE continuous take, no hard cuts. Audio only — NO subtitles, captions, on-screen text or watermark. Avoid: ${productNeg}morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, plastic/CGI skin.`;
+  return `${PHOTOREAL_REALISM} ${clipMotionLawLine()} ${clipCameraLawLine()} ${clipAudioLawLine()} Spoken words are AUDIO ONLY — NO subtitles, captions, on-screen text or watermark. Avoid: ${productNeg}morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, plastic/CGI/wax/airbrushed skin, toy-like or 3D-render materials.`;
 }
 
 /** One-line "Scene Bible" style tokens. Keeps lens/lighting/grade constant so
@@ -35,7 +61,11 @@ function veoConciseTail(hasProduct: boolean): string {
  * videos where every beat is a different metaphor location). */
 function sceneBibleTokens(sb?: SceneBible): string {
   if (!sb) return "";
-  return `STYLE TOKENS (keep the SAME lens, lighting mood and colour grade across every clip): ${sb.lens}; ${sb.lighting}; ${sb.color_grade}. Setting style: ${sb.backdrop}.`;
+  // film_grain is an optional realism fingerprint (grain/texture/acquisition) —
+  // repeated verbatim like the other tokens so the "really filmed" look is
+  // constant across every clip (ported from veoflow-web's scene_bible_tokens).
+  const grain = sb.film_grain ? `; ${sb.film_grain}` : "";
+  return `STYLE TOKENS (keep the SAME lens, lighting mood and colour grade across every clip): ${sb.lens}; ${sb.lighting}; ${sb.color_grade}${grain}. Setting style: ${sb.backdrop}.`;
 }
 
 // ─── Marketing templates ────────────────────────────────────────────────────
@@ -245,6 +275,17 @@ HEALTH / WELLNESS STORYTELLING FRAMEWORK (follow this EXACTLY — kể chuyện:
 const COOKING_FRAMEWORK = `
 COOKING / RECIPE SHORT FRAMEWORK (follow this EXACTLY — THE FOOD IS THE STAR):
 - SUBJECT: one dish/recipe (e.g. "cơm chiên trứng", "bánh mì chảo", "trà sữa nhà làm"). Keep it to ONE dish, doable, with a satisfying finish.
+- 📌 RECIPE CONTENT = SOURCE OF TRUTH: if the idea/topic content contains a structured recipe (lines like "CÔNG THỨC MÓN / NGUYÊN LIỆU / GIA VỊ / CÁC BƯỚC / ÂM THANH ASMR"), that data is ABSOLUTE. Use EXACTLY those ingredients and ONLY those — never invent, swap, add or drop an ingredient/spice; follow CÁC BƯỚC in order and map them onto beats 2-4; use the listed DỤNG CỤ (pot/pan type) verbatim; take each step's ASMR sound from ÂM THANH ASMR; end on the THÀNH PHẨM money shot. If no structured recipe is given, use only common, verifiable ingredients for that dish.
+- 🚫 ANTI-HIJACK (this is a COOKING video, NEVER a health/illness video): even if the idea/topic text mentions symptoms, diseases or health benefits, DO NOT build a sickness storyline — no character acting tired/ill, no rubbing temples or pressing the abdomen, no disease explanations, no "dấu hiệu/triệu chứng" hooks. The hook is the FOOD money shot, the arc is the MAKE. A health benefit may appear as at most ONE warm spoken line (e.g. "món này lại mát gan nữa"), never as the story.
+- 🥬 INGREDIENT FORENSIC DNA: in every first_frame_prompt, describe each visible ingredient with its REAL look — colour, texture, state (e.g. "sấu xanh vỏ sần hơi bóng", "thịt vịt chặt miếng, da vàng nhạt", "gừng thái lát vàng tươi, xơ rõ") — so the render shows the actual Vietnamese ingredient, not a generic lookalike; keep each ingredient's look IDENTICAL across all segments.
+
+- 🏔️ OUTDOOR / WILDERNESS ASMR MODE (activate when the idea/setting mentions ngoài trời / núi / suối / bản / cao nguyên / wilderness / outdoor — the "The Nikos Knife" formula, overrides the normal kitchen rules):
+  · SETTING: a fixed OUTDOOR Vietnamese landscape cooking spot — use environment_ref "vietnam_highland_cook_spot" (đồi núi Tây Bắc) or "vietnam_stream_rock_cook" (bờ suối rừng) for EVERY segment (NOT warm_home_kitchen). Composition law: the cooking action fills the LOWER THIRD of frame (board/bowl/fire in sharp focus), the Vietnamese vista fills the upper frame with real atmospheric depth.
+  · CHARACTER = HANDS ONLY, NO FACE EVER: the "character" is a pair of hands — lock their DNA like a face: skin tone, one jacket-sleeve cuff (colour + material), one accessory (e.g. dark field watch on left wrist). The SAME hands, cuff and watch appear in every segment. character_locks describes the hands/cuff/accessory; gender_age is the cook's hands' owner; NEVER show the face, body or reflection.
+  · CAMERA: near-POV high angle (~40-60° down) over the hands and board, or a low tabletop close-up along the board toward the vista; slow push-ins and gentle tilts only; the landscape horizon sits in the upper third.
+  · AUDIO = 100% DIEGETIC ASMR — THIS OVERRIDES ANY DIALOGUE REQUIREMENT: "dialogue" MUST be an empty string "" and "speaker" "" for EVERY segment. No voiceover, no music, no humming. The soundtrack is ONLY: knife sliding through the ingredient and landing on wood, chop thuds, grating, scraping, drizzling oil, whisking, fire crackle, sizzling, plus the location's nature bed (wind/stream/birds). In every motion_prompt NAME the sound-making contact explicitly (e.g. "the blade glides through the salmon and knocks softly against the board") — Veo generates the audio from the described action.
+  · FOOD REALISM: raw ingredients glisten wet and fresh (moist fish flesh, silver skin, juice beading on the cut face), steam in the cool air, smoke curling off coals — appetising, macro-level real.
+  · ARC (5 beats): finished-dish money shot over the vista → prep cuts on the board (the hero ASMR beat, slow) → sauce/marinade in the wooden bowl (grate + drizzle + stir) → cooking over the open fire (sizzle + smoke) → reveal + first cut/bite, no CTA speech — the CTA lives in the caption only.
 - HERO = THE FOOD, not the person: the camera loves the ingredients, the sizzle, the steam, the texture, the pour, the cheese-pull, the final plating. The cook is usually HANDS + voice (POV) or a warm host; identity matters less than appetite appeal.
 - SETTING = A KITCHEN, LOCKED & CONSISTENT: the whole video happens in ONE fixed kitchen (a warm, tidy home kitchen unless the idea says otherwise — stove/hob, wooden board, clean counter, natural window light). LOCK it into scene_bible.backdrop and repeat the SAME kitchen verbatim in every segment's first_frame_prompt — same counter, same stove, same props, same light. Never drift to an unrelated place; the cooking always happens on that counter/stove.
 - OVERVIEW SHOT (required): segment 1 (or its first beat) opens with a WIDE ESTABLISHING shot of the whole kitchen counter/setup — ingredients laid out, pan on the stove — so the viewer sees the space, THEN the clips move into the close-ups. (This is the "SCENE OVERVIEW" of the board.)
@@ -311,7 +352,7 @@ export function genreAmbientAudio(genre?: string, goal?: string): string | undef
   const isCooking = genre === "cooking" || goal === "cooking";
   const isFitness = genre === "fitness" || goal === "fitness";
   if (isCooking)
-    return "real kitchen cooking sound — sizzling/xèo xèo, chopping, bubbling, oil crackle and gentle kitchen ambience (ASMR), appetising and clear";
+    return "real cooking ASMR, close-mic and clear — knife slicing through the ingredient and knocking on the wooden board, chopping, grating, drizzling, sizzling/xèo xèo, bubbling, oil crackle — plus the location's natural ambience (gentle kitchen room tone indoors; wind, birds, stream and fire crackle when cooking outdoors); no music, appetising and true";
   if (isFitness)
     return "gym/workout ambience — controlled breathing, feet and light weights on the floor, subtle upbeat energy, motivating and clean";
   return undefined;
@@ -335,13 +376,18 @@ COPYWRITING TECHNIQUES (use them to make each line "đắt"): RULE OF THREE ("đ
 Output PLAIN TEXT in EXACTLY this shape (no markdown, no JSON):
 TITLE: <catchy title>
 CORE MESSAGE: <one-line takeaway>
-CHARACTER: <ONE consistent persona — name, age, signature look/prop, tone — that embodies the topic; keep the SAME person across all segments>
+CHARACTERS: <EVERY person in the story, one per line — name, age, signature look, tone; mark children with "(child)". If the idea/script uses role labels (Chồng/Vợ/Con, Bố/Mẹ…), assign each role ONE consistent given name (e.g. Chồng = Nam) and keep the mapping for the whole script. A solo video simply lists one person.>
 SEGMENT 1 [HOOK]:
+  SPEAKER: <the ONE character name who speaks this segment (or "VO" for voiceover)>
+  IN SCENE: <names of everyone visible in this segment>
   ACTION: <one vivid thing we SEE — a visual metaphor for this beat>
   DIALOGUE: "<the exact spoken line>"
 SEGMENT 2 [PROBLEM]:
+  SPEAKER: ...
+  IN SCENE: ...
   ACTION: ...
   DIALOGUE: "..."
+(a dialogue EXCHANGE between two people = consecutive segments alternating SPEAKER — never two speakers in one segment; keep each labelled line VERBATIM with its own character)
 (continue for EXACTLY the requested number of segments, following the emotional arc)
 CAPTION: <ready-to-post caption + 4-6 hashtags>
 
@@ -406,6 +452,13 @@ FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's vid
 - Every object is locked to a "DNA" that NEVER drifts and is repeated VERBATIM in every board/keyframe and every motion prompt.
 - Build a detailed "character_lock" per character with an EXPLICIT "gender" field (male/female — if a reference photo was provided it MUST match that real person's gender), plus age, build, skin tone, hair, eyes, exact costume, signature features, default expression, PLUS a single-line "dna" string capturing the forensic identity WITH RGB HEX CODES for skin/hair/eyes/wardrobe/brand colours (e.g. "navy polo #1F2A44, light-blue tee #A9C7E8, matte steel watch #8A8D91, warm tan skin #C8956A").
 - CHARACTERS ARE ORIGINAL AND FICTIONAL. Use ordinary, common given names (e.g. Mai, Minh, Lan, Nam) and describe a made-up everyday person — NEVER the name, likeness, or description of any real, famous or recognisable public figure/celebrity/influencer. Do not write "looks like [celebrity]" or reference any real person. Describe appearance by generic attributes only, so the render never resembles a specific real individual (this is what makes Veo/Flow reject the clip as a public-figure likeness).
+
+MULTI-CHARACTER CASTING & DIALOGUE ASSIGNMENT (mandatory whenever the story/script has 2+ people — this is what keeps a family/dialogue video coherent):
+- FULL CAST LOCK: create ONE character_lock for EVERY distinct person who appears anywhere in the story/script — no exceptions. If the script names people by ROLE (Chồng/Vợ/Con, Bố/Mẹ, husband/wife/child…), assign each role ONE ordinary given name and state the mapping in the synopsis (e.g. "Chồng = Nam, Vợ = Mai, Con = bé Minh"). Use those EXACT names consistently in every segment, beat caption, first_frame_prompt, dialogue and speaker field. NEVER invent an extra unnamed person.
+- CHILDREN: a character who is a child gets "is_child": true and an age-locked description (e.g. "bé trai ~6 tuổi, dáng nhỏ nhắn"). A child stays a child in EVERY shot — never rendered as an adult, never changes age, and their small relative height vs the adults stays consistent.
+- ROLE-LABELLED DIALOGUE RECOGNITION: when the idea/script contains dialogue labelled by role or name ("Chồng: …", "Vợ: …", "Con: …", "Nam: …"), each labelled line belongs to THAT character — copy the line VERBATIM into a segment's "dialogue" with "speaker" = that character's lock name. NEVER reassign a line to a different character, never merge two people's lines into one segment. A back-and-forth exchange becomes CONSECUTIVE segments alternating the speaker (one speaker per 10s clip).
+- "characters_in_scene" (REQUIRED per segment): list the EXACT lock names of everyone VISIBLE in that segment — nobody else may appear (no background family members drifting in). The "speaker" MUST be one of them (empty speaker = voiceover). Non-speaking listed characters are present, reacting silently, mouths closed. If someone ENTERS mid-clip (e.g. the child runs in), they are still IN characters_in_scene and the motion_prompt describes the entrance explicitly.
+- CAST CONTINUITY: a character's face, hair, wardrobe and colours are IDENTICAL in every segment they appear in (repeat their lock verbatim in that segment's first_frame_prompt). The SAME wardrobe across the whole video — never re-dress anyone between segments.
 - If there is a hero PRODUCT, write "product_dna": exact shape, material, colours WITH RGB hex, label/logo text+colour, cap/parts — repeated verbatim.
 - Build a "scene_bible" (lens, lighting with Kelvin temps, backdrop with hex, colour grade) — the style fingerprint reused VERBATIM so lens, lighting, backdrop and tone never change.
 - One single set/location per segment; only camera framing and the action change.
@@ -417,6 +470,18 @@ PHYSICAL REALISM (every clip must look real, not "AI" — this is what eliminate
 - State physics explicitly in the motion_prompt: real-world weight, gravity, momentum and balance; objects keep one solid form (object permanence); hands make real contact with props and never pass through them; liquids and food obey gravity.
 - Every motion_prompt must include a positive realism clause, e.g.: "single continuous motion, natural movement obeying real-world physics, consistent weight and gravity, stable identity, object permanence".
 - Camera moves are smooth and minimal (a slow push-in or gentle pan). Avoid combining a big camera move with big subject motion — that compounding warps the image.
+
+MATERIAL & SKIN REALISM (this is what kills the "AI/CGI/plastic" look — treat every clip as REAL filmed footage, never a 3D render):
+- SKIN: describe real skin — visible pores, fine vellus/facial hair, natural subsurface scattering, subtle moisture/oil sheen, real catchlights and small natural imperfections. NEVER airbrushed, waxy, plastic or beauty-smoothed. Fill each character_lock's "skin_texture" and "eye_details" with these forensic details (this is the #1 fix for fake-looking faces).
+- MATERIALS: every object/prop/garment must read true-to-life with its real surface physics. Leather = grain, creases, worn scuffs, real stitching; denim = woven twill weave; metal = brushed/worn with real specular reflections; wood = visible grain; fabric = real thread and drape. Put these into each character_lock's "wardrobe_materials" and describe hero props with the same material honesty — no plastic, toy-like or CGI surfaces.
+- LIGHT: physically-based, tied to time-of-day/weather, with soft imperfect shadow edges. Give scene_bible.lighting BOTH Kelvin temperature AND approximate Lux (e.g. "soft overcast dawn key 5200K, ~800 lux"), and set scene_bible.film_grain to a fine organic grain / clean-acquisition token so the filmic texture stays constant across clips.
+
+${lawsSystemDigest()}
+
+ENVIRONMENT ENGINE (locked world archetypes — pick one per segment):
+- The system has a library of LOCKED environment archetypes, each a physically-grounded world spec (real materials with surface physics, Kelvin+Lux lighting, atmosphere, micro-details, imperfections, ambient sound bed). When a segment's setting matches one, set that segment's "environment_ref" to the archetype id — the system then injects the full forensic world spec into the Veo prompt automatically, which is what makes the SETTING render real instead of CGI.
+${environmentCatalogForPrompt()}
+- Rules: pick the id whose world matches the segment's setting and emotional beat (for numerology, prefer archetypes of the number's ngũ hành element). If NO archetype fits the setting you need, set "environment_ref": "custom" and instead write the material physics + Kelvin/Lux + imperfections yourself inside "first_frame_prompt". Cooking videos use warm_home_kitchen for every segment — EXCEPT outdoor/wilderness ASMR cooking, which uses vietnam_highland_cook_spot or vietnam_stream_rock_cook (one of them, same id for ALL segments); fitness ALWAYS modern_gym_daylight. Two consecutive segments in the same location MUST reuse the same environment_ref.
 
 NEGATIVE (forbidden in every image/clip — plain descriptors): warped/changed label or logo text, brand-colour change, extra products or extra people, changed hair/wardrobe/accessories, human hands when the script does not call for them, on-screen text overlays, object/container morphing, teleporting, floating or levitating objects, objects passing through surfaces, deformed liquid, melted food, extra or fused fingers, malformed hands, face morphing, identity drift, plastic/CGI skin.
 
@@ -436,7 +501,7 @@ export function buildStoryboardUserPrompt(
 ): string {
   const characterBlock =
     input.character_descriptions && input.character_descriptions.length > 0
-      ? `\n\nCharacters:\n${input.character_descriptions.map((c) => `- ${c.name}: ${c.appearance}. Personality: ${c.personality}. Role: ${c.role}`).join("\n")}`
+      ? `\n\nCharacters (create ONE character_lock per person below, keep names EXACT):\n${input.character_descriptions.map((c) => `- ${c.name}${c.is_child ? " [CHILD — trẻ em, khoá đúng độ tuổi trẻ con]" : ""}: ${c.appearance}. Personality: ${c.personality}. Role: ${c.role}`).join("\n")}`
       : "";
 
   // Product / TVC brief — when present, the script becomes a real ad.
@@ -475,7 +540,7 @@ export function buildStoryboardUserPrompt(
   // Stage-1 approved script (written by Claude). When present, the storyboard
   // model must EXPAND this exact script into the JSON — not invent a new story.
   const scriptBlock = input.source_script
-    ? `\n\n=== APPROVED SCRIPT (Stage 1) — EXPAND THIS VERBATIM ===\nA scriptwriter already wrote the creative script below. Your job is ONLY to turn it into the technical storyboard JSON. Follow it FAITHFULLY:\n- Keep the SAME character (name, look, persona) across every segment.\n- Map each SEGMENT in the script to one 10s storyboard segment IN ORDER (same count, same beats/roles).\n- Use each segment's DIALOGUE line VERBATIM as that segment's "dialogue" (do not rewrite, translate, or shorten it beyond natural lip-sync length).\n- Turn each segment's ACTION into the first_frame_prompt + motion_prompt (one continuous action per clip).\n- Do NOT add, drop, reorder, or invent segments or lines. This script is final.\n\n${input.source_script}\n=== END APPROVED SCRIPT ===`
+    ? `\n\n=== APPROVED SCRIPT (Stage 1) — EXPAND THIS VERBATIM ===\nA scriptwriter already wrote the creative script below. Your job is ONLY to turn it into the technical storyboard JSON. Follow it FAITHFULLY:\n- Keep the SAME CAST across the whole video: create one character_lock per person in CHARACTERS (same names, same looks everywhere; carry any "(child)" mark into is_child: true).\n- Map each SEGMENT in the script to one 10s storyboard segment IN ORDER (same count, same beats/roles).\n- Use each segment's DIALOGUE line VERBATIM as that segment's "dialogue"; set "speaker" from the script's SPEAKER line ("VO" → speaker: ""); set "characters_in_scene" from the script's IN SCENE line (exact lock names). NEVER give a line to a different character.\n- Turn each segment's ACTION into the first_frame_prompt + motion_prompt (one continuous action per clip).\n- Do NOT add, drop, reorder, or invent segments, lines or people. This script is final.\n\n${input.source_script}\n=== END APPROVED SCRIPT ===`
     : "";
 
   const segmentCount = input.segment_count ?? 5;
@@ -500,10 +565,15 @@ export function buildStoryboardUserPrompt(
           : "";
 
   const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
+  // OUTDOOR ASMR cooking is voiceless by design — the framework's ASMR mode
+  // overrides the forced-dialogue requirement.
+  const asmrDialogueException = isCooking
+    ? ` EXCEPTION: if the OUTDOOR/WILDERNESS ASMR MODE of the cooking framework is active (idea/setting mentions ngoài trời/núi/suối/wilderness), "dialogue" and "speaker" MUST be empty strings for every segment — audio is 100% diegetic ASMR, no voiceover.`
+    : "";
   const dialogueBlock =
     input.force_dialogue === false
-      ? `\nDialogue: optional. When a segment has a spoken line, write it in ${dialogueLanguage}.`
-      : `\nDialogue: REQUIRED. EVERY segment MUST have a non-empty "dialogue" line spoken in ${dialogueLanguage} (natural, conversational ${dialogueLanguage} — not translated word-for-word). Keep each line short (about 5-12 words). Put the line ONLY in the "dialogue" field — do NOT quote it inside the "motion_prompt" (the system appends it once; repeating it makes the character say it twice).`;
+      ? `\nDialogue: optional. When a segment has a spoken line, write it in ${dialogueLanguage}.${asmrDialogueException}`
+      : `\nDialogue: REQUIRED. EVERY segment MUST have a non-empty "dialogue" line spoken in ${dialogueLanguage} (natural, conversational ${dialogueLanguage} — not translated word-for-word). Keep each line short (about 5-12 words). Put the line ONLY in the "dialogue" field — do NOT quote it inside the "motion_prompt" (the system appends it once; repeating it makes the character say it twice).${asmrDialogueException}`;
 
   // Example beat list sized to the requested count.
   const beatExample = Array.from({ length: beatsPerSegment }, (_, i) => {
@@ -538,23 +608,29 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
     {
       "name": "string",
       "gender": "male | female — REQUIRED. If a reference photo of this person was provided, this MUST match the photo's actual gender. Never guess from the story.",
-      "gender_age": "string — e.g. 'male, ~35 years old'",
+      "is_child": "boolean — true when this character is a child (e.g. the family's kid). Child stays a child in every shot.",
+      "gender_age": "string — e.g. 'male, ~35 years old' or 'male child, ~6 years old'",
       "build": "string",
       "skin_tone": "string",
+      "skin_texture": "string — FORENSIC skin realism (anti-CGI): real texture with visible pores, fine vellus/facial hair, subsurface scattering, subtle sheen and small natural imperfections; NEVER plastic/waxy/airbrushed. e.g. 'warm tan skin, visible pores, faint stubble, natural under-eye texture, no beauty smoothing'",
+      "eye_details": "string — exact eye shape + iris colour + real catchlights, e.g. 'dark brown almond eyes, double eyelid, natural moist catchlight'",
       "hair": "string",
       "eyes": "string",
       "costume": "string",
+      "wardrobe_materials": "string — the REAL materials of the outfit/props so they don't render fake, e.g. 'olive cotton-canvas jacket with visible weave, charcoal cotton tee, indigo denim twill, worn brown full-grain leather boots with grain, creases and stitching, brushed-steel pen'",
       "signature_features": "string",
       "default_expression": "string",
       "render_style": "${input.style}",
-      "dna": "string — ONE verbatim forensic-DNA line with RGB HEX codes for skin/hair/eyes/wardrobe/brand colours, e.g. 'navy polo #1F2A44, light-blue tee #A9C7E8, matte steel watch #8A8D91, short black side-part hair #14110F, warm tan skin #C8956A, rectangular tortoise glasses'"
+      "dna": "string — ONE verbatim forensic-DNA line with RGB HEX codes for skin/hair/eyes/wardrobe/brand colours, e.g. 'navy polo #1F2A44, light-blue tee #A9C7E8, matte steel watch #8A8D91, short black side-part hair #14110F, warm tan skin #C8956A, rectangular tortoise glasses'",
+      "voice": "string — TẦNG 9 audio law: the character's FULL locked voice profile, identical in every clip: timbre + pitch range Hz + rate wpm + accent + emotion band. Male ≈ 85-140 Hz, female ≈ 180-260 Hz, child ≈ 250-400 Hz. e.g. 'warm low male timbre, 95-135 Hz, Northern Vietnamese, ~110 wpm, calm-grounded'"
     }
   ],
   "scene_bible": {
     "lens": "string — e.g. '85mm lens, f/1.8' or '100mm macro, f/5.6'",
-    "lighting": "string — with Kelvin temps, e.g. 'softbox key 4500K + strip rim light 5500K'",
+    "lighting": "string — with Kelvin temps AND approximate Lux, e.g. 'softbox key 4500K + strip rim 5500K, ~600 lux' or 'soft overcast dawn 5200K, ~800 lux'",
     "backdrop": "string — with hex when relevant, e.g. 'modern kitchen, soft window daylight' or 'seamless gradient #40E0D0 to #008080'",
-    "color_grade": "string — e.g. 'neutral Rec.709, photoreal premium commercial'"
+    "color_grade": "string — e.g. 'neutral Rec.709, photoreal premium commercial'",
+    "film_grain": "string — filmic realism fingerprint kept constant every clip, e.g. 'clean digital acquisition, minimal chromatic aberration, fine organic film grain'"
   },
   "product_dna": "string or null — if there is a hero product: exact shape, material, colours WITH RGB hex, label/logo text+colour, cap/parts; else null",
   "segments": [
@@ -570,6 +646,8 @@ ${beatExample}
       "motion_prompt": "string — a focused 70-110 word image-to-video ACTION prompt for Omni Flash / Veo describing ONE continuous take. IMPORTANT: the system automatically wraps this text with the full character + product description, the style tokens (lens/light/backdrop/grade), a physics directive and a negative list — so DO NOT repeat identity attributes, style tokens, a physics clause or a negative list here; describe only what HAPPENS. Order: (1) a SHORT anchor that it is the same man and same product from the attached references, rendered as a slightly younger, more attractive version (one phrase — do NOT re-list every attribute); (2) ONE single continuous primary action across the 10s with rough timing ('0-3s ...; 3-6s ...; 6-10s ...') using slow, deliberate, specific motion verbs (body part + verb + manner) — no hard cuts, no second simultaneous action; (3) camera (shot size + SMOOTH minimal movement); (4) a brief mood/light accent only if it changes; (5) note WHEN the character speaks with natural lip movement, but DO NOT quote the spoken words (the dialogue line is appended automatically exactly once); (6) finish with the exact final state so it leads into the next segment.",
       "dialogue": "string — the spoken line in ${dialogueLanguage} (short, natural)",
       "speaker": "string — the EXACT character_locks name of who speaks this line. ONE speaker per segment; the others stay silent. Empty string \\"\\" if it is a voiceover with no on-screen speaker.",
+      "characters_in_scene": ["REQUIRED — array of EXACT character_locks names VISIBLE in this segment (e.g. [\\"Nam\\", \\"Mai\\"]). Only these people appear on screen; the speaker must be listed here; others in the list react silently."],
+      "environment_ref": "string — the environment archetype id from the ENVIRONMENT ENGINE list that matches this segment's setting (e.g. 'misty_mountain_ridge_dawn'), or 'custom' if none fits. Consecutive segments in the same place reuse the same id.",
       "continuity_note": "string — how this segment visually continues from the previous segment (for segment 1 write 'opening shot')"
     }
   ],
@@ -714,6 +792,10 @@ export function buildSegmentFirstFramePrompt(params: {
   firstFramePrompt: string;
   beats: { beat: string; camera: string }[];
   characterDescription: string;
+  /** CAST-SYNC: every character VISIBLE in this segment (name + locked look).
+   * When set, the board renders a labelled reference strip for EACH of them
+   * and ONLY they may appear in the panels. */
+  presentCharacters?: { name: string; description: string; isChild?: boolean }[];
   /** Verbatim product DNA (with RGB) when a hero product exists. */
   productDna?: string;
   /** Named auxiliary ingredients to illustrate & label, e.g. "papaya powder (orange); selenium crystals (silver)". */
@@ -760,14 +842,33 @@ export function buildSegmentFirstFramePrompt(params: {
     expCount > 0
       ? ` Add ${expCount} more WAIST-UP expression view${expCount > 1 ? "s" : ""} (${EXPRESSION_HEADS.slice(0, expCount).join(", ")}) with the SAME identical face — only the expression changes.`
       : ` Keep a neutral relaxed expression on every reference view; do NOT add extra emotional head shots (per-shot emotion is driven by the action captions).`;
-  const refStrip =
-    `LARGE, clearly-visible reference portraits of THE SAME main character — big enough that the face and clothing read clearly, NOT small distant thumbnails: (1) one FULL-BODY FRONT view, head to toe, standing naturally; and (2) two WAIST-UP (half-body) views — a 3/4 angle and a side profile — each showing the face sharply and at good size.${expClause}`;
+  // CAST-SYNC: multi-character boards render one labelled reference column per
+  // PRESENT character (name badge on each), and lock the panels to exactly
+  // that cast — this is what stops "ghost people" and face/wardrobe swapping.
+  const cast = params.presentCharacters ?? [];
+  const isMultiCast = cast.length > 1;
+  const refStrip = isMultiCast
+    ? `reference portraits for EACH of the ${cast.length} characters in this shot, grouped per person and clearly LABELLED with their NAME: ${cast
+        .map(
+          (c) =>
+            `— "${c.name.toUpperCase()}"${c.isChild ? " (CHILD — small child proportions, correct age)" : ""}: one FULL-BODY FRONT view + one WAIST-UP 3/4 view, face sharp and readable`
+        )
+        .join("; ")}. Keep every person's face/hair/wardrobe identical to their description.`
+    : `LARGE, clearly-visible reference portraits of THE SAME main character — big enough that the face and clothing read clearly, NOT small distant thumbnails: (1) one FULL-BODY FRONT view, head to toe, standing naturally; and (2) two WAIST-UP (half-body) views — a 3/4 angle and a side profile — each showing the face sharply and at good size.${expClause}`;
+  const castDescription = isMultiCast
+    ? cast.map((c) => `${c.name}${c.isChild ? " (child)" : ""}: ${c.description}`).join(" | ")
+    : params.characterDescription;
+  const castLock = isMultiCast
+    ? ` CAST LOCK: the scene overview and every action panel contain EXACTLY these ${cast.length} characters — ${cast
+        .map((c) => c.name)
+        .join(", ")} — and NOBODY else; no extra people, no duplicates of a character in the same panel; every action caption names WHO does the action; relative heights stay true (a child is clearly smaller than the adults).`
+    : "";
 
-  return `${refBlock}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for ONE ~10 second video clip, presented as ONE single horizontal image. This board gives an image-to-video model (Veo) full context: who the character is (from every angle), what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions that happen across the 10 seconds. ${params.style} style.
+  return `${refBlock}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for ONE ~10 second video clip, presented as ONE single horizontal image. This board gives an image-to-video model (Veo) full context: who the character${isMultiCast ? "s are" : " is"} (from every angle), what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions that happen across the 10 seconds. ${params.style} style.
 
 THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 
-■ TOP-LEFT — "CHARACTER REFERENCE" block (REPEAT THIS IN EVERY SHOT, make it prominent and reasonably large): ${refStrip} Label "CHARACTER REF". Character: ${params.characterDescription}.
+■ TOP-LEFT — "CHARACTER REFERENCE" block (REPEAT THIS IN EVERY SHOT, make it prominent and reasonably large): ${refStrip} Label "CHARACTER REF". Character${isMultiCast ? "s" : ""}: ${castDescription}.${castLock}
 
 ■ "SCENE OVERVIEW": one larger establishing panel showing the full location/environment of this shot (wide angle)${hasProduct ? ", with the product clearly visible on a surface" : ""}. ${hasSetting ? "CRITICAL: reproduce the EXACT location from the attached interior reference photo — the SAME cabinet style & colour, wall, tiles, countertop, window, appliances and overall layout. Do NOT invent or restyle a different kitchen. Keep this SAME room even in 'before/problem' shots — only the pan/food/props state changes, never the kitchen itself. This identical location must also appear behind every action panel." : "This tells Veo the setting."}
 
@@ -779,7 +880,7 @@ ${params.productDna ? `PRODUCT DNA (identical in every panel, with exact colours
 ${continuity}
 ${directive}
 
-RULES: ONE cohesive board image; the SAME individual (identical face, hair, and the EXACT SAME outfit + accessories — same shirt, trousers, watch; NEVER a suit, jacket, apron or different clothes) AND the SAME product appear in the character-ref block, the scene overview and all ${target} action panels;${params.preserveRealFace ? " match the man's eyewear to his reference portrait EXACTLY — if he is NOT wearing glasses in the photo, do NOT add glasses anywhere; if he is, keep the same ones;" : ""} ${hasSetting ? "the SAME exact kitchen/location from the interior reference photo" : "one single consistent location"} for this whole board; thin clean dividers and small numbered badges; captions short and legible. ${SHARED_NEGATIVE}`;
+RULES: ONE cohesive board image; ${isMultiCast ? `each of the ${cast.length} named characters keeps an IDENTICAL face, hair and the EXACT SAME outfit + accessories everywhere they appear (ref block, scene overview, every action panel) — never re-dress or swap faces between characters, and ONLY the named cast appears` : "the SAME individual (identical face, hair, and the EXACT SAME outfit + accessories — same shirt, trousers, watch; NEVER a suit, jacket, apron or different clothes)"} AND the SAME product appear in the character-ref block, the scene overview and all ${target} action panels;${params.preserveRealFace ? " match the man's eyewear to his reference portrait EXACTLY — if he is NOT wearing glasses in the photo, do NOT add glasses anywhere; if he is, keep the same ones;" : ""} ${hasSetting ? "the SAME exact kitchen/location from the interior reference photo" : "one single consistent location"} for this whole board; thin clean dividers and small numbered badges; captions short and legible. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Clean single KEYFRAME (veoflow handoff format) ─────────────────────────
@@ -806,10 +907,25 @@ export function buildKeyframePrompt(params: {
   /** Name of who speaks this clip — in a 2-3 person scene we frame THIS person
    * toward camera (the others listen). */
   speakerName?: string | null;
+  /** Environment archetype id (segment.environment_ref); auto-matched from the
+   * scene description when absent. */
+  environmentRef?: string | null;
+  /** CAST-SYNC: everyone visible in this clip (name + locked look). Only these
+   * people may appear in the keyframe. */
+  presentCharacters?: { name: string; description: string; isChild?: boolean }[];
 }): string {
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
   const refBlock = buildReferenceInstructions(params.references ?? []);
   const tokens = sceneBibleTokens(params.sceneBible);
+  const env = resolveEnvironment(params.environmentRef, params.sceneDescription);
+  const envBlock = env ? `${renderEnvironmentBlock(env)}\n` : "";
+  const cast = params.presentCharacters ?? [];
+  const castBlock =
+    cast.length > 1
+      ? `CAST IN FRAME (exactly ${cast.length} people, NOBODY else): ${cast
+          .map((c) => `${c.name}${c.isChild ? " (child — true child proportions, clearly smaller than the adults)" : ""}: ${c.description}`)
+          .join(" | ")}. Each person keeps their locked face, hair and wardrobe; no extra people, no duplicated characters.\n`
+      : "";
   const ratioWord = params.aspectRatio === "9:16" ? "vertical 9:16 portrait" : "horizontal 16:9 landscape";
   // Identity lock comes from a LARGE, sharp, well-lit hero — that is what lets
   // an image-to-video model read the face off one start frame (the lesson from
@@ -834,11 +950,11 @@ export function buildKeyframePrompt(params: {
   return `${refBlock}SINGLE STATIC KEYFRAME for shot ${params.segmentNumber} — ONE clean photographic first-frame image used as the STARTING frame for an image-to-video model (Veo). This is NOT a storyboard board: render ONE single cohesive scene only, no panels, no reference strip.
 
 COMPOSITION (${params.shot || "[EYE]"}): ${params.sceneDescription}
-SUBJECT — keep this exact forensic identity: ${params.characterDescription}
+${castBlock}SUBJECT — keep this exact forensic identity: ${params.characterDescription}
 ${prominence}${lipSync}
-${params.productDna ? `PRODUCT (exact, unchanged, with colours): ${params.productDna}\n` : ""}${params.ingredients ? `PROPS / INGREDIENTS (show clearly by name): ${params.ingredients}\n` : ""}${tokens ? tokens + "\n" : ""}${directive}
+${envBlock}${params.productDna ? `PRODUCT (exact, unchanged, with colours): ${params.productDna}\n` : ""}${params.ingredients ? `PROPS / INGREDIENTS (show clearly by name): ${params.ingredients}\n` : ""}${tokens ? tokens + "\n" : ""}${directive}
 
-RENDER RULES: a SINGLE static frame; the subject is sharp and frozen in the STARTING posture for the upcoming action (no motion blur, no camera-movement effect); ${ratioWord} aspect ratio, 1080p quality. Do NOT include timeline markers, multiple panels, split-screens, reference thumbnails, captions, subtitles, on-screen text or speech bubbles. ${grade} ${SHARED_NEGATIVE}`;
+RENDER RULES: a SINGLE static frame; the subject is sharp and frozen in the STARTING posture for the upcoming action (no motion blur, no camera-movement effect); ${ratioWord} aspect ratio, 1080p quality. Do NOT include timeline markers, multiple panels, split-screens, reference thumbnails, captions, subtitles, on-screen text or speech bubbles. ${grade}${isPhotoStyle(params.style) ? ` ${PHOTOREAL_REALISM}` : ""} ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 4: Master Board (Character Sheet + captioned storyboard grid) ─────
@@ -940,8 +1056,17 @@ export function buildSegmentVeoPrompt(params: {
   speaker?: string | null;
   /** All character names in the project — used to silence the non-speakers. */
   characterNames?: string[];
+  /** CAST-SYNC: exact names of everyone VISIBLE in this clip. Only they appear
+   * on screen; project characters NOT listed here must not be rendered. */
+  charactersInScene?: string[];
+  /** TẦNG 9: the speaker's FULL locked voice profile (timbre/Hz/wpm/accent/
+   * emotion) — bound to the spoken line so the voice never swaps or drifts. */
+  speakerVoice?: string;
   /** Genre-appropriate ambient sound (e.g. kitchen sizzle, gym energy). */
   ambientAudio?: string;
+  /** Environment archetype id (segment.environment_ref). Falls back to
+   * keyword-matching the setting text when absent/custom. */
+  environmentRef?: string | null;
 }): string {
   const lang = params.dialogueLanguage ?? "Vietnamese";
   const clean = (s?: string) => (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
@@ -953,6 +1078,10 @@ export function buildSegmentVeoPrompt(params: {
     "Keep the main character visually consistent across every shot, matching the attached reference photo — an ordinary, original person (not a specific real individual). Create ONE continuous, cinematic 10-second shot in the scene described below; build the described setting, do NOT copy the photo's own background.";
   const character = ` Main character: ${clean(params.characterDescription)}.`;
   const setting = params.setting ? ` SCENE: ${clean(params.setting)}.` : "";
+  // Locked world spec (materials/Kelvin+Lux/atmosphere/imperfections) — the
+  // veoflow-web environment payload that makes the SETTING render real.
+  const env = resolveEnvironment(params.environmentRef, params.setting);
+  const envBlock = env ? ` ${renderEnvironmentBlock(env)}` : "";
   const product = params.productDescription
     ? ` PRODUCT (keep its exact shape, colour, material and branding): ${clean(params.productDescription)}.`
     : "";
@@ -962,22 +1091,33 @@ export function buildSegmentVeoPrompt(params: {
     params.colorPalette && params.colorPalette.length > 0
       ? ` Colour palette: ${params.colorPalette.join(", ")}.`
       : "";
-  // Multi-character: name WHO speaks and keep everyone else silent, so Veo
-  // never lip-syncs the line on the wrong person.
+  // Multi-character CAST-SYNC: lock exactly who is ON SCREEN, who SPEAKS, and
+  // who must NOT appear — so Veo never lip-syncs the wrong person or renders a
+  // project character that isn't in this scene.
   const speaker = (params.speaker ?? "").trim();
-  const others = (params.characterNames ?? []).filter(
-    (n) => n && n.trim() && n.trim() !== speaker
-  );
+  const onScreen = (params.charactersInScene ?? [])
+    .map((n) => (n ?? "").trim())
+    .filter(Boolean);
+  const allNames = (params.characterNames ?? []).map((n) => (n ?? "").trim()).filter(Boolean);
+  const silentPool = onScreen.length > 0 ? onScreen : allNames;
+  const others = silentPool.filter((n) => n !== speaker);
+  const absent = onScreen.length > 0 ? allNames.filter((n) => !onScreen.includes(n)) : [];
+  const castLine =
+    onScreen.length > 0
+      ? ` ON SCREEN: exactly ${onScreen.length} character${onScreen.length > 1 ? "s" : ""} — ${onScreen.join(", ")} — and NOBODY else; no extra people in frame or background.${absent.length > 0 ? ` ${absent.join(", ")} ${absent.length > 1 ? "are" : "is"} NOT in this scene and must not appear, not even in the background or as a reflection.` : ""}`
+      : "";
   const speakerLabel = speaker || "The character";
   const silence =
     speaker && others.length > 0
       ? ` Only ${speaker} speaks; the other character${others.length > 1 ? "s" : ""} (${others.join(", ")}) stay silent and listen with mouths closed.`
       : "";
+  const voiceFp = (params.speakerVoice ?? "").trim();
+  const voiceTag = voiceFp ? ` (voice: ${voiceFp})` : "";
   const spoken = params.dialogue
-    ? ` ${speakerLabel} speaks to camera with natural mouth movement and accurate lip-sync, saying in ${lang}: "${params.dialogue}" — delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence}`
+    ? ` ${speakerLabel}${voiceTag} speaks to camera with natural mouth movement and accurate lip-sync — the voice emanates from ${speaker ? `${speaker}'s` : "the speaker's"} mouth — saying in ${lang}: "${params.dialogue}" — delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence}`
     : "";
   const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
-  return `${lead}${character}${setting}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription)}`;
+  return `${lead}${character}${castLine}${setting}${envBlock}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription)}`;
 }
 
 export function buildVideoPromptText(params: {
@@ -993,6 +1133,8 @@ export function buildVideoPromptText(params: {
   dialogueLanguage?: string;
   /** All character names in the project — used to silence non-speakers. */
   characterNames?: string[];
+  /** TẦNG 9: locked voice profile per character name (speaker → voice line). */
+  characterVoices?: Record<string, string>;
   /** Genre-appropriate ambient sound, appended to every clip's Veo prompt. */
   ambientAudio?: string;
   marketing: { hook: string; problem: string; solution: string; cta: string };
@@ -1005,6 +1147,8 @@ export function buildVideoPromptText(params: {
     dialogue?: string | null;
     speaker?: string | null;
     setting?: string;
+    environment_ref?: string | null;
+    characters_in_scene?: string[];
     continuity_note: string;
     beats: { beat: string; camera: string }[];
   }[];
@@ -1032,7 +1176,10 @@ export function buildVideoPromptText(params: {
         dialogueLanguage,
         speaker: s.speaker,
         characterNames: params.characterNames,
+        charactersInScene: s.characters_in_scene,
+        speakerVoice: s.speaker ? params.characterVoices?.[s.speaker.trim()] : undefined,
         ambientAudio: params.ambientAudio,
+        environmentRef: s.environment_ref,
       });
       return `SEGMENT ${s.segment_number} — "${s.title}" [${s.role.toUpperCase()}] (${s.duration_seconds}s)
   Beats:
@@ -1111,11 +1258,19 @@ export function buildVeoJson(
   const characters = locks.map((l) => ({
     name: l.name,
     gender: l.gender ?? "",
+    is_child: !!l.is_child,
+    // TẦNG 9: full locked voice profile (never a bare reference).
+    voice: oneLine(l.voice) || defaultVoiceFor(l.gender, l.is_child),
     appearance: [l.gender_age, l.build, l.skin_tone, l.hair, l.eyes]
       .map((x) => oneLine(x))
       .filter(Boolean)
       .join(", "),
+    // Forensic realism locks (ported from veoflow-web) — keep skin/eyes/materials
+    // real, not CGI, across every clip.
+    skin_texture: oneLine(l.skin_texture),
+    eye_details: oneLine(l.eye_details),
     wardrobe: oneLine(l.costume),
+    wardrobe_materials: oneLine(l.wardrobe_materials),
     signature_features: oneLine(l.signature_features),
     default_expression: oneLine(l.default_expression),
     dna: oneLine(l.dna),
@@ -1137,11 +1292,16 @@ export function buildVeoJson(
       };
     });
     const speaker = oneLine(seg.speaker) || characters[0]?.name || "";
+    // Locked world spec for this clip (veoflow-web environment master_state).
+    const env = resolveEnvironment(seg.environment_ref, seg.first_frame_prompt);
+    const onScreen = (seg.characters_in_scene ?? []).map((n) => oneLine(n)).filter(Boolean);
     return {
       id: seg.segment_number,
       role: seg.marketing_role,
       duration_seconds: seg.duration_seconds ?? clipSeconds,
       scene: oneLine(seg.first_frame_prompt),
+      characters_in_scene: onScreen.length > 0 ? onScreen : null,
+      environment: env ? environmentToJson(env) : null,
       subject: speaker ? `${speaker} (keep identical to continuity.characters)` : "the main character",
       shot: {
         camera_motion: "one continuous take — a single slow, smooth camera move (push-in / pan / orbit); no hard cuts",
@@ -1154,13 +1314,17 @@ export function buildVeoJson(
             speaker,
             language: lang,
             line: oneLine(seg.dialogue),
+            // TẦNG 9: bind the locked voice to the line (anti voice-swap).
+            voice: characters.find((c) => c.name === speaker)?.voice ?? null,
             lip_sync: true,
             subtitles: false,
           }
         : null,
       audio: opts.ambientAudio
         ? `${opts.ambientAudio}; plus the spoken dialogue; no on-screen text`
-        : "spoken dialogue only with natural ambient sound; no music unless noted; no on-screen text",
+        : env
+          ? `ambient bed (constant across clips in this location): ${env.sound_bed}; plus the spoken dialogue; no music bed drowning the voice; no on-screen text`
+          : "spoken dialogue only with natural ambient sound; no music unless noted; no on-screen text",
       continuity_from_previous: oneLine(seg.continuity_note),
       negative_prompt: VEO_NEGATIVE_LIST,
       // Flattened, fully self-contained prompt (text mode fallback).
@@ -1170,6 +1334,8 @@ export function buildVeoJson(
 
   return {
     version: "veo-3.1",
+    // The frozen 9-layer constitution these prompts were compiled under.
+    production_laws: lawsForVeoJson(),
     output: {
       aspect_ratio: opts.aspectRatio,
       duration_seconds_per_clip: clipSeconds,
@@ -1184,8 +1350,11 @@ export function buildVeoJson(
       lighting: oneLine(sb?.lighting),
       backdrop: oneLine(sb?.backdrop),
       color_grade: oneLine(sb?.color_grade),
+      film_grain: oneLine(sb?.film_grain),
       color_palette: breakdown.style_guide?.color_palette ?? [],
       mood: breakdown.mood_tags ?? [],
+      // Realism spine repeated into every clip's flattened prompt (anti-CGI).
+      render_spec: PHOTOREAL_REALISM,
     },
     continuity: {
       characters,

@@ -143,6 +143,8 @@ export async function generateSegmentFrame(params: {
   beats: { beat: string; camera: string }[];
   beatsPerSegment?: number;
   characterDescription: string;
+  /** CAST-SYNC: everyone visible in this segment (name + locked look). */
+  presentCharacters?: { name: string; description: string; isChild?: boolean }[];
   productDna?: string;
   ingredients?: string;
   sceneBible?: SceneBible;
@@ -162,6 +164,7 @@ export async function generateSegmentFrame(params: {
     beats: params.beats,
     beatsPerSegment: params.beatsPerSegment,
     characterDescription: params.characterDescription,
+    presentCharacters: params.presentCharacters,
     productDna: params.productDna,
     ingredients: params.ingredients,
     sceneBible: params.sceneBible,
@@ -197,6 +200,10 @@ export async function generateKeyframe(params: {
   preserveRealFace?: boolean;
   hasDialogue?: boolean;
   speakerName?: string | null;
+  /** Environment archetype id (segment.environment_ref) for the world lock. */
+  environmentRef?: string | null;
+  /** CAST-SYNC: everyone visible in this clip (name + locked look). */
+  presentCharacters?: { name: string; description: string; isChild?: boolean }[];
   referenceImages?: RefImage[];
   references?: RefDescriptor[];
   provider?: AIProvider;
@@ -216,6 +223,8 @@ export async function generateKeyframe(params: {
     preserveRealFace: params.preserveRealFace,
     hasDialogue: params.hasDialogue,
     speakerName: params.speakerName,
+    environmentRef: params.environmentRef,
+    presentCharacters: params.presentCharacters,
     references: params.references,
   });
 

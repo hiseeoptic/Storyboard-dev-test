@@ -730,6 +730,8 @@ interface CharacterEntry {
   name: string;
   role: string;
   appearance: string;
+  /** True when this character is a child (khoá độ tuổi trẻ em). */
+  isChild?: boolean;
   images: UploadedImage[];
 }
 
@@ -935,6 +937,7 @@ export function GenerateClient() {
   const [characters, setCharacters] = useState<CharacterEntry[]>([]);
   const [charName, setCharName] = useState("");
   const [charRole, setCharRole] = useState("");
+  const [charIsChild, setCharIsChild] = useState(false);
   const [charAppearance, setCharAppearance] = useState("");
   const [charApprSel, setCharApprSel] = useState("");
   const [charImages, setCharImages] = useState<UploadedImage[]>([]);
@@ -1033,10 +1036,11 @@ export function GenerateClient() {
     if (!charName.trim()) return;
     setCharacters((prev) => [
       ...prev,
-      { name: charName, role: charRole, appearance: effectiveCharAppearance, images: charImages },
+      { name: charName, role: charRole, appearance: effectiveCharAppearance, isChild: charIsChild, images: charImages },
     ]);
     setCharName("");
     setCharRole("");
+    setCharIsChild(false);
     setCharAppearance("");
     setCharApprSel("");
     setCharImages([]);
@@ -1090,7 +1094,7 @@ export function GenerateClient() {
     const effectiveCharacters = [
       ...characters,
       ...(charImages.length > 0
-        ? [{ name: charName.trim() || "Main character", role: charRole, appearance: effectiveCharAppearance, images: charImages }]
+        ? [{ name: charName.trim() || "Main character", role: charRole, appearance: effectiveCharAppearance, isChild: charIsChild, images: charImages }]
         : []),
     ];
     const effectiveProducts = [
@@ -1174,7 +1178,35 @@ export function GenerateClient() {
       }
       return out;
     };
-    const cappedCharacterImages = fitRefs(characterImages, true);
+    // CAST-SYNC: guarantee at least ONE photo PER CHARACTER (the identity lock
+    // of every cast member) BEFORE spending budget on extra angles — otherwise
+    // a heavy first character could silently evict the 2nd/3rd character's
+    // photos and break their face lock.
+    const fitCharacterRefs = (refs: ImageReference[]): ImageReference[] => {
+      const out: ImageReference[] = refs.map((r) => ({ ...r, images: [] as string[] }));
+      // Pass 1 — the first photo of EVERY character is always kept.
+      refs.forEach((ref, i) => {
+        const first = ref.images[0];
+        if (first) {
+          payloadUsed += b64Bytes(first);
+          out[i]!.images.push(first);
+        }
+      });
+      // Pass 2 — extra angles only while under budget.
+      refs.forEach((ref, i) => {
+        for (const b64 of ref.images.slice(1)) {
+          const bytes = b64Bytes(b64);
+          if (payloadUsed + bytes <= PAYLOAD_BUDGET) {
+            payloadUsed += bytes;
+            out[i]!.images.push(b64);
+          } else {
+            droppedImages++;
+          }
+        }
+      });
+      return out.filter((r) => r.images.length > 0);
+    };
+    const cappedCharacterImages = fitCharacterRefs(characterImages);
     const cappedProductImages = fitRefs(productImages, false);
     const cappedBackgroundImages = fitRefs(backgroundImages, false);
     const cappedIngredientImages = fitRefs(ingredientImages, false);
@@ -1211,7 +1243,7 @@ export function GenerateClient() {
       dialogue_language: forceVietnameseDialogue ? "Vietnamese" : undefined,
       force_dialogue: forceVietnameseDialogue,
       character_descriptions: effectiveCharacters.length > 0
-        ? effectiveCharacters.map((c) => ({ name: c.name, appearance: c.appearance, personality: "", role: c.role }))
+        ? effectiveCharacters.map((c) => ({ name: c.name, appearance: c.appearance, personality: "", role: c.role, is_child: c.isChild }))
         : undefined,
       character_images: cappedCharacterImages.length > 0 ? cappedCharacterImages : undefined,
       product_images: cappedProductImages.length > 0 ? cappedProductImages : undefined,
@@ -2664,13 +2696,23 @@ export function GenerateClient() {
                   <span>{lang === "vi" ? "Đã nhận ảnh đã duyệt từ Image Studio làm ảnh tham chiếu nhân vật." : "Approved images from Image Studio loaded as character references."}</span>
                 </div>
               )}
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Users className="h-4 w-4 shrink-0" />
-                <span>{L("charHint")}</span>
+              <div className="space-y-1.5 rounded-lg border border-primary/30 bg-primary/[0.03] p-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                  <Users className="h-4 w-4 shrink-0" />
+                  <span>{lang === "vi" ? "Video nhiều nhân vật? Thêm TỪNG NGƯỜI MỘT" : "Multiple characters? Add them ONE BY ONE"}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Mỗi nhân vật: ① nhập TÊN (VD: Nam, Mai, bé Minh) → ② bật 👶 nếu là trẻ em → ③ tải 1-3 ảnh CỦA CHÍNH NGƯỜI ĐÓ → ④ bấm \"➕ Thêm nhân vật\". Lặp lại cho người tiếp theo — video gia đình 3 người = thêm 3 lần, mỗi người có bộ ảnh riêng. Tên nhân vật nên TRÙNG với vai trong kịch bản (Chồng = Nam, Vợ = Mai, Con = bé Minh) để hệ thống gán đúng lời thoại."
+                    : "For each character: ① enter their NAME → ② toggle 👶 if a child → ③ upload 1-3 photos of THAT person → ④ click \"➕ Add character\". Repeat for the next person — a 3-person family video = add 3 times, each with their own photos. Use the same names as the script roles so dialogue binds correctly."}
+                </p>
               </div>
 
               {characters.length > 0 && (
                 <div className="space-y-2">
+                  <p className="text-sm font-medium">
+                    {lang === "vi" ? `Dàn nhân vật đã thêm (${characters.length})` : `Cast added (${characters.length})`}
+                  </p>
                   {characters.map((c, i) => (
                     <div key={i} className="flex items-start justify-between rounded-lg border p-3">
                       <div className="flex gap-3">
@@ -2682,8 +2724,8 @@ export function GenerateClient() {
                           </div>
                         )}
                         <div>
-                          <p className="font-medium">{c.name}</p>
-                          <p className="text-xs text-muted-foreground">{c.role}{c.appearance ? ` — ${c.appearance}` : ""}</p>
+                          <p className="font-medium">{c.name}{c.isChild ? " 👶" : ""}</p>
+                          <p className="text-xs text-muted-foreground">{c.isChild ? (lang === "vi" ? "Trẻ em · " : "Child · ") : ""}{c.role}{c.appearance ? ` — ${c.appearance}` : ""}</p>
                           <p className="text-xs text-muted-foreground">{c.images.length} {L("photos")}</p>
                         </div>
                       </div>
@@ -2696,10 +2738,24 @@ export function GenerateClient() {
               )}
 
               <div className="space-y-3 rounded-lg border border-dashed p-4">
+                <p className="text-sm font-semibold">
+                  ➕ {lang === "vi" ? `Nhân vật thứ ${characters.length + 1}` : `Character #${characters.length + 1}`}
+                </p>
                 <div className="grid grid-cols-2 gap-2">
                   <Input value={charName} onChange={(e) => setCharName(e.target.value)} placeholder={L("charName")} />
                   <Input value={charRole} onChange={(e) => setCharRole(e.target.value)} placeholder={L("charRole")} />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setCharIsChild((v) => !v)}
+                  className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                    charIsChild
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input hover:border-primary/50"
+                  }`}
+                >
+                  👶 {lang === "vi" ? "Nhân vật này là TRẺ EM (khoá đúng độ tuổi, vóc dáng trẻ con)" : "This character is a CHILD (locked child age & proportions)"}
+                </button>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-muted-foreground">
                     {lang === "vi" ? "Mô tả ngoại hình (chọn nhanh)" : "Appearance (quick pick)"}
@@ -2718,7 +2774,11 @@ export function GenerateClient() {
                   images={charImages}
                   onChange={setCharImages}
                   maxImages={3}
-                  label={L("charPhotos")}
+                  label={
+                    lang === "vi"
+                      ? `Ảnh của ${charName.trim() || "nhân vật này"} (1-3 ảnh — chỉ ảnh CHÍNH người này)`
+                      : `Photos of ${charName.trim() || "this character"} (1-3 — this person ONLY)`
+                  }
                   hint={L("charPhotosHint")}
                 />
 
@@ -2727,24 +2787,35 @@ export function GenerateClient() {
                   onApprove={(img) => setCharImages((prev) => [...prev, img].slice(0, 6))}
                 />
 
-                {/* Expression control for the board CHARACTER REFERENCE strip */}
-                <div className="space-y-1.5 rounded-lg border border-dashed p-3">
-                  <label className="text-sm font-medium">{L("refExprTitle")}</label>
-                  <Select
-                    value={String(refExpressions)}
-                    onChange={(e) => setRefExpressions(Number(e.target.value))}
-                    options={[
-                      { value: "0", label: L("refExpr0") },
-                      { value: "2", label: L("refExpr2") },
-                      { value: "3", label: L("refExpr3") },
-                    ]}
-                  />
-                  <p className="text-xs text-muted-foreground">{L("refExprHint")}</p>
-                </div>
-
-                <Button variant="outline" size="sm" onClick={addCharacter} disabled={!charName.trim()}>
-                  {L("addCharacter")}
+                <Button onClick={addCharacter} disabled={!charName.trim()} className="w-full gap-2">
+                  ➕ {lang === "vi"
+                    ? charName.trim()
+                      ? `Thêm "${charName.trim()}" vào dàn nhân vật`
+                      : "Nhập tên nhân vật trước"
+                    : charName.trim()
+                      ? `Add "${charName.trim()}" to the cast`
+                      : "Enter a name first"}
                 </Button>
+                <p className="text-center text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Sau khi thêm, form trống lại để bạn nhập nhân vật tiếp theo."
+                    : "After adding, the form resets for the next character."}
+                </p>
+              </div>
+
+              {/* Expression control for the board CHARACTER REFERENCE strip (global setting) */}
+              <div className="space-y-1.5 rounded-lg border border-dashed p-3">
+                <label className="text-sm font-medium">{L("refExprTitle")}</label>
+                <Select
+                  value={String(refExpressions)}
+                  onChange={(e) => setRefExpressions(Number(e.target.value))}
+                  options={[
+                    { value: "0", label: L("refExpr0") },
+                    { value: "2", label: L("refExpr2") },
+                    { value: "3", label: L("refExpr3") },
+                  ]}
+                />
+                <p className="text-xs text-muted-foreground">{L("refExprHint")}</p>
               </div>
             </>
           )}

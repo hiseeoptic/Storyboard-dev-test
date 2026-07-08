@@ -171,6 +171,8 @@ export interface CharacterDescription {
   appearance: string;
   personality: string;
   role: string;
+  /** True when this character is a child (đứa trẻ) — locked age bracket. */
+  is_child?: boolean;
 }
 
 export interface ImageReference {
@@ -185,17 +187,29 @@ export interface CharacterLock {
   name: string;
   /** Hard gender lock (veoflow-aligned). Must match the uploaded photo. */
   gender?: "male" | "female";
+  /** True when this character is a child — age bracket locked, never adult. */
+  is_child?: boolean;
   gender_age: string;
   build: string;
   skin_tone: string;
+  /** Forensic skin realism (pores, subsurface, no plastic/CGI) — anti-fake-face. */
+  skin_texture?: string;
+  /** Exact eye shape + iris colour + real catchlights. */
+  eye_details?: string;
   hair: string;
   eyes: string;
   costume: string;
+  /** Real materials of the outfit/props (leather grain, denim weave, worn metal). */
+  wardrobe_materials?: string;
   signature_features: string;
   default_expression: string;
   render_style: string;
   /** One verbatim forensic-DNA line (with RGB hex) repeated in every keyframe. */
   dna?: string;
+  /** TẦNG 9 (audio law): FULL locked voice profile, identical in every clip —
+   * timbre + pitch Hz + rate wpm + accent + emotion band, e.g. "warm low male
+   * timbre, 95-135 Hz, Northern Vietnamese, ~110 wpm, calm-grounded". */
+  voice?: string;
 }
 
 /** Scene Bible style tokens — repeated VERBATIM in every keyframe/board. */
@@ -208,6 +222,9 @@ export interface SceneBible {
   backdrop: string;
   /** e.g. "neutral Rec.709 grade, photoreal premium commercial" */
   color_grade: string;
+  /** Filmic realism fingerprint kept constant every clip, e.g. "clean digital
+   * acquisition, minimal chromatic aberration, fine organic film grain". */
+  film_grain?: string;
 }
 
 // ─── Scene Breakdown (legacy single-frame type) ─────────────────────────────
@@ -261,6 +278,14 @@ export interface VideoSegment {
   /** Exact character_locks name of who speaks this segment's line (one speaker
    * per clip). Empty/undefined = voiceover or no on-screen speaker. */
   speaker?: string | null;
+  /** Environment archetype id from src/lib/environment (or "custom"). Locks
+   * this segment's world to a physically-grounded spec (materials, Kelvin+Lux
+   * light, atmosphere) so the setting renders real, not CGI. */
+  environment_ref?: string | null;
+  /** EXACT character_locks names of everyone VISIBLE in this segment. Drives
+   * which reference photos are attached and who may appear on screen — the
+   * cast-sync mechanism for multi-character scenes. */
+  characters_in_scene?: string[];
   /** How this segment visually connects to the previous one (seamless join). */
   continuity_note: string;
   /** Filled by the image pipeline — the generated start frame. */

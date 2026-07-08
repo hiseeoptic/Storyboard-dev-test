@@ -43,6 +43,11 @@ const TAB_LABELS: Record<string, string> = {
   thansohoc: "Thần số học",
   SucKhoe: "Sức khoẻ",
   suckhoe: "Sức khoẻ",
+  CongThuc: "Công thức món ăn",
+  congthuc: "Công thức món ăn",
+  MonAn: "Công thức món ăn",
+  monan: "Công thức món ăn",
+  Recipes: "Công thức món ăn",
 };
 
 // Friendly labels for the numerology `type` sub-topics (used in item labels).
@@ -163,11 +168,65 @@ export async function fetchTopicRows(): Promise<TopicRow[]> {
   return rows;
 }
 
+// ─── RECIPE rows (tab "CongThuc"/"MonAn"/"Recipes") ─────────────────────────
+// A recipe row describes ONE dish with REAL structured data, so the cooking
+// framework never has to invent ingredients/steps. Recognised columns (all
+// optional except the dish name):
+//   ten_mon (dish name) · mo_ta · nguyen_lieu · gia_vi · dung_cu ·
+//   cac_buoc · am_thanh_asmr · thanh_pham · meo
+const RECIPE_NAME_KEYS = ["ten_mon", "mon_an", "dish", "ten"];
+const RECIPE_SECTIONS: { key: string; label: string }[] = [
+  { key: "mo_ta", label: "MÔ TẢ" },
+  { key: "nguyen_lieu", label: "NGUYÊN LIỆU (đúng như liệt kê — không bịa thêm)" },
+  { key: "gia_vi", label: "GIA VỊ" },
+  { key: "dung_cu", label: "DỤNG CỤ" },
+  { key: "cac_buoc", label: "CÁC BƯỚC (theo đúng thứ tự)" },
+  { key: "am_thanh_asmr", label: "ÂM THANH ASMR TỪNG BƯỚC" },
+  { key: "thanh_pham", label: "THÀNH PHẨM (money shot)" },
+  { key: "meo", label: "MẸO" },
+];
+
+/** Assemble one recipe row into the structured RECIPE CONTENT text block. */
+function buildRecipeContent(r: Record<string, unknown>, dishName: string): string {
+  const parts: string[] = [`CÔNG THỨC MÓN: ${dishName}`];
+  for (const s of RECIPE_SECTIONS) {
+    const v = stripHtml(String(r[s.key] ?? ""));
+    if (v) parts.push(`${s.label}: ${v}`);
+  }
+  return parts.join("\n");
+}
+
+function getRecipeName(r: Record<string, unknown>): string {
+  for (const k of RECIPE_NAME_KEYS) {
+    const v = String(r[k] ?? "").trim();
+    if (v) return v;
+  }
+  return "";
+}
+
 /** Groups rows into content categories (by tab) → items for the dropdowns. */
 export function buildTopicLibrary(rows: TopicRow[]): TopicCategory[] {
   const byTab = new Map<string, TopicCategory>();
   for (const r of rows) {
     const tab = String(r._tab ?? DEFAULT_TAB).trim() || DEFAULT_TAB;
+
+    // RECIPE row → dish-named item whose content is the structured recipe.
+    const raw = r as Record<string, unknown>;
+    const dishName = getRecipeName(raw);
+    if (dishName) {
+      if (!byTab.has(tab)) {
+        byTab.set(tab, { key: tab, label: TAB_LABELS[tab] ?? tab, items: [] });
+      }
+      const cat = byTab.get(tab)!;
+      cat.items.push({
+        id: `${tab}:recipe:${dishName}:${cat.items.length}`,
+        number: "",
+        label: `🍲 ${dishName}`,
+        content: buildRecipeContent(raw, dishName),
+      });
+      continue;
+    }
+
     const content = stripHtml(String(r.meaning ?? ""));
     if (!content) continue;
     const type = String(r.type ?? "").trim();

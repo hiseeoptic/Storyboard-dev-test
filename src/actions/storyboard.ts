@@ -147,7 +147,43 @@ function buildCleanCharLine(lock?: CharacterLock): string {
   const head = [lock.name, attrs, lock.costume ? `wearing ${lock.costume}` : ""]
     .filter(Boolean)
     .join(", ");
-  return sig ? `${head}. ${sig}` : head;
+  // Forensic realism locks (ported from veoflow-web): fold real skin texture,
+  // eye detail and true wardrobe materials into the description so faces read
+  // human (not CGI) and objects (leather, denim, metal) read real in every clip.
+  const realism = [lock.skin_texture, lock.eye_details, lock.wardrobe_materials]
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean)
+    .join(". ");
+  const base = sig ? `${head}. ${sig}` : head;
+  return realism ? `${base}. ${realism}` : base;
+}
+
+import { defaultVoiceFor, findLawViolations } from "@/lib/laws";
+
+// CAST-SYNC: resolve a segment's characters_in_scene to their locks (in the
+// listed order). Empty/missing list or unmatched names → empty array, and the
+// callers fall back to the legacy single-main-character behaviour.
+function presentLocksFor(
+  seg: { characters_in_scene?: string[] },
+  breakdown: StoryboardGenerationOutput
+): CharacterLock[] {
+  const locks = breakdown.character_locks ?? [];
+  const byName = new Map(locks.map((l) => [l.name.trim().toLowerCase(), l]));
+  return (seg.characters_in_scene ?? [])
+    .map((n) => byName.get((n ?? "").trim().toLowerCase()))
+    .filter((l): l is CharacterLock => !!l);
+}
+
+/** Cast list for the board/keyframe builders (name + locked look + child flag). */
+function presentCastFor(
+  seg: { characters_in_scene?: string[] },
+  breakdown: StoryboardGenerationOutput
+): { name: string; description: string; isChild?: boolean }[] {
+  return presentLocksFor(seg, breakdown).map((l) => ({
+    name: l.name,
+    description: buildCleanCharLine(l),
+    isChild: !!l.is_child,
+  }));
 }
 
 // ─── Shared: vision analysis of all uploads ───────────────────────────────
@@ -403,7 +439,10 @@ function buildRefContext(
 }
 
 // The board reference set: character portrait + product + setting (max 3).
-function buildBoardRefs(ctx: RefContext): {
+// `presentNames` (CAST-SYNC): when a segment declares characters_in_scene,
+// attach ONLY those characters' photos so absent people never leak into the
+// render. Unmatched names fall back to the full set.
+function buildBoardRefs(ctx: RefContext, presentNames?: string[]): {
   images: { base64: string; mimeType?: string }[];
   descriptors: RefDescriptor[];
 } {
@@ -414,8 +453,17 @@ function buildBoardRefs(ctx: RefContext): {
   const MAX_REFS = 5;
   if (ctx.characterRefs.length > 1) {
     // MULTI-CHARACTER: bind each uploaded photo to its named character so Veo
-    // never swaps faces between the 2-3 people in the scene.
-    for (const c of ctx.characterRefs) {
+    // never swaps faces between the 2-3 people in the scene. When the segment
+    // declares its cast, only the PRESENT characters' photos are attached.
+    const wanted = (presentNames ?? [])
+      .map((n) => (n ?? "").trim().toLowerCase())
+      .filter(Boolean);
+    const filtered =
+      wanted.length > 0
+        ? ctx.characterRefs.filter((c) => wanted.includes(c.name.trim().toLowerCase()))
+        : ctx.characterRefs;
+    const pool = filtered.length > 0 ? filtered : ctx.characterRefs;
+    for (const c of pool) {
       if (images.length >= MAX_REFS) break;
       images.push({ base64: c.img, mimeType: "image/jpeg" });
       descriptors.push({ role: "character", name: c.name, description: c.desc });
@@ -516,6 +564,19 @@ export async function generateStoryboardPlan(
       if (seg.first_frame_prompt) seg.first_frame_prompt = makeVeoSafe(seg.first_frame_prompt);
     }
 
+    // PRODUCTION LAWS validation (ported from the GỐC promptValidator): lazy
+    // continuity shorthand ("same as before"…) makes Veo drift — surface it.
+    for (const seg of breakdown.segments) {
+      const violations = findLawViolations(
+        `${seg.motion_prompt ?? ""} ${seg.first_frame_prompt ?? ""}`
+      );
+      if (violations.length > 0) {
+        warnings.push(
+          `Cảnh ${seg.segment_number}: phát hiện cách viết tắt bị cấm (${violations.join(", ")}) — mô tả phải tự chứa đầy đủ, không tham chiếu cảnh trước. Hãy sửa lại cảnh này trong trình chỉnh sửa.`
+        );
+      }
+    }
+
     // When the user uploaded reference images, the photos are the source of
     // truth — strip the AI-invented RGB hex colour codes out of the script so
     // they can't contradict the references (and so the editor stays clean).
@@ -588,10 +649,31 @@ function assemblePlanPrompts(
   // get mangled into gibberish).
   const charDesc = makeVeoSafe(ctx.charDescVeo);
   const productDesc = ctx.productDnaText ? makeVeoSafe(ctx.productDnaText) : ctx.productDnaText;
+  // TẦNG 9 (audio law): every character carries a FULL locked voice profile —
+  // model-filled when present, gender/child-appropriate default otherwise.
+  const characterVoices: Record<string, string> = {};
+  for (const l of breakdown.character_locks ?? []) {
+    if (l.name?.trim()) {
+      characterVoices[l.name.trim()] = (l.voice ?? "").trim() || defaultVoiceFor(l.gender, l.is_child);
+    }
+  }
   for (const seg of breakdown.segments) {
     seg.first_frame_url = null;
+    // CAST-SYNC: in a multi-character scene, describe EVERY present character
+    // (each with their locked look + child flag) instead of only the main one.
+    const presentLocks = presentLocksFor(seg, breakdown);
+    const castDesc =
+      presentLocks.length > 1
+        ? presentLocks
+            .map((l) =>
+              makeVeoSafe(
+                `${buildCleanCharLine(l)}${l.is_child ? " — a CHILD with true child age, size and proportions" : ""}`
+              )
+            )
+            .join(" | ")
+        : charDesc;
     seg.full_prompt = buildSegmentVeoPrompt({
-      characterDescription: charDesc,
+      characterDescription: castDesc,
       setting: makeVeoSafe(seg.first_frame_prompt ?? ""),
       productDescription: productDesc,
       ingredients: ctx.ingredientsText,
@@ -602,7 +684,10 @@ function assemblePlanPrompts(
       dialogueLanguage: ctx.dialogueLanguage,
       speaker: seg.speaker,
       characterNames: ctx.characterNames,
+      charactersInScene: seg.characters_in_scene,
+      speakerVoice: seg.speaker ? characterVoices[seg.speaker.trim()] : undefined,
       ambientAudio,
+      environmentRef: seg.environment_ref,
     });
   }
   return buildVideoPromptText({
@@ -617,6 +702,7 @@ function assemblePlanPrompts(
     colorPalette: palette,
     dialogueLanguage: ctx.dialogueLanguage,
     characterNames: ctx.characterNames,
+    characterVoices,
     ambientAudio,
     marketing: breakdown.marketing_structure,
     segments: breakdown.segments.map((s) => ({
@@ -628,6 +714,8 @@ function assemblePlanPrompts(
       dialogue: s.dialogue,
       speaker: s.speaker,
       setting: makeVeoSafe(s.first_frame_prompt ?? ""),
+      environment_ref: s.environment_ref,
+      characters_in_scene: s.characters_in_scene,
       continuity_note: s.continuity_note,
       beats: s.beats,
     })),
@@ -709,6 +797,8 @@ export async function generateBoardImage(params: {
 
     if (params.kind === "keyframe") {
       // Clean single first-frame (veoflow format) at the user's real aspect.
+      // CAST-SYNC: attach ONLY the present characters' photos + cast block.
+      const kfRefs = buildBoardRefs(ctx, seg.characters_in_scene);
       const r = await generateKeyframe({
         segmentNumber: seg.segment_number,
         sceneDescription: seg.first_frame_prompt || seg.title,
@@ -716,6 +806,7 @@ export async function generateBoardImage(params: {
         // Multi-character scene → describe ALL named characters; single → the
         // identity-locked main description.
         characterDescription: ctx.characterRefs.length > 1 ? ctx.charDescForPoster : ctx.charDescDna,
+        presentCharacters: presentCastFor(seg, breakdown),
         productDna: ctx.productDnaText,
         ingredients: ctx.ingredientsText,
         sceneBible: ctx.sceneBible,
@@ -723,8 +814,9 @@ export async function generateBoardImage(params: {
         preserveRealFace: ctx.preserveRealFace,
         hasDialogue: !!(seg.dialogue && seg.dialogue.trim()),
         speakerName: seg.speaker,
-        referenceImages: ctx.canChain && images.length > 0 ? images : undefined,
-        references: ctx.canChain && descriptors.length > 0 ? descriptors : undefined,
+        environmentRef: seg.environment_ref,
+        referenceImages: ctx.canChain && kfRefs.images.length > 0 ? kfRefs.images : undefined,
+        references: ctx.canChain && kfRefs.descriptors.length > 0 ? kfRefs.descriptors : undefined,
         provider,
         aspectRatio: ctx.aspectRatio,
         quality: ctx.quality,
@@ -736,8 +828,10 @@ export async function generateBoardImage(params: {
     // every later board copies the EXACT same outfit + accessories (stops the
     // wardrobe drifting into a suit on one board, etc.). The anchor goes FIRST
     // so it's the dominant reference.
-    let segImages = ctx.canChain && images.length > 0 ? images : [];
-    let segDescriptors = ctx.canChain && descriptors.length > 0 ? descriptors : [];
+    // CAST-SYNC: attach only the PRESENT characters' reference photos.
+    const boardRefs = buildBoardRefs(ctx, seg.characters_in_scene);
+    let segImages = ctx.canChain && boardRefs.images.length > 0 ? boardRefs.images : [];
+    let segDescriptors = ctx.canChain && boardRefs.descriptors.length > 0 ? boardRefs.descriptors : [];
     if (params.anchorImage && ctx.canChain) {
       segImages = [{ base64: params.anchorImage, mimeType: "image/jpeg" }, ...segImages];
       segDescriptors = [{ role: "anchor" as const }, ...segDescriptors];
@@ -749,6 +843,7 @@ export async function generateBoardImage(params: {
       beats: seg.beats,
       beatsPerSegment: ctx.beatsPerSegment,
       characterDescription: ctx.charDescDna,
+      presentCharacters: presentCastFor(seg, breakdown),
       productDna: ctx.productDnaText,
       ingredients: ctx.ingredientsText,
       sceneBible: ctx.sceneBible,
