@@ -758,7 +758,9 @@ export async function generateBoardImage(params: {
   const provider = params.provider ?? "gemini";
   const { input, breakdown, analysis } = params;
   const ctx = buildRefContext(input, breakdown, analysis, provider);
-  const { images, descriptors } = buildBoardRefs(ctx);
+  // Master board uses only the primary image; keyframe/segment build their own
+  // cast-scoped refs below (buildBoardRefs(ctx, seg.characters_in_scene)).
+  const { images } = buildBoardRefs(ctx);
 
   try {
     if (params.kind === "master") {
