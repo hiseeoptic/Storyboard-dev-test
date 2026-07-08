@@ -17,6 +17,8 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
 const STRING_SCHEMA = { type: "STRING" };
 const INTEGER_SCHEMA = { type: "INTEGER" };
+const NUMBER_SCHEMA = { type: "NUMBER" };
+const BOOLEAN_SCHEMA = { type: "BOOLEAN" };
 const STRING_ARRAY_SCHEMA = { type: "ARRAY", items: STRING_SCHEMA };
 
 // Gemini's JSON mode is much more reliable when it gets a concrete schema.
@@ -45,16 +47,21 @@ const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
         properties: {
           name: STRING_SCHEMA,
           gender: STRING_SCHEMA,
+          is_child: BOOLEAN_SCHEMA,
           gender_age: STRING_SCHEMA,
           build: STRING_SCHEMA,
           skin_tone: STRING_SCHEMA,
+          skin_texture: STRING_SCHEMA,
+          eye_details: STRING_SCHEMA,
           hair: STRING_SCHEMA,
           eyes: STRING_SCHEMA,
           costume: STRING_SCHEMA,
+          wardrobe_materials: STRING_SCHEMA,
           signature_features: STRING_SCHEMA,
           default_expression: STRING_SCHEMA,
           render_style: STRING_SCHEMA,
           dna: STRING_SCHEMA,
+          voice: STRING_SCHEMA,
         },
         required: [
           "name",
@@ -78,6 +85,7 @@ const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
         lighting: STRING_SCHEMA,
         backdrop: STRING_SCHEMA,
         color_grade: STRING_SCHEMA,
+        film_grain: STRING_SCHEMA,
       },
       required: ["lens", "lighting", "backdrop", "color_grade"],
     },
@@ -105,6 +113,24 @@ const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
           first_frame_prompt: STRING_SCHEMA,
           motion_prompt: STRING_SCHEMA,
           dialogue: STRING_SCHEMA,
+          speaker: STRING_SCHEMA,
+          // TẦNG 9 turn-taking: up to 3 sequential timed turns per clip.
+          dialogue_lines: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                speaker: STRING_SCHEMA,
+                text: STRING_SCHEMA,
+                start_s: NUMBER_SCHEMA,
+                end_s: NUMBER_SCHEMA,
+              },
+              required: ["speaker", "text"],
+            },
+          },
+          // CAST-SYNC + ENVIRONMENT ENGINE per-segment locks.
+          characters_in_scene: STRING_ARRAY_SCHEMA,
+          environment_ref: STRING_SCHEMA,
           continuity_note: STRING_SCHEMA,
         },
         required: [
@@ -208,18 +234,85 @@ function stripTrailingCommasOutsideStrings(json: string): string {
   return out;
 }
 
+/**
+ * Repair MISSING commas between JSON values (the model's most common syntax
+ * slip in nested arrays, e.g. `} {` between dialogue_lines entries or
+ * `"end_s": 3 "speaker"`). Walks outside strings only: when a value-ending
+ * char is followed (across whitespace) by the start of a new value, a comma
+ * is inserted between them.
+ */
+function insertMissingCommasOutsideStrings(json: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+
+  const endsValue = (c: string) => /["\d}\]]|[el]/.test(c); // ", digit, }, ], true/false/null endings
+  const startsValue = (c: string) => /["{\[\-\d]|[tfn]/.test(c);
+
+  for (let i = 0; i < json.length; i++) {
+    const ch = json.charAt(i);
+
+    if (inString) {
+      out += ch;
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') {
+        inString = false;
+        // Closing quote: look ahead for a missing comma before the next value.
+        let j = i + 1;
+        while (j < json.length && /\s/.test(json.charAt(j))) j++;
+        const next = json.charAt(j);
+        // After a closing string, `:` means it was a key; `,}]` are fine.
+        if (next && next !== ":" && next !== "," && next !== "}" && next !== "]" && startsValue(next)) {
+          out += ",";
+        }
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+
+    out += ch;
+    if (endsValue(ch) && ch !== '"') {
+      let j = i + 1;
+      while (j < json.length && /\s/.test(json.charAt(j))) j++;
+      const next = json.charAt(j);
+      if (next && next !== "," && next !== "}" && next !== "]" && next !== ":" && startsValue(next)) {
+        // Guard: only fire after a COMPLETE literal (e.g. `e` of true/false/null
+        // or a digit not followed by more digits/dot/exponent).
+        if (/[el}\]]/.test(ch) || (/\d/.test(ch) && !/[\d.eE+\-]/.test(json.charAt(i + 1) || ""))) {
+          out += ",";
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
 function parseJsonResponse(text: string): unknown {
   const sanitized = sanitizeJsonResponse(text);
 
   try {
     return JSON.parse(sanitized);
   } catch (err) {
-    const repaired = stripTrailingCommasOutsideStrings(sanitized);
-    if (repaired !== sanitized) {
-      try {
-        return JSON.parse(repaired);
-      } catch {
-        // Keep the original parse error because it points at the real raw response.
+    // Repair pass 1: trailing commas. Pass 2: missing commas. Pass 3: both.
+    const candidates = [
+      stripTrailingCommasOutsideStrings(sanitized),
+      insertMissingCommasOutsideStrings(sanitized),
+      insertMissingCommasOutsideStrings(stripTrailingCommasOutsideStrings(sanitized)),
+    ];
+    for (const candidate of candidates) {
+      if (candidate !== sanitized) {
+        try {
+          return JSON.parse(candidate);
+        } catch {
+          // try the next repair
+        }
       }
     }
     throw err;
@@ -319,7 +412,10 @@ export async function generateStoryboardBreakdown(
           jsonMode: true,
           responseSchema: STORYBOARD_RESPONSE_SCHEMA,
           temperature: 0.35,
-          maxOutputTokens: 8192,
+          // The storyboard JSON grew (dialogue_lines, cast/environment locks,
+          // voice, forensic fields) — 8192 could truncate mid-array, which
+          // surfaces as "Expected ',' or ']'" parse errors.
+          maxOutputTokens: 24576,
         });
       } else {
         const openai = getOpenAIClient();
