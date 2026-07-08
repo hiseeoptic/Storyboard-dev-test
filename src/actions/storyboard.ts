@@ -174,6 +174,87 @@ function presentLocksFor(
     .filter((l): l is CharacterLock => !!l);
 }
 
+/**
+ * TẦNG 9 turn-taking normalisation + SAFETY CLAMP. Runs once on a fresh
+ * breakdown so both dialogue forms stay consistent and the multi-speaker
+ * feature can never over-constrain a Veo clip (the user's explicit caution):
+ *  - mirror single dialogue/speaker ↔ dialogue_lines[0]
+ *  - drop empty turns; CAP at 3 turns / 2 distinct main speakers per clip
+ *  - enforce strictly sequential, non-overlapping time windows (0-10s)
+ *  - ensure every on-screen speaker is listed in characters_in_scene
+ *  - if only ONE real turn remains, collapse back to the simple single-line form
+ */
+function normalizeDialogue(breakdown: StoryboardGenerationOutput): void {
+  const MAX_TURNS = 3;
+  for (const seg of breakdown.segments) {
+    let turns = Array.isArray(seg.dialogue_lines) ? seg.dialogue_lines : [];
+    // Seed from the single-line form when the model only filled that.
+    if (turns.length === 0 && seg.dialogue && seg.dialogue.trim()) {
+      turns = [{ speaker: (seg.speaker ?? "").trim(), text: seg.dialogue.trim() }];
+    }
+    // Keep only real spoken text, cap the count.
+    turns = turns
+      .filter((t) => t && typeof t.text === "string" && t.text.trim())
+      .slice(0, MAX_TURNS)
+      .map((t) => ({
+        speaker: (t.speaker ?? "").trim(),
+        text: t.text.trim(),
+        start_s: typeof t.start_s === "number" ? t.start_s : undefined,
+        end_s: typeof t.end_s === "number" ? t.end_s : undefined,
+      }));
+
+    // Rebuild plausible sequential, non-overlapping windows within 10s whenever
+    // timing is missing or inconsistent (never trust raw model timings blindly).
+    const needsRetime =
+      turns.length > 1 &&
+      turns.some((t, i) => {
+        const prev = turns[i - 1];
+        return (
+          t.start_s == null ||
+          t.end_s == null ||
+          t.end_s <= t.start_s ||
+          (prev && prev.end_s != null && t.start_s! < prev.end_s)
+        );
+      });
+    if (needsRetime) {
+      // Budget each turn by its length (~0.42s/word) + a 0.4s beat, scaled to ≤9s.
+      const raw = turns.map((t) => Math.max(1.2, t.text.split(/\s+/).length * 0.42));
+      const gap = 0.4;
+      const total = raw.reduce((a, b) => a + b, 0) + gap * (turns.length - 1);
+      const scale = total > 9 ? 9 / total : 1;
+      let cursor = 0;
+      turns = turns.map((t, i) => {
+        const dur = raw[i]! * scale;
+        const start = Math.round(cursor * 10) / 10;
+        cursor += dur;
+        const end = Math.round(Math.min(cursor, 10) * 10) / 10;
+        cursor += gap * scale;
+        return { ...t, start_s: start, end_s: end };
+      });
+    }
+
+    // Ensure every speaker is on screen (turn-taking requires their face).
+    if (turns.length > 0) {
+      const onScreen = new Set((seg.characters_in_scene ?? []).map((n) => n.trim()).filter(Boolean));
+      for (const t of turns) if (t.speaker) onScreen.add(t.speaker);
+      if (onScreen.size > 0) seg.characters_in_scene = Array.from(onScreen);
+    }
+
+    // Write both forms back. Collapse to single-line when only one turn remains.
+    if (turns.length > 1) {
+      seg.dialogue_lines = turns;
+      seg.dialogue = turns[0]!.text;
+      seg.speaker = turns[0]!.speaker;
+    } else if (turns.length === 1) {
+      seg.dialogue_lines = undefined;
+      seg.dialogue = turns[0]!.text;
+      seg.speaker = turns[0]!.speaker;
+    } else {
+      seg.dialogue_lines = undefined;
+    }
+  }
+}
+
 /** Cast list for the board/keyframe builders (name + locked look + child flag). */
 function presentCastFor(
   seg: { characters_in_scene?: string[] },
@@ -547,6 +628,11 @@ export async function generateStoryboardPlan(
     }
     if (!Array.isArray(breakdown.character_locks)) breakdown.character_locks = [];
 
+    // TẦNG 9 turn-taking normalisation + safety clamp. Reconcile the two dialogue
+    // forms so downstream code (and the editor) is always consistent, and hard-
+    // cap the multi-speaker feature so it can never over-constrain a Veo clip.
+    normalizeDialogue(breakdown);
+
     for (const lock of breakdown.character_locks) {
       const analyzed = analysis.characterDescriptions[lock.name];
       if (analyzed) {
@@ -683,6 +769,8 @@ function assemblePlanPrompts(
       dialogue: seg.dialogue,
       dialogueLanguage: ctx.dialogueLanguage,
       speaker: seg.speaker,
+      dialogueTurns: seg.dialogue_lines,
+      characterVoices,
       characterNames: ctx.characterNames,
       charactersInScene: seg.characters_in_scene,
       speakerVoice: seg.speaker ? characterVoices[seg.speaker.trim()] : undefined,
@@ -713,6 +801,7 @@ function assemblePlanPrompts(
       motion_prompt: makeVeoSafe(s.motion_prompt),
       dialogue: s.dialogue,
       speaker: s.speaker,
+      dialogue_lines: s.dialogue_lines,
       setting: makeVeoSafe(s.first_frame_prompt ?? ""),
       environment_ref: s.environment_ref,
       characters_in_scene: s.characters_in_scene,

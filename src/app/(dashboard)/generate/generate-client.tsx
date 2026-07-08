@@ -18,6 +18,7 @@ import {
   Image as ImageIcon,
   AlertTriangle,
   BookOpen,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1415,6 +1416,38 @@ export function GenerateClient() {
       d ? { ...d, segments: d.segments.map((s, idx) => (idx === i ? { ...s, [field]: value } : s)) } : d
     );
 
+  // TẦNG 9 turn-taking editor: set a segment's dialogue_lines array (and keep
+  // the single dialogue/speaker mirror in sync with the first turn).
+  const setSegTurns = (
+    i: number,
+    turns: { speaker: string; text: string; start_s?: number; end_s?: number }[]
+  ) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            segments: d.segments.map((s, idx) =>
+              idx === i
+                ? {
+                    ...s,
+                    dialogue_lines: turns.length > 1 ? turns : undefined,
+                    dialogue: turns[0]?.text ?? (turns.length === 0 ? "" : s.dialogue),
+                    speaker: turns[0]?.speaker ?? s.speaker,
+                  }
+                : s
+            ),
+          }
+        : d
+    );
+
+  /** Current turns of a segment for the editor (seed from the single line). */
+  const segTurns = (s: StoryboardGenerationOutput["segments"][number]) =>
+    s.dialogue_lines && s.dialogue_lines.length > 0
+      ? s.dialogue_lines
+      : s.dialogue
+        ? [{ speaker: (s.speaker ?? "") as string, text: s.dialogue }]
+        : [];
+
   // ─── Review & redo: re-render a single board on demand ───────────
   const regenerateBoard = async (
     target: number | "master"
@@ -1823,37 +1856,90 @@ export function GenerateClient() {
                     className="resize-none text-sm"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    {lang === "vi" ? "Lời thoại" : "Dialogue"}
-                  </label>
-                  <Input
-                    value={s.dialogue ?? ""}
-                    onChange={(e) => updateSeg(i, "dialogue", e.target.value)}
-                    placeholder={lang === "vi" ? "(không có thoại)" : "(no dialogue)"}
-                  />
-                </div>
-                {draft.character_locks.length > 1 && (
+                {draft.character_locks.length <= 1 ? (
+                  // Single character → simple one-line dialogue.
                   <div className="space-y-1">
                     <label className="text-xs font-medium text-muted-foreground">
-                      {lang === "vi" ? "Người nói (chỉ 1 người / cảnh)" : "Speaker (one per scene)"}
+                      {lang === "vi" ? "Lời thoại" : "Dialogue"}
                     </label>
-                    <Select
-                      value={s.speaker ?? ""}
-                      onChange={(e) => updateSeg(i, "speaker", e.target.value)}
-                      options={[
-                        { value: "", label: lang === "vi" ? "— Lồng tiếng / không ai nói —" : "— Voiceover / none —" },
-                        ...draft.character_locks
-                          .filter((c) => c.name)
-                          .map((c) => ({ value: c.name, label: c.name })),
-                      ]}
+                    <Input
+                      value={s.dialogue ?? ""}
+                      onChange={(e) => updateSeg(i, "dialogue", e.target.value)}
+                      placeholder={lang === "vi" ? "(không có thoại)" : "(no dialogue)"}
                     />
-                    <p className="text-[11px] text-muted-foreground">
-                      {lang === "vi"
-                        ? "Mỗi cảnh chỉ 1 người nói; người còn lại im lặng. Hội thoại thì đổi người nói qua từng cảnh."
-                        : "One speaker per scene; the others stay silent. For a dialogue, alternate the speaker across scenes."}
-                    </p>
                   </div>
+                ) : (
+                  // Multi-character → TURN-TAKING editor (up to 3 lines in one 10s clip).
+                  (() => {
+                    const turns = segTurns(s);
+                    const speakerOpts = [
+                      { value: "", label: lang === "vi" ? "— Lồng tiếng —" : "— Voiceover —" },
+                      ...draft.character_locks.filter((c) => c.name).map((c) => ({ value: c.name, label: c.name })),
+                    ];
+                    return (
+                      <div className="space-y-2 rounded-lg border border-dashed p-2.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-medium text-muted-foreground">
+                            {lang === "vi" ? "Hội thoại trong cảnh (lần lượt, tối đa 3 lượt / 10s)" : "In-scene dialogue (turn-taking, max 3 lines / 10s)"}
+                          </label>
+                          {turns.length < 3 && (
+                            <button
+                              type="button"
+                              className="rounded-full border border-input px-2 py-0.5 text-[11px] hover:border-primary/50"
+                              onClick={() =>
+                                setSegTurns(i, [
+                                  ...turns,
+                                  { speaker: draft.character_locks[turns.length % draft.character_locks.length]?.name ?? "", text: "" },
+                                ])
+                              }
+                            >
+                              ➕ {lang === "vi" ? "Thêm lượt" : "Add turn"}
+                            </button>
+                          )}
+                        </div>
+                        {turns.length === 0 && (
+                          <button
+                            type="button"
+                            className="w-full rounded border border-dashed border-input py-1.5 text-[11px] text-muted-foreground hover:border-primary/50"
+                            onClick={() => setSegTurns(i, [{ speaker: draft.character_locks[0]?.name ?? "", text: "" }])}
+                          >
+                            {lang === "vi" ? "➕ Thêm lời thoại cho cảnh này" : "➕ Add dialogue to this scene"}
+                          </button>
+                        )}
+                        {turns.map((t, ti) => (
+                          <div key={ti} className="flex items-start gap-1.5">
+                            <span className="mt-2 text-[11px] font-semibold text-muted-foreground">{ti + 1}.</span>
+                            <div className="w-32 shrink-0">
+                              <Select
+                                value={t.speaker ?? ""}
+                                onChange={(e) => setSegTurns(i, turns.map((x, xi) => (xi === ti ? { ...x, speaker: e.target.value } : x)))}
+                                options={speakerOpts}
+                              />
+                            </div>
+                            <Input
+                              value={t.text}
+                              onChange={(e) => setSegTurns(i, turns.map((x, xi) => (xi === ti ? { ...x, text: e.target.value } : x)))}
+                              placeholder={lang === "vi" ? "câu thoại..." : "line..."}
+                              className="flex-1"
+                            />
+                            <button
+                              type="button"
+                              className="mt-1.5 rounded p-1 text-muted-foreground hover:text-destructive"
+                              onClick={() => setSegTurns(i, turns.filter((_, xi) => xi !== ti))}
+                              title={lang === "vi" ? "Xoá lượt" : "Remove"}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                        <p className="text-[11px] text-muted-foreground">
+                          {lang === "vi"
+                            ? "Lần lượt từng người nói (không chồng tiếng), tự canh giờ gọn trong 10s. Thoại dài quá thì tách sang cảnh sau. Máy quay tự bám mặt người đang nói."
+                            : "Speakers take turns (no overlap), auto-timed within 10s. Overflow spills to the next scene. Camera follows whoever speaks."}
+                        </p>
+                      </div>
+                    );
+                  })()
                 )}
               </div>
             ))}

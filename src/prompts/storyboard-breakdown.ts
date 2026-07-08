@@ -378,16 +378,17 @@ TITLE: <catchy title>
 CORE MESSAGE: <one-line takeaway>
 CHARACTERS: <EVERY person in the story, one per line — name, age, signature look, tone; mark children with "(child)". If the idea/script uses role labels (Chồng/Vợ/Con, Bố/Mẹ…), assign each role ONE consistent given name (e.g. Chồng = Nam) and keep the mapping for the whole script. A solo video simply lists one person.>
 SEGMENT 1 [HOOK]:
-  SPEAKER: <the ONE character name who speaks this segment (or "VO" for voiceover)>
   IN SCENE: <names of everyone visible in this segment>
   ACTION: <one vivid thing we SEE — a visual metaphor for this beat>
-  DIALOGUE: "<the exact spoken line>"
+  DIALOGUE:
+    <SpeakerName>: "<the exact spoken line>"
+    <SpeakerName>: "<the next line, if a short back-and-forth fits this same 10s clip>"
 SEGMENT 2 [PROBLEM]:
-  SPEAKER: ...
   IN SCENE: ...
   ACTION: ...
-  DIALOGUE: "..."
-(a dialogue EXCHANGE between two people = consecutive segments alternating SPEAKER — never two speakers in one segment; keep each labelled line VERBATIM with its own character)
+  DIALOGUE:
+    <SpeakerName>: "..."
+(TURN-TAKING: a short exchange — a question + reply, ~2-3 short lines total — SHOULD share ONE segment as consecutive speaker-tagged DIALOGUE lines so the 10s isn't wasted; they play in order, never overlapping. Keep each labelled line VERBATIM with its real speaker. Only push lines to the NEXT segment when they no longer fit ~9 seconds. Use "VO" as the name for a voiceover line. A single speaker with one line is fine too.)
 (continue for EXACTLY the requested number of segments, following the emotional arc)
 CAPTION: <ready-to-post caption + 4-6 hashtags>
 
@@ -456,7 +457,7 @@ FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's vid
 MULTI-CHARACTER CASTING & DIALOGUE ASSIGNMENT (mandatory whenever the story/script has 2+ people — this is what keeps a family/dialogue video coherent):
 - FULL CAST LOCK: create ONE character_lock for EVERY distinct person who appears anywhere in the story/script — no exceptions. If the script names people by ROLE (Chồng/Vợ/Con, Bố/Mẹ, husband/wife/child…), assign each role ONE ordinary given name and state the mapping in the synopsis (e.g. "Chồng = Nam, Vợ = Mai, Con = bé Minh"). Use those EXACT names consistently in every segment, beat caption, first_frame_prompt, dialogue and speaker field. NEVER invent an extra unnamed person.
 - CHILDREN: a character who is a child gets "is_child": true and an age-locked description (e.g. "bé trai ~6 tuổi, dáng nhỏ nhắn"). A child stays a child in EVERY shot — never rendered as an adult, never changes age, and their small relative height vs the adults stays consistent.
-- ROLE-LABELLED DIALOGUE RECOGNITION: when the idea/script contains dialogue labelled by role or name ("Chồng: …", "Vợ: …", "Con: …", "Nam: …"), each labelled line belongs to THAT character — copy the line VERBATIM into a segment's "dialogue" with "speaker" = that character's lock name. NEVER reassign a line to a different character, never merge two people's lines into one segment. A back-and-forth exchange becomes CONSECUTIVE segments alternating the speaker (one speaker per 10s clip).
+- ROLE-LABELLED DIALOGUE RECOGNITION: when the idea/script contains dialogue labelled by role or name ("Chồng: …", "Vợ: …", "Con: …", "Nam: …"), each labelled line belongs to THAT character — copy it VERBATIM and set that character's lock name as its speaker. NEVER reassign a line to a different character. A short back-and-forth (e.g. a question + a reply, ~2-3 short lines) SHOULD share ONE 10s clip as sequential turns in "dialogue_lines" (fill the time instead of wasting a clip per line) — following the DIALOGUE turn-taking rules below. Only spill to the NEXT segment when the exchange no longer fits in ~9 seconds.
 - "characters_in_scene" (REQUIRED per segment): list the EXACT lock names of everyone VISIBLE in that segment — nobody else may appear (no background family members drifting in). The "speaker" MUST be one of them (empty speaker = voiceover). Non-speaking listed characters are present, reacting silently, mouths closed. If someone ENTERS mid-clip (e.g. the child runs in), they are still IN characters_in_scene and the motion_prompt describes the entrance explicitly.
 - CAST CONTINUITY: a character's face, hair, wardrobe and colours are IDENTICAL in every segment they appear in (repeat their lock verbatim in that segment's first_frame_prompt). The SAME wardrobe across the whole video — never re-dress anyone between segments.
 - If there is a hero PRODUCT, write "product_dna": exact shape, material, colours WITH RGB hex, label/logo text+colour, cap/parts — repeated verbatim.
@@ -485,11 +486,18 @@ ${environmentCatalogForPrompt()}
 
 NEGATIVE (forbidden in every image/clip — plain descriptors): warped/changed label or logo text, brand-colour change, extra products or extra people, changed hair/wardrobe/accessories, human hands when the script does not call for them, on-screen text overlays, object/container morphing, teleporting, floating or levitating objects, objects passing through surfaces, deformed liquid, melted food, extra or fused fingers, malformed hands, face morphing, identity drift, plastic/CGI skin.
 
-DIALOGUE (spoken audio in Veo 3):
-- Veo 3 generates real spoken audio. Each segment's "dialogue" is the exact line the on-screen character (or voiceover) speaks.
-- Write dialogue in the language requested by the user. Keep each line SHORT (about 5-12 words, ~3-6 seconds) so lip-sync stays natural.
-- Put the spoken line ONLY in the "dialogue" field. Do NOT quote or embed the spoken line inside the "motion_prompt" — the system appends it automatically exactly once, so repeating it makes the character say it twice. In the motion_prompt just note WHEN the character speaks and that the lips move naturally (e.g. "around 6-10s he speaks his line with natural lip movement"), without quoting the words.
-- SPEAKER (critical when there are 2+ characters): ONLY ONE character may speak per 10s segment. Set "speaker" to that character's EXACT name from character_locks. The other characters stay silent and listen (mouths closed) in that clip. For a conversation, ALTERNATE the speaker across consecutive segments (character A speaks in one clip, character B replies in the next) — never have two people talk in the same clip, because the video model cannot reliably lip-sync two speakers at once. If the line is a voiceover with no on-screen speaker, set "speaker" to "".
+DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlapping):
+- Veo 3 generates real spoken audio. Write dialogue in the language requested. Keep each spoken line SHORT and natural.
+- Put spoken lines ONLY in the dialogue fields. Do NOT quote them inside "motion_prompt" (the system appends them once; repeating makes the character say it twice). In motion_prompt just note WHO speaks WHEN with natural lip movement (e.g. "0-4s Nam speaks; 4-7s Mai replies"), without quoting the words.
+- FIT A SHORT EXCHANGE INTO ONE CLIP (this is the key rule — do NOT waste a whole 10s clip on one 3-word line): use the "dialogue_lines" array to place 1-3 SEQUENTIAL turns inside the same 10s clip when they belong to the same beat of conversation. Each turn = { "speaker": exact character_locks name (or "" for voiceover), "text": the line, "start_s": when they start, "end_s": when they finish }.
+- HARD SAFETY RULES (a video model CANNOT lip-sync two mouths at once — breaking these causes garbled clips):
+  1. TURN-TAKING ONLY, NEVER OVERLAP: turns are strictly sequential — turn N's end_s ≤ turn N+1's start_s. Exactly ONE person's mouth moves at any instant; everyone else has their mouth closed, listening.
+  2. FIT THE SECONDS: the whole exchange must finish by ~9s (leave breathing room). Budget realistically at a natural pace — roughly 0.4s per word plus a ~0.5s beat between speakers. A short line like "Thế anh đã vo gạo chưa?" ≈ 2.5s. If the exchange does NOT fit, keep only the turns that fit and PUSH the rest into the NEXT segment — never cram or speed up speech.
+  3. MAX 3 turns and MAX 2 distinct speakers per clip (a third speaker like a child interjecting is allowed only as the LAST short turn). More than that → split across segments.
+  4. FACE-ON-CAMERA: whoever is speaking in a turn must have their face in medium-close/close-up during their start_s-end_s window; the motion_prompt and the beats must move the camera to the active speaker for each turn (a gentle pan/reframe between speakers, still ONE continuous take — no hard cut).
+  5. "characters_in_scene" must include every speaker; a voiceover speaker ("") is heard but not shown.
+- SINGLE-LINE CLIPS: if a beat is just one line, you may use "dialogue_lines" with one entry OR the plain "dialogue"+"speaker" fields — both work. For a longer monologue that fills the clip, one speaker is correct.
+- Mirror the FIRST turn into the top-level "dialogue" (its text) and "speaker" (its name) for compatibility.
 
 Camera codes: [EYE] eye-level, [LOW] low, [HIGH] high, [OVH] overhead, [DUTCH] dutch, [OTS] over-shoulder, [POV] first-person, [CLOSE] close-up, [SIDE] side profile.
 
@@ -644,8 +652,11 @@ ${beatExample}
       ],
       "first_frame_prompt": "string — describe the SHARED scene/setting of this 10s segment (location, lighting, EXACT character appearance from character_locks, product if any). It is used as the scene-overview context for the shot board, so describe the environment and the character clearly.",
       "motion_prompt": "string — a focused 70-110 word image-to-video ACTION prompt for Omni Flash / Veo describing ONE continuous take. IMPORTANT: the system automatically wraps this text with the full character + product description, the style tokens (lens/light/backdrop/grade), a physics directive and a negative list — so DO NOT repeat identity attributes, style tokens, a physics clause or a negative list here; describe only what HAPPENS. Order: (1) a SHORT anchor that it is the same man and same product from the attached references, rendered as a slightly younger, more attractive version (one phrase — do NOT re-list every attribute); (2) ONE single continuous primary action across the 10s with rough timing ('0-3s ...; 3-6s ...; 6-10s ...') using slow, deliberate, specific motion verbs (body part + verb + manner) — no hard cuts, no second simultaneous action; (3) camera (shot size + SMOOTH minimal movement); (4) a brief mood/light accent only if it changes; (5) note WHEN the character speaks with natural lip movement, but DO NOT quote the spoken words (the dialogue line is appended automatically exactly once); (6) finish with the exact final state so it leads into the next segment.",
-      "dialogue": "string — the spoken line in ${dialogueLanguage} (short, natural)",
-      "speaker": "string — the EXACT character_locks name of who speaks this line. ONE speaker per segment; the others stay silent. Empty string \\"\\" if it is a voiceover with no on-screen speaker.",
+      "dialogue": "string — the FIRST turn's spoken line in ${dialogueLanguage} (short, natural). Mirror of dialogue_lines[0].text.",
+      "speaker": "string — the EXACT character_locks name of the FIRST turn's speaker (mirror of dialogue_lines[0].speaker). Empty string \\"\\" if voiceover.",
+      "dialogue_lines": [
+        { "speaker": "exact character_locks name or \\"\\" for voiceover", "text": "the spoken line in ${dialogueLanguage}", "start_s": 0, "end_s": 3 }
+      ],
       "characters_in_scene": ["REQUIRED — array of EXACT character_locks names VISIBLE in this segment (e.g. [\\"Nam\\", \\"Mai\\"]). Only these people appear on screen; the speaker must be listed here; others in the list react silently."],
       "environment_ref": "string — the environment archetype id from the ENVIRONMENT ENGINE list that matches this segment's setting (e.g. 'misty_mountain_ridge_dawn'), or 'custom' if none fits. Consecutive segments in the same place reuse the same id.",
       "continuity_note": "string — how this segment visually continues from the previous segment (for segment 1 write 'opening shot')"
@@ -1062,6 +1073,12 @@ export function buildSegmentVeoPrompt(params: {
   /** TẦNG 9: the speaker's FULL locked voice profile (timbre/Hz/wpm/accent/
    * emotion) — bound to the spoken line so the voice never swaps or drifts. */
   speakerVoice?: string;
+  /** TẦNG 9 turn-taking: up to 3 sequential (non-overlapping) spoken turns to
+   * fit a short exchange in this one clip. Overrides `dialogue`/`speaker` when
+   * it has 2+ entries. */
+  dialogueTurns?: { speaker: string; text: string; start_s?: number; end_s?: number }[];
+  /** Locked voice profile per character name, to bind each turn's voice. */
+  characterVoices?: Record<string, string>;
   /** Genre-appropriate ambient sound (e.g. kitchen sizzle, gym energy). */
   ambientAudio?: string;
   /** Environment archetype id (segment.environment_ref). Falls back to
@@ -1099,23 +1116,58 @@ export function buildSegmentVeoPrompt(params: {
     .map((n) => (n ?? "").trim())
     .filter(Boolean);
   const allNames = (params.characterNames ?? []).map((n) => (n ?? "").trim()).filter(Boolean);
-  const silentPool = onScreen.length > 0 ? onScreen : allNames;
-  const others = silentPool.filter((n) => n !== speaker);
   const absent = onScreen.length > 0 ? allNames.filter((n) => !onScreen.includes(n)) : [];
   const castLine =
     onScreen.length > 0
       ? ` ON SCREEN: exactly ${onScreen.length} character${onScreen.length > 1 ? "s" : ""} — ${onScreen.join(", ")} — and NOBODY else; no extra people in frame or background.${absent.length > 0 ? ` ${absent.join(", ")} ${absent.length > 1 ? "are" : "is"} NOT in this scene and must not appear, not even in the background or as a reflection.` : ""}`
       : "";
   const speakerLabel = speaker || "The character";
-  const silence =
-    speaker && others.length > 0
-      ? ` Only ${speaker} speaks; the other character${others.length > 1 ? "s" : ""} (${others.join(", ")}) stay silent and listen with mouths closed.`
-      : "";
-  const voiceFp = (params.speakerVoice ?? "").trim();
-  const voiceTag = voiceFp ? ` (voice: ${voiceFp})` : "";
-  const spoken = params.dialogue
-    ? ` ${speakerLabel}${voiceTag} speaks to camera with natural mouth movement and accurate lip-sync — the voice emanates from ${speaker ? `${speaker}'s` : "the speaker's"} mouth — saying in ${lang}: "${params.dialogue}" — delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence}`
-    : "";
+  const voices = params.characterVoices ?? {};
+  const voiceOf = (name: string) => (name && voices[name.trim()] ? ` (voice: ${voices[name.trim()]})` : "");
+
+  // Normalise turns: prefer the multi-turn array; else fall back to the single
+  // dialogue/speaker pair. Filter to real spoken text.
+  const rawTurns =
+    params.dialogueTurns && params.dialogueTurns.length > 0
+      ? params.dialogueTurns
+      : params.dialogue
+        ? [{ speaker, text: params.dialogue, start_s: undefined, end_s: undefined }]
+        : [];
+  const turns = rawTurns.filter((t) => (t.text ?? "").trim());
+
+  let spoken = "";
+  if (turns.length > 1) {
+    // TURN-TAKING: sequential timed lines, ONE mouth at a time, camera on the
+    // active speaker. Everyone else keeps mouths closed.
+    const speakersInTurns = Array.from(new Set(turns.map((t) => (t.speaker ?? "").trim()).filter(Boolean)));
+    const lines = turns
+      .map((t) => {
+        const nm = (t.speaker ?? "").trim();
+        const who = nm || "voiceover";
+        const vt = nm ? voiceOf(nm) : params.speakerVoice ? ` (voice: ${params.speakerVoice})` : "";
+        const window =
+          t.start_s != null && t.end_s != null ? `${t.start_s}-${t.end_s}s ` : "";
+        return `${window}${who}${vt}: "${(t.text ?? "").trim()}"`;
+      })
+      .join("; ");
+    const listeners = onScreen.filter((n) => !speakersInTurns.includes(n));
+    const listenerNote =
+      listeners.length > 0
+        ? ` While each person speaks, ${listeners.join(", ")} stay silent with mouths closed.`
+        : "";
+    spoken = ` DIALOGUE (turn-taking, ONE person speaks at a time, never overlapping; the camera is on whoever is speaking, their face in medium-close, mouth moving with exact lip-sync; the others keep mouths closed): ${lines}. All lines in ${lang}, AUDIO ONLY — absolutely NO subtitles, captions or on-screen text.${listenerNote}`;
+  } else if (turns.length === 1) {
+    const t = turns[0]!;
+    const nm = (t.speaker ?? "").trim();
+    const label = nm || speakerLabel;
+    const vt = nm ? voiceOf(nm) || (params.speakerVoice ? ` (voice: ${params.speakerVoice})` : "") : params.speakerVoice ? ` (voice: ${params.speakerVoice})` : "";
+    const others = (onScreen.length > 0 ? onScreen : allNames).filter((n) => n !== nm);
+    const silence =
+      nm && others.length > 0
+        ? ` Only ${nm} speaks; the other character${others.length > 1 ? "s" : ""} (${others.join(", ")}) stay silent and listen with mouths closed.`
+        : "";
+    spoken = ` ${label}${vt} speaks to camera with natural mouth movement and accurate lip-sync — the voice emanates from ${nm ? `${nm}'s` : "the speaker's"} mouth — saying in ${lang}: "${(t.text ?? "").trim()}" — delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence}`;
+  }
   const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
   return `${lead}${character}${castLine}${setting}${envBlock}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription)}`;
 }
@@ -1146,6 +1198,7 @@ export function buildVideoPromptText(params: {
     motion_prompt: string;
     dialogue?: string | null;
     speaker?: string | null;
+    dialogue_lines?: { speaker: string; text: string; start_s?: number; end_s?: number }[];
     setting?: string;
     environment_ref?: string | null;
     characters_in_scene?: string[];
@@ -1175,6 +1228,8 @@ export function buildVideoPromptText(params: {
         dialogue: s.dialogue,
         dialogueLanguage,
         speaker: s.speaker,
+        dialogueTurns: s.dialogue_lines,
+        characterVoices: params.characterVoices,
         characterNames: params.characterNames,
         charactersInScene: s.characters_in_scene,
         speakerVoice: s.speaker ? params.characterVoices?.[s.speaker.trim()] : undefined,
@@ -1295,6 +1350,20 @@ export function buildVeoJson(
     // Locked world spec for this clip (veoflow-web environment master_state).
     const env = resolveEnvironment(seg.environment_ref, seg.first_frame_prompt);
     const onScreen = (seg.characters_in_scene ?? []).map((n) => oneLine(n)).filter(Boolean);
+    const voiceFor = (nm: string) => characters.find((c) => c.name === nm)?.voice ?? null;
+    // TẦNG 9 turn-taking: timed, non-overlapping spoken turns (each with its
+    // locked voice) so a short exchange fits one clip.
+    const turns = (seg.dialogue_lines ?? []).filter((t) => oneLine(t.text));
+    const dialogueLines =
+      turns.length > 1
+        ? turns.map((t) => ({
+            speaker: oneLine(t.speaker),
+            line: oneLine(t.text),
+            start_s: t.start_s ?? null,
+            end_s: t.end_s ?? null,
+            voice: voiceFor(oneLine(t.speaker)),
+          }))
+        : null;
     return {
       id: seg.segment_number,
       role: seg.marketing_role,
@@ -1315,7 +1384,10 @@ export function buildVeoJson(
             language: lang,
             line: oneLine(seg.dialogue),
             // TẦNG 9: bind the locked voice to the line (anti voice-swap).
-            voice: characters.find((c) => c.name === speaker)?.voice ?? null,
+            voice: voiceFor(speaker),
+            // Multi-speaker turn-taking (null when the clip is single-speaker).
+            turns: dialogueLines,
+            turn_taking: dialogueLines ? "sequential, non-overlapping, camera on active speaker" : null,
             lip_sync: true,
             subtitles: false,
           }

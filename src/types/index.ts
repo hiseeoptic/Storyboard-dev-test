@@ -261,6 +261,22 @@ export interface ShotBeat {
 }
 
 /**
+ * One spoken turn inside a 10s clip (TẦNG 9 turn-taking). Multiple lines let a
+ * short back-and-forth (Chồng → Vợ → Con) fit in ONE clip instead of wasting a
+ * whole clip per short line — as long as they DON'T overlap and fit the seconds.
+ */
+export interface DialogueTurn {
+  /** Exact character_locks name of who speaks this turn. "" = voiceover. */
+  speaker: string;
+  /** The spoken line (verbatim, in the dialogue language). */
+  text: string;
+  /** When this turn starts within the clip (seconds, 0-10). */
+  start_s?: number;
+  /** When this turn ends within the clip (seconds, 0-10). */
+  end_s?: number;
+}
+
+/**
  * One ~10s segment = exactly one Omni Flash / Veo image-to-video generation.
  * Segments are chained: the start frame of N+1 continues from N's end.
  */
@@ -275,9 +291,17 @@ export interface VideoSegment {
   /** Image-to-video motion prompt (30-80 words) for Veo/Seedance. */
   motion_prompt: string;
   dialogue: string | null;
-  /** Exact character_locks name of who speaks this segment's line (one speaker
-   * per clip). Empty/undefined = voiceover or no on-screen speaker. */
+  /** Exact character_locks name of who speaks this segment's line (used for the
+   * single-line case, and as the first turn of a multi-turn clip). Empty/
+   * undefined = voiceover or no on-screen speaker. */
   speaker?: string | null;
+  /**
+   * TẦNG 9 turn-taking: up to 3 SEQUENTIAL (non-overlapping) spoken turns that
+   * fit inside this 10s clip, so a short exchange isn't wasted across clips.
+   * When present with 2+ entries, this is the source of truth for dialogue;
+   * `dialogue`/`speaker` mirror the first turn for backward compatibility.
+   */
+  dialogue_lines?: DialogueTurn[];
   /** Environment archetype id from src/lib/environment (or "custom"). Locks
    * this segment's world to a physically-grounded spec (materials, Kelvin+Lux
    * light, atmosphere) so the setting renders real, not CGI. */

@@ -8,7 +8,7 @@ export const audioLaws = {
   id: "audio_positional_v1",
   laws: [
     "Sound is POSITIONAL: the voice emanates from the speaker's mouth, with exact natural lip-sync; distance and space shape what we hear",
-    "ONE speaker per clip; everyone else present is silent with mouths closed — a voice never jumps to another face",
+    "TURN-TAKING, NEVER OVERLAP: a clip may hold up to 3 sequential spoken turns (a short exchange), but exactly ONE mouth moves at any instant — turns do not overlap, everyone not speaking has their mouth closed, and the camera is on the active speaker's face during their turn; a voice never jumps to the wrong face",
     "Every speaker has a FULL locked voice profile (timbre, pitch range in Hz, speech rate in wpm, accent, emotion band) — identical in every clip; male ≈ 85-140 Hz, female ≈ 180-260 Hz, child ≈ 250-400 Hz; cross-gender voice swap is a critical failure",
     "The ambient bed is CONSTANT per location (one declared soundscape at low level ≈ -40dB feel) so stitched clips share one seamless soundstage; diegetic SFX follow the visible actions",
     "Silence is data: leave natural breathing room before and after the spoken line — no wall-to-wall talking, no music bed drowning the voice",
