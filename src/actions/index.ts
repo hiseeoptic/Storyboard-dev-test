@@ -6,6 +6,7 @@ export {
   generateStoryboardPlan,
   generateBoardImage,
   finalizeScript,
+  rewriteSegment,
   type BoardKind,
   type StoryboardResult,
   type StoryboardAnalysis,

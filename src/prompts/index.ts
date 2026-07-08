@@ -3,6 +3,7 @@ export {
   buildScriptWriterUserPrompt,
   buildStoryboardSystemPrompt,
   buildStoryboardUserPrompt,
+  buildSegmentRewriteUserPrompt,
   buildCharacterRefSheetPrompt,
   buildSegmentFirstFramePrompt,
   buildKeyframePrompt,

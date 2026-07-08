@@ -1,6 +1,10 @@
 "use server";
 
-import { generateScript, generateStoryboardBreakdown } from "@/services/ai-engine";
+import {
+  generateScript,
+  generateStoryboardBreakdown,
+  rewriteStoryboardSegment,
+} from "@/services/ai-engine";
 import {
   generateSegmentFrame,
   generateKeyframe,
@@ -22,6 +26,7 @@ import type {
   SceneBible,
   StoryboardGenerationInput,
   StoryboardGenerationOutput,
+  VideoSegment,
 } from "@/types";
 
 export interface StoryboardResult {
@@ -827,6 +832,91 @@ export async function finalizeScript(params: {
     return { success: true, data: { breakdown: params.breakdown, videoPrompt } };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Lỗi xử lý kịch bản" };
+  }
+}
+
+/**
+ * Per-scene "Tạo lại" in the script editor: after the user edits/adds dialogue
+ * turns for ONE segment, the AI re-choreographs that segment's action, beats
+ * and turn timing around the new lines — keeping the chain with the untouched
+ * neighbouring segments. The user's edited lines are LOCKED: whatever the model
+ * returns, the turns' text/speaker are forced back to the user's exact edit.
+ */
+export async function rewriteSegment(params: {
+  input: StoryboardGenerationInput;
+  breakdown: StoryboardGenerationOutput;
+  segmentIndex: number;
+  provider?: AIProvider;
+}): Promise<ActionResult<{ segment: VideoSegment; warnings: string[] }>> {
+  const provider = params.provider ?? "gemini";
+  const warnings: string[] = [];
+  try {
+    const original = params.breakdown.segments[params.segmentIndex];
+    if (!original) return { success: false, error: "Không tìm thấy cảnh cần viết lại." };
+
+    const segment = await rewriteStoryboardSegment({
+      input: params.input,
+      breakdown: params.breakdown,
+      segmentIndex: params.segmentIndex,
+      provider,
+    });
+
+    // LOCK the user's edited lines: keep the model's timing/choreography but
+    // force each turn's text + speaker back to exactly what the user typed.
+    const userTurns =
+      original.dialogue_lines && original.dialogue_lines.length > 0
+        ? original.dialogue_lines
+        : original.dialogue && original.dialogue.trim()
+          ? [{ speaker: (original.speaker ?? "").trim(), text: original.dialogue.trim() }]
+          : [];
+    if (userTurns.length > 0) {
+      const modelTurns = segment.dialogue_lines ?? [];
+      segment.dialogue_lines = userTurns.map((t, i) => ({
+        speaker: (t.speaker ?? "").trim(),
+        text: t.text.trim(),
+        start_s: modelTurns[i]?.start_s,
+        end_s: modelTurns[i]?.end_s,
+      }));
+      segment.dialogue = userTurns[0]!.text;
+      segment.speaker = userTurns[0]!.speaker;
+    } else {
+      segment.dialogue_lines = undefined;
+      segment.dialogue = "";
+      segment.speaker = "";
+    }
+
+    // Same post-processing pipeline as a fresh breakdown, scoped to this segment.
+    if (segment.motion_prompt) segment.motion_prompt = makeVeoSafe(segment.motion_prompt);
+    if (segment.first_frame_prompt)
+      segment.first_frame_prompt = makeVeoSafe(segment.first_frame_prompt);
+    const hasRefImages =
+      (params.input.character_images?.length ?? 0) > 0 ||
+      (params.input.product_images?.length ?? 0) > 0;
+    if (hasRefImages) {
+      if (segment.motion_prompt) segment.motion_prompt = stripHexCodes(segment.motion_prompt);
+      if (segment.first_frame_prompt)
+        segment.first_frame_prompt = stripHexCodes(segment.first_frame_prompt);
+    }
+    // TẦNG 9 turn-taking clamp on the single rewritten segment (retimes turns,
+    // syncs characters_in_scene with the speakers, mirrors the single form).
+    normalizeDialogue({ ...params.breakdown, segments: [segment] });
+
+    const violations = findLawViolations(
+      `${segment.motion_prompt ?? ""} ${segment.first_frame_prompt ?? ""}`
+    );
+    if (violations.length > 0) {
+      warnings.push(
+        `Cảnh ${segment.segment_number}: phát hiện cách viết tắt bị cấm (${violations.join(", ")}) — hãy kiểm tra lại mô tả hành động.`
+      );
+    }
+
+    return { success: true, data: { segment, warnings } };
+  } catch (err) {
+    console.error("[Storyboard] segment rewrite failed:", err);
+    return {
+      success: false,
+      error: `Viết lại cảnh thất bại: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 }
 

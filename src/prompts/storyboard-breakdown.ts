@@ -389,6 +389,7 @@ SEGMENT 2 [PROBLEM]:
   DIALOGUE:
     <SpeakerName>: "..."
 (TURN-TAKING: a short exchange — a question + reply, ~2-3 short lines total — SHOULD share ONE segment as consecutive speaker-tagged DIALOGUE lines so the 10s isn't wasted; they play in order, never overlapping. Keep each labelled line VERBATIM with its real speaker. Only push lines to the NEXT segment when they no longer fit ~9 seconds. Use "VO" as the name for a voiceover line. A single speaker with one line is fine too.)
+(PACING AUDIT — MANDATORY before you output: speech runs ~0.4s/word, so a lone 5-8 word line fills only ~2-3s of a 10s clip — that clip is WASTED. Re-scan every segment: if its DIALOGUE is a single line under ~10 words AND it is part of an exchange (a question, a reply, a reaction to the adjacent segment's line), MERGE those lines into ONE segment as 2-3 consecutive turns, and give the freed segment new story value (a new beat of the arc with its own line) — never leave a near-silent 10s clip unless the ACTION itself deliberately carries the moment, e.g. ASMR or a wordless reveal.)
 (continue for EXACTLY the requested number of segments, following the emotional arc)
 CAPTION: <ready-to-post caption + 4-6 hashtags>
 
@@ -669,6 +670,87 @@ ${beatExample}
     "consistency_notes": "string"
   }
 }`;
+}
+
+// ─── Single-segment rewrite (per-scene "Tạo lại" in the script editor) ──────
+
+/**
+ * User prompt for rewriting ONE segment after the user edited its dialogue
+ * turns in the script editor. The whole action/beats/timing must be
+ * re-choreographed around the LOCKED turns while staying chained to the
+ * untouched neighbouring segments. Paired with buildStoryboardSystemPrompt()
+ * so all production laws (turn-taking, one-action, physics) still govern it.
+ */
+export function buildSegmentRewriteUserPrompt(params: {
+  input: StoryboardGenerationInput;
+  breakdown: StoryboardGenerationOutput;
+  segmentIndex: number;
+}): string {
+  const { input, breakdown, segmentIndex } = params;
+  const seg = breakdown.segments[segmentIndex]!;
+  const prev = breakdown.segments[segmentIndex - 1];
+  const next = breakdown.segments[segmentIndex + 1];
+  const beatsPerSegment = Math.min(5, Math.max(3, input.beats_per_segment ?? 3));
+  const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
+
+  const castBlock = (breakdown.character_locks ?? [])
+    .map(
+      (c) =>
+        `- ${c.name}${c.is_child ? " [CHILD]" : ""}: ${[c.gender_age, c.build, c.hair, c.costume]
+          .map((s) => (s ?? "").trim())
+          .filter(Boolean)
+          .join(", ")}`
+    )
+    .join("\n");
+
+  // The user's edited turns are the LOCKED source of truth for this rewrite.
+  const turns =
+    seg.dialogue_lines && seg.dialogue_lines.length > 0
+      ? seg.dialogue_lines
+      : seg.dialogue && seg.dialogue.trim()
+        ? [{ speaker: seg.speaker ?? "", text: seg.dialogue.trim() }]
+        : [];
+  const turnsBlock =
+    turns.length > 0
+      ? turns
+          .map((t, i) => `  ${i + 1}. ${t.speaker?.trim() ? t.speaker : "VO (voiceover)"}: "${t.text}"`)
+          .join("\n")
+      : "  (no dialogue — a wordless beat; the action alone must carry the moment)";
+
+  const prevBlock = prev
+    ? `PREVIOUS SEGMENT #${prev.segment_number} (UNCHANGED — your segment must open exactly where it ends):\n- Its motion_prompt (the END STATE described at its end is your opening moment): ${prev.motion_prompt}\n- Its first_frame_prompt: ${prev.first_frame_prompt}`
+    : "This is the FIRST segment (the HOOK — it must stop the scroll; continuity_note = 'opening shot').";
+  const nextBlock = next
+    ? `NEXT SEGMENT #${next.segment_number} (UNCHANGED — your segment must END in the exact state its first_frame_prompt opens with):\n- Its first_frame_prompt: ${next.first_frame_prompt}\n- Its first dialogue line: ${next.dialogue ?? "(none)"}`
+    : "This is the LAST segment (it carries the CTA).";
+
+  return `REWRITE EXACTLY ONE SEGMENT of an existing storyboard. The user edited this segment's dialogue turns in the editor, so its action/beats/timing no longer match — re-choreograph the WHOLE segment around the new turns. Everything else in the video is already approved and stays untouched.
+
+FULL CAST (character_locks — use these EXACT names):
+${castBlock || "- (voiceover only)"}
+
+SCENE BIBLE (identical in every clip): ${breakdown.scene_bible ? `${breakdown.scene_bible.lens}; ${breakdown.scene_bible.lighting}; ${breakdown.scene_bible.backdrop}; ${breakdown.scene_bible.color_grade}` : "n/a"}
+Visual style: ${input.style} · Genre: ${input.genre} · Dialogue language: ${dialogueLanguage}
+
+${prevBlock}
+
+${nextBlock}
+
+THE SEGMENT TO REWRITE — #${seg.segment_number} "${seg.title}" (marketing_role: ${seg.marketing_role}, duration: ${seg.duration_seconds || 10}s, environment_ref: ${seg.environment_ref ?? "custom"}):
+Current first_frame_prompt: ${seg.first_frame_prompt}
+Current motion_prompt (STALE — written before the dialogue changed): ${seg.motion_prompt}
+
+LOCKED DIALOGUE TURNS (the user's final text — copy each line VERBATIM, same speaker, same order; do NOT add, drop, reword or reassign any line):
+${turnsBlock}
+
+REWRITE RULES:
+1. Re-time the turns realistically (~0.4s per word + ~0.5s beat between speakers), strictly sequential and non-overlapping, finished by ~9s. Fill "dialogue_lines" with start_s/end_s for every turn; mirror turn 1 into "dialogue" and "speaker".
+2. Rewrite "motion_prompt" (70-110 words) as ONE continuous take whose physical action and camera are choreographed AROUND those timed turns: during each turn's window the camera holds the active speaker's face in medium-close/close-up with natural lip movement (gentle pan/reframe between speakers — never a hard cut), listeners keep their mouths closed and react. Time left before/after/between the turns must be filled with meaningful physical action that advances the story — never dead air. Do NOT quote the spoken words inside motion_prompt.
+3. Rewrite the "beats" (EXACTLY ${beatsPerSegment} beats) as the progressive camera framings of that one continuous action, aligned with the turn windows.
+4. Update "first_frame_prompt" only as needed (same location/lighting; restate the present characters' looks from character_locks). Set "characters_in_scene" to the EXACT lock names visible — every speaker with a non-empty name must be included.
+5. HARD CONSTRAINTS: keep "segment_number" = ${seg.segment_number}, "duration_seconds" = ${seg.duration_seconds || 10}, "marketing_role" = "${seg.marketing_role}", "environment_ref" = "${seg.environment_ref ?? "custom"}". Open from the previous segment's end state and close on the next segment's opening state (write that exact final state at the end of motion_prompt; update "continuity_note" accordingly).
+
+Return ONLY the rewritten segment as ONE JSON object with the exact segment structure (segment_number, duration_seconds, title, marketing_role, beats[], first_frame_prompt, motion_prompt, dialogue, speaker, dialogue_lines[], characters_in_scene[], environment_ref, continuity_note) — no wrapper, no markdown, no prose.`;
 }
 
 // ─── Render style helpers ───────────────────────────────────────────────────

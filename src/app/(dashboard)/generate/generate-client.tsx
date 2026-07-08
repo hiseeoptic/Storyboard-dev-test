@@ -37,6 +37,7 @@ import {
   generateStoryboardPlan,
   generateBoardImage,
   finalizeScript,
+  rewriteSegment,
   getTopicLibrary,
   type StoryboardResult,
   type StoryboardAnalysis,
@@ -774,6 +775,8 @@ export function GenerateClient() {
   // Script-review phase: the editable breakdown + carried plan data.
   const [draft, setDraft] = useState<StoryboardGenerationOutput | null>(null);
   const [planWarnings, setPlanWarnings] = useState<string[]>([]);
+  // Per-scene AI rewrite in the script editor (index being rewritten, or null).
+  const [rewriteTarget, setRewriteTarget] = useState<number | null>(null);
 
   // ─── Topic library (Google Sheet: numerology / health scripts) ──
   const [topicCats, setTopicCats] = useState<TopicCategory[]>([]);
@@ -1448,6 +1451,40 @@ export function GenerateClient() {
         ? [{ speaker: (s.speaker ?? "") as string, text: s.dialogue }]
         : [];
 
+  // Per-scene AI rewrite: after the user edits/adds dialogue turns, re-run the
+  // AI on JUST this segment so the action, beats and turn timing are re-
+  // choreographed around the new lines (the stale-action problem). The edited
+  // lines themselves are locked server-side and never rewritten.
+  const rewriteScene = async (i: number) => {
+    if (!genInput || !draft || rewriteTarget !== null) return;
+    setRewriteTarget(i);
+    setError(null);
+    try {
+      const r = await rewriteSegment({
+        input: genInput,
+        breakdown: draft,
+        segmentIndex: i,
+        provider,
+      });
+      if (r.success) {
+        setDraft((d) =>
+          d
+            ? { ...d, segments: d.segments.map((s, idx) => (idx === i ? r.data.segment : s)) }
+            : d
+        );
+        if (r.data.warnings.length > 0) {
+          setPlanWarnings((w) => [...w, ...r.data.warnings]);
+        }
+      } else {
+        setError(r.error);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rewrite failed");
+    } finally {
+      setRewriteTarget(null);
+    }
+  };
+
   // ─── Review & redo: re-render a single board on demand ───────────
   const regenerateBoard = async (
     target: number | "master"
@@ -1834,10 +1871,33 @@ export function GenerateClient() {
           </CardHeader>
           <CardContent className="space-y-4">
             {draft.segments.map((s, i) => (
-              <div key={i} className="space-y-2 rounded-lg border p-3">
+              <div key={i} className={`space-y-2 rounded-lg border p-3 ${rewriteTarget === i ? "opacity-70" : ""}`}>
                 <div className="flex items-center gap-2">
                   <Badge>#{s.segment_number}</Badge>
                   <Badge variant="secondary" className="uppercase">{s.marketing_role}</Badge>
+                  <div className="ml-auto">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1.5 text-xs"
+                      disabled={rewriteTarget !== null}
+                      onClick={() => rewriteScene(i)}
+                      title={
+                        lang === "vi"
+                          ? "Sửa/thêm thoại xong, bấm để AI viết lại hành động + căn giờ của RIÊNG cảnh này cho khớp thoại mới (các cảnh khác giữ nguyên)."
+                          : "After editing the dialogue, let the AI re-write JUST this scene's action + timing to match (other scenes untouched)."
+                      }
+                    >
+                      {rewriteTarget === i ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RotateCw className="h-3.5 w-3.5" />
+                      )}
+                      {rewriteTarget === i
+                        ? lang === "vi" ? "Đang viết lại..." : "Rewriting..."
+                        : lang === "vi" ? "Viết lại cảnh theo thoại" : "Rewrite scene to dialogue"}
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">
@@ -1934,8 +1994,8 @@ export function GenerateClient() {
                         ))}
                         <p className="text-[11px] text-muted-foreground">
                           {lang === "vi"
-                            ? "Lần lượt từng người nói (không chồng tiếng), tự canh giờ gọn trong 10s. Thoại dài quá thì tách sang cảnh sau. Máy quay tự bám mặt người đang nói."
-                            : "Speakers take turns (no overlap), auto-timed within 10s. Overflow spills to the next scene. Camera follows whoever speaks."}
+                            ? "Lần lượt từng người nói (không chồng tiếng), tự canh giờ gọn trong 10s. Thoại dài quá thì tách sang cảnh sau. Máy quay tự bám mặt người đang nói. 💡 Sau khi sửa/thêm thoại, bấm 'Viết lại cảnh theo thoại' ở góc trên để AI dựng lại hành động cho khớp."
+                            : "Speakers take turns (no overlap), auto-timed within 10s. Overflow spills to the next scene. Camera follows whoever speaks. 💡 After editing turns, hit 'Rewrite scene to dialogue' above so the AI re-choreographs the action to match."}
                         </p>
                       </div>
                     );
@@ -1951,7 +2011,7 @@ export function GenerateClient() {
           <Button variant="outline" onClick={() => setPhase("input")} className="gap-1">
             <ChevronLeft className="h-4 w-4" /> {lang === "vi" ? "Quay lại brief" : "Back to brief"}
           </Button>
-          <Button onClick={buildStoryboardFromScript} className="gap-2">
+          <Button onClick={buildStoryboardFromScript} disabled={rewriteTarget !== null} className="gap-2">
             <Sparkles className="h-4 w-4" /> {lang === "vi" ? "Dựng Storyboard" : "Build storyboard"}
           </Button>
         </div>

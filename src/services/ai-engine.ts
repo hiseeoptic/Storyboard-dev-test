@@ -6,11 +6,13 @@ import {
   buildScriptWriterUserPrompt,
   buildStoryboardSystemPrompt,
   buildStoryboardUserPrompt,
+  buildSegmentRewriteUserPrompt,
 } from "@/prompts";
 import type {
   AIProvider,
   StoryboardGenerationInput,
   StoryboardGenerationOutput,
+  VideoSegment,
 } from "@/types";
 
 const MAX_RETRIES = 3;
@@ -20,6 +22,62 @@ const INTEGER_SCHEMA = { type: "INTEGER" };
 const NUMBER_SCHEMA = { type: "NUMBER" };
 const BOOLEAN_SCHEMA = { type: "BOOLEAN" };
 const STRING_ARRAY_SCHEMA = { type: "ARRAY", items: STRING_SCHEMA };
+
+// One storyboard segment — shared by the full-storyboard schema and the
+// single-segment rewrite endpoint so the two can never drift apart.
+const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
+  type: "OBJECT",
+  properties: {
+    segment_number: INTEGER_SCHEMA,
+    duration_seconds: INTEGER_SCHEMA,
+    title: STRING_SCHEMA,
+    marketing_role: STRING_SCHEMA,
+    beats: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          beat: STRING_SCHEMA,
+          camera: STRING_SCHEMA,
+        },
+        required: ["beat", "camera"],
+      },
+    },
+    first_frame_prompt: STRING_SCHEMA,
+    motion_prompt: STRING_SCHEMA,
+    dialogue: STRING_SCHEMA,
+    speaker: STRING_SCHEMA,
+    // TẦNG 9 turn-taking: up to 3 sequential timed turns per clip.
+    dialogue_lines: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          speaker: STRING_SCHEMA,
+          text: STRING_SCHEMA,
+          start_s: NUMBER_SCHEMA,
+          end_s: NUMBER_SCHEMA,
+        },
+        required: ["speaker", "text"],
+      },
+    },
+    // CAST-SYNC + ENVIRONMENT ENGINE per-segment locks.
+    characters_in_scene: STRING_ARRAY_SCHEMA,
+    environment_ref: STRING_SCHEMA,
+    continuity_note: STRING_SCHEMA,
+  },
+  required: [
+    "segment_number",
+    "duration_seconds",
+    "title",
+    "marketing_role",
+    "beats",
+    "first_frame_prompt",
+    "motion_prompt",
+    "dialogue",
+    "continuity_note",
+  ],
+};
 
 // Gemini's JSON mode is much more reliable when it gets a concrete schema.
 // Keep this local to the storyboard text step so the rest of the pipeline stays unchanged.
@@ -92,59 +150,7 @@ const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
     product_dna: STRING_SCHEMA,
     segments: {
       type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          segment_number: INTEGER_SCHEMA,
-          duration_seconds: INTEGER_SCHEMA,
-          title: STRING_SCHEMA,
-          marketing_role: STRING_SCHEMA,
-          beats: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                beat: STRING_SCHEMA,
-                camera: STRING_SCHEMA,
-              },
-              required: ["beat", "camera"],
-            },
-          },
-          first_frame_prompt: STRING_SCHEMA,
-          motion_prompt: STRING_SCHEMA,
-          dialogue: STRING_SCHEMA,
-          speaker: STRING_SCHEMA,
-          // TẦNG 9 turn-taking: up to 3 sequential timed turns per clip.
-          dialogue_lines: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                speaker: STRING_SCHEMA,
-                text: STRING_SCHEMA,
-                start_s: NUMBER_SCHEMA,
-                end_s: NUMBER_SCHEMA,
-              },
-              required: ["speaker", "text"],
-            },
-          },
-          // CAST-SYNC + ENVIRONMENT ENGINE per-segment locks.
-          characters_in_scene: STRING_ARRAY_SCHEMA,
-          environment_ref: STRING_SCHEMA,
-          continuity_note: STRING_SCHEMA,
-        },
-        required: [
-          "segment_number",
-          "duration_seconds",
-          "title",
-          "marketing_role",
-          "beats",
-          "first_frame_prompt",
-          "motion_prompt",
-          "dialogue",
-          "continuity_note",
-        ],
-      },
+      items: SEGMENT_ITEM_SCHEMA,
     },
     style_guide: {
       type: "OBJECT",
@@ -560,5 +566,117 @@ export async function generateStoryboardBreakdown(
 
   throw new Error(
     `Storyboard generation failed after ${MAX_RETRIES} attempts: ${lastError?.message}`
+  );
+}
+
+function validateSegment(data: unknown): data is VideoSegment {
+  if (typeof data !== "object" || data === null) return false;
+  const d = data as Record<string, unknown>;
+  return typeof d.motion_prompt === "string" && typeof d.first_frame_prompt === "string";
+}
+
+/**
+ * Rewrites ONE segment of an existing breakdown around its (user-edited)
+ * dialogue turns — the per-scene "Tạo lại" in the script editor. The rest of
+ * the storyboard is passed only as chaining context and is never modified.
+ */
+export async function rewriteStoryboardSegment(params: {
+  input: StoryboardGenerationInput;
+  breakdown: StoryboardGenerationOutput;
+  segmentIndex: number;
+  provider?: AIProvider;
+}): Promise<VideoSegment> {
+  const provider = params.provider ?? "gemini";
+  const original = params.breakdown.segments[params.segmentIndex];
+  if (!original) {
+    throw new Error(`Segment index ${params.segmentIndex} not found`);
+  }
+  const systemPrompt = buildStoryboardSystemPrompt();
+  const userPrompt = buildSegmentRewriteUserPrompt({
+    input: params.input,
+    breakdown: params.breakdown,
+    segmentIndex: params.segmentIndex,
+  });
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      let rawContent: string | null = null;
+
+      if (provider === "claude") {
+        rawContent = await claudeGenerateText({
+          systemPrompt,
+          userPrompt:
+            userPrompt +
+            "\n\nReturn ONLY the JSON object — no markdown, no code fences, no prose.",
+          maxTokens: 4000,
+        });
+      } else if (provider === "gemini") {
+        rawContent = await geminiGenerateText({
+          systemPrompt,
+          userPrompt,
+          jsonMode: true,
+          responseSchema: SEGMENT_ITEM_SCHEMA,
+          temperature: 0.35,
+          maxOutputTokens: 4096,
+        });
+      } else {
+        const openai = getOpenAIClient();
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.7,
+          max_tokens: 2500,
+          response_format: { type: "json_object" },
+        });
+        rawContent = completion.choices[0]?.message?.content ?? null;
+      }
+
+      if (!rawContent) {
+        throw new Error(`Empty response from ${provider}`);
+      }
+
+      const parsed = parseJsonResponse(rawContent);
+      if (!validateSegment(parsed)) {
+        throw new Error("Response does not match the segment schema");
+      }
+
+      // HARD CONSTRAINTS enforced in code (never trust the model for these):
+      // identity/position fields stay exactly as the original segment's.
+      parsed.segment_number = original.segment_number;
+      parsed.duration_seconds = original.duration_seconds || 10;
+      parsed.marketing_role = original.marketing_role;
+      parsed.environment_ref = original.environment_ref;
+      if (!parsed.title) parsed.title = original.title;
+      if (!Array.isArray(parsed.beats) || parsed.beats.length === 0) {
+        parsed.beats = original.beats;
+      }
+      parsed.beats.forEach((b) => {
+        if (!b.camera) b.camera = "[EYE]";
+      });
+      if (!parsed.continuity_note) parsed.continuity_note = original.continuity_note;
+      // The rewrite invalidates any previously rendered assets for this segment.
+      parsed.first_frame_url = null;
+      parsed.keyframe_url = null;
+      parsed.full_prompt = undefined;
+
+      return parsed;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        `[AI Engine] Segment rewrite attempt ${attempt + 1}/${MAX_RETRIES} failed:`,
+        lastError.message
+      );
+      if (attempt < MAX_RETRIES - 1) {
+        await sleep(RETRY_DELAY_MS * (attempt + 1));
+      }
+    }
+  }
+
+  throw new Error(
+    `Segment rewrite failed after ${MAX_RETRIES} attempts: ${lastError?.message}`
   );
 }
