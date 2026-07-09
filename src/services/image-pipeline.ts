@@ -257,6 +257,8 @@ export async function generateMasterBoard(params: {
   style: string;
   colorPalette?: string[];
   dialogueLanguage?: string;
+  /** Real reference photo governs the face — hard photoreal + identity lock. */
+  preserveRealFace?: boolean;
   /** Reference images (e.g. the generated character sheet) for consistency. */
   referenceImages?: RefImage[];
   provider?: AIProvider;
@@ -268,7 +270,7 @@ export async function generateMasterBoard(params: {
   let prompt = buildMasterBoardPrompt(params);
 
   if (hasRefs) {
-    prompt = `IMPORTANT: The attached reference image defines the character's exact appearance. Keep the same face, hair, costume and features IDENTICAL in the reference column and across every storyboard panel.\n\n${prompt}`;
+    prompt = `IMPORTANT: The attached reference image defines the character's exact appearance. Keep the same face, hair, costume and features IDENTICAL in the reference column and across every storyboard panel — never render a different face and never redraw the person as a cartoon.\n\n${prompt}`;
   }
 
   const url = await generateImage(prompt, {

@@ -14,6 +14,7 @@ export {
   VEO_NEGATIVE_LIST,
   genreAmbientAudio,
   buildReferenceInstructions,
+  isPhotoStyle,
 } from "./storyboard-breakdown";
 export type { RefRole, RefDescriptor } from "./storyboard-breakdown";
 

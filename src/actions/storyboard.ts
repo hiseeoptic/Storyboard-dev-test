@@ -15,6 +15,7 @@ import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
   genreAmbientAudio,
+  isPhotoStyle,
   type RefDescriptor,
 } from "@/prompts";
 import type {
@@ -393,6 +394,9 @@ interface RefContext {
   aspectRatio: AspectRatio;
   boardAspect: AspectRatio;
   quality: ImageQuality;
+  /** Effective style for the IMAGE calls after the character_render override
+   * ("photo" forces a photographic style even if the visual style is art). */
+  boardStyle: string;
   beatsPerSegment: number;
   referenceExpressions: number;
   dialogueLanguage: string;
@@ -433,7 +437,16 @@ function buildRefContext(
   const productDesc = productName ? analysis.productDescriptions[productName] : undefined;
   const bgDesc = analysis.backgroundDescription || undefined;
 
-  const preserveRealFace = canChain && !!faceImg;
+  // CHARACTER RENDER MODE (the user's explicit choice beats every heuristic):
+  //  - "stylized": the ref photo only guides the look — real-face lock OFF.
+  //  - "photo": HARD photoreal — force a photographic style for every image
+  //    call even if the visual style is an art style, so boards can never
+  //    drift into cartoon/illustration.
+  //  - "auto" (default): previous behaviour.
+  const renderMode = input.character_render ?? "auto";
+  const preserveRealFace = canChain && !!faceImg && renderMode !== "stylized";
+  const boardStyle =
+    renderMode === "photo" && !isPhotoStyle(input.style) ? "cinematic" : input.style;
 
   const charDescForPosterRaw = (breakdown.character_locks ?? [])
     .map(
@@ -501,6 +514,7 @@ function buildRefContext(
     aspectRatio: input.aspect_ratio ?? "16:9",
     boardAspect: "16:9",
     quality: input.image_quality ?? "standard",
+    boardStyle,
     beatsPerSegment: Math.min(5, Math.max(3, input.beats_per_segment ?? 3)),
     referenceExpressions: Math.min(3, Math.max(0, input.reference_expressions ?? 0)),
     dialogueLanguage: input.dialogue_language ?? "Vietnamese",
@@ -790,7 +804,7 @@ function assemblePlanPrompts(
     ingredients: ctx.ingredientsText,
     sceneBible: ctx.sceneBible,
     setting: input.setting || "Unspecified",
-    style: input.style,
+    style: ctx.boardStyle,
     aspectRatio: ctx.aspectRatio,
     colorPalette: palette,
     dialogueLanguage: ctx.dialogueLanguage,
@@ -956,9 +970,10 @@ export async function generateBoardImage(params: {
         })),
         characterDescription: ctx.charDescDna,
         characterName: breakdown.character_locks?.[0]?.name,
-        style: input.style,
+        style: ctx.boardStyle,
         colorPalette: breakdown.style_guide?.color_palette ?? [],
         dialogueLanguage: ctx.dialogueLanguage,
+        preserveRealFace: ctx.preserveRealFace,
         provider,
         aspectRatio: ctx.boardAspect,
         quality: ctx.quality,
@@ -991,7 +1006,7 @@ export async function generateBoardImage(params: {
         productDna: ctx.productDnaText,
         ingredients: ctx.ingredientsText,
         sceneBible: ctx.sceneBible,
-        style: input.style,
+        style: ctx.boardStyle,
         preserveRealFace: ctx.preserveRealFace,
         hasDialogue: !!(seg.dialogue && seg.dialogue.trim()),
         speakerName: seg.speaker,
@@ -1028,7 +1043,7 @@ export async function generateBoardImage(params: {
       productDna: ctx.productDnaText,
       ingredients: ctx.ingredientsText,
       sceneBible: ctx.sceneBible,
-      style: input.style,
+      style: ctx.boardStyle,
       isFirst: i === 0,
       preserveRealFace: ctx.preserveRealFace,
       referenceImages: segImages.length > 0 ? segImages : undefined,

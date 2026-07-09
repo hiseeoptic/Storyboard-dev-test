@@ -91,6 +91,14 @@ export type Genre =
 
 // ─── AI Engine ──────────────────────────────────────────────────────────────
 
+/** How characters render on every board/keyframe.
+ * - "auto": photoreal when the style is photographic (default behaviour);
+ * - "photo": HARD photoreal lock — the real face from the reference photo,
+ *   never a cartoon/illustration, even if the visual style says otherwise;
+ * - "stylized": cartoon/art render by the chosen style — the reference photo
+ *   guides the look only, the real-face lock is off. */
+export type CharacterRenderMode = "auto" | "photo" | "stylized";
+
 export interface StoryboardGenerationInput {
   story_idea: string;
   genre: Genre;
@@ -145,6 +153,8 @@ export interface StoryboardGenerationInput {
    * the emotion from the prompt (recommended); 2-3 = include a small fixed set.
    */
   reference_expressions?: number;
+  /** Character render mode for all generated images (see CharacterRenderMode). */
+  character_render?: CharacterRenderMode;
 }
 
 /** Marketing video template that drives the script structure. */

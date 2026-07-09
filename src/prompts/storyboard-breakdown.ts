@@ -774,9 +774,9 @@ const BEAUTIFY_DIRECTIVE =
 
 function renderDirective(style: string, preserveRealFace: boolean): string {
   if (isPhotoStyle(style)) {
-    return `Photorealistic, lifelike, real human, cinematic photography quality — NOT a cartoon, NOT an illustration.${
+    return `RENDER AS REAL PHOTOGRAPHY: photorealistic, lifelike, real human beings photographed with a real camera, cinematic photography quality. ABSOLUTELY FORBIDDEN: cartoon, anime, comic, manga, illustration, drawing, sketch, painting, 2D/3D animation, Pixar/Disney look, CGI render, vector art, flat shading — every panel and every person must look like a frame from real filmed footage.${
       preserveRealFace
-        ? ` CRITICAL: preserve the EXACT real face, skin tone, hairstyle and likeness from the attached reference photo — same real person, never stylized into a cartoon. ${BEAUTIFY_DIRECTIVE}`
+        ? ` CRITICAL: preserve the EXACT face, skin tone, hairstyle and likeness from the attached reference photo — the same character with the same face in every panel; never redraw the face, never swap it for a different person, never stylize it into a cartoon. ${BEAUTIFY_DIRECTIVE}`
         : ""
     }`;
   }
@@ -965,7 +965,7 @@ THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 
 ■ "SCENE OVERVIEW": one larger establishing panel showing the full location/environment of this shot (wide angle)${hasProduct ? ", with the product clearly visible on a surface" : ""}. ${hasSetting ? "CRITICAL: reproduce the EXACT location from the attached interior reference photo — the SAME cabinet style & colour, wall, tiles, countertop, window, appliances and overall layout. Do NOT invent or restyle a different kitchen. Keep this SAME room even in 'before/problem' shots — only the pan/food/props state changes, never the kitchen itself. This identical location must also appear behind every action panel." : "This tells Veo the setting."}
 
-■ RIGHT / BOTTOM — "ACTION SEQUENCE": ${target} numbered action panels (${numberLabels}) laid out left → right showing the ${target} key moments across the 10 seconds, each a small illustration with a SHORT caption under it describing the action:
+■ RIGHT / BOTTOM — "ACTION SEQUENCE": ${target} numbered action panels (${numberLabels}) laid out left → right showing the ${target} key moments across the 10 seconds, each a small ${isPhotoStyle(params.style) ? "PHOTOGRAPHIC cinematic still (a real photo frame — not a drawing or illustration)" : `${params.style} illustration`} with a SHORT caption under it describing the action:
 ${panelLines}
 
 SCENE CONTEXT for all panels: ${params.firstFramePrompt}
@@ -1074,6 +1074,8 @@ export function buildMasterBoardPrompt(params: {
   style: string;
   colorPalette?: string[];
   dialogueLanguage?: string;
+  /** Real reference photo governs the face — hard photoreal + identity lock. */
+  preserveRealFace?: boolean;
 }): string {
   const maxPanels = Math.min(params.segments.length, 12);
   const panels = params.segments.slice(0, maxPanels);
@@ -1114,7 +1116,7 @@ ${params.characterName ? `- Small profile block with the name "${params.characte
 
 ▶ RIGHT ZONE (about 3/4 width) — "STORYBOARD — ${params.title.toUpperCase()}":
 - Grid of ${maxPanels} panels, ${cols} columns × ${rows} rows, thin clean borders, numbered badge (01, 02, ...) in each panel's top-left corner.
-- Each panel: a ${params.style} illustration of that moment, and BELOW the picture a small white caption band with two labeled lines of text:
+- Each panel: a ${isPhotoStyle(params.style) ? "PHOTOGRAPHIC cinematic still of that moment (a real photo frame — NOT a drawing, NOT an illustration)" : `${params.style} illustration of that moment`}, and BELOW the picture a small white caption band with two labeled lines of text:
   "Action:" the action description, then "Lời thoại:" the spoken ${lang} line in quotes.
 
 CHARACTER (THE SAME individual in the reference column AND every storyboard panel — identical face, hair, outfit): ${charDesc}
@@ -1124,7 +1126,9 @@ ${panelLines}
 
 Metadata footer: "${params.totalDuration}s • ${maxPanels} shots • ${params.moodTags.slice(0, 3).join(" • ")}".
 
-RULES: ONE cohesive document image; same character everywhere; ${params.style} style for the panel art; caption text small, clean and legible; no watermark.`;
+${renderDirective(params.style, params.preserveRealFace ?? false)}
+
+RULES: ONE cohesive document image; same character everywhere — the reference column and EVERY panel show the SAME person with an identical face (never a different face, never a redrawn/cartoon face); ${isPhotoStyle(params.style) ? "photographic realism for both the reference column and all panel stills" : `${params.style} style for the panel art`}; caption text small, clean and legible; no watermark. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 5: Video Assembly Guide (text for Veo / Seedance) ─────────────────

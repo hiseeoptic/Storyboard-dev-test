@@ -1022,6 +1022,8 @@ export function GenerateClient() {
 
   // Step 5: Style
   const [style, setStyle] = useState<StoryboardStyle>("cinematic");
+  // Character render mode: hard photoreal lock / stylized / auto (see types).
+  const [characterRender, setCharacterRender] = useState<"auto" | "photo" | "stylized">("auto");
   const [segmentCount, setSegmentCount] = useState(4);
   const [beatsPerSegment, setBeatsPerSegment] = useState(3);
   const [forceVietnameseDialogue, setForceVietnameseDialogue] = useState(true);
@@ -1266,6 +1268,7 @@ export function GenerateClient() {
       image_quality: imageQuality,
       aspect_ratio: aspectRatio,
       reference_expressions: refExpressions,
+      character_render: characterRender,
     };
 
     setProgressPercent(6);
@@ -1307,12 +1310,13 @@ export function GenerateClient() {
     setProgressPercent(12);
 
     const segCount = breakdown.segments.length;
-    // Per clip we render ONE review BOARD (shows the scene), plus the master
-    // board at the end. Clean keyframes are NOT auto-generated anymore — feed
-    // Veo your uploaded character photo + the self-contained prompt instead
-    // (saves tokens and avoids inconsistent AI faces). A per-clip keyframe can
-    // still be generated on demand from the result screen.
-    const total = segCount + 1;
+    // Per clip we render ONE review BOARD (shows the scene). Clean keyframes
+    // and the MASTER BOARD are NOT auto-generated anymore — the per-segment
+    // boards are what actually feed Veo; the master board is presentation-only
+    // and can be generated on demand from the result screen (saves one image
+    // call per run). Feed Veo your uploaded character photo + the
+    // self-contained prompt (saves tokens and avoids inconsistent AI faces).
+    const total = segCount;
     let done = 0;
     const bump = () => {
       done++;
@@ -1360,21 +1364,14 @@ export function GenerateClient() {
       if (i < segCount - 1) await sleep(1200);
     }
 
-    setProgressMessage(lang === "vi" ? "Đang vẽ bảng tổng" : "Drawing master board");
-    await sleep(1500);
-    const posterUrl = await genBoard(
-      { input, breakdown, analysis, kind: "master", provider, anchorImage: anchorB64 ?? undefined },
-      lang === "vi" ? "Bảng tổng" : "Master board",
-      "master"
-    );
-    bump();
-
+    // Master board is on-demand only (a presentation document, not a Veo
+    // input) — the result screen has a button to generate it when needed.
     setBoardErrors(errs);
     setProgressPercent(100);
     setResult({
       breakdown,
       characterRefSheetUrl: null,
-      storyboardPosterUrl: posterUrl,
+      storyboardPosterUrl: null,
       videoPrompt,
       warnings: [...warnings, ...boardWarnings],
     });
@@ -2155,17 +2152,22 @@ export function GenerateClient() {
           </Card>
         ) : (
           <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+            <CardContent className="flex flex-col items-center justify-center py-8 text-center">
               <ImageIcon className="mb-2 h-8 w-8 text-muted-foreground/50" />
               <p className="text-sm font-medium text-muted-foreground">
-                {lang === "vi" ? "Bảng Storyboard Tổng không tạo được" : "Master Board could not be generated"}
+                {lang === "vi" ? "Bảng Storyboard Tổng (tuỳ chọn)" : "Master Board (optional)"}
+              </p>
+              <p className="mt-1 max-w-md text-xs text-muted-foreground">
+                {lang === "vi"
+                  ? "Không tự tạo để tiết kiệm chi phí — các board từng cảnh ở dưới mới là thứ đưa vào Veo. Chỉ tạo bảng tổng khi cần 1 ảnh trình bày/duyệt kịch bản."
+                  : "Not auto-generated to save cost — the per-scene boards below are what feed Veo. Generate it only when you need one presentation image."}
               </p>
               {boardErrors["master"] && (
                 <p className="mt-1 max-w-md text-xs text-destructive/80">{boardErrors["master"]}</p>
               )}
               <Button variant="outline" size="sm" disabled={regenTarget !== null} onClick={() => regenerateBoard("master")} className="mt-3 gap-1.5">
-                {regenTarget === "master" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
-                {lang === "vi" ? "Thử lại" : "Retry"}
+                {regenTarget === "master" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                {lang === "vi" ? "Tạo bảng tổng" : "Generate master board"}
               </Button>
             </CardContent>
           </Card>
@@ -3154,6 +3156,34 @@ export function GenerateClient() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("visualStyle")}</label>
                 <Select value={style} onChange={(e) => setStyle(e.target.value as StoryboardStyle)} options={STYLE_OPTIONS[lang]} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  {lang === "vi" ? "Kiểu nhân vật trên ảnh" : "Character render mode"}
+                </label>
+                <Select
+                  value={characterRender}
+                  onChange={(e) => setCharacterRender(e.target.value as "auto" | "photo" | "stylized")}
+                  options={[
+                    {
+                      value: "auto",
+                      label: lang === "vi" ? "Tự động (theo phong cách đã chọn)" : "Auto (follow the visual style)",
+                    },
+                    {
+                      value: "photo",
+                      label: lang === "vi" ? "📷 Ảnh thật — giữ đúng mặt trong ảnh ref, cấm hoạt hình" : "📷 Photoreal — lock the real face, never cartoon",
+                    },
+                    {
+                      value: "stylized",
+                      label: lang === "vi" ? "🎨 Hoạt hình / cách điệu — không giữ mặt thật" : "🎨 Cartoon / stylized — real-face lock off",
+                    },
+                  ]}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Đã tải ảnh nhân vật thật thì chọn 📷 Ảnh thật — mọi board sẽ bị khoá cứng photoreal, không bao giờ bị vẽ thành hoạt hình hay đổi mặt."
+                    : "If you uploaded a real person's photo, pick 📷 Photoreal — every board is hard-locked to photography, never redrawn as a cartoon or a different face."}
+                </p>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("segmentCount")}</label>
