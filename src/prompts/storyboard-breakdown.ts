@@ -24,7 +24,7 @@ import {
 // Phrased as plain descriptors (no instructive "no/don't") — Veo/Kling read the
 // negative list as nouns/adjectives to avoid, and "no X" phrasing can backfire.
 const SHARED_NEGATIVE =
-  "NEGATIVE (avoid — plain descriptors): resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, warped or altered label/logo text, logo change, brand-colour change, extra products, duplicated or doubled objects (e.g. two pans / two of the same item), floating or levitating objects, objects passing through solid surfaces, physically impossible actions (e.g. lifting/holding a pan with a spatula), sudden appearing or disappearing objects, teleporting, morphing, warping, melting, distorting, deforming, object/container morphing, inconsistent physics, unnatural motion, jittery or stuttering movement, frame skipping, mid-clip jump cuts, extra people, changed hair/wardrobe/accessories, identity drift, face morphing, changing facial features, age shifting, extra or missing limbs, extra or fused fingers, mutated or malformed hands, human hands when the action does not require them, limbs bending or passing through objects, deformed liquid, floating ingredients, melted food, warping plate, liquid flowing upward, on-screen text overlays, captions, subtitles, burned-in dialogue text, title cards, watermark, duplicate subject, plastic/CGI skin.";
+  "NEGATIVE (avoid — plain descriptors): resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, warped or altered label/logo text, logo change, brand-colour change, extra products, duplicated or doubled objects (e.g. two pans / two of the same item), floating or levitating objects, objects passing through solid surfaces, physically impossible actions (e.g. lifting/holding a pan with a spatula), sudden appearing or disappearing objects, teleporting, morphing, warping, melting, distorting, deforming, object/container morphing, inconsistent physics, unnatural motion, jittery or stuttering movement, frame skipping, mid-clip jump cuts, extra people, changed hair/wardrobe/accessories, identity drift, face morphing, changing facial features, age shifting, extra or missing limbs, extra or fused fingers, mutated or malformed hands, human hands when the action does not require them, limbs bending or passing through objects, deformed liquid, floating ingredients, melted food, warping plate, liquid flowing upward, on-screen text overlays, captions, subtitles, burned-in dialogue text, title cards, karaoke/lyric text, camera or lens spec overlay (e.g. '50mm', 'f/2.8', '4300K', 'lux'), technical readout, HUD, info card pinned in a corner, timecode or timestamp text, watermark, duplicate subject, plastic/CGI skin.";
 
 // Positive realism directive — reproduced in every motion/video prompt. Models
 // respond better to explicit positive physics cues than to negatives alone, so
@@ -52,7 +52,7 @@ function veoConciseTail(hasProduct: boolean): string {
   const productNeg = hasProduct
     ? "warped or altered label/logo text, brand-colour change, extra or duplicated products, "
     : "";
-  return `${PHOTOREAL_REALISM} ${clipMotionLawLine()} ${clipCameraLawLine()} ${clipAudioLawLine()} Spoken words are AUDIO ONLY — NO subtitles, captions, on-screen text or watermark. Avoid: ${productNeg}morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, plastic/CGI/wax/airbrushed skin, toy-like or 3D-render materials.`;
+  return `${PHOTOREAL_REALISM} ${clipMotionLawLine()} ${clipCameraLawLine()} ${clipAudioLawLine()} ABSOLUTE NO-TEXT RULE: the finished frame contains ZERO readable text, letters, numbers or typography of ANY kind — no subtitles, no captions, no karaoke/lyric text, no title cards, no watermark or logo, and NEVER render any of this prompt's technical values (lens like "50mm" or "f/2.8", colour temperature like "4300K", light level like "600 lux", timecodes like "0-3s") as on-screen text, spec cards, HUD readouts or corner overlays — every technical value here is an INTERNAL camera/render instruction, never visible content. Spoken words are AUDIO ONLY. Avoid: ${productNeg}morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, plastic/CGI/wax/airbrushed skin, toy-like or 3D-render materials.`;
 }
 
 /** One-line "Scene Bible" style tokens. Keeps lens/lighting/grade constant so
@@ -1180,7 +1180,7 @@ export function buildSegmentVeoPrompt(params: {
   // pre-generate a per-scene keyframe. The attached photo only locks the
   // face/wardrobe; the scene is built from the text below.
   const lead =
-    "Keep the main character visually consistent across every shot, matching the attached reference photo — an ordinary, original person (not a specific real individual). Create ONE continuous, cinematic 10-second shot in the scene described below; build the described setting, do NOT copy the photo's own background.";
+    "Keep the main character visually consistent across every shot, matching the attached reference photo — an ordinary, original person (not a specific real individual). Create ONE continuous, cinematic 10-second shot in the scene described below; build the described setting, do NOT copy the photo's own background. Every word of this prompt is an INTERNAL production instruction — the rendered frame must contain NO readable text of any kind (no subtitles, captions, labels, spec cards, watermarks or numbers).";
   const character = ` Main character: ${clean(params.characterDescription)}.`;
   const setting = params.setting ? ` SCENE: ${clean(params.setting)}.` : "";
   // Locked world spec (materials/Kelvin+Lux/atmosphere/imperfections) — the
@@ -1191,7 +1191,11 @@ export function buildSegmentVeoPrompt(params: {
     ? ` PRODUCT (keep its exact shape, colour, material and branding): ${clean(params.productDescription)}.`
     : "";
   const ing = params.ingredients ? ` INGREDIENTS (show and name each): ${clean(params.ingredients)}.` : "";
-  const tokens = params.sceneBible ? ` ${sceneBibleTokens(params.sceneBible)}` : "";
+  // Style tokens are camera/render settings — flag them as internal so Veo
+  // never draws "50mm / 4300K / 600 lux" as a spec card on the frame (it did).
+  const tokens = params.sceneBible
+    ? ` ${sceneBibleTokens(params.sceneBible)} (These style values are internal camera settings — NEVER display them as text on screen.)`
+    : "";
   const palette =
     params.colorPalette && params.colorPalette.length > 0
       ? ` Colour palette: ${params.colorPalette.join(", ")}.`
@@ -1392,7 +1396,7 @@ Compatible with: Google Veo 3.1, Seedance 2.0, Kling, Runway, Pika`;
 
 /** The one comprehensive negative list, reused at project + clip level. */
 export const VEO_NEGATIVE_LIST =
-  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, on-screen text, captions, subtitles, burned-in dialogue text, title cards, watermark, plastic or CGI skin";
+  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, exposure/Kelvin/lux/timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo, plastic or CGI skin";
 
 interface VeoJsonOptions {
   aspectRatio: string;
@@ -1528,6 +1532,8 @@ export function buildVeoJson(
     },
     reference_image:
       "Attach the SAME uploaded character photo as the identity reference in EVERY clip. Do NOT copy the photo's own background — build each clip's scene from its `scene` field.",
+    on_screen_text:
+      "FORBIDDEN — the rendered frame contains ZERO readable text, letters, numbers or typography: no subtitles, captions, karaoke/lyric text, title cards, watermarks or logos. Every technical value in this JSON (lens mm, f-stop, Kelvin, lux, timecodes) is an internal camera/render setting — NEVER draw it as on-screen text, a spec card, HUD or corner overlay.",
     global_style: {
       look: oneLine(breakdown.style_guide?.art_direction) || "cinematic realistic",
       lens: oneLine(sb?.lens),
