@@ -497,6 +497,8 @@ DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlap
   3. MAX 3 turns and MAX 2 distinct speakers per clip (a third speaker like a child interjecting is allowed only as the LAST short turn). More than that → split across segments.
   4. FACE-ON-CAMERA: whoever is speaking in a turn must have their face in medium-close/close-up during their start_s-end_s window; the motion_prompt and the beats must move the camera to the active speaker for each turn (a gentle pan/reframe between speakers, still ONE continuous take — no hard cut).
   5. "characters_in_scene" must include every speaker; a voiceover speaker ("") is heard but not shown.
+  6. SPEAK-WHILE-STILL (critical — the video model reassigns a line to whichever stable face is on camera if the named speaker is mid-action): a character NEVER delivers a line while performing a large body action (standing up, sitting down, walking, turning away, bending). Choreograph big movements into the GAPS between turns: move first THEN speak from a stable pose, or speak first THEN move. Small gestures while speaking are fine (a nod, lifting a spoon).
+  7. ONE SHARED CLOCK: the second-by-second timing in "motion_prompt" MUST use the exact same clock as the dialogue_lines start_s/end_s — the action described at second X must be what is physically happening while the line at second X plays (e.g. if Minh speaks 4-6s, the motion at 4-6s shows Minh stable and facing camera, NOT walking). Never write a motion timeline that contradicts the dialogue windows.
 - SINGLE-LINE CLIPS: if a beat is just one line, you may use "dialogue_lines" with one entry OR the plain "dialogue"+"speaker" fields — both work. For a longer monologue that fills the clip, one speaker is correct.
 - Mirror the FIRST turn into the top-level "dialogue" (its text) and "speaker" (its name) for compatibility.
 
@@ -745,7 +747,7 @@ ${turnsBlock}
 
 REWRITE RULES:
 1. Re-time the turns realistically (~0.4s per word + ~0.5s beat between speakers), strictly sequential and non-overlapping, finished by ~9s. Fill "dialogue_lines" with start_s/end_s for every turn; mirror turn 1 into "dialogue" and "speaker".
-2. Rewrite "motion_prompt" (70-110 words) as ONE continuous take whose physical action and camera are choreographed AROUND those timed turns: during each turn's window the camera holds the active speaker's face in medium-close/close-up with natural lip movement (gentle pan/reframe between speakers — never a hard cut), listeners keep their mouths closed and react. Time left before/after/between the turns must be filled with meaningful physical action that advances the story — never dead air. Do NOT quote the spoken words inside motion_prompt.
+2. Rewrite "motion_prompt" (70-110 words) as ONE continuous take whose physical action and camera are choreographed AROUND those timed turns: during each turn's window the camera holds the active speaker's face in medium-close/close-up with natural lip movement (gentle pan/reframe between speakers — never a hard cut), listeners keep their mouths closed and react. SPEAK-WHILE-STILL: a speaker NEVER performs a large body action (standing up, walking, turning away) during their own line — schedule big movements into the GAPS between turns, and while a line plays its speaker holds a stable pose facing camera. The motion timeline MUST use the same clock as the turn windows (the action at second X is what happens while the line at second X plays). Time left before/after/between the turns must be filled with meaningful physical action that advances the story — never dead air. Do NOT quote the spoken words inside motion_prompt.
 3. Rewrite the "beats" (EXACTLY ${beatsPerSegment} beats) as the progressive camera framings of that one continuous action, aligned with the turn windows.
 4. Update "first_frame_prompt" only as needed (same location/lighting; restate the present characters' looks from character_locks). Set "characters_in_scene" to the EXACT lock names visible — every speaker with a non-empty name must be included.
 5. HARD CONSTRAINTS: keep "segment_number" = ${seg.segment_number}, "duration_seconds" = ${seg.duration_seconds || 10}, "marketing_role" = "${seg.marketing_role}", "environment_ref" = "${seg.environment_ref ?? "custom"}". Open from the previous segment's end state and close on the next segment's opening state (write that exact final state at the end of motion_prompt; update "continuity_note" accordingly).
@@ -1229,8 +1231,15 @@ export function buildSegmentVeoPrompt(params: {
     const lines = turns
       .map((t) => {
         const nm = (t.speaker ?? "").trim();
-        const who = nm || "voiceover";
-        const vt = nm ? voiceOf(nm) : params.speakerVoice ? ` (voice: ${params.speakerVoice})` : "";
+        // A nameless turn is OFF-SCREEN NARRATION — say so explicitly, or Veo
+        // lip-syncs it through whichever on-screen face the camera is holding
+        // (the wife "spoke" the narrator's line in production).
+        const who = nm || "VOICEOVER (off-screen narration — NOBODY on screen moves their mouth or lips during this narration; all on-screen characters keep mouths fully closed)";
+        const vt = nm
+          ? voiceOf(nm)
+          : params.speakerVoice
+            ? ` (narrator voice: ${params.speakerVoice} — heard from off-screen only, it does NOT belong to any character visible in frame)`
+            : "";
         const window =
           t.start_s != null && t.end_s != null ? `${t.start_s}-${t.end_s}s ` : "";
         return `${window}${who}${vt}: "${(t.text ?? "").trim()}"`;
@@ -1241,10 +1250,21 @@ export function buildSegmentVeoPrompt(params: {
       listeners.length > 0
         ? ` While each person speaks, ${listeners.join(", ")} stay silent with mouths closed.`
         : "";
-    spoken = ` DIALOGUE (turn-taking, ONE person speaks at a time, never overlapping; the camera is on whoever is speaking, their face in medium-close, mouth moving with exact lip-sync; the others keep mouths closed): ${lines}. All lines in ${lang}, AUDIO ONLY — absolutely NO subtitles, captions or on-screen text.${listenerNote}`;
+    // LINE OWNERSHIP + STILLNESS: Veo reassigns a line to whichever face is
+    // stable on camera if the named speaker is mid-action (standing up,
+    // walking) during their window — so bind each line hard to its owner and
+    // freeze the big action while the mouth moves.
+    const ownership = ` LINE OWNERSHIP (STRICT): every line above belongs ONLY to its named speaker — NEVER let a different character say it, never move another character's mouth to it, and never swap voices between characters (${speakersInTurns.length > 1 ? `${speakersInTurns.join(" and ")} have different voices — each line uses its owner's voice and face` : "the line stays with its owner"}). SPEAK-WHILE-STILL RULE: during each line's time window its speaker HOLDS a stable pose, face toward camera, and delivers the line with clear lip-sync — any large body action (standing up, sitting down, walking, turning away) happens in the GAPS between lines, never during a line. If the MOTION timing and these DIALOGUE windows disagree, the DIALOGUE windows win — shift the action beats to fit around them.`;
+    spoken = ` DIALOGUE (turn-taking, ONE person speaks at a time, never overlapping; the camera is on whoever is speaking, their face in medium-close, mouth moving with exact lip-sync; the others keep mouths closed): ${lines}. All lines in ${lang}, AUDIO ONLY — absolutely NO subtitles, captions or on-screen text.${listenerNote}${ownership}`;
   } else if (turns.length === 1) {
     const t = turns[0]!;
     const nm = (t.speaker ?? "").trim();
+    if (!nm && !speaker) {
+      // Genuine VOICEOVER clip: the line is off-screen narration — if we say
+      // "the character speaks", Veo lip-syncs it through an on-screen face.
+      const vt = params.speakerVoice ? ` (narrator voice: ${params.speakerVoice} — heard from off-screen only)` : "";
+      spoken = ` VOICEOVER${vt}, off-screen narration in ${lang}: "${(t.text ?? "").trim()}" — NOBODY on screen moves their mouth or lips during this narration; every visible character keeps the mouth fully closed. AUDIO ONLY — absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.`;
+    } else {
     const label = nm || speakerLabel;
     const vt = nm ? voiceOf(nm) || (params.speakerVoice ? ` (voice: ${params.speakerVoice})` : "") : params.speakerVoice ? ` (voice: ${params.speakerVoice})` : "";
     const others = (onScreen.length > 0 ? onScreen : allNames).filter((n) => n !== nm);
@@ -1252,7 +1272,8 @@ export function buildSegmentVeoPrompt(params: {
       nm && others.length > 0
         ? ` Only ${nm} speaks; the other character${others.length > 1 ? "s" : ""} (${others.join(", ")}) stay silent and listen with mouths closed.`
         : "";
-    spoken = ` ${label}${vt} speaks to camera with natural mouth movement and accurate lip-sync — the voice emanates from ${nm ? `${nm}'s` : "the speaker's"} mouth — saying in ${lang}: "${(t.text ?? "").trim()}" — delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence}`;
+    spoken = ` ${label}${vt} speaks to camera with natural mouth movement and accurate lip-sync — the voice emanates from ${nm ? `${nm}'s` : "the speaker's"} mouth — saying in ${lang}: "${(t.text ?? "").trim()}" — delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence} While delivering the line, ${nm || "the speaker"} HOLDS a stable pose with the face toward camera — any large body action (standing up, walking, turning away) happens before or after the line, never during it; the line is NEVER reassigned to another character.`;
+    }
   }
   const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
   return `${lead}${character}${castLine}${setting}${envBlock}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription)}`;
@@ -1442,13 +1463,16 @@ export function buildVeoJson(
     const turns = (seg.dialogue_lines ?? []).filter((t) => oneLine(t.text));
     const dialogueLines =
       turns.length > 1
-        ? turns.map((t) => ({
-            speaker: oneLine(t.speaker),
-            line: oneLine(t.text),
-            start_s: t.start_s ?? null,
-            end_s: t.end_s ?? null,
-            voice: voiceFor(oneLine(t.speaker)),
-          }))
+        ? turns.map((t) => {
+            const nm = oneLine(t.speaker);
+            return {
+              speaker: nm || "VOICEOVER (off-screen narration — no on-screen mouth moves)",
+              line: oneLine(t.text),
+              start_s: t.start_s ?? null,
+              end_s: t.end_s ?? null,
+              voice: nm ? voiceFor(nm) : null,
+            };
+          })
         : null;
     return {
       id: seg.segment_number,
@@ -1473,7 +1497,9 @@ export function buildVeoJson(
             voice: voiceFor(speaker),
             // Multi-speaker turn-taking (null when the clip is single-speaker).
             turns: dialogueLines,
-            turn_taking: dialogueLines ? "sequential, non-overlapping, camera on active speaker" : null,
+            turn_taking: dialogueLines
+              ? "sequential, non-overlapping, camera on active speaker; STRICT line ownership — each line is spoken ONLY by its named speaker (never reassigned to another character, voices never swapped); while a line plays its speaker holds a stable pose facing camera — large body actions (standing up, walking, turning) happen in the gaps between lines, never during a line; dialogue windows override the motion timeline on any conflict"
+              : null,
             lip_sync: true,
             subtitles: false,
           }
