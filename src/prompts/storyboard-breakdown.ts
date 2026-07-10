@@ -641,6 +641,22 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
     "forbidden_entities": ["CONCRETE list for THIS world — e.g. for a period piece: smartphones, sneakers, LED lights, modern signage; for modern Vietnam: unexplained foreign signage, random robots"],
     "intentional_exceptions": ["declared exceptions only: intentional contrast / memory / dream / parody / product metaphor / narrative disruption — empty array if none"]
   },
+  "social_posts": {
+    "_rules": "READY-TO-POST captions for THIS exact video, written in ${dialogueLanguage} — each must reference the video's actual story/hook/payoff (a specific moment, the punchline, the question it answers), NEVER a generic 'check out my video'. SHORT and emotional: hook first, 1-3 fitting emoji woven in naturally (not a wall of emoji), one platform-native CTA. Hashtags = real SEO: mix 1-2 broad trending tags + 2-3 niche topic tags (the video's subject, in ${dialogueLanguage} where natural) + 1 branded/series tag when it fits; every tag starts with # and contains no spaces.",
+    "tiktok": {
+      "caption": "string — 1-2 punchy lines + emoji, open a curiosity gap or call the viewer out, end with a comment-bait question (e.g. 'Bạn thuộc team nào? 👇'). Max ~150 chars.",
+      "hashtags": ["4-6 tags — e.g. #fyp/#xuhuong + niche topic tags + 1 series tag"]
+    },
+    "youtube_shorts": {
+      "title": "string — clickable title under ~60 chars: the video's core promise/curiosity gap (may include 1 emoji)",
+      "description": "string — 1-2 lines: what the viewer gets + subscribe CTA, keywords from the topic worked in naturally for search",
+      "hashtags": ["3-5 tags, MUST include #Shorts, plus niche topic tags"]
+    },
+    "facebook_reel": {
+      "caption": "string — warm, shareable, 2-4 lines: relatable feeling → the video's insight → share/tag CTA ('Gửi cho người cần xem cái này ❤️'). Facebook rewards conversation — end with a question.",
+      "hashtags": ["3-5 tags — broad + niche topic tags"]
+    }
+  },
   "marketing_structure": {
     "hook": "string — the 3s hook line/idea",
     "problem": "string — the pain point addressed",

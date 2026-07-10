@@ -393,6 +393,17 @@ export interface MarketingStructure {
   cta: string;
 }
 
+/** Ready-to-post platform captions generated WITH the video (same story, same
+ * hook), each tuned to its platform's culture + SEO hashtag conventions. */
+export interface SocialPosts {
+  /** TikTok: 1-2 punchy lines + emoji, comment-bait, 4-6 SEO hashtags. */
+  tiktok: { caption: string; hashtags: string[] };
+  /** YouTube Shorts: clickable title + 1-2 line description, #Shorts included. */
+  youtube_shorts: { title: string; description: string; hashtags: string[] };
+  /** Facebook Reels: warm, shareable caption (can be slightly longer), 3-5 hashtags. */
+  facebook_reel: { caption: string; hashtags: string[] };
+}
+
 export interface StoryboardGenerationOutput {
   title: string;
   synopsis: string;
@@ -400,6 +411,8 @@ export interface StoryboardGenerationOutput {
   mood_tags: string[];
   /** TẦNG 0 — the LOCKED world context every scene must obey (Context-Locked DNA). */
   world_context?: WorldContext;
+  /** Platform-native captions + SEO hashtags for TikTok / YT Shorts / FB Reels. */
+  social_posts?: SocialPosts;
   marketing_structure: MarketingStructure;
   character_locks: CharacterLock[];
   /** Style fingerprint (lens/lighting/backdrop/grade) reused VERBATIM everywhere. */

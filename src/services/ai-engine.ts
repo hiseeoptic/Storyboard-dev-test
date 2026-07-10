@@ -133,6 +133,38 @@ const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
       },
       required: ["hook", "problem", "solution", "cta"],
     },
+    // Platform-native ready-to-post captions (TikTok / YT Shorts / FB Reels).
+    social_posts: {
+      type: "OBJECT",
+      properties: {
+        tiktok: {
+          type: "OBJECT",
+          properties: {
+            caption: STRING_SCHEMA,
+            hashtags: STRING_ARRAY_SCHEMA,
+          },
+          required: ["caption", "hashtags"],
+        },
+        youtube_shorts: {
+          type: "OBJECT",
+          properties: {
+            title: STRING_SCHEMA,
+            description: STRING_SCHEMA,
+            hashtags: STRING_ARRAY_SCHEMA,
+          },
+          required: ["title", "description", "hashtags"],
+        },
+        facebook_reel: {
+          type: "OBJECT",
+          properties: {
+            caption: STRING_SCHEMA,
+            hashtags: STRING_ARRAY_SCHEMA,
+          },
+          required: ["caption", "hashtags"],
+        },
+      },
+      required: ["tiktok", "youtube_shorts", "facebook_reel"],
+    },
     character_locks: {
       type: "ARRAY",
       items: {
@@ -198,7 +230,7 @@ const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
       required: ["color_palette", "art_direction", "visual_references", "consistency_notes"],
     },
   },
-  required: ["title", "synopsis", "world_context", "character_locks", "segments", "style_guide"],
+  required: ["title", "synopsis", "world_context", "social_posts", "character_locks", "segments", "style_guide"],
 };
 
 async function sleep(ms: number): Promise<void> {
@@ -574,6 +606,27 @@ export async function generateStoryboardBreakdown(
             "foreign signage with no story reason",
             "off-culture architecture and props",
           ],
+        };
+      }
+
+      // Ensure ready-to-post social captions exist (derive a simple set from
+      // the title/synopsis when the model omitted them).
+      if (!parsed.social_posts || typeof parsed.social_posts !== "object") {
+        const firstLine = (parsed.synopsis ?? "").split(/(?<=[.!?])\s+/)[0] ?? parsed.title;
+        parsed.social_posts = {
+          tiktok: {
+            caption: `${parsed.title} 😮 Xem hết rồi nói cảm nhận của bạn ở comment nhé 👇`,
+            hashtags: ["#viral", "#xuhuong", "#fyp", "#learnontiktok"],
+          },
+          youtube_shorts: {
+            title: parsed.title,
+            description: `${firstLine} Đăng ký kênh để xem tập tiếp theo!`,
+            hashtags: ["#Shorts", "#viral", "#xuhuong"],
+          },
+          facebook_reel: {
+            caption: `${firstLine} ❤️ Chia sẻ cho người cần xem điều này nhé!`,
+            hashtags: ["#reels", "#viral", "#xuhuong"],
+          },
         };
       }
 

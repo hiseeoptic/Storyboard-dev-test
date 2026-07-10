@@ -1727,6 +1727,43 @@ export function GenerateClient() {
         clipArr.map((c) => JSON.stringify(c)).join("\n")
       );
 
+      // ── Ready-to-post social captions (TikTok / YT Shorts / FB Reels) ──
+      // Written by the AI together with the script, so each caption references
+      // THIS video's actual hook/story — copy-paste when uploading.
+      const sp = bd.social_posts;
+      if (sp) {
+        const tags = (arr?: string[]) => (arr ?? []).join(" ");
+        const social = [
+          "BÀI ĐĂNG CHO TỪNG NỀN TẢNG (copy nguyên khối khi đăng video)",
+          "============================================================",
+          "",
+          "── 1) TIKTOK ──────────────────────────────────────────────",
+          sp.tiktok?.caption ?? "",
+          "",
+          tags(sp.tiktok?.hashtags),
+          "",
+          "── 2) YOUTUBE SHORTS ──────────────────────────────────────",
+          `TIÊU ĐỀ: ${sp.youtube_shorts?.title ?? ""}`,
+          "",
+          "MÔ TẢ:",
+          sp.youtube_shorts?.description ?? "",
+          "",
+          tags(sp.youtube_shorts?.hashtags),
+          "",
+          "── 3) FACEBOOK REELS ──────────────────────────────────────",
+          sp.facebook_reel?.caption ?? "",
+          "",
+          tags(sp.facebook_reel?.hashtags),
+          "",
+          "MẸO ĐĂNG:",
+          "  - TikTok: đăng kèm caption + hashtag ở trên; ghim 1 comment đặt câu hỏi để kéo tương tác.",
+          "  - YouTube Shorts: dán TIÊU ĐỀ vào title, MÔ TẢ + hashtag vào description (giữ #Shorts).",
+          "  - Facebook Reels: caption dài hơn được — giữ câu hỏi cuối để kéo comment/share.",
+          "  - Giờ vàng gợi ý: 11h30-13h & 19h-22h (giờ VN). Trả lời comment trong 30 phút đầu.",
+        ].join("\n");
+        zip.file(`bai_dang_social.txt`, social);
+      }
+
       // ── Plain how-to-use guide (so the files are self-explanatory) ──
       const readme = [
         "CÁCH DÙNG BỘ PROMPT NÀY VỚI VEO / OMNI FLASH",
@@ -1757,6 +1794,8 @@ export function GenerateClient() {
         "  - veo_prompts.jsonl  → mỗi dòng = 1 clip (JSON) — cho batch / tự động.",
         "  - master_prompt.txt  → nếu Veo dùng chế độ TEXT: mỗi clip dán trường \"prompt\"",
         "      (đã tự chứa đủ nhân vật + bối cảnh + phong cách + negative).",
+        "  - bai_dang_social.txt→ BÀI ĐĂNG viết sẵn cho TikTok / YouTube Shorts / Facebook",
+        "      Reels (caption + hashtag SEO, bám đúng nội dung video này) — copy khi đăng.",
         "",
         "MẸO: mỗi clip đều có \"negative_prompt\" liệt kê rõ những thứ phải tránh",
         "(morphing, warping, teleporting, floating/duplicated objects, tay/ngón lỗi,",
