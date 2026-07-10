@@ -779,6 +779,7 @@ function assemblePlanPrompts(
         : charDesc;
     seg.full_prompt = buildSegmentVeoPrompt({
       characterDescription: castDesc,
+      worldContext: breakdown.world_context,
       setting: makeVeoSafe(seg.first_frame_prompt ?? ""),
       productDescription: productDesc,
       ingredients: ctx.ingredientsText,

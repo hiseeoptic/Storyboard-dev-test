@@ -75,18 +75,34 @@ export type Genre =
   | "thriller"
   | "animation"
   | "documentary"
+  // ─── Film / story genres (Context-Locked DNA expansion) ──────────────
+  | "fantasy"
+  | "historical" // cổ trang / period piece
+  | "mythology" // thần thoại
+  | "sitcom"
+  | "mockumentary"
+  | "music_video"
+  | "kids"
   // ─── Advertising / marketing genres (for TVC & product ads) ─────────
   | "advertising"
   | "product_demo"
   | "brand_film"
   | "promo"
   | "unboxing"
+  | "luxury" // luxury brand film
   // ─── Knowledge/topic content (from the topic library) ────────────────
   | "numerology"
   | "health"
-  // ─── Demonstration content (recipe / workout) ────────────────────────
+  | "psychology" // tâm lý
+  | "education" // giáo dục
+  | "finance"
+  | "tech"
+  // ─── Lifestyle / demonstration content ───────────────────────────────
   | "cooking"
   | "fitness"
+  | "lifestyle"
+  | "travel"
+  | "sports"
   | "other";
 
 // ─── AI Engine ──────────────────────────────────────────────────────────────
@@ -172,9 +188,49 @@ export type VideoGoal =
   // ─── Knowledge/topic content (numerology, health, self-development) ──
   | "numerology"
   | "health"
+  | "psychology"
+  // ─── Documentary / factual ────────────────────────────────────────────
+  | "documentary_story"
   // ─── Demonstration content (recipe / workout) ────────────────────────
   | "cooking"
   | "fitness";
+
+/**
+ * TẦNG 0 — LOCKED WORLD CONTEXT (Context-Locked Video DNA System).
+ * "Open during design. Locked during generation." — before the video is
+ * finalised the rules stay abstract; once the LLM locks this context from the
+ * brief, EVERY entity in every scene (objects, architecture, clothing,
+ * technology, language, food, behavior, sound, motifs) must belong to it.
+ * Anything outside is an ontology violation unless listed as an intentional
+ * exception (contrast / memory / dream / parody / product metaphor).
+ */
+export interface WorldContext {
+  /** realistic / cinematic realistic / stylized / fantasy / sci-fi / historical / mythological / surreal / commercial / documentary / animation / hybrid */
+  world_type: string;
+  /** One of the 6 reality levels: documentary / cinematic / commercial / stylized / symbolic-surreal / fantasy-scifi-internal */
+  reality_level: string;
+  genre: string;
+  /** Where this world lives (country/region/imaginary place). */
+  geography: string;
+  /** The culture that governs objects, food, behavior, text, rituals. */
+  culture: string;
+  /** Locked era: ancient / medieval / a specific decade / contemporary / near-future / far-future / timeless-mythic. */
+  time_period: string;
+  /** none / hand-craft / industrial / modern / near-future / far-future / magical. */
+  technology_level: string;
+  /** Social class / economic layer that props, home and wardrobe must match. */
+  social_class: string;
+  /** Locked environment category (home / office / street / forest / spaceship / temple ...). */
+  environment_category: string;
+  visual_style: string;
+  audio_style: string;
+  /** What text/scripts may appear on signs/labels ("Vietnamese only", "none/blurred"...). */
+  allowed_language_text?: string;
+  /** Entities FORBIDDEN in this world unless explicitly justified (wrong-era tech, foreign signage, off-culture props...). */
+  forbidden_entities?: string[];
+  /** Declared exceptions: intentional contrast, memory, dream, parody, product metaphor, narrative disruption. */
+  intentional_exceptions?: string[];
+}
 
 export interface CharacterDescription {
   name: string;
@@ -342,6 +398,8 @@ export interface StoryboardGenerationOutput {
   synopsis: string;
   total_duration_seconds: number;
   mood_tags: string[];
+  /** TẦNG 0 — the LOCKED world context every scene must obey (Context-Locked DNA). */
+  world_context?: WorldContext;
   marketing_structure: MarketingStructure;
   character_locks: CharacterLock[];
   /** Style fingerprint (lens/lighting/backdrop/grade) reused VERBATIM everywhere. */

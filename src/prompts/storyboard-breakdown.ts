@@ -18,7 +18,10 @@ import {
   clipAudioLawLine,
   lawsForVeoJson,
   defaultVoiceFor,
+  contextDnaSystemDigest,
+  worldContextLockBlock,
 } from "@/lib/laws";
+import type { WorldContext } from "@/types";
 
 // Forbidden in every generated image/clip (the brief's negative list).
 // Phrased as plain descriptors (no instructive "no/don't") — Veo/Kling read the
@@ -91,6 +94,10 @@ const GOAL_GUIDANCE: Record<VideoGoal, string> = {
     "Promo / sale push. Bold offer hook (discount/deadline), show the value, create urgency (limited time/stock), end with a strong shop-now CTA.",
   numerology:
     "Numerology / self-development insight short. ONE relatable character embodying the number(s). 5-beat emotional arc: Hook (call out the viewer) → Pain (the misunderstood struggle) → Insight (reframe: 'not X, but Y') → Payoff (the mission/gift) → CTA (loop-friendly, comment prompt). Warm, cinematic, inspiring — never a hard product sell.",
+  psychology:
+    "Psychology / behavior insight short. ONE relatable character living a specific psychological pattern (anxiety loop, people-pleasing, procrastination, attachment style...). 5-beat arc: Hook (name the exact behavior the viewer secretly does) → Pattern (show it playing out in a real moment) → Mechanism (the simple psychology behind it — one concept, plain words, no jargon lecture) → Reframe (the healthier move, shown not preached) → CTA (save/share 'gửi cho người cần'). Empathetic, non-judgmental, precise — never clinical diagnosis, never shame.",
+  documentary_story:
+    "Documentary-style short. Real-feeling, observational: natural light, honest frames, real textures, minimal staging (Reality Level 1-2). Structure: a compelling opening fact/moment → context that raises a question → observed process/details → a human beat → a quiet, earned takeaway. Narration calm and factual; no hard sell, CTA is a soft follow/learn-more.",
   health:
     "Health / wellness education short. ONE relatable character living the health problem. 5-beat arc: Hook (name the symptom/fear) → Problem (how it disrupts daily life) → Insight (the real root cause, explained simply) → Solution (the habit/remedy/product that helps) → CTA (save/follow/try). Trustworthy, empathetic, clear — evidence-based, not alarmist.",
   cooking:
@@ -368,6 +375,8 @@ export function buildScriptWriterSystemPrompt(): string {
 
 Write in the language the user asks for. Your job is RETENTION: make people watch to the last second and comment.
 
+CONTEXT LOCK (before writing a single line): silently resolve the WORLD this video lives in from the idea — geography, culture, time period, genre, reality level, social class, technology level. Never assume a default country or era; infer them. Then keep EVERY detail of the script (places, objects, clothing, food, behavior, speech style) inside that one locked world — no out-of-era technology, no off-culture props or rituals, no world-hopping between segments (open during design, locked during writing).
+
 THE HOOK (first 2-3s) IS 80% OF THE JOB — write it LAST, after you know the payoff, so it promises exactly what you deliver. Beat 1's opening line must stop the scroll. Use ONE proven hook formula (vary across scripts): CALL-OUT + STOP ("Nếu bạn là [X], khoan lướt đã"); UNCOMFORTABLE TRUTH; CONTRADICTION ("Càng [strength], càng [pain]"); CURIOSITY GAP / OPEN LOOP ("Xem hết sẽ rõ"); WARNING; MIND-READING ("Đúng không?"); or BOLD CLAIM. No slow intros, no "Hôm nay mình nói về…", no logo card.
 RETENTION SPINE: every segment ends on a mini open-loop the next one pays off; each beat re-hooks. Use a "NHƯNG / VÌ THẾ" spine between beats (reversal or consequence — never "rồi… rồi…"). Escalate tension to an "aha" reframe, then deliver the promised payoff, then a CTA that LOOPS back to the hook wording + ONE low-effort bait (prefer share bait "Gửi cho người cần nghe điều này", else comment/save bait).
 DIALOGUE: SHORT, punchy, natural spoken lines (not literary), ~8-14 words — ONE "đắt giá" line per segment. Talk to "bạn", be hyper-SPECIFIC not generic (a concrete behaviour the viewer secretly does beats an abstract trait), prefer "không phải X mà là Y" reframes, front-load power words (bí mật, sự thật, đừng, tại sao, giấu kín), SHOW don't tell (let the ACTION carry meaning), never lecture or list.
@@ -481,6 +490,8 @@ MATERIAL & SKIN REALISM (this is what kills the "AI/CGI/plastic" look — treat 
 - SKIN: describe real skin — visible pores, fine vellus/facial hair, natural subsurface scattering, subtle moisture/oil sheen, real catchlights and small natural imperfections. NEVER airbrushed, waxy, plastic or beauty-smoothed. Fill each character_lock's "skin_texture" and "eye_details" with these forensic details (this is the #1 fix for fake-looking faces).
 - MATERIALS: every object/prop/garment must read true-to-life with its real surface physics. Leather = grain, creases, worn scuffs, real stitching; denim = woven twill weave; metal = brushed/worn with real specular reflections; wood = visible grain; fabric = real thread and drape. Put these into each character_lock's "wardrobe_materials" and describe hero props with the same material honesty — no plastic, toy-like or CGI surfaces.
 - LIGHT: physically-based, tied to time-of-day/weather, with soft imperfect shadow edges. Give scene_bible.lighting BOTH Kelvin temperature AND approximate Lux (e.g. "soft overcast dawn key 5200K, ~800 lux"), and set scene_bible.film_grain to a fine organic grain / clean-acquisition token so the filmic texture stays constant across clips.
+
+${contextDnaSystemDigest()}
 
 ${lawsSystemDigest()}
 
@@ -614,6 +625,22 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
   "synopsis": "string — 2-3 sentences",
   "total_duration_seconds": ${segmentCount * 10},
   "mood_tags": ["3-4 mood keywords"],
+  "world_context": {
+    "world_type": "string — realistic | cinematic realistic | stylized | fantasy | sci-fi | historical | mythological | surreal | commercial | documentary | animation | hybrid — RESOLVED from the brief, never a blind default",
+    "reality_level": "string — exactly one of the 6 REALITY LEVELS from Tầng 0 (e.g. 'Level 2 — Cinematic Reality')",
+    "genre": "string — the locked genre",
+    "geography": "string — where this world lives (country/region/imaginary place)",
+    "culture": "string — the culture governing objects, food, behavior, text, rituals",
+    "time_period": "string — locked era (ancient / medieval / specific decade / contemporary / near-future / far-future / timeless-mythic)",
+    "technology_level": "string — none / hand-craft / industrial / modern / near-future / far-future / magical",
+    "social_class": "string — the social/economic layer props, home and wardrobe must match",
+    "environment_category": "string — the locked environment category",
+    "visual_style": "string — the locked visual style mode",
+    "audio_style": "string — the locked audio world",
+    "allowed_language_text": "string — what visible text/scripts may appear (e.g. 'Vietnamese only, minimal', 'none — blur all signage')",
+    "forbidden_entities": ["CONCRETE list for THIS world — e.g. for a period piece: smartphones, sneakers, LED lights, modern signage; for modern Vietnam: unexplained foreign signage, random robots"],
+    "intentional_exceptions": ["declared exceptions only: intentional contrast / memory / dream / parody / product metaphor / narrative disruption — empty array if none"]
+  },
   "marketing_structure": {
     "hook": "string — the 3s hook line/idea",
     "problem": "string — the pain point addressed",
@@ -737,7 +764,7 @@ FULL CAST (character_locks — use these EXACT names):
 ${castBlock || "- (voiceover only)"}
 
 SCENE BIBLE (identical in every clip): ${breakdown.scene_bible ? `${breakdown.scene_bible.lens}; ${breakdown.scene_bible.lighting}; ${breakdown.scene_bible.backdrop}; ${breakdown.scene_bible.color_grade}` : "n/a"}
-Visual style: ${input.style} · Genre: ${input.genre} · Dialogue language: ${dialogueLanguage}
+Visual style: ${input.style} · Genre: ${input.genre} · Dialogue language: ${dialogueLanguage}${worldContextLockBlock(breakdown.world_context) ? `\n${worldContextLockBlock(breakdown.world_context).trim()}` : ""}
 
 ${prevBlock}
 
@@ -1147,6 +1174,9 @@ RULES: ONE cohesive document image; same character everywhere — the reference 
  */
 export function buildSegmentVeoPrompt(params: {
   characterDescription: string;
+  /** TẦNG 0 — the locked world context (Context-Locked DNA); rendered as a
+   * LOCKED WORLD CONTEXT block so the clip can never drift out of its world. */
+  worldContext?: WorldContext | null;
   /** This clip's scene/setting (from the segment's first_frame_prompt). */
   setting?: string;
   productDescription?: string;
@@ -1187,6 +1217,8 @@ export function buildSegmentVeoPrompt(params: {
   const lead =
     "Keep the main character visually consistent across every shot, matching the attached reference photo — an ordinary, original person (not a specific real individual). Create ONE continuous, cinematic 10-second shot in the scene described below; build the described setting, do NOT copy the photo's own background. Every word of this prompt is an INTERNAL production instruction — the rendered frame must contain NO readable text of any kind (no subtitles, captions, labels, spec cards, watermarks or numbers).";
   const character = ` Main character: ${clean(params.characterDescription)}.`;
+  // TẦNG 0 — the locked world every entity in this clip must belong to.
+  const contextLock = worldContextLockBlock(params.worldContext);
   // The scene doubles as the clip's START STATE: planting props here is what
   // stops objects materialising mid-clip (the jacket-teleport bug).
   const setting = params.setting
@@ -1289,7 +1321,7 @@ export function buildSegmentVeoPrompt(params: {
     }
   }
   const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
-  return `${lead}${character}${castLine}${setting}${envBlock}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription)}`;
+  return `${lead}${character}${castLine}${contextLock}${setting}${envBlock}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription)}`;
 }
 
 export function buildVideoPromptText(params: {
@@ -1531,6 +1563,9 @@ export function buildVeoJson(
 
   return {
     version: "veo-3.1",
+    // TẦNG 0 — the locked world context every clip must belong to
+    // (Context-Locked Video DNA: open during design, locked during generation).
+    locked_world_context: breakdown.world_context ?? null,
     // The frozen 9-layer constitution these prompts were compiled under.
     production_laws: lawsForVeoJson(),
     output: {

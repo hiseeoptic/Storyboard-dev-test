@@ -88,6 +88,41 @@ const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
     synopsis: STRING_SCHEMA,
     total_duration_seconds: INTEGER_SCHEMA,
     mood_tags: STRING_ARRAY_SCHEMA,
+    // TẦNG 0 — Context-Locked Video DNA: the world the model resolved from the
+    // brief and LOCKED. Every other field must obey it.
+    world_context: {
+      type: "OBJECT",
+      properties: {
+        world_type: STRING_SCHEMA,
+        reality_level: STRING_SCHEMA,
+        genre: STRING_SCHEMA,
+        geography: STRING_SCHEMA,
+        culture: STRING_SCHEMA,
+        time_period: STRING_SCHEMA,
+        technology_level: STRING_SCHEMA,
+        social_class: STRING_SCHEMA,
+        environment_category: STRING_SCHEMA,
+        visual_style: STRING_SCHEMA,
+        audio_style: STRING_SCHEMA,
+        allowed_language_text: STRING_SCHEMA,
+        forbidden_entities: STRING_ARRAY_SCHEMA,
+        intentional_exceptions: STRING_ARRAY_SCHEMA,
+      },
+      required: [
+        "world_type",
+        "reality_level",
+        "genre",
+        "geography",
+        "culture",
+        "time_period",
+        "technology_level",
+        "social_class",
+        "environment_category",
+        "visual_style",
+        "audio_style",
+        "forbidden_entities",
+      ],
+    },
     marketing_structure: {
       type: "OBJECT",
       properties: {
@@ -163,7 +198,7 @@ const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
       required: ["color_palette", "art_direction", "visual_references", "consistency_notes"],
     },
   },
-  required: ["title", "synopsis", "character_locks", "segments", "style_guide"],
+  required: ["title", "synopsis", "world_context", "character_locks", "segments", "style_guide"],
 };
 
 async function sleep(ms: number): Promise<void> {
@@ -516,6 +551,30 @@ export async function generateStoryboardBreakdown(
           if (/\b(female|woman|girl|she|nữ|cô|chị|bà)\b/.test(hay)) lock.gender = "female";
           else if (/\b(male|man|boy|he|nam|anh|ông|chú)\b/.test(hay)) lock.gender = "male";
         }
+      }
+
+      // TẦNG 0 — ensure a locked world_context exists (Context-Locked DNA).
+      // Claude/OpenAI paths have no response schema, so backfill a sensible
+      // default resolved from the input rather than leaving the lock empty.
+      if (!parsed.world_context || typeof parsed.world_context !== "object") {
+        parsed.world_context = {
+          world_type: "cinematic realistic",
+          reality_level: "Level 2 — Cinematic Reality",
+          genre: input.genre ?? "other",
+          geography: (input.dialogue_language ?? "Vietnamese") === "Vietnamese" ? "Vietnam" : "unspecified",
+          culture: (input.dialogue_language ?? "Vietnamese") === "Vietnamese" ? "contemporary Vietnamese" : "contemporary",
+          time_period: "contemporary",
+          technology_level: "modern everyday",
+          social_class: "middle class",
+          environment_category: input.setting || "everyday interior",
+          visual_style: input.style,
+          audio_style: "natural diegetic ambience",
+          forbidden_entities: [
+            "out-of-era technology",
+            "foreign signage with no story reason",
+            "off-culture architecture and props",
+          ],
+        };
       }
 
       // Ensure marketing_structure exists

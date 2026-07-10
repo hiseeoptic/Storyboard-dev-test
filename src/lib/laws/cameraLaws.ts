@@ -13,5 +13,8 @@ export const cameraLaws = {
     "Horizon locked within ±3°; default height is human eye-level (~1.6m) unless a coded angle ([LOW]/[HIGH]/[OVH]) says otherwise",
     "Framing grammar resets attention: progress establish → medium → close within and across clips; the speaker's face is in medium-close or close-up during their line",
     "Depth of field is natural and consistent with the declared aperture — subject tack-sharp, background falls off realistically",
+    "HUMAN-PLAUSIBLE VIEWPOINT: the camera occupies a position a real operator or real rig could occupy — never inside solid objects, never through walls, floors or furniture, never clipping into a character; a POV shot sits at that character's true eye height and looks where their head actually points",
+    "PERSPECTIVE GEOMETRY: one consistent perspective per shot — objects shrink correctly with distance, parallel lines converge naturally, near/far scale relationships stay true; no fisheye or anatomy-warping field of view unless the locked visual style explicitly declares it",
+    "EYE-LINE TRUTH: characters' eye-lines match the established spatial map — a character looking at someone off-frame looks in that person's true direction; the 180° axis is respected so screen direction never flips mid-conversation",
   ],
 } as const;
