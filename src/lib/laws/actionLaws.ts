@@ -15,6 +15,7 @@ export const actionLaws = {
     "CAUSE BEFORE EFFECT: nothing happens by itself — if anything falls, tips, spills, swings, opens or breaks, its visible physical cause (a gripping hand, a bump, a sleeve catching, transferred weight) must make contact FIRST, in frame, and the effect follows with believable physics timing (a knocked coat rack leans, then topples — it never simply drops on its own)",
     "ONE LOCATION PER CLIP: the entire clip lives in ONE continuous space — the room/backdrop never switches or 'jumps' mid-clip; any change of position happens by the character physically walking there inside the same visible space",
     "Chained continuity: the END state of clip N (pose, position, expression, props) EQUALS the START state of clip N+1 — clips join seamlessly",
+    "PEOPLE NEVER TELEPORT: every person visible during the clip is either placed in the START STATE from second 0, or ENTERS by visibly walking through a real entrance as an explicitly described action — no one pops into frame, materialises in the background, or appears behind another character mid-clip",
     "A character entering or leaving the frame does so by walking through real space, described explicitly in the motion",
   ],
 } as const;

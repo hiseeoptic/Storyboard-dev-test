@@ -355,6 +355,14 @@ function enhanceInput(
 
   const extra: string[] = [];
 
+  // LOCATION LOCK: a real location photo was uploaded — the whole video is
+  // staged inside THAT place; the LLM must never invent a different set.
+  if ((input.background_images?.length ?? 0) > 0) {
+    extra.push(
+      `LOCATION LOCK — the user uploaded a REAL photo of the location. Stage EVERY segment inside THIS exact place (its real layout, furniture, colours, materials and light — see the setting description). Do not invent, swap or "upgrade" the location, and do not move any scene to a different set.`
+    );
+  }
+
   // CRITICAL: feed the uploaded character's REAL identity into script
   // generation so the character_lock matches the photo. Without this the LLM
   // invents a character from the story idea and can pick the WRONG GENDER
@@ -799,6 +807,7 @@ function assemblePlanPrompts(
       speakerVoice: seg.speaker ? characterVoices[seg.speaker.trim()] : undefined,
       ambientAudio,
       environmentRef: seg.environment_ref,
+      hasLocationRef: !!ctx.bgImg,
     });
   }
   return buildVideoPromptText({

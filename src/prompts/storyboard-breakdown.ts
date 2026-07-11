@@ -460,6 +460,10 @@ MARKETING STRUCTURE (always apply):
 - Then PROBLEM → SOLUTION → (optional BODY beats) → CTA in the final segment.
 - Reset attention every 5-10 seconds with an angle change, push-in, or reveal.
 
+UPLOADED REFERENCE PRIORITY (absolute hierarchy — PHOTOS beat text, text beats invention):
+- When the user uploaded reference images (character / product / background location), those photos are the SUPREME source of truth. NEVER invent a replacement: a character keeps the photo's exact gender, age, face and look; a product keeps its exact shape, colours and branding; and when a LOCATION photo exists, the ENTIRE story is staged INSIDE that uploaded location — reuse its real layout, furniture, colours, materials and light in every segment's first_frame_prompt. Do NOT relocate scenes to an invented set, do NOT "improve" the location into a generic pretty one, do NOT add rooms/furniture that contradict the photo.
+- If the story idea and an uploaded photo conflict (e.g. the idea says villa but the photo shows a small apartment), THE PHOTO WINS — adapt the story to the real place/person/product.
+
 FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's video must not "look AI"):
 - Every object is locked to a "DNA" that NEVER drifts and is repeated VERBATIM in every board/keyframe and every motion prompt.
 - Build a detailed "character_lock" per character with an EXPLICIT "gender" field (male/female — if a reference photo was provided it MUST match that real person's gender), plus age, build, skin tone, hair, eyes, exact costume, signature features, default expression, PLUS a single-line "dna" string capturing the forensic identity WITH RGB HEX CODES for skin/hair/eyes/wardrobe/brand colours (e.g. "navy polo #1F2A44, light-blue tee #A9C7E8, matte steel watch #8A8D91, warm tan skin #C8956A").
@@ -1235,13 +1239,14 @@ COMPOSITION (mobile-first key art):
 ■ The main character fills the LOWER 2/3 of the frame, chest-up or waist-up, LARGE — face razor-sharp, angled to camera.
 ■ EXAGGERATED COMEDIC EXPRESSION: wide eyes, raised brows, open-mouth gasp / suppressed laugh / deadpan disbelief — a real human face caught at the peak of the funny moment (genuine, not rubber-faced cartoon).${isMultiCast ? " The second character reacts in contrast (smirking, facepalming, or mock-innocent) slightly behind/beside the main one." : ""}
 ■ The gag's key prop or consequence is visible and readable (tilted, mid-mishap, comically framed) — the image should make the viewer ask "what happened here?!"
-■ BACKGROUND: the video's real location simplified and punched up — brighter, more saturated, slightly blurred so the subject pops; strong rim light separating subject from background; subtle vignette.
+■ 🏷️ STICKER-POP TREATMENT (the signature viral-thumbnail effect): the main character${isMultiCast ? " group" : ""} is rendered as a crisp CUTOUT with a clean, bold, even WHITE STICKER OUTLINE (~10px) tracing their whole silhouette, plus a vibrant NEON GLOW rim just outside the white edge — pick ONE saturated accent colour that contrasts the background (electric cyan, acid yellow or hot magenta) and keep the glow tight and clean, not a blurry halo. The cutout subject floats slightly IN FRONT of the background layer (subtle drop shadow behind the sticker edge) for the punchy layered "sticker pop" depth. The face inside the cutout stays fully photoreal — only the outline/glow treatment is graphic.
+■ BACKGROUND: the video's real location simplified and punched up — brighter, more saturated, slightly blurred so the sticker cutout pops; subtle vignette.
 ■ TOP ~20% of the frame stays CLEAN, low-detail negative space (sky/wall/soft gradient) reserved for a title the user adds later.
 ■ High contrast, punchy commercial colour, crisp edges — legible even at 150px tall.
 
 ${tokens ? tokens + "\n" : ""}${directive}
 
-RENDER RULES: ONE single 9:16 vertical frame, no panels, no borders, no collage; the character's face, hair and outfit IDENTICAL to the reference; energetic but physically plausible pose (real anatomy, real contact with props). ABSOLUTELY NO TEXT of any kind — no title, caption, sticker, emoji, logo, watermark or numbers anywhere in the image (text gets added later by the editor). ${SHARED_NEGATIVE}`;
+RENDER RULES: ONE single 9:16 vertical frame, no panels, no frame borders, no collage; the character's face, hair and outfit IDENTICAL to the reference; energetic but physically plausible pose (real anatomy, real contact with props). The white sticker OUTLINE + neon glow rim around the character are the ONLY graphic treatment allowed — ABSOLUTELY NO TEXT of any kind: no title, caption, text sticker, emoji, arrows, circles, logo, watermark or numbers anywhere in the image (those get added later by the editor). ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 5: Video Assembly Guide (text for Veo / Seedance) ─────────────────
@@ -1286,15 +1291,22 @@ export function buildSegmentVeoPrompt(params: {
   /** Environment archetype id (segment.environment_ref). Falls back to
    * keyword-matching the setting text when absent/custom. */
   environmentRef?: string | null;
+  /** TRUE when the user uploaded a real LOCATION photo — the set must be
+   * rebuilt from that photo, not invented from text alone. */
+  hasLocationRef?: boolean;
 }): string {
   const lang = params.dialogueLanguage ?? "Vietnamese";
   const clean = (s?: string) => (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
   // SELF-CONTAINED prompt: repeat the FULL character + scene + style in EVERY
   // clip so Veo renders correctly from the uploaded character PHOTO — no need to
   // pre-generate a per-scene keyframe. The attached photo only locks the
-  // face/wardrobe; the scene is built from the text below.
+  // face/wardrobe; the scene is built from the text below — UNLESS the user
+  // also uploaded a LOCATION photo, in which case THAT photo is the set.
+  const settingSource = params.hasLocationRef
+    ? "An attached LOCATION photo shows the REAL set — rebuild THIS exact place as the scene (same layout, furniture, colours, materials and light); only the CHARACTER portrait's own background is ignored."
+    : "build the described setting, do NOT copy the character photo's own background.";
   const lead =
-    "Keep the main character visually consistent across every shot, matching the attached reference photo — an ordinary, original person (not a specific real individual). Create ONE continuous, cinematic 10-second shot in the scene described below; build the described setting, do NOT copy the photo's own background. Every word of this prompt is an INTERNAL production instruction — the rendered frame must contain NO readable text of any kind (no subtitles, captions, labels, spec cards, watermarks or numbers).";
+    `Keep the main character visually consistent across every shot, matching the attached reference photo — an ordinary, original person (not a specific real individual). Create ONE continuous, cinematic 10-second shot in the scene described below; ${settingSource} Every word of this prompt is an INTERNAL production instruction — the rendered frame must contain NO readable text of any kind (no subtitles, captions, labels, spec cards, watermarks or numbers).`;
   const character = ` Main character: ${clean(params.characterDescription)}.`;
   // TẦNG 0 — the locked world every entity in this clip must belong to.
   const contextLock = worldContextLockBlock(params.worldContext);
@@ -1331,7 +1343,7 @@ export function buildSegmentVeoPrompt(params: {
   const absent = onScreen.length > 0 ? allNames.filter((n) => !onScreen.includes(n)) : [];
   const castLine =
     onScreen.length > 0
-      ? ` ON SCREEN: exactly ${onScreen.length} character${onScreen.length > 1 ? "s" : ""} — ${onScreen.join(", ")} — and NOBODY else; no extra people in frame or background.${absent.length > 0 ? ` ${absent.join(", ")} ${absent.length > 1 ? "are" : "is"} NOT in this scene and must not appear, not even in the background or as a reflection.` : ""}`
+      ? ` ON SCREEN: exactly ${onScreen.length} character${onScreen.length > 1 ? "s" : ""} — ${onScreen.join(", ")} — and NOBODY else; no extra people in frame or background. NO HUMAN TELEPORT: everyone listed is ALREADY in place at second 0 exactly as the START STATE positions them, and stays physically continuous for the whole clip — no person ever pops into frame, materialises in the background, or appears behind someone mid-clip; if the story needs someone to arrive or leave, they visibly WALK in/out through a real entrance as an explicitly described action.${absent.length > 0 ? ` ${absent.join(", ")} ${absent.length > 1 ? "are" : "is"} NOT in this scene and must not appear, not even in the background or as a reflection.` : ""}`
       : "";
   const speakerLabel = speaker || "The character";
   const voices = params.characterVoices ?? {};
