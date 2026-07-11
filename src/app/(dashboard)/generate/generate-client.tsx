@@ -548,6 +548,7 @@ const SEGMENT_OPTIONS = [
   { value: "3", label: "3 (~30s)" },
   { value: "4", label: "4 (~40s)" },
   { value: "5", label: "5 (~50s)" },
+  { value: "6", label: "6 (~60s)" },
   { value: "7", label: "7 (~70s)" },
   { value: "10", label: "10 (~100s)" },
 ];

@@ -292,6 +292,27 @@ export const environmentArchetypes: Record<string, EnvironmentArchetype> = {
     forbidden_variation: LOCKED,
   },
 
+  warm_apartment_living_room: {
+    archetype_id: "warm_apartment_living_room",
+    display_name: "Warm Apartment Living Room",
+    environment_class: "interior",
+    element: "Thổ",
+    keywords: ["living room", "sofa", "couch", "apartment living", "phòng khách", "ghế sofa", "sô pha", "căn hộ", "chung cư"],
+    scale: "one fixed sofa-and-TV wall zone ~5×4m, camera works within a 3.5m arc, warm domestic framing",
+    materials: [
+      { surface: "sofa", material: "fabric upholstery sofa with cushions", physics: "soft weave with seat compression creases, cushions dented where people actually sit, real fabric nap catching side light" },
+      { surface: "floor", material: "warm wood-look flooring with a woven rug", physics: "satin plank sheen dulled along the walk path, rug fibres flattened where feet rest" },
+      { surface: "furniture", material: "light wood coffee table + TV cabinet", physics: "visible grain, faint cup rings, matte edges slightly worn from daily use" },
+    ],
+    lighting: { key_kelvin: 4000, ambient_kelvin: 2700, ambient_lux: 450, sources: ["soft window daylight through sheer curtains", "warm practical floor and table lamps"], shadows: "soft directional from the window, warm pooled lamp light toward evening" },
+    atmosphere: { time_of_day: "late afternoon into evening", weather: "n/a", particulates: ["faint dust motes in the window light"], ambient_motion: "sheer curtain breathing, plant leaves trembling near the fan, TV standby glow" },
+    micro_details: ["a throw blanket folded over the sofa arm", "family photos and a small plant on the shelf", "TV remote and a glass of water on the coffee table"],
+    imperfections: ["one flattened cushion", "a faint scuff at the table leg", "a slightly crooked photo frame"],
+    sound_bed: "quiet apartment room tone, distant street murmur, soft clock tick, neighbours far off",
+    micro_variation_allowed: ["curtain sway", "lamp warmth", "TV standby glow"],
+    forbidden_variation: LOCKED,
+  },
+
   modern_gym_daylight: {
     archetype_id: "modern_gym_daylight",
     display_name: "Modern Gym with Daylight",

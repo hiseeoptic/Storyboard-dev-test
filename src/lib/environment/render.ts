@@ -15,24 +15,52 @@ export function resolveEnvironment(
   ref?: string | null,
   settingText?: string | null
 ): EnvironmentArchetype | undefined {
-  const id = (ref ?? "").trim().toLowerCase();
-  if (id && id !== "custom" && environmentArchetypes[id]) {
-    return environmentArchetypes[id];
-  }
+  // Keyword score of one archetype against a setting text (longer keywords
+  // are more specific → weighed by word count).
+  const scoreFor = (arch: EnvironmentArchetype, text: string): number => {
+    let score = 0;
+    for (const kw of arch.keywords) {
+      if (text.includes(kw.toLowerCase())) {
+        score += kw.trim().split(/\s+/).length;
+      }
+    }
+    return score;
+  };
 
   const text = (settingText ?? "").toLowerCase();
+  const id = (ref ?? "").trim().toLowerCase();
+  if (id && id !== "custom" && environmentArchetypes[id]) {
+    const chosen = environmentArchetypes[id]!;
+    if (!text) return chosen;
+    // MISMATCH GUARD: the LLM sometimes picks a wrong archetype (a LIVING ROOM
+    // scene got the KITCHEN lock injected — sizzling sound bed and all, which
+    // contradicts the whole prompt). If the chosen archetype has ZERO keyword
+    // hits in the setting text while another archetype matches it clearly,
+    // trust the TEXT over the ref.
+    if (scoreFor(chosen, text) === 0) {
+      let bestOther: EnvironmentArchetype | undefined;
+      let bestOtherScore = 0;
+      for (const arch of Object.values(environmentArchetypes)) {
+        if (arch.archetype_id === chosen.archetype_id) continue;
+        const s = scoreFor(arch, text);
+        if (s > bestOtherScore) {
+          bestOtherScore = s;
+          bestOther = arch;
+        }
+      }
+      // ≥2 = a specific multi-word/curated hit (e.g. "living room", "phòng
+      // khách") — clear evidence the scene lives in a different archetype.
+      if (bestOtherScore >= 2) return bestOther;
+    }
+    return chosen;
+  }
+
   if (!text) return undefined;
 
   let best: EnvironmentArchetype | undefined;
   let bestScore = 0;
   for (const arch of Object.values(environmentArchetypes)) {
-    let score = 0;
-    for (const kw of arch.keywords) {
-      if (text.includes(kw.toLowerCase())) {
-        // Longer keywords are more specific → weigh by word count.
-        score += kw.trim().split(/\s+/).length;
-      }
-    }
+    const score = scoreFor(arch, text);
     if (score > bestScore) {
       bestScore = score;
       best = arch;
