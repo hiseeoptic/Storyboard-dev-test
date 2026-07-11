@@ -653,6 +653,7 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
     "forbidden_entities": ["CONCRETE list for THIS world — e.g. for a period piece: smartphones, sneakers, LED lights, modern signage; for modern Vietnam: unexplained foreign signage, random robots"],
     "intentional_exceptions": ["declared exceptions only: intentional contrast / memory / dream / parody / product metaphor / narrative disruption — empty array if none"]
   },
+  "thumbnail_title": "string — the SMASH-HOOK printed HUGE on the video's 9:16 cover, in ${dialogueLanguage}, UPPERCASE, 2-6 words MAX (shorter = stronger). It must sell THIS video's gag/curiosity gap in one glance, hot-trend style: a shock equation ('MẤT WIFI = MẤT VỢ?!'), a call-out ('CHỒNG ĐOẢNG CẤP ĐỘ MAX'), a forbidden question ('AI SAI Ở ĐÂY?!'). May end with ?! — no hashtags, no emoji inside the text (an emoji graphic is added separately), correct Vietnamese diacritics.",
   "social_posts": {
     "_rules": "READY-TO-POST captions for THIS exact video, written in ${dialogueLanguage} — each must reference the video's actual story/hook/payoff (a specific moment, the punchline, the question it answers), NEVER a generic 'check out my video'. SHORT and emotional: hook first, 1-3 fitting emoji woven in naturally (not a wall of emoji), one platform-native CTA. Hashtags = real SEO: mix 1-2 broad trending tags + 2-3 niche topic tags (the video's subject, in ${dialogueLanguage} where natural) + 1 branded/series tag when it fits; every tag starts with # and contains no spaces.",
     "tiktok": {
@@ -1204,6 +1205,9 @@ RULES: ONE cohesive document image; same character everywhere — the reference 
  */
 export function buildThumbnailPrompt(params: {
   title: string;
+  /** EXACT short smash-hook to print HUGE on the cover (2-6 words, UPPERCASE,
+   * dialogue language). When absent the cover renders with no text. */
+  titleText?: string;
   /** The video's hook line — the promise/gag the cover must sell. */
   hook?: string;
   /** The story's key comedic/dramatic moment (usually segment 1 or the twist). */
@@ -1228,6 +1232,12 @@ export function buildThumbnailPrompt(params: {
     ? cast.map((c) => `${c.name}${c.isChild ? " (child — true child size)" : ""}: ${c.description}`).join(" | ")
     : params.characterDescription;
   const gag = params.gagHint || params.hook || params.title;
+  // With a headline, SHARED_NEGATIVE's blanket text bans ("title cards, text
+  // overlays") would fight the requested title — swap in a text-aware negative
+  // that bans only WRONG text, keeping all the identity/physics negatives.
+  const negative = params.titleText
+    ? "NEGATIVE (avoid — plain descriptors): resembling a real or famous person, celebrity likeness, misspelled or garbled headline letters, wrong or missing Vietnamese diacritics, duplicated or extra words beyond the specified headline, any second block of text, subtitles, captions, hashtags on the image, watermark, logo, morphing, warping, extra or fused fingers, malformed hands, extra or missing limbs, the face changing, identity drift, changed hair/wardrobe, extra people, duplicated subject, plastic/CGI/wax/airbrushed skin, toy-like or 3D-render materials."
+    : SHARED_NEGATIVE;
 
   return `${refBlock}VIRAL VIDEO COVER / THUMBNAIL — ONE single VERTICAL 9:16 image used as the cover of a short video. It must STOP THE SCROLL on a phone feed: bold, funny, instantly readable at thumbnail size.
 
@@ -1241,12 +1251,13 @@ COMPOSITION (mobile-first key art):
 ■ The gag's key prop or consequence is visible and readable (tilted, mid-mishap, comically framed) — the image should make the viewer ask "what happened here?!"
 ■ 🏷️ STICKER-POP TREATMENT (the signature viral-thumbnail effect): the main character${isMultiCast ? " group" : ""} is rendered as a crisp CUTOUT with a clean, bold, even WHITE STICKER OUTLINE (~10px) tracing their whole silhouette, plus a vibrant NEON GLOW rim just outside the white edge — pick ONE saturated accent colour that contrasts the background (electric cyan, acid yellow or hot magenta) and keep the glow tight and clean, not a blurry halo. The cutout subject floats slightly IN FRONT of the background layer (subtle drop shadow behind the sticker edge) for the punchy layered "sticker pop" depth. The face inside the cutout stays fully photoreal — only the outline/glow treatment is graphic.
 ■ BACKGROUND: the video's real location simplified and punched up — brighter, more saturated, slightly blurred so the sticker cutout pops; subtle vignette.
-■ TOP ~20% of the frame stays CLEAN, low-detail negative space (sky/wall/soft gradient) reserved for a title the user adds later.
+${params.titleText ? `■ 💥 HUGE HEADLINE (the click magnet): across the TOP band of the frame, print the EXACT text «${params.titleText}» — VERBATIM, letter-for-letter with correct Vietnamese diacritics, no words added or removed. Style: massive bold condensed sans-serif display type (MrBeast/TikTok viral-thumbnail style) filling most of the frame width, maximum 2 lines, UPPERCASE, white letters with a thick black outline and a soft drop shadow (or black letters on a bright yellow highlight bar), tilted a playful 2-3°. The headline must be the FIRST thing the eye hits and stay razor-legible at 150px tall. TEXT ACCURACY IS CRITICAL: if any glyph is uncertain, render it plain and clean — never substitute, duplicate or garble letters.
+■ 😱 ONE EMOTION ICON: exactly ONE large glossy emoji-style icon (a shocked face 😱, fire 🔥 or red exclamation ❗ — pick the one matching the gag) placed beside the headline or near the character's reaction, rendered clean and bold like a platform emoji sticker — ONE only, never a scatter of icons.` : `■ TOP ~20% of the frame stays CLEAN, low-detail negative space (sky/wall/soft gradient) reserved for a title the user adds later.`}
 ■ High contrast, punchy commercial colour, crisp edges — legible even at 150px tall.
 
 ${tokens ? tokens + "\n" : ""}${directive}
 
-RENDER RULES: ONE single 9:16 vertical frame, no panels, no frame borders, no collage; the character's face, hair and outfit IDENTICAL to the reference; energetic but physically plausible pose (real anatomy, real contact with props). The white sticker OUTLINE + neon glow rim around the character are the ONLY graphic treatment allowed — ABSOLUTELY NO TEXT of any kind: no title, caption, text sticker, emoji, arrows, circles, logo, watermark or numbers anywhere in the image (those get added later by the editor). ${SHARED_NEGATIVE}`;
+RENDER RULES: ONE single 9:16 vertical frame, no panels, no frame borders, no collage; the character's face, hair and outfit IDENTICAL to the reference; energetic but physically plausible pose (real anatomy, real contact with props). ${params.titleText ? `The ONLY text in the image is the exact headline «${params.titleText}» styled as specified, and the ONLY graphics are that headline, ONE emotion icon, and the white sticker outline + neon rim — nothing else written or drawn: no captions, subtitles, hashtags, extra stickers, arrows, circles, logos, watermarks or stray numbers.` : `The white sticker OUTLINE + neon glow rim around the character are the ONLY graphic treatment allowed — ABSOLUTELY NO TEXT of any kind: no title, caption, text sticker, emoji, arrows, circles, logo, watermark or numbers anywhere in the image (those get added later by the editor).`} ${negative}`;
 }
 
 // ─── Step 5: Video Assembly Guide (text for Veo / Seedance) ─────────────────

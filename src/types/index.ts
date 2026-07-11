@@ -413,6 +413,9 @@ export interface StoryboardGenerationOutput {
   world_context?: WorldContext;
   /** Platform-native captions + SEO hashtags for TikTok / YT Shorts / FB Reels. */
   social_posts?: SocialPosts;
+  /** 2-6 word UPPERCASE smash-hook printed HUGE on the 9:16 thumbnail
+   * (e.g. "MẤT WIFI = MẤT VỢ?!"). Written with the script, in dialogue language. */
+  thumbnail_title?: string;
   marketing_structure: MarketingStructure;
   character_locks: CharacterLock[];
   /** Style fingerprint (lens/lighting/backdrop/grade) reused VERBATIM everywhere. */

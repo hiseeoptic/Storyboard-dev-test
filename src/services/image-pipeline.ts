@@ -244,6 +244,7 @@ export async function generateKeyframe(params: {
 
 export async function generateThumbnail(params: {
   title: string;
+  titleText?: string;
   hook?: string;
   gagHint?: string;
   settingHint?: string;

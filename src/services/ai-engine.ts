@@ -133,6 +133,8 @@ const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
       },
       required: ["hook", "problem", "solution", "cta"],
     },
+    // 2-6 word UPPERCASE smash-hook printed HUGE on the 9:16 thumbnail.
+    thumbnail_title: STRING_SCHEMA,
     // Platform-native ready-to-post captions (TikTok / YT Shorts / FB Reels).
     social_posts: {
       type: "OBJECT",
@@ -230,7 +232,7 @@ const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
       required: ["color_palette", "art_direction", "visual_references", "consistency_notes"],
     },
   },
-  required: ["title", "synopsis", "world_context", "social_posts", "character_locks", "segments", "style_guide"],
+  required: ["title", "synopsis", "world_context", "social_posts", "thumbnail_title", "character_locks", "segments", "style_guide"],
 };
 
 async function sleep(ms: number): Promise<void> {
@@ -607,6 +609,16 @@ export async function generateStoryboardBreakdown(
             "off-culture architecture and props",
           ],
         };
+      }
+
+      // Ensure a short smash-hook title for the thumbnail exists (fallback:
+      // first ~5 words of the title, uppercased).
+      if (!parsed.thumbnail_title || !String(parsed.thumbnail_title).trim()) {
+        parsed.thumbnail_title = (parsed.title ?? "")
+          .split(/\s+/)
+          .slice(0, 5)
+          .join(" ")
+          .toUpperCase();
       }
 
       // Ensure ready-to-post social captions exist (derive a simple set from

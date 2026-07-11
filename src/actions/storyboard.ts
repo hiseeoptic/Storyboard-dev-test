@@ -1015,6 +1015,11 @@ export async function generateBoardImage(params: {
       const thumbRefs = buildBoardRefs(ctx, hookSeg?.characters_in_scene);
       const r = await generateThumbnail({
         title: breakdown.title,
+        // The AI-written smash-hook, printed HUGE on the cover (fallback:
+        // uppercased short title so older breakdowns still get a headline).
+        titleText:
+          (breakdown.thumbnail_title ?? "").trim() ||
+          breakdown.title.split(/\s+/).slice(0, 5).join(" ").toUpperCase(),
         hook: breakdown.marketing_structure?.hook,
         gagHint: hookSeg ? `${hookSeg.title} — ${trim(hookSeg.motion_prompt)}` : trim(breakdown.synopsis),
         settingHint: trim(ctx.sceneBible?.backdrop || hookSeg?.first_frame_prompt, 200),

@@ -1807,8 +1807,8 @@ export function GenerateClient() {
         "      (đã tự chứa đủ nhân vật + bối cảnh + phong cách + negative).",
         "  - bai_dang_social.txt→ BÀI ĐĂNG viết sẵn cho TikTok / YouTube Shorts / Facebook",
         "      Reels (caption + hashtag SEO, bám đúng nội dung video này) — copy khi đăng.",
-        "  - thumbnail_9x16.png → ẢNH BÌA dọc 9:16 (nếu bạn đã bấm 'Tạo thumbnail'): dùng làm",
-        "      cover khi đăng; phần trên đã chừa trống — chèn tiêu đề to trong CapCut.",
+        "  - thumbnail_9x16.png → ẢNH BÌA dọc 9:16 (nếu bạn đã bấm 'Tạo thumbnail'): tiêu đề",
+        "      giật + emoji đã in sẵn — kiểm tra chính tả trước khi đăng, lỗi thì Tạo lại.",
         "",
         "MẸO: mỗi clip đều có \"negative_prompt\" liệt kê rõ những thứ phải tránh",
         "(morphing, warping, teleporting, floating/duplicated objects, tay/ngón lỗi,",
@@ -2290,8 +2290,8 @@ export function GenerateClient() {
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? "Bìa dọc 9:16 theo khoảnh khắc hài nhất của video — phần trên đã chừa trống để bạn chèn tiêu đề trong CapCut. Ảnh này cũng được kèm vào ZIP khi tải."
-                  : "Vertical 9:16 cover staging the video's funniest beat — the top band is left clean for your title in CapCut. Included in the ZIP download."}
+                  ? "Bìa dọc 9:16 theo khoảnh khắc hài nhất của video — tiêu đề giật + 1 emoji cảm xúc đã in sẵn thật to (kiểm tra chính tả; nếu chữ lỗi bấm Tạo lại). Ảnh này cũng được kèm vào ZIP khi tải."
+                  : "Vertical 9:16 cover staging the video's funniest beat — the smash-hook headline + 1 emotion emoji are printed on it (check spelling; hit Redo if garbled). Included in the ZIP download."}
               </p>
             </CardContent>
           </Card>
@@ -2304,8 +2304,8 @@ export function GenerateClient() {
               </p>
               <p className="mt-1 max-w-md text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? "Tạo 1 ảnh bìa dọc kiểu hài hước, bắt mắt: nhân vật đúng ảnh ref với biểu cảm cường điệu ở khoảnh khắc đắt nhất của video, chừa khoảng trống phía trên để chèn tiêu đề. Dùng làm cover khi đăng TikTok/Shorts/Reels."
-                  : "Generate one funny, scroll-stopping vertical cover: your locked character at the video's best moment with an exaggerated expression, clean top space for a title. Use as the upload cover."}
+                  ? "Tạo 1 ảnh bìa dọc kiểu hài hước, bắt mắt: nhân vật cutout viền trắng + neon với biểu cảm cường điệu, TIÊU ĐỀ GIẬT in sẵn thật to + 1 emoji cảm xúc — đập vào mắt ngay khi lướt. Dùng làm cover khi đăng TikTok/Shorts/Reels."
+                  : "Generate one funny, scroll-stopping vertical cover: sticker-cutout character with neon rim, the HUGE smash-hook headline + 1 emotion emoji printed on it. Use as the upload cover."}
               </p>
               {boardErrors["thumbnail"] && (
                 <p className="mt-1 max-w-md text-xs text-destructive/80">{boardErrors["thumbnail"]}</p>
