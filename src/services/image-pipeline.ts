@@ -5,6 +5,7 @@ import {
   buildSegmentFirstFramePrompt,
   buildKeyframePrompt,
   buildMasterBoardPrompt,
+  buildThumbnailPrompt,
   type RefDescriptor,
 } from "@/prompts";
 import type {
@@ -234,6 +235,36 @@ export async function generateKeyframe(params: {
     aspectRatio: params.aspectRatio,
     quality: params.quality,
     // Single clean frame → cap at 1K so the data-URI response stays returnable.
+    imageSize: "1K",
+  });
+  return { url };
+}
+
+// ─── Generate a viral 9:16 THUMBNAIL / video cover ───────────────────────────
+
+export async function generateThumbnail(params: {
+  title: string;
+  hook?: string;
+  gagHint?: string;
+  settingHint?: string;
+  characterDescription: string;
+  presentCharacters?: { name: string; description: string; isChild?: boolean }[];
+  productDna?: string;
+  sceneBible?: SceneBible;
+  style: string;
+  preserveRealFace?: boolean;
+  referenceImages?: RefImage[];
+  references?: RefDescriptor[];
+  provider?: AIProvider;
+  quality?: ImageQuality;
+}): Promise<{ url: string }> {
+  const prompt = buildThumbnailPrompt(params);
+  const url = await generateImage(prompt, {
+    provider: params.provider,
+    referenceImages: params.referenceImages,
+    // The cover is ALWAYS vertical 9:16 (feed/upload cover format).
+    aspectRatio: "9:16",
+    quality: params.quality,
     imageSize: "1K",
   });
   return { url };

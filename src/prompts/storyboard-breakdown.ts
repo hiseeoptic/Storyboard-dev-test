@@ -1181,6 +1181,61 @@ ${renderDirective(params.style, params.preserveRealFace ?? false)}
 RULES: ONE cohesive document image; same character everywhere — the reference column and EVERY panel show the SAME person with an identical face (never a different face, never a redrawn/cartoon face); ${isPhotoStyle(params.style) ? "photographic realism for both the reference column and all panel stills" : `${params.style} style for the panel art`}; caption text small, clean and legible; no watermark. ${SHARED_NEGATIVE}`;
 }
 
+// ─── Viral 9:16 THUMBNAIL / cover (funny, scroll-stopping, on-topic) ─────────
+
+/**
+ * One vertical 9:16 COVER image for the uploaded video: the video's funniest /
+ * most dramatic moment pushed into a scroll-stopping, comedic key-art frame.
+ * The character identity stays locked to the reference photos; the top band is
+ * kept clean so the user can add their own title text in CapCut (AI-rendered
+ * Vietnamese text is never trustworthy, so we render NO text at all).
+ */
+export function buildThumbnailPrompt(params: {
+  title: string;
+  /** The video's hook line — the promise/gag the cover must sell. */
+  hook?: string;
+  /** The story's key comedic/dramatic moment (usually segment 1 or the twist). */
+  gagHint?: string;
+  /** Locked scene/setting hint so the cover matches the video's world. */
+  settingHint?: string;
+  characterDescription: string;
+  /** CAST: everyone who should appear on the cover (max 2-3, locked looks). */
+  presentCharacters?: { name: string; description: string; isChild?: boolean }[];
+  productDna?: string;
+  sceneBible?: SceneBible;
+  style: string;
+  preserveRealFace?: boolean;
+  references?: RefDescriptor[];
+}): string {
+  const refBlock = buildReferenceInstructions(params.references ?? []);
+  const directive = renderDirective(params.style, params.preserveRealFace ?? false);
+  const tokens = sceneBibleTokens(params.sceneBible);
+  const cast = params.presentCharacters ?? [];
+  const isMultiCast = cast.length > 1;
+  const castDesc = isMultiCast
+    ? cast.map((c) => `${c.name}${c.isChild ? " (child — true child size)" : ""}: ${c.description}`).join(" | ")
+    : params.characterDescription;
+  const gag = params.gagHint || params.hook || params.title;
+
+  return `${refBlock}VIRAL VIDEO COVER / THUMBNAIL — ONE single VERTICAL 9:16 image used as the cover of a short video. It must STOP THE SCROLL on a phone feed: bold, funny, instantly readable at thumbnail size.
+
+THE MOMENT TO SELL (the video's hook — stage THIS as one exaggerated comedic beat): ${gag}
+${params.settingHint ? `WORLD OF THE VIDEO (the cover must clearly belong to this same world/location): ${params.settingHint}\n` : ""}
+SUBJECT${isMultiCast ? "S" : ""} (identity locked — same face(s) as the reference photos): ${castDesc}.
+${params.productDna ? `HERO PROP / PRODUCT (exact, unchanged): ${params.productDna}\n` : ""}
+COMPOSITION (mobile-first key art):
+■ The main character fills the LOWER 2/3 of the frame, chest-up or waist-up, LARGE — face razor-sharp, angled to camera.
+■ EXAGGERATED COMEDIC EXPRESSION: wide eyes, raised brows, open-mouth gasp / suppressed laugh / deadpan disbelief — a real human face caught at the peak of the funny moment (genuine, not rubber-faced cartoon).${isMultiCast ? " The second character reacts in contrast (smirking, facepalming, or mock-innocent) slightly behind/beside the main one." : ""}
+■ The gag's key prop or consequence is visible and readable (tilted, mid-mishap, comically framed) — the image should make the viewer ask "what happened here?!"
+■ BACKGROUND: the video's real location simplified and punched up — brighter, more saturated, slightly blurred so the subject pops; strong rim light separating subject from background; subtle vignette.
+■ TOP ~20% of the frame stays CLEAN, low-detail negative space (sky/wall/soft gradient) reserved for a title the user adds later.
+■ High contrast, punchy commercial colour, crisp edges — legible even at 150px tall.
+
+${tokens ? tokens + "\n" : ""}${directive}
+
+RENDER RULES: ONE single 9:16 vertical frame, no panels, no borders, no collage; the character's face, hair and outfit IDENTICAL to the reference; energetic but physically plausible pose (real anatomy, real contact with props). ABSOLUTELY NO TEXT of any kind — no title, caption, sticker, emoji, logo, watermark or numbers anywhere in the image (text gets added later by the editor). ${SHARED_NEGATIVE}`;
+}
+
 // ─── Step 5: Video Assembly Guide (text for Veo / Seedance) ─────────────────
 
 /**

@@ -9,6 +9,7 @@ import {
   generateSegmentFrame,
   generateKeyframe,
   generateMasterBoard,
+  generateThumbnail,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
 import {
@@ -34,6 +35,8 @@ export interface StoryboardResult {
   breakdown: StoryboardGenerationOutput;
   characterRefSheetUrl: string | null;
   storyboardPosterUrl: string | null;
+  /** Viral 9:16 cover image (funny key-art) — generated on demand. */
+  thumbnailUrl?: string | null;
   videoPrompt: string;
   warnings: string[];
 }
@@ -937,7 +940,7 @@ export async function rewriteSegment(params: {
 
 // ─── Phase 2: one board image per call (small request + response) ──────────
 
-export type BoardKind = "segment" | "master" | "keyframe";
+export type BoardKind = "segment" | "master" | "keyframe" | "thumbnail";
 
 export async function generateBoardImage(params: {
   input: StoryboardGenerationInput;
@@ -984,6 +987,38 @@ export async function generateBoardImage(params: {
             : ctx.canChain && images.length > 0
               ? [images[0]!]
               : undefined,
+      });
+      return { success: true, data: { url: r.url } };
+    }
+
+    if (params.kind === "thumbnail") {
+      // Viral 9:16 cover: stage the HOOK segment's gag as one comedic key-art
+      // frame, identity locked to the same reference photos as the boards.
+      const hookSeg =
+        breakdown.segments.find((s) => s.marketing_role === "hook") ?? breakdown.segments[0];
+      const trim = (s?: string | null, n = 260) =>
+        (s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+      const cast = (breakdown.character_locks ?? []).slice(0, 3).map((l) => ({
+        name: l.name,
+        description: buildCleanCharLine(l),
+        isChild: !!l.is_child,
+      }));
+      const thumbRefs = buildBoardRefs(ctx, hookSeg?.characters_in_scene);
+      const r = await generateThumbnail({
+        title: breakdown.title,
+        hook: breakdown.marketing_structure?.hook,
+        gagHint: hookSeg ? `${hookSeg.title} — ${trim(hookSeg.motion_prompt)}` : trim(breakdown.synopsis),
+        settingHint: trim(ctx.sceneBible?.backdrop || hookSeg?.first_frame_prompt, 200),
+        characterDescription: ctx.charDescDna,
+        presentCharacters: cast.length > 1 ? cast : undefined,
+        productDna: ctx.productDnaText,
+        sceneBible: ctx.sceneBible,
+        style: ctx.boardStyle,
+        preserveRealFace: ctx.preserveRealFace,
+        referenceImages: ctx.canChain && thumbRefs.images.length > 0 ? thumbRefs.images : undefined,
+        references: ctx.canChain && thumbRefs.descriptors.length > 0 ? thumbRefs.descriptors : undefined,
+        provider,
+        quality: ctx.quality,
       });
       return { success: true, data: { url: r.url } };
     }

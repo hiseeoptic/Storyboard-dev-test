@@ -805,7 +805,7 @@ export function GenerateClient() {
   // (the quality-review/redo gate) without rebuilding the whole storyboard.
   const [genInput, setGenInput] = useState<StoryboardGenerationInput | null>(null);
   const [genAnalysis, setGenAnalysis] = useState<StoryboardAnalysis | null>(null);
-  const [regenTarget, setRegenTarget] = useState<number | "master" | null>(null);
+  const [regenTarget, setRegenTarget] = useState<number | "master" | "thumbnail" | null>(null);
   const [keyframeBusy, setKeyframeBusy] = useState<number | null>(null);
   // Per-board failure reasons, keyed by "seg-<index>" / "master".
   const [boardErrors, setBoardErrors] = useState<Record<string, string>>({});
@@ -1410,6 +1410,7 @@ export function GenerateClient() {
       breakdown,
       characterRefSheetUrl: null,
       storyboardPosterUrl: null,
+      thumbnailUrl: null,
       videoPrompt,
       warnings: [...warnings, ...boardWarnings],
     });
@@ -1522,7 +1523,7 @@ export function GenerateClient() {
 
   // ─── Review & redo: re-render a single board on demand ───────────
   const regenerateBoard = async (
-    target: number | "master"
+    target: number | "master" | "thumbnail"
   ) => {
     if (!genInput || !genAnalysis || !result || regenTarget !== null) return;
     setRegenTarget(target);
@@ -1540,12 +1541,12 @@ export function GenerateClient() {
         input: genInput,
         breakdown: result.breakdown,
         analysis: genAnalysis,
-        kind: target === "master" ? "master" : "segment",
-        segmentIndex: target === "master" ? undefined : target,
+        kind: target === "master" ? "master" : target === "thumbnail" ? "thumbnail" : "segment",
+        segmentIndex: typeof target === "number" ? target : undefined,
         provider,
         anchorImage: anchorImage ?? undefined,
       });
-      const key = target === "master" ? "master" : `seg-${target}`;
+      const key = typeof target === "number" ? `seg-${target}` : target;
       if (r.success) {
         // Clear any previous failure reason for this board.
         setBoardErrors((prev) => {
@@ -1555,6 +1556,8 @@ export function GenerateClient() {
         });
         if (target === "master") {
           setResult({ ...result, storyboardPosterUrl: r.data.url });
+        } else if (target === "thumbnail") {
+          setResult({ ...result, thumbnailUrl: r.data.url });
         } else {
           const segments = result.breakdown.segments.slice();
           const seg = segments[target];
@@ -1668,6 +1671,13 @@ export function GenerateClient() {
         try {
           const b = await (await fetch(result.storyboardPosterUrl)).blob();
           zip.file(`storyboard_overview.png`, b);
+        } catch {}
+      }
+      // Viral 9:16 thumbnail (video cover) — included once generated.
+      if (result.thumbnailUrl) {
+        try {
+          const b = await (await fetch(result.thumbnailUrl)).blob();
+          zip.file(`thumbnail_9x16.png`, b);
         } catch {}
       }
       // Assembly guide / prompts
@@ -1796,6 +1806,8 @@ export function GenerateClient() {
         "      (đã tự chứa đủ nhân vật + bối cảnh + phong cách + negative).",
         "  - bai_dang_social.txt→ BÀI ĐĂNG viết sẵn cho TikTok / YouTube Shorts / Facebook",
         "      Reels (caption + hashtag SEO, bám đúng nội dung video này) — copy khi đăng.",
+        "  - thumbnail_9x16.png → ẢNH BÌA dọc 9:16 (nếu bạn đã bấm 'Tạo thumbnail'): dùng làm",
+        "      cover khi đăng; phần trên đã chừa trống — chèn tiêu đề to trong CapCut.",
         "",
         "MẸO: mỗi clip đều có \"negative_prompt\" liệt kê rõ những thứ phải tránh",
         "(morphing, warping, teleporting, floating/duplicated objects, tay/ngón lỗi,",
@@ -2245,6 +2257,61 @@ export function GenerateClient() {
               <Button variant="outline" size="sm" disabled={regenTarget !== null} onClick={() => regenerateBoard("master")} className="mt-3 gap-1.5">
                 {regenTarget === "master" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
                 {lang === "vi" ? "Tạo bảng tổng" : "Generate master board"}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Viral 9:16 Thumbnail / video cover */}
+        {result.thumbnailUrl ? (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <ImageIcon className="h-5 w-5" />
+                  {lang === "vi" ? "Thumbnail 9:16 (bìa video)" : "9:16 Thumbnail (video cover)"}
+                </CardTitle>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" disabled={regenTarget !== null} onClick={() => regenerateBoard("thumbnail")} className="gap-1.5">
+                    {regenTarget === "thumbnail" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
+                    {lang === "vi" ? "Tạo lại" : "Redo"}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => downloadImage(result.thumbnailUrl!, `thumbnail-${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.png`)} className="gap-1.5">
+                    <Download className="h-3.5 w-3.5" />
+                    {lang === "vi" ? "Tải ảnh" : "Download"}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="mx-auto max-w-xs overflow-hidden rounded-lg border">
+                <img src={result.thumbnailUrl!} alt="Video thumbnail" className="w-full" />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {lang === "vi"
+                  ? "Bìa dọc 9:16 theo khoảnh khắc hài nhất của video — phần trên đã chừa trống để bạn chèn tiêu đề trong CapCut. Ảnh này cũng được kèm vào ZIP khi tải."
+                  : "Vertical 9:16 cover staging the video's funniest beat — the top band is left clean for your title in CapCut. Included in the ZIP download."}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+              <ImageIcon className="mb-2 h-8 w-8 text-muted-foreground/50" />
+              <p className="text-sm font-medium text-muted-foreground">
+                {lang === "vi" ? "Thumbnail 9:16 — bìa video (tuỳ chọn)" : "9:16 Thumbnail — video cover (optional)"}
+              </p>
+              <p className="mt-1 max-w-md text-xs text-muted-foreground">
+                {lang === "vi"
+                  ? "Tạo 1 ảnh bìa dọc kiểu hài hước, bắt mắt: nhân vật đúng ảnh ref với biểu cảm cường điệu ở khoảnh khắc đắt nhất của video, chừa khoảng trống phía trên để chèn tiêu đề. Dùng làm cover khi đăng TikTok/Shorts/Reels."
+                  : "Generate one funny, scroll-stopping vertical cover: your locked character at the video's best moment with an exaggerated expression, clean top space for a title. Use as the upload cover."}
+              </p>
+              {boardErrors["thumbnail"] && (
+                <p className="mt-1 max-w-md text-xs text-destructive/80">{boardErrors["thumbnail"]}</p>
+              )}
+              <Button variant="outline" size="sm" disabled={regenTarget !== null} onClick={() => regenerateBoard("thumbnail")} className="mt-3 gap-1.5">
+                {regenTarget === "thumbnail" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                {lang === "vi" ? "Tạo thumbnail hài hước" : "Generate funny thumbnail"}
               </Button>
             </CardContent>
           </Card>

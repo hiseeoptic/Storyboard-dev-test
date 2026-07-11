@@ -8,6 +8,7 @@ export {
   buildSegmentFirstFramePrompt,
   buildKeyframePrompt,
   buildMasterBoardPrompt,
+  buildThumbnailPrompt,
   buildVideoPromptText,
   buildSegmentVeoPrompt,
   buildVeoJson,
