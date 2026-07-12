@@ -8,6 +8,19 @@ import {
   buildStoryboardUserPrompt,
   buildSegmentRewriteUserPrompt,
 } from "@/prompts";
+import {
+  buildContextAnalysisSystemPrompt,
+  buildContextAnalysisUserPrompt,
+  contextIrToWorldContext,
+  resolvedVideoContextSchema,
+  VIDEO_CONTEXT_RESPONSE_SCHEMA,
+  type ResolvedVideoContext,
+} from "@/lib/video-context";
+import {
+  SCENE_INTENT_RESPONSE_SCHEMA,
+  sceneIntentSchema,
+  validateSceneIntent,
+} from "@/lib/scene-intent";
 import type {
   AIProvider,
   StoryboardGenerationInput,
@@ -32,6 +45,7 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
     duration_seconds: INTEGER_SCHEMA,
     title: STRING_SCHEMA,
     marketing_role: STRING_SCHEMA,
+    scene_intent: SCENE_INTENT_RESPONSE_SCHEMA,
     beats: {
       type: "ARRAY",
       items: {
@@ -71,6 +85,7 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
     "duration_seconds",
     "title",
     "marketing_role",
+    "scene_intent",
     "beats",
     "first_frame_prompt",
     "motion_prompt",
@@ -395,6 +410,75 @@ function parseJsonResponse(text: string): unknown {
 }
 
 /**
+ * Stage 1.5 — resolve the project's neutral 10-layer context once.
+ * Storyboard expansion then consumes this canonical IR instead of inventing a
+ * different environment, light, continuity mode, or audio world per field.
+ */
+export async function analyzeVideoContext(
+  input: StoryboardGenerationInput,
+  provider: AIProvider = "gemini"
+): Promise<ResolvedVideoContext> {
+  const systemPrompt = buildContextAnalysisSystemPrompt();
+  const userPrompt = buildContextAnalysisUserPrompt(input);
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      let rawContent: string | null = null;
+
+      if (provider === "claude") {
+        rawContent = await claudeGenerateText({
+          systemPrompt,
+          userPrompt: `${userPrompt}\n\nReturn ONLY the JSON object — no markdown or commentary.`,
+          maxTokens: 7000,
+        });
+      } else if (provider === "gemini") {
+        rawContent = await geminiGenerateText({
+          systemPrompt,
+          userPrompt,
+          jsonMode: true,
+          responseSchema: VIDEO_CONTEXT_RESPONSE_SCHEMA,
+          temperature: 0.15,
+          maxOutputTokens: 8192,
+        });
+      } else {
+        const openai = getOpenAIClient();
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.15,
+          max_tokens: 7000,
+          response_format: { type: "json_object" },
+        });
+        rawContent = completion.choices[0]?.message?.content ?? null;
+      }
+
+      if (!rawContent) throw new Error(`Empty context response from ${provider}`);
+      const parsed = resolvedVideoContextSchema.safeParse(parseJsonResponse(rawContent));
+      if (!parsed.success) {
+        const firstIssue = parsed.error.issues[0];
+        throw new Error(
+          `Context IR schema mismatch${firstIssue ? ` at ${firstIssue.path.join(".")}: ${firstIssue.message}` : ""}`
+        );
+      }
+      return parsed.data;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        `[AI Engine] Context analysis attempt ${attempt + 1}/2 failed:`,
+        lastError.message
+      );
+      if (attempt === 0) await sleep(RETRY_DELAY_MS);
+    }
+  }
+
+  throw new Error(`Context analysis failed after 2 attempts: ${lastError?.message}`);
+}
+
+/**
  * Stage 1 — write ONLY the creative script (plain text) with the chosen model
  * (e.g. Claude Opus). A separate model then expands this into the storyboard
  * JSON (Stage 2). Returns the raw script text, or throws on failure.
@@ -515,6 +599,51 @@ export async function generateStoryboardBreakdown(
 
       if (!validateOutput(parsed)) {
         throw new Error("Response does not match expected schema");
+      }
+
+      // Gemini's STRING response schema used to turn a JSON null into the
+      // literal text "null", which the compiler then rendered as PRODUCT: null.
+      if (
+        typeof parsed.product_dna === "string" &&
+        /^(null|none|n\/a|not applicable|không có)$/i.test(parsed.product_dna.trim())
+      ) {
+        parsed.product_dna = undefined;
+      }
+
+      for (const [index, segment] of parsed.segments.entries()) {
+        const intent = sceneIntentSchema.safeParse(segment.scene_intent);
+        if (!intent.success) {
+          const issue = intent.error.issues[0];
+          throw new Error(
+            `Segment ${index + 1} scene_intent invalid${issue ? ` at ${issue.path.join(".")}: ${issue.message}` : ""}`
+          );
+        }
+        segment.scene_intent = intent.data;
+        const intentIssues = validateSceneIntent(intent.data, {
+          segmentIndex: index,
+          segmentCount: parsed.segments.length,
+          charactersInScene: segment.characters_in_scene,
+          projectPurpose: input.resolved_context?.layers.project_intent.purpose,
+        });
+        const hardIssues = intentIssues.filter((item) => item.severity === "error");
+        if (hardIssues.length > 0) {
+          throw new Error(
+            `Segment ${index + 1} scene_intent failed semantic validation: ${hardIssues
+              .map((item) => `${item.code} — ${item.message}`)
+              .join("; ")}`
+          );
+        }
+        for (const warning of intentIssues.filter((item) => item.severity === "warning")) {
+          console.warn(`[AI Engine] Segment ${index + 1} ${warning.code}: ${warning.message}`);
+        }
+      }
+
+      // Stage 1.5 is canonical. The storyboard model may echo a different
+      // legacy world_context, so replace that echo deterministically and keep
+      // the full 10-layer IR on the project output.
+      if (input.resolved_context) {
+        parsed.context_ir = input.resolved_context;
+        parsed.world_context = contextIrToWorldContext(input.resolved_context);
       }
 
       const targetCount = input.segment_count ?? input.scene_count ?? 5;
@@ -767,6 +896,24 @@ export async function rewriteStoryboardSegment(params: {
       if (!validateSegment(parsed)) {
         throw new Error("Response does not match the segment schema");
       }
+      const rewrittenIntent = sceneIntentSchema.safeParse(parsed.scene_intent);
+      if (!rewrittenIntent.success) {
+        throw new Error("Rewritten segment is missing a valid scene_intent contract");
+      }
+      const rewrittenIntentIssues = validateSceneIntent(rewrittenIntent.data, {
+        segmentIndex: params.segmentIndex,
+        segmentCount: params.breakdown.segments.length,
+        charactersInScene: parsed.characters_in_scene,
+        projectPurpose: params.breakdown.context_ir?.layers.project_intent.purpose,
+      }).filter((item) => item.severity === "error");
+      if (rewrittenIntentIssues.length > 0) {
+        throw new Error(
+          `Rewritten scene_intent failed validation: ${rewrittenIntentIssues
+            .map((item) => item.code)
+            .join(", ")}`
+        );
+      }
+      parsed.scene_intent = rewrittenIntent.data;
 
       // HARD CONSTRAINTS enforced in code (never trust the model for these):
       // identity/position fields stay exactly as the original segment's.

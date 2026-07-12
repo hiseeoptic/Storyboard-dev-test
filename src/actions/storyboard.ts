@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  analyzeVideoContext,
   generateScript,
   generateStoryboardBreakdown,
   rewriteStoryboardSegment,
@@ -633,10 +634,23 @@ export async function generateStoryboardPlan(
       ? { ...enhanced, source_script: sourceScript }
       : enhanced;
 
+    // Stage 1.5: analyse the approved script/brief into the canonical neutral
+    // 10-layer Context IR. This is best-effort during the migration: an API
+    // failure warns and falls back to the legacy direct storyboard path.
+    let contextBoundInput = stage2Input;
+    try {
+      const resolvedContext = await analyzeVideoContext(stage2Input, provider);
+      contextBoundInput = { ...stage2Input, resolved_context: resolvedContext };
+    } catch (e) {
+      warnings.push(
+        `Không khóa được Context IR 10 tầng — tạm dùng luồng cũ. (${e instanceof Error ? e.message : String(e)})`
+      );
+    }
+
     let breakdown;
     try {
       // Stage 2: Gemini flash expands the approved script into the storyboard.
-      breakdown = await generateStoryboardBreakdown(stage2Input, provider);
+      breakdown = await generateStoryboardBreakdown(contextBoundInput, provider);
     } catch (e) {
       if (sourceScript && scriptProvider !== provider) {
         // Storyboard model failed — build the storyboard with the script model
@@ -644,7 +658,7 @@ export async function generateStoryboardPlan(
         warnings.push(
           `${provider} không dựng được storyboard — đã dùng ${scriptProvider} để dựng. (${e instanceof Error ? e.message : String(e)})`
         );
-        breakdown = await generateStoryboardBreakdown(stage2Input, scriptProvider);
+        breakdown = await generateStoryboardBreakdown(contextBoundInput, scriptProvider);
       } else {
         throw e;
       }
@@ -790,6 +804,8 @@ function assemblePlanPrompts(
         : charDesc;
     seg.full_prompt = buildSegmentVeoPrompt({
       characterDescription: castDesc,
+      realityProfile: breakdown.context_ir?.reality_profile,
+      sceneIntent: seg.scene_intent,
       worldContext: breakdown.world_context,
       setting: makeVeoSafe(seg.first_frame_prompt ?? ""),
       productDescription: productDesc,
@@ -813,6 +829,7 @@ function assemblePlanPrompts(
   return buildVideoPromptText({
     title: breakdown.title,
     characterDescription: charDesc,
+    realityProfile: breakdown.context_ir?.reality_profile,
     productDescription: productDesc,
     ingredients: ctx.ingredientsText,
     sceneBible: ctx.sceneBible,
@@ -829,6 +846,7 @@ function assemblePlanPrompts(
       segment_number: s.segment_number,
       title: s.title,
       role: s.marketing_role,
+      scene_intent: s.scene_intent,
       duration_seconds: s.duration_seconds,
       motion_prompt: makeVeoSafe(s.motion_prompt),
       dialogue: s.dialogue,

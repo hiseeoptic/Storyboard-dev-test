@@ -1,3 +1,6 @@
+import type { ResolvedVideoContext } from "@/lib/video-context/types";
+import type { SceneIntentIR } from "@/lib/scene-intent/types";
+
 // ─── Plans ──────────────────────────────────────────────────────────────────
 
 export type Plan = "free" | "pro" | "enterprise";
@@ -151,6 +154,12 @@ export interface StoryboardGenerationInput {
   /** Stage-1 script (written by script_provider, e.g. Claude). When present,
    * the storyboard model must expand THIS script into the JSON verbatim. */
   source_script?: string;
+  /**
+   * Internal Stage-1.5 output: the neutral 10-layer context resolved from the
+   * brief + approved script. Storyboard generation consumes this canonical IR
+   * instead of independently re-inventing its own world for every field.
+   */
+  resolved_context?: ResolvedVideoContext;
   // ─── Product / TVC brief (drives a product-advertising script) ───────
   product_name?: string;
   /** Key selling points / USP, free text. */
@@ -351,6 +360,8 @@ export interface VideoSegment {
   duration_seconds: number; // ~10
   title: string;
   marketing_role: MarketingRole;
+  /** Detailed per-clip creative contract: why it exists and what must change. */
+  scene_intent?: SceneIntentIR;
   beats: ShotBeat[]; // 3-5 beats within the 10s
   /** Prompt used to generate this segment's start (first) frame image. */
   first_frame_prompt: string;
@@ -411,6 +422,8 @@ export interface StoryboardGenerationOutput {
   mood_tags: string[];
   /** TẦNG 0 — the LOCKED world context every scene must obey (Context-Locked DNA). */
   world_context?: WorldContext;
+  /** Canonical 10-layer project context. Derived once, never regenerated per clip. */
+  context_ir?: ResolvedVideoContext;
   /** Platform-native captions + SEO hashtags for TikTok / YT Shorts / FB Reels. */
   social_posts?: SocialPosts;
   /** 2-6 word UPPERCASE smash-hook printed HUGE on the 9:16 thumbnail

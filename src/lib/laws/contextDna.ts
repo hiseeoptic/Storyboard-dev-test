@@ -195,8 +195,10 @@ export function worldContextLockBlock(wc?: WorldContext | null): string {
     wc.intentional_exceptions && wc.intentional_exceptions.length > 0
       ? ` Declared intentional exceptions: ${wc.intentional_exceptions.join(", ")}.`
       : "";
-  const text = wc.allowed_language_text
-    ? ` Visible text/signage: ${wc.allowed_language_text} — avoid readable text unless explicitly specified; use abstract or blurred background signage otherwise.`
+  const textPolicy = (wc.allowed_language_text ?? "").trim();
+  const textPermitted = !!textPolicy && !/(none|forbid|zero|avoid readable|blur all|no text)/i.test(textPolicy);
+  const text = textPermitted
+    ? ` Visible text/signage policy: ${textPolicy}. Only explicitly requested text may be readable; never invent additional signs, captions or labels.`
     : " Avoid readable text unless explicitly specified; use abstract or blurred background signage otherwise.";
   return ` LOCKED WORLD CONTEXT (${parts}). Therefore ALL objects, architecture, clothing, technology, language, cultural details, social behavior, food, environmental details, sounds and visual motifs in this clip must belong to this locked world — any element outside it is an ontology violation unless declared as intentional contrast, memory, dream, parody, fantasy insertion, or product metaphor.${forbidden}${exceptions}${text}`;
 }

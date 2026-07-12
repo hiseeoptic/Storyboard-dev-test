@@ -18,9 +18,15 @@ import {
   clipAudioLawLine,
   lawsForVeoJson,
   defaultVoiceFor,
-  contextDnaSystemDigest,
   worldContextLockBlock,
 } from "@/lib/laws";
+import { contextFrameworkSystemDigest } from "@/lib/video-context";
+import { renderSceneIntentDirective, type SceneIntentIR } from "@/lib/scene-intent";
+import {
+  buildRealityDirective,
+  realityUsesRealWorldPhysics,
+  type RealityProfile,
+} from "@/lib/reality";
 import type { WorldContext } from "@/types";
 
 // Forbidden in every generated image/clip (the brief's negative list).
@@ -51,11 +57,40 @@ const PHOTOREAL_REALISM =
 // the clip actually has a product, so a person-only clip never mentions products.
 // The physics/camera/audio clauses are RENDERED FROM the frozen PRODUCTION_LAWS
 // manifest (src/lib/laws) — single source of truth, per the 9-layer canon.
-function veoConciseTail(hasProduct: boolean): string {
+function veoConciseTail(
+  hasProduct: boolean,
+  realityProfile?: RealityProfile | null,
+  visibleTextPolicy?: string | null
+): string {
   const productNeg = hasProduct
     ? "warped or altered label/logo text, brand-colour change, extra or duplicated products, "
     : "";
-  return `${PHOTOREAL_REALISM} ${clipMotionLawLine()} ${clipCameraLawLine()} ${clipAudioLawLine()} ABSOLUTE NO-TEXT RULE: the finished frame contains ZERO readable text, letters, numbers or typography of ANY kind — no subtitles, no captions, no karaoke/lyric text, no title cards, no watermark or logo, and NEVER render any of this prompt's technical values (lens like "50mm" or "f/2.8", colour temperature like "4300K", light level like "600 lux", timecodes like "0-3s") as on-screen text, spec cards, HUD readouts or corner overlays — every technical value here is an INTERNAL camera/render instruction, never visible content. Spoken words are AUDIO ONLY. Avoid: ${productNeg}morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, plastic/CGI/wax/airbrushed skin, toy-like or 3D-render materials.`;
+  const realWorld = realityUsesRealWorldPhysics(realityProfile);
+  const realityDirective = realityProfile
+    ? buildRealityDirective(realityProfile)
+    : PHOTOREAL_REALISM;
+  const motionLaw = !realityProfile
+    ? clipMotionLawLine()
+    : realWorld
+      ? "ACTION LAW: intention or another declared trigger precedes deliberate change; contact precedes influence; force has a source/direction; materials react; secondary motion follows; result state and meaningful traces persist according to the locked continuity mode."
+      : "INTERNAL PHYSICS LAW: motion, anatomy, materials and causality obey the locked reality profile consistently; any impossible or stylized behaviour must be explicitly allowed by that world, never accidental drift.";
+  const cameraLaw = realityProfile
+    ? "CAMERA LAW: follow the locked visual-language grammar and scene proof requirements; the viewpoint must make required evidence observable without adding unrelated moves, cuts or impossible camera positions."
+    : clipCameraLawLine();
+  const audioLaw = realityProfile
+    ? "AUDIO LAW: follow the locked audio world; voices, ambience and foley have causal sources, correct timing and perspective, while silence remains available when required by scene intent."
+    : clipAudioLawLine();
+  const renderNeg = realWorld
+    ? "plastic/CGI/wax/airbrushed skin, toy-like or 3D-render materials"
+    : "unmotivated photoreal/stylized switching, accidental world-physics drift";
+  const policy = (visibleTextPolicy ?? "").trim();
+  const permitsText = !!policy && !/(none|forbid|zero|avoid readable|blur all|no text)/i.test(policy);
+  const textLaw = permitsText
+    ? `TEXT POLICY: render only text explicitly allowed by the locked policy (${policy}); no invented captions, subtitles, signs, labels or technical overlays.`
+    : hasProduct
+      ? "TEXT POLICY: the exact approved product label/logo may remain; all other readable text is forbidden — no subtitles, captions, title cards, watermarks, spec cards, HUD or technical values."
+      : "NO-TEXT POLICY: the frame contains no readable text — no subtitles, captions, title cards, logos, watermarks, spec cards, HUD or technical values. Spoken words are audio only.";
+  return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${textLaw} Avoid: ${productNeg}morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, ${renderNeg}.`;
 }
 
 /** One-line "Scene Bible" style tokens. Keeps lens/lighting/grade constant so
@@ -371,28 +406,28 @@ export function genreAmbientAudio(genre?: string, goal?: string): string | undef
 // storyboard model then expands it into the full JSON verbatim.
 
 export function buildScriptWriterSystemPrompt(): string {
-  return `You are a world-class short-form video SCRIPTWRITER for viral social media (TikTok / Reels / YouTube Shorts). You write ONLY the creative script — NOT the technical storyboard or JSON (a separate tool turns your script into the visual storyboard).
+  return `You are a world-class multi-domain short-form video SCRIPTWRITER. You write ONLY the creative script — NOT the technical storyboard or JSON (a separate tool turns your script into the visual storyboard).
 
-Write in the language the user asks for. Your job is RETENTION: make people watch to the last second and comment.
+Write in the language the user asks for. Your first duty is the LOCKED PROJECT INTENT: marketing, narrative, documentary, education, atmosphere, psychology, comedy, product demonstration and experimental work require different structures and endings. Never impose a viral-marketing formula when the requested purpose does not support it.
 
 CONTEXT LOCK (before writing a single line): silently resolve the WORLD this video lives in from the idea — geography, culture, time period, genre, reality level, social class, technology level. Never assume a default country or era; infer them. Then keep EVERY detail of the script (places, objects, clothing, food, behavior, speech style) inside that one locked world — no out-of-era technology, no off-culture props or rituals, no world-hopping between segments (open during design, locked during writing).
 
-THE HOOK (first 2-3s) IS 80% OF THE JOB — write it LAST, after you know the payoff, so it promises exactly what you deliver. Beat 1's opening line must stop the scroll. Use ONE proven hook formula (vary across scripts): CALL-OUT + STOP ("Nếu bạn là [X], khoan lướt đã"); UNCOMFORTABLE TRUTH; CONTRADICTION ("Càng [strength], càng [pain]"); CURIOSITY GAP / OPEN LOOP ("Xem hết sẽ rõ"); WARNING; MIND-READING ("Đúng không?"); or BOLD CLAIM. No slow intros, no "Hôm nay mình nói về…", no logo card.
-RETENTION SPINE: every segment ends on a mini open-loop the next one pays off; each beat re-hooks. Use a "NHƯNG / VÌ THẾ" spine between beats (reversal or consequence — never "rồi… rồi…"). Escalate tension to an "aha" reframe, then deliver the promised payoff, then a CTA that LOOPS back to the hook wording + ONE low-effort bait (prefer share bait "Gửi cho người cần nghe điều này", else comment/save bait).
-DIALOGUE: SHORT, punchy, natural spoken lines (not literary), ~8-14 words — ONE "đắt giá" line per segment. Talk to "bạn", be hyper-SPECIFIC not generic (a concrete behaviour the viewer secretly does beats an abstract trait), prefer "không phải X mà là Y" reframes, front-load power words (bí mật, sự thật, đừng, tại sao, giấu kín), SHOW don't tell (let the ACTION carry meaning), never lecture or list.
-COPYWRITING TECHNIQUES (use them to make each line "đắt"): RULE OF THREE ("đổi việc, đổi đam mê, đổi cả những cuộc tình" > "hay thay đổi"); CHALLENGE THE LABEL ("Người ta bảo bạn [nhãn]. Nhưng sự thật phũ phàng hơn nhiều."); ANTITHESIS ("không phải để chạy trốn — mà để cho đi"); SELF-DOUBT AS QUESTION ("Sao mình không thể yên một chỗ như người ta?"); RHYTHM ngắn–ngắn–dài. QUALITY BAR — a hook like "Người ta bảo bạn cả thèm chóng chán. Nhưng sự thật phũ phàng hơn nhiều đấy." is the level to hit; if a line sounds soft/generic ("bạn có bao giờ thấy cô đơn?"), rewrite it sharper.
+OPENING / RETENTION ARE INTENT-LED: every opening must earn attention in a way appropriate to the project. Marketing/social projects may use a call-out, contradiction, curiosity gap, warning or bold claim. Documentary may open on an observed fact; narrative on an inciting moment; education on a question/problem; atmosphere on a sensory image. A CTA, comment bait or loop appears only when the chosen goal/script requires it.
+STORY SPINE: every segment must have a named function and a causal relationship to the next (continuation, reversal, consequence, contrast, reveal, resolution, montage association or intentional atmosphere). Do not write "then... then..." filler. The ending must fulfil the project purpose, not a default conversion template.
+DIALOGUE: natural spoken lines appropriate to character, culture, genre and scene intent. Keep them performable inside the duration; let action or silence carry a clip when the intent requires it. SHOW don't tell and never lecture or list without an educational reason.
+COPYWRITING / DRAMATIC TECHNIQUES ARE OPTIONAL TOOLS: rule of three, antithesis, challenge-the-label, curiosity gap, subtext, reversal, suspense and rhythmic phrasing are selected only when they serve the locked intent and speaker identity.
 
 Output PLAIN TEXT in EXACTLY this shape (no markdown, no JSON):
 TITLE: <catchy title>
 CORE MESSAGE: <one-line takeaway>
 CHARACTERS: <EVERY person in the story, one per line — name, age, signature look, tone; mark children with "(child)". If the idea/script uses role labels (Chồng/Vợ/Con, Bố/Mẹ…), assign each role ONE consistent given name (e.g. Chồng = Nam) and keep the mapping for the whole script. A solo video simply lists one person.>
-SEGMENT 1 [HOOK]:
+SEGMENT 1 [<PRIMARY FUNCTION justified by the project/script>]:
   IN SCENE: <names of everyone visible in this segment>
   ACTION: <one vivid thing we SEE — a visual metaphor for this beat>
   DIALOGUE:
     <SpeakerName>: "<the exact spoken line>"
     <SpeakerName>: "<the next line, if a short back-and-forth fits this same 10s clip>"
-SEGMENT 2 [PROBLEM]:
+SEGMENT 2 [<PRIMARY FUNCTION>]:
   IN SCENE: ...
   ACTION: ...
   DIALOGUE:
@@ -455,10 +490,10 @@ CRITICAL PRODUCTION MODEL — how the final video is actually made:
 - Segments are CHAINED for seamless playback: the visual state at the END of segment N must flow naturally into the START of segment N+1 (same character, location, lighting, continuous action). No jarring cuts between segments.
 - So "beats" = the progressive camera framings of the ONE continuous action inside a 10s segment (not separate scenes). Provide the EXACT number of beats requested in the user message.
 
-MARKETING STRUCTURE (always apply):
-- HOOK in the first segment (grab attention in 3 seconds).
-- Then PROBLEM → SOLUTION → (optional BODY beats) → CTA in the final segment.
-- Reset attention every 5-10 seconds with an angle change, push-in, or reveal.
+PROJECT-LED STORY STRUCTURE (never force one template onto every video):
+- Read the locked Project Intent and approved script FIRST. Marketing projects may use HOOK → PROBLEM → SOLUTION → CTA; narrative, documentary, educational, atmospheric, symbolic, comedy, music-driven and experimental projects use the structure their intent requires.
+- A hook, product reveal, punchline, lesson or CTA appears only when supported by the project intent/script. Do not invent a hard-sell CTA for a story whose intended ending is emotional, informational or atmospheric.
+- `marketing_role` remains a legacy compatibility label; `scene_intent` is the canonical per-clip creative contract.
 
 UPLOADED REFERENCE PRIORITY (absolute hierarchy — PHOTOS beat text, text beats invention):
 - When the user uploaded reference images (character / product / background location), those photos are the SUPREME source of truth. NEVER invent a replacement: a character keeps the photo's exact gender, age, face and look; a product keeps its exact shape, colours and branding; and when a LOCATION photo exists, the ENTIRE story is staged INSIDE that uploaded location — reuse its real layout, furniture, colours, materials and light in every segment's first_frame_prompt. Do NOT relocate scenes to an invented set, do NOT "improve" the location into a generic pretty one, do NOT add rooms/furniture that contradict the photo.
@@ -502,7 +537,7 @@ MATERIAL & SKIN REALISM (this is what kills the "AI/CGI/plastic" look — treat 
 - MATERIALS: every object/prop/garment must read true-to-life with its real surface physics. Leather = grain, creases, worn scuffs, real stitching; denim = woven twill weave; metal = brushed/worn with real specular reflections; wood = visible grain; fabric = real thread and drape. Put these into each character_lock's "wardrobe_materials" and describe hero props with the same material honesty — no plastic, toy-like or CGI surfaces.
 - LIGHT: physically-based, tied to time-of-day/weather, with soft imperfect shadow edges. Give scene_bible.lighting BOTH Kelvin temperature AND approximate Lux (e.g. "soft overcast dawn key 5200K, ~800 lux"), and set scene_bible.film_grain to a fine organic grain / clean-acquisition token so the filmic texture stays constant across clips.
 
-${contextDnaSystemDigest()}
+${contextFrameworkSystemDigest()}
 
 ${lawsSystemDigest()}
 
@@ -576,6 +611,13 @@ export function buildStoryboardUserPrompt(
     ? `\nAdditional Instructions: ${input.custom_instructions}`
     : "";
 
+  const resolvedContextBlock = input.resolved_context
+    ? `\n\n=== RESOLVED CONTEXT IR (Stage 1.5 — CANONICAL, DO NOT RE-INFER) ===
+The context-analysis stage already resolved the project's 10 layers from the brief and approved script. Treat this JSON as the single source of truth. Copy its world facts into the legacy "world_context" output for compatibility; do not replace its locations, continuity mode, light motivation, audio strategy or visual language with a preset. An environment library entry may be selected only when it is semantically compatible with the location definition; otherwise use "custom".
+${JSON.stringify(input.resolved_context, null, 2)}
+=== END RESOLVED CONTEXT IR ===`
+    : "";
+
   // Stage-1 approved script (written by Claude). When present, the storyboard
   // model must EXPAND this exact script into the JSON — not invent a new story.
   const scriptBlock = input.source_script
@@ -620,6 +662,18 @@ export function buildStoryboardUserPrompt(
     return `        { "beat": "framing ${i + 1}: the camera reframes the SAME continuous action", "camera": "${cams[i] ?? "[EYE] ..."}" }`;
   }).join(",\n");
 
+  const hardMarketingArc = new Set<VideoGoal>([
+    "marketing_general",
+    "product_ad",
+    "brand_story",
+    "testimonial",
+    "promo_sale",
+    "social_short",
+  ]).has(goal);
+  const structureDirective = hardMarketingArc
+    ? "This project intent requires an attention-opening first segment and an earned CTA in the final segment; their exact form must still follow the approved script and each scene_intent contract."
+    : "Do NOT automatically force a marketing hook or CTA. The first and final segments perform only the functions justified by the approved script and their scene_intent contracts (for example: introduce, reveal, resolve, close-loop, atmosphere or education).";
+
   return `Create a chained-segment storyboard for this short video.
 
 Story / Product Idea: ${input.story_idea}
@@ -627,9 +681,9 @@ Video Goal: ${goal} — ${goalGuidance}
 Genre: ${input.genre}
 Visual Style: ${input.style}
 Number of 10-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 10} seconds)
-Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
+Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
 
-Produce EXACTLY ${segmentCount} segments. Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Each beat covers a distinct time-frame inside the unbroken 10 seconds while the subject, props and physics stay continuous. Segment 1 must HOOK. The last segment must contain the CTA. CRITICAL CHAINING RULE: the visual state at the END of segment N (pose, position, expression, camera) must EQUAL the opening moment described in segment N+1's "first_frame_prompt", so the generated clips join into one continuous story with no jumps. The "motion_prompt" must describe that ONE continuous action across the 10s with rough timing (split 10s across the beats, e.g. "0-3s ...; 3-6s ...; 6-10s ..."), using slow, deliberate, specific motion verbs (body part + verb + manner) and SMOOTH, minimal camera moves only, plus an explicit final state that matches the next segment's first_frame_prompt. Keep ONE primary action per clip — never stack multiple or simultaneous actions, which causes morphing and teleporting. NOTE: the system auto-wraps each motion_prompt with the full character + product description, the style tokens, a physics directive, the spoken line and a negative list — so do NOT repeat identity details, a physics clause, the dialogue text or a negative list inside the motion_prompt. Restate the main character's visual attributes (from character_locks) inside every first_frame_prompt so the keyframe stays on-model; inside the motion_prompt use only a SHORT one-phrase anchor that it is the same character. Describe them as a character by appearance — never as "the same real person", "their real face", "same identity", or "strictly follow the reference images".
+Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Each beat covers a distinct time-frame inside the unbroken 10 seconds while the subject, props and locked physics stay continuous. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" must describe that ONE continuous action across the 10s with rough timing (split 10s across the beats, e.g. "0-3s ...; 3-6s ...; 6-10s ..."), using deliberate, specific motion verbs (body part + verb + manner) plus an explicit final state/anchor. Keep ONE primary action per clip — never stack multiple simultaneous actions that exceed the target model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. Restate only the visually necessary character attributes in every first_frame_prompt; inside the motion_prompt use a short reference anchor.
 
 Return a JSON object with this EXACT structure (the "beats" array must contain EXACTLY ${beatsPerSegment} items):
 {
@@ -704,13 +758,62 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
     "color_grade": "string — e.g. 'neutral Rec.709, photoreal premium commercial'",
     "film_grain": "string — filmic realism fingerprint kept constant every clip, e.g. 'clean digital acquisition, minimal chromatic aberration, fine organic film grain'"
   },
-  "product_dna": "string or null — if there is a hero product: exact shape, material, colours WITH RGB hex, label/logo text+colour, cap/parts; else null",
+  "product_dna": "string — include this field ONLY when there is a real hero product: exact shape, material, colours WITH RGB hex, label/logo text+colour, cap/parts. When there is no product, OMIT this field completely; never write the string 'null'.",
   "segments": [
     {
       "segment_number": 1,
       "duration_seconds": 8,
       "title": "string — short segment title",
       "marketing_role": "hook|problem|solution|body|cta",
+      "scene_intent": {
+        "intent_id": "scene_intent_01 — stable project-local id",
+        "state": "inferred|confirmed|locked — inferred unless explicitly approved in the supplied script/context",
+        "evidence": ["short facts from the approved script/project intent that justify this intent — never generic template claims"],
+        "confidence": 0.9,
+        "primary_function": "hook|introduce_world|introduce_character|introduce_product|establish_desire|show_problem|create_conflict|escalate|reveal|educate|demonstrate|prove_benefit|build_trust|create_metaphor|create_suspense|deliver_punchline|emotional_hit|transform|show_consequence|resolve|call_to_action|close_loop|atmosphere|custom",
+        "secondary_functions": ["0-3 additional functions from the same vocabulary; empty when unnecessary"],
+        "narrative_objective": "why this clip must exist in this exact project",
+        "audience_effect": {
+          "attention": "what specifically earns/holds attention",
+          "emotion": "the intended audience emotion",
+          "belief": "what understanding or belief changes",
+          "desired_action": "what the audience should do, or 'none' when no action is intended"
+        },
+        "story_change": {
+          "state_before": "story/knowledge/emotion state entering the clip",
+          "trigger": "the event or information that creates change",
+          "state_after": "state leaving the clip",
+          "information_revealed": "new information, or 'none'",
+          "if_removed_what_breaks": "the concrete narrative/emotional/informational/atmospheric loss"
+        },
+        "performance": {
+          "point_of_view_character": "exact character name or 'audience/observer'",
+          "character_objective": "what the POV character wants now",
+          "obstacle": "what blocks it",
+          "tactic": "how the character tries to get it",
+          "stakes": "why it matters now",
+          "subtext": "what is meant/felt beneath literal dialogue",
+          "emotion_start": "specific observable emotional state",
+          "emotion_end": "specific motivated end state",
+          "performance_intensity": "restrained|natural|heightened|stylized plus a short justification",
+          "physical_behavior": "one concise bodily behavior proving objective/subtext — not camera choreography"
+        },
+        "proof": {
+          "must_show": ["smallest visible evidence needed to prove intent"],
+          "must_hear": ["smallest audible evidence needed; empty if silent"],
+          "must_not_distract_with": ["unrelated spectacle/details that would weaken this intent"]
+        },
+        "entry_exit": {
+          "entry_state": "canonical input state",
+          "exit_state": "canonical output state",
+          "continuity_anchors": ["body|object|eye-line|motion|emotion|sound|light|symbol|dialogue|location — only anchors required by continuity mode"],
+          "exit_hook": "specific reason to continue, or 'none' for a resolved ending"
+        },
+        "validation": {
+          "success_criteria": ["observable/testable checks"],
+          "failure_conditions": ["observable ways the clip could miss or contradict its intent"]
+        }
+      },
       "beats": [
 ${beatExample}
       ],
@@ -755,6 +858,8 @@ export function buildSegmentRewriteUserPrompt(params: {
   const next = breakdown.segments[segmentIndex + 1];
   const beatsPerSegment = Math.min(5, Math.max(3, input.beats_per_segment ?? 3));
   const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
+  const continuityMode = breakdown.context_ir?.layers.motion_continuity.continuity_mode ?? "strict";
+  const strictContinuity = /strict|one.?shot/i.test(continuityMode);
 
   const castBlock = (breakdown.character_locks ?? [])
     .map(
@@ -781,11 +886,11 @@ export function buildSegmentRewriteUserPrompt(params: {
       : "  (no dialogue — a wordless beat; the action alone must carry the moment)";
 
   const prevBlock = prev
-    ? `PREVIOUS SEGMENT #${prev.segment_number} (UNCHANGED — your segment must open exactly where it ends):\n- Its motion_prompt (the END STATE described at its end is your opening moment): ${prev.motion_prompt}\n- Its first_frame_prompt: ${prev.first_frame_prompt}`
-    : "This is the FIRST segment (the HOOK — it must stop the scroll; continuity_note = 'opening shot').";
+    ? `PREVIOUS SEGMENT #${prev.segment_number} (UNCHANGED):\n- Its motion_prompt: ${prev.motion_prompt}\n- Its first_frame_prompt: ${prev.first_frame_prompt}`
+    : "This is the FIRST segment. Its opening function comes from scene_intent; do not automatically turn it into a marketing hook.";
   const nextBlock = next
-    ? `NEXT SEGMENT #${next.segment_number} (UNCHANGED — your segment must END in the exact state its first_frame_prompt opens with):\n- Its first_frame_prompt: ${next.first_frame_prompt}\n- Its first dialogue line: ${next.dialogue ?? "(none)"}`
-    : "This is the LAST segment (it carries the CTA).";
+    ? `NEXT SEGMENT #${next.segment_number} (UNCHANGED):\n- Its first_frame_prompt: ${next.first_frame_prompt}\n- Its first dialogue line: ${next.dialogue ?? "(none)"}`
+    : "This is the LAST segment. Its ending function comes from scene_intent; do not invent a CTA unless the project intent requires one.";
 
   return `REWRITE EXACTLY ONE SEGMENT of an existing storyboard. The user edited this segment's dialogue turns in the editor, so its action/beats/timing no longer match — re-choreograph the WHOLE segment around the new turns. Everything else in the video is already approved and stays untouched.
 
@@ -800,6 +905,7 @@ ${prevBlock}
 ${nextBlock}
 
 THE SEGMENT TO REWRITE — #${seg.segment_number} "${seg.title}" (marketing_role: ${seg.marketing_role}, duration: ${seg.duration_seconds || 10}s, environment_ref: ${seg.environment_ref ?? "custom"}):
+Current scene_intent contract: ${JSON.stringify(seg.scene_intent ?? null)}
 Current first_frame_prompt: ${seg.first_frame_prompt}
 Current motion_prompt (STALE — written before the dialogue changed): ${seg.motion_prompt}
 
@@ -807,13 +913,14 @@ LOCKED DIALOGUE TURNS (the user's final text — copy each line VERBATIM, same s
 ${turnsBlock}
 
 REWRITE RULES:
+0. Return a complete valid "scene_intent" contract. Preserve its primary function and story job unless the edited dialogue genuinely changes them; update performance, must_hear, proof, entry/exit, success criteria and failure conditions so they match the new dialogue. Never replace it with an automatic hook/CTA template.
 1. Re-time the turns realistically (~0.4s per word + ~0.5s beat between speakers), strictly sequential and non-overlapping, finished by ~9s. Fill "dialogue_lines" with start_s/end_s for every turn; mirror turn 1 into "dialogue" and "speaker".
 2. Rewrite "motion_prompt" (70-110 words) as ONE continuous take whose physical action and camera are choreographed AROUND those timed turns: during each turn's window the camera holds the active speaker's face in medium-close/close-up with natural lip movement (gentle pan/reframe between speakers — never a hard cut), listeners keep their mouths closed and react. SPEAK-WHILE-STILL: a speaker NEVER performs a large body action (standing up, walking, turning away) during their own line — schedule big movements into the GAPS between turns, and while a line plays its speaker holds a stable pose facing camera. The motion timeline MUST use the same clock as the turn windows (the action at second X is what happens while the line at second X plays). Time left before/after/between the turns must be filled with meaningful physical action that advances the story — never dead air. CAUSAL CHAIN: write every object interaction as the full visible chain (hand reaches → fingers grip a named part → carried along one continuous path → released), never let an object appear in a hand; every effect (something falls/tips/spills) must be PRECEDED by its visible physical cause making contact; the whole clip stays in ONE location. PROP EXISTENCE: every object the motion uses must be planted in the first_frame_prompt start state (held, worn or placed) — update the first_frame_prompt if the new action needs a prop it doesn't mention. QUIET WINDOW: no line plays during a loud/major physical event — a reaction line starts only after the event has finished. LOAD BUDGET: a 10s clip carries 8-22 total spoken words (~0.4s/word + gaps) — if the locked turns exceed this, keep the timing honest and flag it in continuity_note instead of squeezing speech. STAGING: give every visible character one concrete physical business (a named hand action serving the story) and name exact micro-expressions (an eyebrow raise, a suppressed smile) — never write "reacts"; the camera move must differ from the neighbouring clips' moves and travel calmly across the whole 10s, easing in and out, never a rushed 1-second whip. Do NOT quote the spoken words inside motion_prompt.
 3. Rewrite the "beats" (EXACTLY ${beatsPerSegment} beats) as the progressive camera framings of that one continuous action, aligned with the turn windows.
 4. Update "first_frame_prompt" only as needed (same location/lighting; restate the present characters' looks from character_locks). Set "characters_in_scene" to the EXACT lock names visible — every speaker with a non-empty name must be included.
-5. HARD CONSTRAINTS: keep "segment_number" = ${seg.segment_number}, "duration_seconds" = ${seg.duration_seconds || 10}, "marketing_role" = "${seg.marketing_role}", "environment_ref" = "${seg.environment_ref ?? "custom"}". Open from the previous segment's end state and close on the next segment's opening state (write that exact final state at the end of motion_prompt; update "continuity_note" accordingly).
+5. HARD CONSTRAINTS: keep "segment_number" = ${seg.segment_number}, "duration_seconds" = ${seg.duration_seconds || 10}, "marketing_role" = "${seg.marketing_role}", "environment_ref" = "${seg.environment_ref ?? "custom"}". Locked continuity mode = "${continuityMode}". ${strictContinuity ? "Open from the previous segment's exact end state and close on the next segment's exact opening state." : "Preserve only the continuity anchors declared by scene_intent/context; location, time or pose may change when this continuity mode explicitly permits it."} Update continuity_note accordingly.
 
-Return ONLY the rewritten segment as ONE JSON object with the exact segment structure (segment_number, duration_seconds, title, marketing_role, beats[], first_frame_prompt, motion_prompt, dialogue, speaker, dialogue_lines[], characters_in_scene[], environment_ref, continuity_note) — no wrapper, no markdown, no prose.`;
+Return ONLY the rewritten segment as ONE JSON object with the exact segment structure (segment_number, duration_seconds, title, marketing_role, scene_intent, beats[], first_frame_prompt, motion_prompt, dialogue, speaker, dialogue_lines[], characters_in_scene[], environment_ref, continuity_note) — no wrapper, no markdown, no prose.`;
 }
 
 // ─── Render style helpers ───────────────────────────────────────────────────
@@ -1269,6 +1376,9 @@ RENDER RULES: ONE single 9:16 vertical frame, no panels, no frame borders, no co
  */
 export function buildSegmentVeoPrompt(params: {
   characterDescription: string;
+  /** Cross-cutting mode/fidelity selector; prevents unconditional photoreal rules. */
+  realityProfile?: RealityProfile | null;
+  sceneIntent?: SceneIntentIR | null;
   /** TẦNG 0 — the locked world context (Context-Locked DNA); rendered as a
    * LOCKED WORLD CONTEXT block so the clip can never drift out of its world. */
   worldContext?: WorldContext | null;
@@ -1317,8 +1427,8 @@ export function buildSegmentVeoPrompt(params: {
     ? "An attached LOCATION photo shows the REAL set — rebuild THIS exact place as the scene (same layout, furniture, colours, materials and light); only the CHARACTER portrait's own background is ignored."
     : "build the described setting, do NOT copy the character photo's own background.";
   const lead =
-    `Keep the main character visually consistent across every shot, matching the attached reference photo — an ordinary, original person (not a specific real individual). Create ONE continuous, cinematic 10-second shot in the scene described below; ${settingSource} Every word of this prompt is an INTERNAL production instruction — the rendered frame must contain NO readable text of any kind (no subtitles, captions, labels, spec cards, watermarks or numbers).`;
-  const character = ` Main character: ${clean(params.characterDescription)}.`;
+    `Keep every referenced subject visually consistent across the project — original characters/entities, not a public-figure imitation. Create ONE continuous 10-second shot in the scene described below; ${settingSource} Every technical value in this prompt is an INTERNAL production instruction, never an on-screen overlay; visible text follows only the locked text policy stated below.`;
+  const character = ` Primary subject/cast: ${clean(params.characterDescription)}.`;
   // TẦNG 0 — the locked world every entity in this clip must belong to.
   const contextLock = worldContextLockBlock(params.worldContext);
   // The scene doubles as the clip's START STATE: planting props here is what
@@ -1343,6 +1453,8 @@ export function buildSegmentVeoPrompt(params: {
     params.colorPalette && params.colorPalette.length > 0
       ? ` Colour palette: ${params.colorPalette.join(", ")}.`
       : "";
+  const intent = renderSceneIntentDirective(params.sceneIntent);
+  const intentBlock = intent ? ` ${intent}` : "";
   // Multi-character CAST-SYNC: lock exactly who is ON SCREEN, who SPEAKS, and
   // who must NOT appear — so Veo never lip-syncs the wrong person or renders a
   // project character that isn't in this scene.
@@ -1423,12 +1535,13 @@ export function buildSegmentVeoPrompt(params: {
     }
   }
   const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
-  return `${lead}${character}${castLine}${contextLock}${setting}${envBlock}${product}${ing}${tokens}${palette} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription)}`;
+  return `${lead}${character}${castLine}${contextLock}${setting}${envBlock}${product}${ing}${tokens}${palette}${intentBlock} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription, params.realityProfile, params.worldContext?.allowed_language_text)}`;
 }
 
 export function buildVideoPromptText(params: {
   title: string;
   characterDescription: string;
+  realityProfile?: RealityProfile | null;
   productDescription?: string;
   ingredients?: string;
   sceneBible?: SceneBible;
@@ -1448,6 +1561,7 @@ export function buildVideoPromptText(params: {
     segment_number: number;
     title: string;
     role: string;
+    scene_intent?: SceneIntentIR;
     duration_seconds: number;
     motion_prompt: string;
     dialogue?: string | null;
@@ -1473,6 +1587,8 @@ export function buildVideoPromptText(params: {
         .join("\n");
       const fullPrompt = buildSegmentVeoPrompt({
         characterDescription: params.characterDescription,
+        realityProfile: params.realityProfile,
+        sceneIntent: s.scene_intent,
         setting: s.setting,
         productDescription: params.productDescription,
         ingredients: params.ingredients,
@@ -1624,6 +1740,7 @@ export function buildVeoJson(
     return {
       id: seg.segment_number,
       role: seg.marketing_role,
+      scene_intent: seg.scene_intent ?? null,
       duration_seconds: seg.duration_seconds ?? clipSeconds,
       scene: oneLine(seg.first_frame_prompt),
       characters_in_scene: onScreen.length > 0 ? onScreen : null,
@@ -1665,6 +1782,9 @@ export function buildVeoJson(
 
   return {
     version: "veo-3.1",
+    // Canonical project-level source of truth. It is never expanded per clip;
+    // target compilers select only the relevant layer fragments.
+    context_ir: breakdown.context_ir ?? null,
     // TẦNG 0 — the locked world context every clip must belong to
     // (Context-Locked Video DNA: open during design, locked during generation).
     locked_world_context: breakdown.world_context ?? null,
