@@ -509,15 +509,22 @@ export async function generateScript(
           maxOutputTokens: 4096,
         });
       } else {
+        // GPT-5-mini: strong creative writing at ~1/5 the price of gpt-4o.
+        // GPT-5-series models take `max_completion_tokens` (NOT `max_tokens`)
+        // and only support the default temperature — sending either legacy
+        // param 400s the request. Overridable via OPENAI_SCRIPT_MODEL.
         const openai = getOpenAIClient();
+        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5-mini";
+        const isGpt5 = scriptModel.startsWith("gpt-5") || scriptModel.startsWith("o");
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: scriptModel,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          temperature: 0.85,
-          max_tokens: 4000,
+          ...(isGpt5
+            ? { max_completion_tokens: 8000 }
+            : { temperature: 0.85, max_tokens: 4000 }),
         });
         text = completion.choices[0]?.message?.content ?? null;
       }

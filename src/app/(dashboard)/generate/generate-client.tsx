@@ -851,9 +851,10 @@ export function GenerateClient() {
     "inspirational" | "analytical" | "balanced"
   >("balanced");
 
-  // ─── Script model (default Claude Opus 4.8) — images always use Gemini.
+  // ─── Script model (default GPT-5-mini — user's choice for cost + quality;
+  // images always stay on Gemini/Nano Banana).
   // Switchable via the hidden panel (double-click the title, passcode 2502). ──
-  const [scriptProvider, setScriptProvider] = useState<AIProvider>("claude");
+  const [scriptProvider, setScriptProvider] = useState<AIProvider>("openai");
   const [modelPanelOpen, setModelPanelOpen] = useState(false);
   const [modelUnlocked, setModelUnlocked] = useState(false);
   const [modelPw, setModelPw] = useState("");
@@ -868,9 +869,12 @@ export function GenerateClient() {
     if (saved === "gemini" || saved === "openai") {
       setProvider(saved);
     }
+    // v2 key: the default moved claude → openai (GPT-5-mini). The old key's
+    // stored "claude" was just the old default, so it is deliberately ignored;
+    // manual choices made from now on persist under the new key.
     const savedScript =
       typeof window !== "undefined"
-        ? window.localStorage.getItem("sb_script_provider")
+        ? window.localStorage.getItem("sb_script_provider_v2")
         : null;
     if (savedScript === "gemini" || savedScript === "openai" || savedScript === "claude") {
       setScriptProvider(savedScript);
@@ -894,7 +898,7 @@ export function GenerateClient() {
   const switchScriptProvider = (p: AIProvider) => {
     setScriptProvider(p);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("sb_script_provider", p);
+      window.localStorage.setItem("sb_script_provider_v2", p);
     }
   };
 
@@ -2650,9 +2654,9 @@ export function GenerateClient() {
                 </p>
                 <div className="space-y-1.5">
                   {([
-                    { v: "claude" as AIProvider, label: "Claude Opus 4.8 (mặc định — viết kịch bản)" },
+                    { v: "openai" as AIProvider, label: "GPT-5-mini (mặc định — rẻ + kịch bản hay)" },
+                    { v: "claude" as AIProvider, label: "Claude Opus 4.8 (chất lượng cao nhất)" },
                     { v: "gemini" as AIProvider, label: "Gemini 2.5 Flash (rẻ)" },
-                    { v: "openai" as AIProvider, label: "GPT-4o (OpenAI)" },
                   ]).map((o) => (
                     <button
                       key={o.v}
