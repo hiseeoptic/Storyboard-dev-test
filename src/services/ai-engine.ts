@@ -617,13 +617,20 @@ export async function generateStoryboardBreakdown(
         parsed.product_dna = undefined;
       }
 
+      // SCENE INTENT — RESILIENT VALIDATION. scene_intent is auxiliary creative
+      // metadata: a malformed one must NEVER kill the whole (expensive) 3-attempt
+      // generation the user already paid for. The schema now coerces near-miss
+      // values; if it STILL cannot parse, drop that segment's intent (prompts
+      // render fine without it). Semantic issues are logged as warnings only.
       for (const [index, segment] of parsed.segments.entries()) {
         const intent = sceneIntentSchema.safeParse(segment.scene_intent);
         if (!intent.success) {
           const issue = intent.error.issues[0];
-          throw new Error(
-            `Segment ${index + 1} scene_intent invalid${issue ? ` at ${issue.path.join(".")}: ${issue.message}` : ""}`
+          console.warn(
+            `[AI Engine] Segment ${index + 1} scene_intent unparseable — dropped${issue ? ` (${issue.path.join(".")}: ${issue.message})` : ""}`
           );
+          segment.scene_intent = undefined;
+          continue;
         }
         segment.scene_intent = intent.data;
         const intentIssues = validateSceneIntent(intent.data, {
@@ -632,16 +639,10 @@ export async function generateStoryboardBreakdown(
           charactersInScene: segment.characters_in_scene,
           projectPurpose: input.resolved_context?.layers.project_intent.purpose,
         });
-        const hardIssues = intentIssues.filter((item) => item.severity === "error");
-        if (hardIssues.length > 0) {
-          throw new Error(
-            `Segment ${index + 1} scene_intent failed semantic validation: ${hardIssues
-              .map((item) => `${item.code} — ${item.message}`)
-              .join("; ")}`
+        for (const issue of intentIssues) {
+          console.warn(
+            `[AI Engine] Segment ${index + 1} scene_intent ${issue.severity}: ${issue.code} — ${issue.message}`
           );
-        }
-        for (const warning of intentIssues.filter((item) => item.severity === "warning")) {
-          console.warn(`[AI Engine] Segment ${index + 1} ${warning.code}: ${warning.message}`);
         }
       }
 
