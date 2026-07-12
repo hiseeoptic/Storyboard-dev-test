@@ -802,6 +802,8 @@ function assemblePlanPrompts(
             )
             .join(" | ")
         : charDesc;
+    // buildSegmentVeoPrompt now strips ALL hex from its own output (Veo burns
+    // "#A9C7E8" onto the frame as a name tag), so no wrap needed here.
     seg.full_prompt = buildSegmentVeoPrompt({
       characterDescription: castDesc,
       realityProfile: breakdown.context_ir?.reality_profile,

@@ -94,7 +94,7 @@ function veoConciseTail(
     : hasProduct
       ? "TEXT POLICY: the exact approved product label/logo may remain; all other readable text is forbidden — no subtitles, captions, dialogue transcription, title cards, watermarks, spec cards, HUD or technical values. Spoken words are AUDIO ONLY."
       : "NO-TEXT POLICY: the frame contains no readable text — no subtitles, captions, dialogue transcription, title cards, logos, watermarks, spec cards, HUD or technical values. Spoken words are audio only.";
-  return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${textLaw} Avoid: ${productNeg}burned-in subtitles or captions, spoken words rendered as on-screen text, morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, ${renderNeg}.`;
+  return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${textLaw} NO LABELS ON PEOPLE OR OBJECTS: never draw a character name tag, name badge, floating label, caption box, colour swatch, hex colour code (like "#A9C7E8") or any identifying text over a person, object or the frame — names and technical values in this prompt are internal only, never shown. Avoid: ${productNeg}character name tags or labels on screen, colour-code or hex-code text overlays, burned-in subtitles or captions, spoken words rendered as on-screen text, morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, ${renderNeg}.`;
 }
 
 /** One-line "Scene Bible" style tokens. Keeps lens/lighting/grade constant so
@@ -1475,10 +1475,13 @@ export function buildSegmentVeoPrompt(params: {
   const tokens = params.sceneBible
     ? ` ${sceneBibleTokens(params.sceneBible)} (These style values are internal camera settings — NEVER display them as text on screen.)`
     : "";
-  const palette =
-    params.colorPalette && params.colorPalette.length > 0
-      ? ` Colour palette: ${params.colorPalette.join(", ")}.`
-      : "";
+  // Colour palette for Veo: strip raw hex (Veo cannot read hex and renders a
+  // bare "#A9C7E8" as an on-screen colour-swatch label). Keep only real colour
+  // WORDS; if the palette is hex-only, omit the line entirely.
+  const paletteWords = (params.colorPalette ?? [])
+    .map((c) => c.replace(/#[0-9A-Fa-f]{3,8}\b/g, "").replace(/[()]/g, "").trim())
+    .filter(Boolean);
+  const palette = paletteWords.length > 0 ? ` Colour palette: ${paletteWords.join(", ")}.` : "";
   const intent = renderSceneIntentDirective(params.sceneIntent);
   const intentBlock = intent ? ` ${intent}` : "";
   // Multi-character CAST-SYNC: lock exactly who is ON SCREEN, who SPEAKS, and
@@ -1561,7 +1564,17 @@ export function buildSegmentVeoPrompt(params: {
     }
   }
   const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
-  return `${lead}${character}${castLine}${panelMap}${contextLock}${setting}${envBlock}${product}${ing}${tokens}${palette}${intentBlock} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription, params.realityProfile, params.worldContext?.allowed_language_text)}`;
+  const assembled = `${lead}${character}${castLine}${panelMap}${contextLock}${setting}${envBlock}${product}${ing}${tokens}${palette}${intentBlock} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription, params.realityProfile, params.worldContext?.allowed_language_text)}`;
+  // DEFINITIVE hex-code scrub: Veo cannot read hex and burns any "#A9C7E8"
+  // next to a name onto the frame as a name tag. Hex serves the boards, never
+  // the video prompt — remove EVERY hex token from the final Veo text here so
+  // no caller can leak one (single source of truth for the whole app).
+  return assembled
+    .replace(/\s*\(#[0-9A-Fa-f]{3,8}\)/g, "")
+    .replace(/\s*#[0-9A-Fa-f]{3,8}\b/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;)])/g, "$1")
+    .trim();
 }
 
 export function buildVideoPromptText(params: {
@@ -1652,12 +1665,12 @@ Spoken language: ${dialogueLanguage} (lip-synced, no on-screen subtitles)
 - CTA: ${params.marketing.cta}
 
 ## Character (keep visually consistent in every clip — paste this wording into every prompt)
-${params.characterDescription}
-Use the generated CHARACTER REFERENCE SHEET as a reference image in every clip so the appearance and wardrobe stay consistent.
+${params.characterDescription.replace(/\s*\(?#[0-9A-Fa-f]{3,8}\)?/g, "").replace(/\s{2,}/g, " ").replace(/\s+([,.;)])/g, "$1")}
+Use the generated CHARACTER REFERENCE SHEET as a reference image in every clip so the appearance and wardrobe stay consistent. (Colour hex codes are omitted on purpose — the reference image locks the colours; hex text pasted into Veo gets burned onto the frame as a label.)
 
 ## Setting
-${params.setting}
-Color palette: ${params.colorPalette.join(", ")}
+${params.setting.replace(/\s*\(?#[0-9A-Fa-f]{3,8}\)?/g, "").replace(/\s{2,}/g, " ")}
+Colour theme (for your reference only, do NOT paste into Veo): ${params.colorPalette.join(", ")}
 
 ## HOW TO BUILD THE VIDEO (seamless chaining)
 Each shot has TWO images: (a) a CLEAN KEYFRAME — one single photographic scene — and (b) a multi-panel STORYBOARD BOARD (character angles + scene + captioned action sequence).
@@ -1702,6 +1715,15 @@ export function buildVeoJson(
 ): Record<string, unknown> {
   const oneLine = (s?: string | null) =>
     (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+  // Veo-facing JSON must carry ZERO hex codes: Veo renders "#A9C7E8" as an
+  // on-screen name/colour label. Boards keep hex; this export never does.
+  const noHex = (s?: string | null) =>
+    oneLine(s)
+      .replace(/\s*\(#[0-9A-Fa-f]{3,8}\)/g, "")
+      .replace(/\s*#[0-9A-Fa-f]{3,8}\b/g, "")
+      .replace(/\s{2,}/g, " ")
+      .replace(/\s+([,.;)])/g, "$1")
+      .trim();
   const lang = opts.dialogueLanguage ?? "Vietnamese";
   const locks = breakdown.character_locks ?? [];
   const clipSeconds = 10;
@@ -1713,18 +1735,18 @@ export function buildVeoJson(
     // TẦNG 9: full locked voice profile (never a bare reference).
     voice: oneLine(l.voice) || defaultVoiceFor(l.gender, l.is_child),
     appearance: [l.gender_age, l.build, l.skin_tone, l.hair, l.eyes]
-      .map((x) => oneLine(x))
+      .map((x) => noHex(x))
       .filter(Boolean)
       .join(", "),
     // Forensic realism locks (ported from veoflow-web) — keep skin/eyes/materials
     // real, not CGI, across every clip.
-    skin_texture: oneLine(l.skin_texture),
-    eye_details: oneLine(l.eye_details),
-    wardrobe: oneLine(l.costume),
-    wardrobe_materials: oneLine(l.wardrobe_materials),
-    signature_features: oneLine(l.signature_features),
+    skin_texture: noHex(l.skin_texture),
+    eye_details: noHex(l.eye_details),
+    wardrobe: noHex(l.costume),
+    wardrobe_materials: noHex(l.wardrobe_materials),
+    signature_features: noHex(l.signature_features),
     default_expression: oneLine(l.default_expression),
-    dna: oneLine(l.dna),
+    dna: noHex(l.dna),
   }));
 
   const sb = breakdown.scene_bible;
@@ -1842,7 +1864,7 @@ export function buildVeoJson(
     },
     continuity: {
       characters,
-      product_dna: breakdown.product_dna ? oneLine(breakdown.product_dna) : null,
+      product_dna: breakdown.product_dna ? noHex(breakdown.product_dna) : null,
     },
     negative_prompt: VEO_NEGATIVE_LIST,
     title: breakdown.title,
