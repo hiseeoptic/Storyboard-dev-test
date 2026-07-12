@@ -1284,19 +1284,20 @@ export function buildMasterBoardPrompt(params: {
       ? params.colorPalette.slice(0, 6).join(", ")
       : "#F5E6D3, #8B4513, #2D5016, #FFFFFF, #1A1A1A";
 
-  return `Professional production STORYBOARD DOCUMENT, ONE single horizontal image, clean white/light background, agency-quality layout with two zones:
+  return `Professional production STORYBOARD DOCUMENT, ONE single horizontal image, clean white/light background, agency-quality layout with two zones. PURPOSE: this single sheet is attached as a REFERENCE DOCUMENT to an image-to-video model for EVERY clip of the video — so the character references must be LARGE and razor-sharp, and every panel number must be instantly readable at a glance.
 
-◀ LEFT COLUMN (about 1/4 width) — "CHARACTER REFERENCE SHEET":
+◀ LEFT COLUMN (about 1/4 width) — "CHARACTER REFERENCE SHEET" (make this column the sharpest, most detailed zone of the whole sheet — the video model locks identity from HERE):
 - Header text "CHARACTER REFERENCE SHEET".
 - FULL BODY: 3 standing turnaround views (front, side, back) of the character.
-- CLOSE UP / PORTRAIT: 3 head studies at different angles.
+- CLOSE UP / PORTRAIT: 3 LARGE head studies at different angles — faces big, tack-sharp, filling the column width; never small blurry thumbnails.
 - COLOR PALETTE: small circular swatches: ${colorBlock}.
 ${params.characterName ? `- Small profile block with the name "${params.characterName}".` : ""}
 
 ▶ RIGHT ZONE (about 3/4 width) — "STORYBOARD — ${params.title.toUpperCase()}":
-- Grid of ${maxPanels} panels, ${cols} columns × ${rows} rows, thin clean borders, numbered badge (01, 02, ...) in each panel's top-left corner.
+- Grid of ${maxPanels} panels, ${cols} columns × ${rows} rows, thin clean borders. EACH panel carries a BIG, BOLD panel number badge ("1", "2", …) in its top-left corner — large solid dark badge with white numeral, readable even when the sheet is shrunk (these numbers are how each video clip is pointed at its panel).
 - Each panel: a ${isPhotoStyle(params.style) ? "PHOTOGRAPHIC cinematic still of that moment (a real photo frame — NOT a drawing, NOT an illustration)" : `${params.style} illustration of that moment`}, and BELOW the picture a small white caption band with two labeled lines of text:
   "Action:" the action description, then "Lời thoại:" the spoken ${lang} line in quotes.
+- Panels stage the character LARGE enough that face and wardrobe read clearly — medium/medium-close staging preferred over tiny wide figures.
 
 CHARACTER (THE SAME individual in the reference column AND every storyboard panel — identical face, hair, outfit): ${charDesc}
 
@@ -1307,7 +1308,7 @@ Metadata footer: "${params.totalDuration}s • ${maxPanels} shots • ${params.m
 
 ${renderDirective(params.style, params.preserveRealFace ?? false)}
 
-RULES: ONE cohesive document image; same character everywhere — the reference column and EVERY panel show the SAME person with an identical face (never a different face, never a redrawn/cartoon face); ${isPhotoStyle(params.style) ? "photographic realism for both the reference column and all panel stills" : `${params.style} style for the panel art`}; caption text small, clean and legible; no watermark. ${SHARED_NEGATIVE}`;
+RULES: ONE cohesive document image; same character everywhere — the reference column and EVERY panel show the SAME person with an identical face (never a different face, never a redrawn/cartoon face); ${isPhotoStyle(params.style) ? "photographic realism for both the reference column and all panel stills" : `${params.style} style for the panel art`}; panel numbers BIG and unmistakable; caption text small, clean and legible; no watermark. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Viral 9:16 THUMBNAIL / cover (funny, scroll-stopping, on-topic) ─────────
@@ -1424,6 +1425,10 @@ export function buildSegmentVeoPrompt(params: {
   /** TRUE when the user uploaded a real LOCATION photo — the set must be
    * rebuilt from that photo, not invented from text alone. */
   hasLocationRef?: boolean;
+  /** This clip's panel number on the MASTER STORYBOARD SHEET. When set, the
+   * prompt carries a REFERENCE MAP so Flow reads the attached sheet as a
+   * document and animates ONLY this panel's moment (never renders the grid). */
+  panelNumber?: number;
 }): string {
   const lang = params.dialogueLanguage ?? "Vietnamese";
   const clean = (s?: string) => (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
@@ -1438,6 +1443,13 @@ export function buildSegmentVeoPrompt(params: {
   const lead =
     `Keep every referenced subject visually consistent across the project — original characters/entities, not a public-figure imitation. Create ONE continuous 10-second shot in the scene described below; ${settingSource} Every technical value in this prompt is an INTERNAL production instruction, never an on-screen overlay; visible text follows only the locked text policy stated below.`;
   const character = ` Primary subject/cast: ${clean(params.characterDescription)}.`;
+  // MASTER-SHEET WORKFLOW: one storyboard sheet (all panels + char refs) is
+  // attached to every clip; this block tells Flow which panel THIS clip is,
+  // and forbids rendering the sheet's grid/borders/numbers in the output.
+  const panelMap =
+    params.panelNumber != null
+      ? ` STORYBOARD REFERENCE MAP: if a multi-panel STORYBOARD SHEET image is attached, it is a REFERENCE DOCUMENT — not the shot itself. Use its CHARACTER REFERENCE column to lock the character's face, hair and wardrobe, and use PANEL ${params.panelNumber} (the panel with the big number ${params.panelNumber} badge) as the staging reference for THIS clip: same positions, poses, framing and location as that one panel, brought to life as full-screen live footage. Animate ONLY panel ${params.panelNumber}'s moment — ignore every other panel. NEVER render the sheet itself: no grid, no panel borders, no number badges, no caption bands, no split-screen — the output is one single full-frame cinematic shot.`
+      : "";
   // TẦNG 0 — the locked world every entity in this clip must belong to.
   const contextLock = worldContextLockBlock(params.worldContext);
   // The scene doubles as the clip's START STATE: planting props here is what
@@ -1544,7 +1556,7 @@ export function buildSegmentVeoPrompt(params: {
     }
   }
   const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
-  return `${lead}${character}${castLine}${contextLock}${setting}${envBlock}${product}${ing}${tokens}${palette}${intentBlock} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription, params.realityProfile, params.worldContext?.allowed_language_text)}`;
+  return `${lead}${character}${castLine}${panelMap}${contextLock}${setting}${envBlock}${product}${ing}${tokens}${palette}${intentBlock} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription, params.realityProfile, params.worldContext?.allowed_language_text)}`;
 }
 
 export function buildVideoPromptText(params: {
@@ -1748,6 +1760,8 @@ export function buildVeoJson(
         : null;
     return {
       id: seg.segment_number,
+      // Which panel of the attached master storyboard sheet this clip animates.
+      storyboard_panel: seg.segment_number,
       role: seg.marketing_role,
       scene_intent: seg.scene_intent ?? null,
       duration_seconds: seg.duration_seconds ?? clipSeconds,
@@ -1806,7 +1820,7 @@ export function buildVeoJson(
       total_clips: clips.length,
     },
     reference_image:
-      "Attach the SAME uploaded character photo as the identity reference in EVERY clip. Do NOT copy the photo's own background — build each clip's scene from its `scene` field.",
+      "Attach TWO references to EVERY clip: (1) the SAME uploaded character photo as the identity reference, and (2) the MASTER STORYBOARD SHEET (storyboard_overview.png) as the staging reference — each clip's prompt names its own panel number on that sheet. Do NOT copy either image's own background/grid — build each clip's scene from its `scene` field; never render the sheet's panels, borders or number badges in the output.",
     on_screen_text:
       "FORBIDDEN — the rendered frame contains ZERO readable text, letters, numbers or typography: no subtitles, captions, karaoke/lyric text, title cards, watermarks or logos. Every technical value in this JSON (lens mm, f-stop, Kelvin, lux, timecodes) is an internal camera/render setting — NEVER draw it as on-screen text, a spec card, HUD or corner overlay.",
     global_style: {

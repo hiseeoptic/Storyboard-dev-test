@@ -1353,13 +1353,13 @@ export function GenerateClient() {
     setProgressPercent(12);
 
     const segCount = breakdown.segments.length;
-    // Per clip we render ONE review BOARD (shows the scene). Clean keyframes
-    // and the MASTER BOARD are NOT auto-generated anymore — the per-segment
-    // boards are what actually feed Veo; the master board is presentation-only
-    // and can be generated on demand from the result screen (saves one image
-    // call per run). Feed Veo your uploaded character photo + the
-    // self-contained prompt (saves tokens and avoids inconsistent AI faces).
-    const total = segCount;
+    // MASTER-BOARD-CENTRIC FLOW (user-approved 2026-07-12): auto-draw ONE
+    // master storyboard sheet (all panels + big character refs) instead of
+    // one board per segment (~5× cheaper). In Flow, each clip attaches the
+    // SAME master sheet + the user's character photo, and every clip prompt
+    // carries a STORYBOARD REFERENCE MAP pointing at its own panel number.
+    // Per-segment boards remain available on demand from the result screen.
+    const total = 1;
     let done = 0;
     const bump = () => {
       done++;
@@ -1390,31 +1390,27 @@ export function GenerateClient() {
       return null;
     };
 
-    // The first successful board sets the canonical wardrobe/look; every later
-    // board receives it as an anchor so the outfit + accessories stay identical.
-    let anchorB64: string | null = null;
-    for (let i = 0; i < segCount; i++) {
-      setProgressMessage(lang === "vi" ? `Đang vẽ cảnh ${i + 1}/${segCount}` : `Drawing board ${i + 1}/${segCount}`);
-      const url = await genBoard(
-        { input, breakdown, analysis, kind: "segment", segmentIndex: i, provider, anchorImage: anchorB64 ?? undefined },
-        lang === "vi" ? `Cảnh ${i + 1}` : `Board ${i + 1}`,
-        `seg-${i}`
-      );
-      const seg = breakdown.segments[i];
-      if (seg) seg.first_frame_url = url;
-      if (url && !anchorB64) anchorB64 = await toAnchorBase64(url);
-      bump();
-      if (i < segCount - 1) await sleep(1200);
-    }
+    // ONE master storyboard sheet for the whole video: all panels + the big
+    // character-reference column. This single image is what gets attached
+    // (with the user's character photo) to EVERY clip in Flow.
+    setProgressMessage(
+      lang === "vi"
+        ? `Đang vẽ bảng storyboard tổng (${segCount} cảnh trong 1 ảnh)`
+        : `Drawing the master storyboard sheet (${segCount} panels in 1 image)`
+    );
+    const posterUrl = await genBoard(
+      { input, breakdown, analysis, kind: "master", provider },
+      lang === "vi" ? "Bảng tổng" : "Master board",
+      "master"
+    );
+    bump();
 
-    // Master board is on-demand only (a presentation document, not a Veo
-    // input) — the result screen has a button to generate it when needed.
     setBoardErrors(errs);
     setProgressPercent(100);
     setResult({
       breakdown,
       characterRefSheetUrl: null,
-      storyboardPosterUrl: null,
+      storyboardPosterUrl: posterUrl,
       thumbnailUrl: null,
       videoPrompt,
       warnings: [...warnings, ...boardWarnings],
@@ -1784,15 +1780,18 @@ export function GenerateClient() {
         "CÁCH DÙNG BỘ PROMPT NÀY VỚI VEO / OMNI FLASH",
         "=============================================",
         "",
-        "Mỗi clip 10s làm ĐỘC LẬP. Với TỪNG clip:",
-        "  1) Mở Veo (image-to-video), tải ẢNH NHÂN VẬT của bạn (ảnh bạn đã upload) làm ảnh tham chiếu.",
+        "Mỗi clip 10s làm ĐỘC LẬP. Với TỪNG clip đính kèm 2 ẢNH THAM CHIẾU GIỐNG NHAU:",
+        "  1) Mở Veo/Flow (image-to-video), đính kèm: ① ẢNH NHÂN VẬT của bạn (khoá mặt)",
+        "     + ② BẢNG STORYBOARD TỔNG (file storyboard_overview.png — khoá dàn cảnh).",
+        "     Cả " + bd.segments.length + " clip dùng CHUNG đúng 2 ảnh này, không cần vẽ board riêng từng cảnh.",
         "  2) Dán ĐÚNG phần prompt của clip đó (dòng PROMPT trong master_prompt.txt,",
-        "     hoặc trường \"prompt\" của segment trong veo_prompts.json).",
+        "     hoặc trường \"prompt\" của segment trong veo_prompts.json). Prompt đã tự trỏ",
+        "     đúng SỐ PANEL của clip đó trên bảng tổng (STORYBOARD REFERENCE MAP).",
         "  3) Đặt tỉ lệ " + aspect + ", tạo clip. Lặp cho " + bd.segments.length + " clip rồi ghép (CapCut/ffmpeg).",
         "",
         "KHÔNG cần copy phần đầu JSON (title / character_locks / scene_bible / style_guide)",
-        "vào Veo — mỗi prompt segment đã TỰ CHỨA đầy đủ nhân vật + bối cảnh + phong cách,",
-        "nên chỉ cần ảnh nhân vật của bạn + prompt là ĐỦ. Không cần tạo keyframe riêng.",
+        "vào Veo — mỗi prompt segment đã TỰ CHỨA đầy đủ nhân vật + bối cảnh + phong cách.",
+        "Không cần tạo keyframe riêng.",
         "",
         "\"continuity\" / \"Nối tiếp\": chỉ là GHI CHÚ cho bạn biết clip này nối với clip trước thế nào",
         "(để ghép mượt) — KHÔNG dán vào Veo. Segment 1 ghi 'opening shot' vì là cảnh mở đầu.",
@@ -2239,8 +2238,8 @@ export function GenerateClient() {
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? `Bố cục tài liệu production: Character Sheet bên trái + lưới ${result.breakdown.segments.length} panel kèm Action & Lời thoại — dùng để trình bày/duyệt kịch bản`
-                  : `Production-document layout: Character Sheet on the left + ${result.breakdown.segments.length}-panel grid with Action & Dialogue captions — for presenting/approving the script`}
+                  ? `⭐ TẤM THAM CHIẾU CHÍNH cho Flow: với TỪNG clip, đính kèm ẢNH NHÂN VẬT của bạn + TẤM NÀY (1 ảnh dùng chung cho cả ${result.breakdown.segments.length} clip). Prompt mỗi clip đã tự trỏ đúng số panel của nó trên tấm này — Flow sẽ dựng cảnh theo panel đó, không hiện lưới.`
+                  : `⭐ THE reference sheet for Flow: for EACH clip, attach YOUR character photo + THIS sheet (one image shared by all ${result.breakdown.segments.length} clips). Every clip's prompt already points at its own panel number — Flow stages that panel without rendering the grid.`}
               </p>
             </CardContent>
           </Card>
@@ -2249,12 +2248,12 @@ export function GenerateClient() {
             <CardContent className="flex flex-col items-center justify-center py-8 text-center">
               <ImageIcon className="mb-2 h-8 w-8 text-muted-foreground/50" />
               <p className="text-sm font-medium text-muted-foreground">
-                {lang === "vi" ? "Bảng Storyboard Tổng (tuỳ chọn)" : "Master Board (optional)"}
+                {lang === "vi" ? "Bảng Storyboard Tổng — chưa tạo được" : "Master Board — not generated yet"}
               </p>
               <p className="mt-1 max-w-md text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? "Không tự tạo để tiết kiệm chi phí — các board từng cảnh ở dưới mới là thứ đưa vào Veo. Chỉ tạo bảng tổng khi cần 1 ảnh trình bày/duyệt kịch bản."
-                  : "Not auto-generated to save cost — the per-scene boards below are what feed Veo. Generate it only when you need one presentation image."}
+                  ? "Đây là TẤM THAM CHIẾU CHÍNH đính kèm cho từng clip trong Flow (cùng ảnh nhân vật của bạn) — hãy bấm tạo lại để có nó trước khi dựng video."
+                  : "This is THE reference sheet you attach to every clip in Flow (with your character photo) — retry generating it before making the video."}
               </p>
               {boardErrors["master"] && (
                 <p className="mt-1 max-w-md text-xs text-destructive/80">{boardErrors["master"]}</p>

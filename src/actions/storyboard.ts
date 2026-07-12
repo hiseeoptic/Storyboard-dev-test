@@ -824,6 +824,8 @@ function assemblePlanPrompts(
       ambientAudio,
       environmentRef: seg.environment_ref,
       hasLocationRef: !!ctx.bgImg,
+      // Master-sheet workflow: this clip = panel N on the master storyboard.
+      panelNumber: seg.segment_number,
     });
   }
   return buildVideoPromptText({
