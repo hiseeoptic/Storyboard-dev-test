@@ -292,6 +292,27 @@ export const environmentArchetypes: Record<string, EnvironmentArchetype> = {
     forbidden_variation: LOCKED,
   },
 
+  sunny_apartment_balcony: {
+    archetype_id: "sunny_apartment_balcony",
+    display_name: "Sunny Apartment Balcony",
+    environment_class: "exterior_urban",
+    element: "Mộc",
+    keywords: ["balcony", "ban công", "lô gia", "loggia", "hiên căn hộ", "balcony garden", "potted plants balcony"],
+    scale: "one fixed apartment balcony ~3×1.5m with railing, camera works within a 2.5m arc, soft-focus city beyond",
+    materials: [
+      { surface: "floor", material: "outdoor ceramic tiles", physics: "matte weathered glaze, darker grout lines, a few sun-faded patches" },
+      { surface: "railing", material: "painted metal railing with concrete parapet", physics: "paint micro-chipped at the handrail, warm to the touch in sun, real specular on edges" },
+      { surface: "plants", material: "potted plants in ceramic and plastic pots", physics: "real leaf translucency in sunlight, soil dark when watered, water stains under pots" },
+    ],
+    lighting: { key_kelvin: 5500, ambient_kelvin: 6000, ambient_lux: 5000, sources: ["direct morning/afternoon sun", "bright open sky dome"], shadows: "crisp but soft-edged sun shadows through railing, bright bounce off the wall" },
+    atmosphere: { time_of_day: "bright daytime", weather: "clear", particulates: ["floating dust sparkles in sunbeams"], ambient_motion: "leaves trembling in the breeze, laundry or curtain flutter at the edge, birds passing far off" },
+    micro_details: ["a watering can by the pots", "clothes pegs on a line", "one leaf yellowing at the edge"],
+    imperfections: ["water stains under pots", "hairline crack in one tile", "dusty railing corner"],
+    sound_bed: "city murmur far below, light breeze, sparrows, an occasional distant motorbike horn",
+    micro_variation_allowed: ["leaf movement", "cloud-driven light shifts", "curtain flutter"],
+    forbidden_variation: LOCKED,
+  },
+
   warm_apartment_living_room: {
     archetype_id: "warm_apartment_living_room",
     display_name: "Warm Apartment Living Room",

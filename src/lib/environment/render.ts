@@ -51,6 +51,13 @@ export function resolveEnvironment(
       // ≥2 = a specific multi-word/curated hit (e.g. "living room", "phòng
       // khách") — clear evidence the scene lives in a different archetype.
       if (bestOtherScore >= 2) return bestOther;
+      // No credible alternative either (a BALCONY scene once got the DAWN
+      // LAKE lock — 6200K mist over a 5500K sunny balcony): DROP the block.
+      // No world lock is far better than a wrong world fighting the prompt.
+      console.warn(
+        `[Environment] ref "${chosen.archetype_id}" contradicts the setting text and nothing else matches — dropping the environment lock for this clip.`
+      );
+      return undefined;
     }
     return chosen;
   }

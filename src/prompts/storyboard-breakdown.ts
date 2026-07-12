@@ -85,12 +85,16 @@ function veoConciseTail(
     : "unmotivated photoreal/stylized switching, accidental world-physics drift";
   const policy = (visibleTextPolicy ?? "").trim();
   const permitsText = !!policy && !/(none|forbid|zero|avoid readable|blur all|no text)/i.test(policy);
+  // CRITICAL: a language policy like "Vietnamese only, minimal" governs
+  // DIEGETIC SIGNAGE in the world (a shop sign, a book cover) — Veo once read
+  // it as permission to BURN THE VOICEOVER ONTO THE FRAME as Vietnamese
+  // subtitles. Subtitles/captions/dialogue transcription stay banned ALWAYS.
   const textLaw = permitsText
-    ? `TEXT POLICY: render only text explicitly allowed by the locked policy (${policy}); no invented captions, subtitles, signs, labels or technical overlays.`
+    ? `TEXT POLICY (diegetic signage only): the ONLY text that may ever be readable is a real in-world sign/label/object print EXPLICITLY described in the SCENE, in ${policy}. Everything else is FORBIDDEN — ABSOLUTELY no subtitles, no captions, no transcription of any spoken line or voiceover onto the frame, no karaoke/lyric text, no title cards, no floating text boxes, no watermarks, no spec cards/HUD/technical values. Spoken words are AUDIO ONLY and must NEVER appear as written words on screen.`
     : hasProduct
-      ? "TEXT POLICY: the exact approved product label/logo may remain; all other readable text is forbidden — no subtitles, captions, title cards, watermarks, spec cards, HUD or technical values."
-      : "NO-TEXT POLICY: the frame contains no readable text — no subtitles, captions, title cards, logos, watermarks, spec cards, HUD or technical values. Spoken words are audio only.";
-  return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${textLaw} Avoid: ${productNeg}morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, ${renderNeg}.`;
+      ? "TEXT POLICY: the exact approved product label/logo may remain; all other readable text is forbidden — no subtitles, captions, dialogue transcription, title cards, watermarks, spec cards, HUD or technical values. Spoken words are AUDIO ONLY."
+      : "NO-TEXT POLICY: the frame contains no readable text — no subtitles, captions, dialogue transcription, title cards, logos, watermarks, spec cards, HUD or technical values. Spoken words are audio only.";
+  return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${textLaw} Avoid: ${productNeg}burned-in subtitles or captions, spoken words rendered as on-screen text, morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, ${renderNeg}.`;
 }
 
 /** One-line "Scene Bible" style tokens. Keeps lens/lighting/grade constant so
@@ -1264,7 +1268,7 @@ export function buildMasterBoardPrompt(params: {
 
   const panelLines = panels
     .map((s) => {
-      const action = s.action.length > 90 ? s.action.slice(0, 90) + "..." : s.action;
+      const action = s.action.length > 160 ? s.action.slice(0, 160) + "..." : s.action;
       const line = s.dialogue
         ? s.dialogue.length > 70
           ? s.dialogue.slice(0, 70) + "..."
@@ -1288,6 +1292,7 @@ export function buildMasterBoardPrompt(params: {
 
 ◀ LEFT COLUMN (about 1/4 width) — "CHARACTER REFERENCE SHEET" (make this column the sharpest, most detailed zone of the whole sheet — the video model locks identity from HERE):
 - Header text "CHARACTER REFERENCE SHEET".
+- NEUTRAL BACKGROUND RULE (critical): EVERY reference view in this column stands on a CLEAN, SEAMLESS, plain light-grey STUDIO background — never inside any scene, location or landscape (no rooftop, no kitchen, no balcony, no city behind them). This column shows ONLY the character's angles and looks; real locations exist ONLY inside the numbered panels on the right.
 - FULL BODY: 3 standing turnaround views (front, side, back) of the character.
 - CLOSE UP / PORTRAIT: 3 LARGE head studies at different angles — faces big, tack-sharp, filling the column width; never small blurry thumbnails.
 - COLOR PALETTE: small circular swatches: ${colorBlock}.
@@ -1535,7 +1540,7 @@ export function buildSegmentVeoPrompt(params: {
     // walking) during their window — so bind each line hard to its owner and
     // freeze the big action while the mouth moves.
     const ownership = ` LINE OWNERSHIP (STRICT): every line above belongs ONLY to its named speaker — NEVER let a different character say it, never move another character's mouth to it, and never swap voices between characters (${speakersInTurns.length > 1 ? `${speakersInTurns.join(" and ")} have different voices — each line uses its owner's voice and face` : "the line stays with its owner"}). SPEAK-WHILE-STILL RULE: during each line's time window its speaker HOLDS a stable pose, face toward camera, and delivers the line with clear lip-sync — any large body action (standing up, sitting down, walking, turning away) happens in the GAPS between lines, never during a line. If the MOTION timing and these DIALOGUE windows disagree, the DIALOGUE windows win — shift the action beats to fit around them.`;
-    spoken = ` DIALOGUE (turn-taking, ONE person speaks at a time, never overlapping; the camera is on whoever is speaking, their face in medium-close, mouth moving with exact lip-sync; the others keep mouths closed): ${lines}. All lines in ${lang}, AUDIO ONLY — absolutely NO subtitles, captions or on-screen text.${listenerNote}${ownership}`;
+    spoken = ` DIALOGUE (turn-taking, ONE person speaks at a time, never overlapping; the camera is on whoever is speaking, their face in medium-close, mouth moving with exact lip-sync; the others keep mouths closed): ${lines}. All lines in ${lang}, AUDIO ONLY — absolutely NO subtitles, captions or on-screen text. SAY IT ONCE: each line is spoken EXACTLY ONCE, straight through at a natural pace — never repeat, stutter, loop or echo any word or phrase of it (a word must never be said twice in a row); when the line ends, the voice stops cleanly and does not restart.${listenerNote}${ownership}`;
   } else if (turns.length === 1) {
     const t = turns[0]!;
     const nm = (t.speaker ?? "").trim();
@@ -1543,7 +1548,7 @@ export function buildSegmentVeoPrompt(params: {
       // Genuine VOICEOVER clip: the line is off-screen narration — if we say
       // "the character speaks", Veo lip-syncs it through an on-screen face.
       const vt = params.speakerVoice ? ` (narrator voice: ${params.speakerVoice} — heard from off-screen only)` : "";
-      spoken = ` VOICEOVER${vt}, off-screen narration in ${lang}: "${(t.text ?? "").trim()}" — NOBODY on screen moves their mouth or lips during this narration; every visible character keeps the mouth fully closed. AUDIO ONLY — absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.`;
+      spoken = ` VOICEOVER${vt}, off-screen narration in ${lang}: "${(t.text ?? "").trim()}" — NOBODY on screen moves their mouth or lips during this narration; every visible character keeps the mouth fully closed. Spoken EXACTLY ONCE, straight through — never repeat, stutter or loop any word or phrase. AUDIO ONLY — absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.`;
     } else {
     const label = nm || speakerLabel;
     const vt = nm ? voiceOf(nm) || (params.speakerVoice ? ` (voice: ${params.speakerVoice})` : "") : params.speakerVoice ? ` (voice: ${params.speakerVoice})` : "";
@@ -1552,7 +1557,7 @@ export function buildSegmentVeoPrompt(params: {
       nm && others.length > 0
         ? ` Only ${nm} speaks; the other character${others.length > 1 ? "s" : ""} (${others.join(", ")}) stay silent and listen with mouths closed.`
         : "";
-    spoken = ` ${label}${vt} speaks to camera with natural mouth movement and accurate lip-sync — the voice emanates from ${nm ? `${nm}'s` : "the speaker's"} mouth — saying in ${lang}: "${(t.text ?? "").trim()}" — delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence} While delivering the line, ${nm || "the speaker"} HOLDS a stable pose with the face toward camera — any large body action (standing up, walking, turning away) happens before or after the line, never during it; the line is NEVER reassigned to another character.`;
+    spoken = ` ${label}${vt} speaks to camera with natural mouth movement and accurate lip-sync — the voice emanates from ${nm ? `${nm}'s` : "the speaker's"} mouth — saying in ${lang}: "${(t.text ?? "").trim()}" — spoken EXACTLY ONCE, straight through at a natural pace (never repeat, stutter or loop any word or phrase; the voice stops cleanly when the line ends), delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence} While delivering the line, ${nm || "the speaker"} HOLDS a stable pose with the face toward camera — any large body action (standing up, walking, turning away) happens before or after the line, never during it; the line is NEVER reassigned to another character.`;
     }
   }
   const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";

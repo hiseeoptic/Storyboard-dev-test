@@ -998,7 +998,15 @@ export async function generateBoardImage(params: {
         segments: breakdown.segments.map((s) => ({
           segment_number: s.segment_number,
           title: s.title,
-          action: s.beats?.[0]?.beat || s.title,
+          // Panel = its clip's REAL location + action (a panel drawn in the
+          // wrong place breaks the whole master-sheet staging-reference flow:
+          // prompt said balcony while panel 1 showed a kitchen).
+          action: [
+            s.beats?.[0]?.beat || s.title,
+            (s.first_frame_prompt ?? "").replace(/\s+/g, " ").trim().slice(0, 90),
+          ]
+            .filter(Boolean)
+            .join(" — SETTING: "),
           dialogue: s.dialogue,
         })),
         characterDescription: ctx.charDescDna,
