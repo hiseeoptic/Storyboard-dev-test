@@ -38,4 +38,3 @@ export function selectRules(
     return active.has(rule.profile);
   });
 }
-
