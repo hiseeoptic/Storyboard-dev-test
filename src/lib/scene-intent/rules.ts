@@ -1,8 +1,11 @@
-import { defineRules } from "@/lib/rules";
+import { defineRules, selectRules, type RuleSelectionContext } from "@/lib/rules";
 
 /** Abstract laws. They apply to every project without assuming a marketing arc. */
 export const SCENE_INTENT_ABSTRACT_LAWS = [
   "Scene intent is derived from the locked project intent, approved script and story state — never selected from a default marketing template without evidence",
+  "The FIRST clip reserves a 3-5 second Hook Window that earns immediate attention in an intent-appropriate form (visual event, question, conflict, observed fact, sensory moment, emotional recognition or product proof); later clips do not pretend to be new opening hooks",
+  "A Hook Window carries exactly one honest core promise and names how the later payoff fulfils it; misleading clickbait, unrelated spectacle, slow greetings, logo-first openings and context dumps before the hook are violations",
+  "Hook dialogue is optional: a strong visual/audio event may carry the first 3-5 seconds, but the window must provide immediate observable evidence rather than an abstract claim",
   "Every clip has exactly one primary function and at most three secondary functions; the primary function wins whenever purposes compete",
   "Every clip must create a declared change in story state, audience understanding, emotion, character position, product proof or atmosphere; pure beauty is valid only when atmosphere is the declared purpose",
   "The intent states WHY the clip exists and WHAT must change; it must not duplicate action choreography, camera instructions, lighting recipes or dialogue timing owned by other layers",
@@ -68,4 +71,15 @@ export const SCENE_INTENT_RULE_DEFINITIONS = defineRules([
 
 export function sceneIntentSystemDigest(): string {
   return `SCENE INTENT CONTRACT (per clip — mandatory, project-led, never template-led):\n${SCENE_INTENT_ABSTRACT_LAWS.map((law) => `· ${law}`).join("\n")}`;
+}
+
+export function selectSceneIntentRules(context: RuleSelectionContext) {
+  return selectRules(SCENE_INTENT_RULE_DEFINITIONS, context);
+}
+
+export function selectedSceneIntentRulesDigest(context: RuleSelectionContext): string {
+  const selected = selectSceneIntentRules(context);
+  return `ACTIVE SCENE-INTENT RULES (deterministically selected):\n${selected
+    .map((rule) => `· [${rule.profile}/${rule.priority}] ${rule.statement}`)
+    .join("\n")}`;
 }

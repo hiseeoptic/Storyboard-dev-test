@@ -72,6 +72,33 @@ export interface SceneIntentValidation {
   failure_conditions: string[];
 }
 
+export type HookType =
+  | "visual_interrupt"
+  | "curiosity_gap"
+  | "inciting_event"
+  | "conflict"
+  | "emotional_recognition"
+  | "surprising_fact"
+  | "question"
+  | "sensory_moment"
+  | "product_proof"
+  | "transformation_preview"
+  | "custom";
+
+/** Mandatory only for clip 1; later clips carry enabled=false for schema stability. */
+export interface HookWindowIR {
+  enabled: boolean;
+  /** Clip 1 must reserve 3-5 seconds for this attention contract. */
+  duration_seconds: number;
+  hook_type: HookType;
+  core_promise: string;
+  immediate_visual_event: string;
+  immediate_audio_event: string;
+  dialogue_hook: string;
+  payoff_link: string;
+  forbidden_delays: string[];
+}
+
 /**
  * Per-clip creative contract. It states WHY the clip exists and WHAT must
  * change; action/camera/audio compilers decide HOW to prove it.
@@ -83,6 +110,7 @@ export interface SceneIntentIR {
   confidence: number;
   primary_function: SceneFunction;
   secondary_functions: SceneFunction[];
+  hook_window: HookWindowIR;
   narrative_objective: string;
   audience_effect: SceneAudienceEffect;
   story_change: SceneStoryChange;
@@ -91,4 +119,3 @@ export interface SceneIntentIR {
   entry_exit: SceneEntryExitIntent;
   validation: SceneIntentValidation;
 }
-

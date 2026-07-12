@@ -11,6 +11,20 @@ const sceneFunctionSchema = z.enum([
   "atmosphere", "custom",
 ]);
 
+const hookTypeSchema = z.enum([
+  "visual_interrupt",
+  "curiosity_gap",
+  "inciting_event",
+  "conflict",
+  "emotional_recognition",
+  "surprising_fact",
+  "question",
+  "sensory_moment",
+  "product_proof",
+  "transformation_preview",
+  "custom",
+]);
+
 export const sceneIntentSchema = z.object({
   intent_id: text,
   state: z.enum(["inferred", "confirmed", "locked"]),
@@ -18,6 +32,17 @@ export const sceneIntentSchema = z.object({
   confidence: z.number().min(0).max(1),
   primary_function: sceneFunctionSchema,
   secondary_functions: z.array(sceneFunctionSchema).max(3).default([]),
+  hook_window: z.object({
+    enabled: z.boolean(),
+    duration_seconds: z.number().min(0).max(5),
+    hook_type: hookTypeSchema,
+    core_promise: text,
+    immediate_visual_event: text,
+    immediate_audio_event: text,
+    dialogue_hook: text,
+    payoff_link: text,
+    forbidden_delays: textArray,
+  }),
   narrative_objective: text,
   audience_effect: z.object({
     attention: text,
@@ -76,6 +101,17 @@ export const SCENE_INTENT_RESPONSE_SCHEMA: Record<string, unknown> = objectOf({
   confidence: { type: "NUMBER" },
   primary_function: stringField(),
   secondary_functions: stringArray(),
+  hook_window: objectOf({
+    enabled: { type: "BOOLEAN" },
+    duration_seconds: { type: "NUMBER" },
+    hook_type: stringField(),
+    core_promise: stringField(),
+    immediate_visual_event: stringField(),
+    immediate_audio_event: stringField(),
+    dialogue_hook: stringField(),
+    payoff_link: stringField(),
+    forbidden_delays: stringArray(),
+  }),
   narrative_objective: stringField(),
   audience_effect: objectOf({
     attention: stringField(), emotion: stringField(), belief: stringField(), desired_action: stringField(),
@@ -99,4 +135,3 @@ export const SCENE_INTENT_RESPONSE_SCHEMA: Record<string, unknown> = objectOf({
     success_criteria: stringArray(), failure_conditions: stringArray(),
   }),
 });
-

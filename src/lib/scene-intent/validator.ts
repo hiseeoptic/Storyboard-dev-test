@@ -13,7 +13,7 @@ export interface SceneIntentValidationContext {
   projectPurpose?: string;
 }
 
-const emptyMeaning = /^(none|nothing|n\/a|not applicable|không|không có)$/i;
+const emptyMeaning = /^(none|nothing|n\/a|not[ _-]?applicable|không|không có)$/i;
 
 /** Semantic checks that a JSON schema cannot express. */
 export function validateSceneIntent(
@@ -23,6 +23,34 @@ export function validateSceneIntent(
   const issues: SceneIntentIssue[] = [];
   const add = (code: string, severity: SceneIntentIssue["severity"], message: string) =>
     issues.push({ code, severity, message });
+
+  const hook = intent.hook_window;
+  if (context.segmentIndex === 0) {
+    if (!hook.enabled) {
+      add("HOOK_WINDOW_DISABLED", "error", "The first clip must enable its 3-5 second Hook Window.");
+    }
+    if (hook.duration_seconds < 3 || hook.duration_seconds > 5) {
+      add("HOOK_WINDOW_DURATION", "error", "The first clip Hook Window must last between 3 and 5 seconds.");
+    }
+    if (emptyMeaning.test(hook.core_promise) || emptyMeaning.test(hook.payoff_link)) {
+      add("HOOK_WINDOW_NO_PROMISE", "error", "Hook Window needs one honest promise and a link to its later payoff.");
+    }
+    const evidence = [hook.immediate_visual_event, hook.immediate_audio_event, hook.dialogue_hook];
+    if (evidence.every((value) => emptyMeaning.test(value.trim()))) {
+      add("HOOK_WINDOW_NO_EVIDENCE", "error", "Hook Window needs an immediate visual, audio or dialogue event.");
+    }
+    if (hook.forbidden_delays.length === 0) {
+      add("HOOK_WINDOW_NO_DELAY_GUARD", "error", "Hook Window must declare slow-opening delays it forbids.");
+    }
+  } else {
+    if (hook.enabled || hook.duration_seconds !== 0) {
+      add(
+        "HOOK_WINDOW_OUTSIDE_OPENING",
+        "error",
+        "Only the first clip owns the opening Hook Window; later clips must set enabled=false and duration_seconds=0."
+      );
+    }
+  }
 
   if (intent.evidence.length === 0) {
     add("INTENT_NO_EVIDENCE", "error", "Scene intent must cite evidence from the script/project intent.");
@@ -83,4 +111,3 @@ export function validateSceneIntent(
 
   return issues;
 }
-

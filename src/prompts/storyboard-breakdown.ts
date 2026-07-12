@@ -21,7 +21,11 @@ import {
   worldContextLockBlock,
 } from "@/lib/laws";
 import { contextFrameworkSystemDigest } from "@/lib/video-context";
-import { renderSceneIntentDirective, type SceneIntentIR } from "@/lib/scene-intent";
+import {
+  renderSceneIntentDirective,
+  selectedSceneIntentRulesDigest,
+  type SceneIntentIR,
+} from "@/lib/scene-intent";
 import {
   buildRealityDirective,
   realityUsesRealWorldPhysics,
@@ -412,7 +416,7 @@ Write in the language the user asks for. Your first duty is the LOCKED PROJECT I
 
 CONTEXT LOCK (before writing a single line): silently resolve the WORLD this video lives in from the idea — geography, culture, time period, genre, reality level, social class, technology level. Never assume a default country or era; infer them. Then keep EVERY detail of the script (places, objects, clothing, food, behavior, speech style) inside that one locked world — no out-of-era technology, no off-culture props or rituals, no world-hopping between segments (open during design, locked during writing).
 
-OPENING / RETENTION ARE INTENT-LED: every opening must earn attention in a way appropriate to the project. Marketing/social projects may use a call-out, contradiction, curiosity gap, warning or bold claim. Documentary may open on an observed fact; narrative on an inciting moment; education on a question/problem; atmosphere on a sensory image. A CTA, comment bait or loop appears only when the chosen goal/script requires it.
+FIRST-SHOT HOOK WINDOW (mandatory 3-5s): clip 1 must earn immediate attention before exposition, but the hook form is intent-led. Marketing/social may use a call-out, contradiction, curiosity gap, warning or bold claim; documentary an observed fact; narrative an inciting moment; education a question/problem; atmosphere a sensory event. The hook makes one honest promise that the later payoff fulfils. No greeting, logo, context dump or slow setup before it. A CTA, comment bait or loop appears only when the chosen goal/script requires it.
 STORY SPINE: every segment must have a named function and a causal relationship to the next (continuation, reversal, consequence, contrast, reveal, resolution, montage association or intentional atmosphere). Do not write "then... then..." filler. The ending must fulfil the project purpose, not a default conversion template.
 DIALOGUE: natural spoken lines appropriate to character, culture, genre and scene intent. Keep them performable inside the duration; let action or silence carry a clip when the intent requires it. SHOW don't tell and never lecture or list without an educational reason.
 COPYWRITING / DRAMATIC TECHNIQUES ARE OPTIONAL TOOLS: rule of three, antithesis, challenge-the-label, curiosity gap, subtext, reversal, suspense and rhythmic phrasing are selected only when they serve the locked intent and speaker identity.
@@ -421,7 +425,7 @@ Output PLAIN TEXT in EXACTLY this shape (no markdown, no JSON):
 TITLE: <catchy title>
 CORE MESSAGE: <one-line takeaway>
 CHARACTERS: <EVERY person in the story, one per line — name, age, signature look, tone; mark children with "(child)". If the idea/script uses role labels (Chồng/Vợ/Con, Bố/Mẹ…), assign each role ONE consistent given name (e.g. Chồng = Nam) and keep the mapping for the whole script. A solo video simply lists one person.>
-SEGMENT 1 [<PRIMARY FUNCTION justified by the project/script>]:
+SEGMENT 1 [HOOK WINDOW 3-5s + <PRIMARY FUNCTION justified by project/script>]:
   IN SCENE: <names of everyone visible in this segment>
   ACTION: <one vivid thing we SEE — a visual metaphor for this beat>
   DIALOGUE:
@@ -492,8 +496,8 @@ CRITICAL PRODUCTION MODEL — how the final video is actually made:
 
 PROJECT-LED STORY STRUCTURE (never force one template onto every video):
 - Read the locked Project Intent and approved script FIRST. Marketing projects may use HOOK → PROBLEM → SOLUTION → CTA; narrative, documentary, educational, atmospheric, symbolic, comedy, music-driven and experimental projects use the structure their intent requires.
-- A hook, product reveal, punchline, lesson or CTA appears only when supported by the project intent/script. Do not invent a hard-sell CTA for a story whose intended ending is emotional, informational or atmospheric.
-- `marketing_role` remains a legacy compatibility label; `scene_intent` is the canonical per-clip creative contract.
+- Clip 1 ALWAYS owns a 3-5 second Hook Window, but its form comes from Project Intent: inciting event, observed fact, question, sensory moment, emotional recognition, conflict, transformation preview or product proof. Marketing-style clickbait and CTA remain conditional. Do not invent a hard-sell CTA for a story whose intended ending is emotional, informational or atmospheric.
+- "marketing_role" remains a legacy compatibility label; "scene_intent" is the canonical per-clip creative contract.
 
 UPLOADED REFERENCE PRIORITY (absolute hierarchy — PHOTOS beat text, text beats invention):
 - When the user uploaded reference images (character / product / background location), those photos are the SUPREME source of truth. NEVER invent a replacement: a character keeps the photo's exact gender, age, face and look; a product keeps its exact shape, colours and branding; and when a LOCATION photo exists, the ENTIRE story is staged INSIDE that uploaded location — reuse its real layout, furniture, colours, materials and light in every segment's first_frame_prompt. Do NOT relocate scenes to an invented set, do NOT "improve" the location into a generic pretty one, do NOT add rooms/furniture that contradict the photo.
@@ -672,7 +676,14 @@ ${JSON.stringify(input.resolved_context, null, 2)}
   ]).has(goal);
   const structureDirective = hardMarketingArc
     ? "This project intent requires an attention-opening first segment and an earned CTA in the final segment; their exact form must still follow the approved script and each scene_intent contract."
-    : "Do NOT automatically force a marketing hook or CTA. The first and final segments perform only the functions justified by the approved script and their scene_intent contracts (for example: introduce, reveal, resolve, close-loop, atmosphere or education).";
+    : "The first segment still requires an intent-appropriate 3-5 second Hook Window, but do NOT turn it into generic marketing clickbait and do NOT automatically add a CTA. The final segment performs only the ending function justified by the approved script (resolve, close-loop, takeaway, atmosphere, education or another declared function).";
+  const activeSceneIntentRulesBlock = `\n\n${selectedSceneIntentRulesDigest({
+    projectPurpose: input.resolved_context?.layers.project_intent.purpose,
+    videoGoal: goal,
+    genre: input.genre,
+    realityMode: input.resolved_context?.reality_profile.mode,
+    continuityMode: input.resolved_context?.layers.motion_continuity.continuity_mode,
+  })}`;
 
   return `Create a chained-segment storyboard for this short video.
 
@@ -681,7 +692,7 @@ Video Goal: ${goal} — ${goalGuidance}
 Genre: ${input.genre}
 Visual Style: ${input.style}
 Number of 10-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 10} seconds)
-Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
+Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
 
 Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Each beat covers a distinct time-frame inside the unbroken 10 seconds while the subject, props and locked physics stay continuous. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" must describe that ONE continuous action across the 10s with rough timing (split 10s across the beats, e.g. "0-3s ...; 3-6s ...; 6-10s ..."), using deliberate, specific motion verbs (body part + verb + manner) plus an explicit final state/anchor. Keep ONE primary action per clip — never stack multiple simultaneous actions that exceed the target model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. Restate only the visually necessary character attributes in every first_frame_prompt; inside the motion_prompt use a short reference anchor.
 
@@ -772,6 +783,17 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
         "confidence": 0.9,
         "primary_function": "hook|introduce_world|introduce_character|introduce_product|establish_desire|show_problem|create_conflict|escalate|reveal|educate|demonstrate|prove_benefit|build_trust|create_metaphor|create_suspense|deliver_punchline|emotional_hit|transform|show_consequence|resolve|call_to_action|close_loop|atmosphere|custom",
         "secondary_functions": ["0-3 additional functions from the same vocabulary; empty when unnecessary"],
+        "hook_window": {
+          "enabled": "boolean — REQUIRED true only for segment 1; false for every later segment",
+          "duration_seconds": "number — segment 1 must be 3-5; every later segment exactly 0",
+          "hook_type": "visual_interrupt|curiosity_gap|inciting_event|conflict|emotional_recognition|surprising_fact|question|sensory_moment|product_proof|transformation_preview|custom",
+          "core_promise": "ONE honest promise/question established in the first 3-5s; later segments use 'not_applicable'",
+          "immediate_visual_event": "what the viewer sees immediately — concrete and observable; later segments use 'not_applicable'",
+          "immediate_audio_event": "immediate line/sound/silence contrast, or 'none' when visual-only; later segments use 'not_applicable'",
+          "dialogue_hook": "exact opening line or 'none' when the hook is visual/audio-only; later segments use 'not_applicable'",
+          "payoff_link": "exact later reveal/result that fulfils the hook promise; later segments use 'not_applicable'",
+          "forbidden_delays": ["segment 1: greeting, logo-first opening, context dump, unrelated beauty shot, vague setup before hook; later segments: empty array"]
+        },
         "narrative_objective": "why this clip must exist in this exact project",
         "audience_effect": {
           "attention": "what specifically earns/holds attention",
@@ -913,7 +935,7 @@ LOCKED DIALOGUE TURNS (the user's final text — copy each line VERBATIM, same s
 ${turnsBlock}
 
 REWRITE RULES:
-0. Return a complete valid "scene_intent" contract. Preserve its primary function and story job unless the edited dialogue genuinely changes them; update performance, must_hear, proof, entry/exit, success criteria and failure conditions so they match the new dialogue. Never replace it with an automatic hook/CTA template.
+0. Return a complete valid "scene_intent" contract. Preserve its primary function and story job unless the edited dialogue genuinely changes them; update performance, must_hear, proof, entry/exit, success criteria and failure conditions so they match the new dialogue. ${segmentIndex === 0 ? "This is clip 1: keep hook_window.enabled=true, duration 3-5s, and make its one honest promise pay off later; no greeting/logo/context dump before the hook." : "This is not clip 1: hook_window.enabled=false and duration_seconds=0; do not create another opening hook."} Never invent a CTA unless Project Intent requires it.
 1. Re-time the turns realistically (~0.4s per word + ~0.5s beat between speakers), strictly sequential and non-overlapping, finished by ~9s. Fill "dialogue_lines" with start_s/end_s for every turn; mirror turn 1 into "dialogue" and "speaker".
 2. Rewrite "motion_prompt" (70-110 words) as ONE continuous take whose physical action and camera are choreographed AROUND those timed turns: during each turn's window the camera holds the active speaker's face in medium-close/close-up with natural lip movement (gentle pan/reframe between speakers — never a hard cut), listeners keep their mouths closed and react. SPEAK-WHILE-STILL: a speaker NEVER performs a large body action (standing up, walking, turning away) during their own line — schedule big movements into the GAPS between turns, and while a line plays its speaker holds a stable pose facing camera. The motion timeline MUST use the same clock as the turn windows (the action at second X is what happens while the line at second X plays). Time left before/after/between the turns must be filled with meaningful physical action that advances the story — never dead air. CAUSAL CHAIN: write every object interaction as the full visible chain (hand reaches → fingers grip a named part → carried along one continuous path → released), never let an object appear in a hand; every effect (something falls/tips/spills) must be PRECEDED by its visible physical cause making contact; the whole clip stays in ONE location. PROP EXISTENCE: every object the motion uses must be planted in the first_frame_prompt start state (held, worn or placed) — update the first_frame_prompt if the new action needs a prop it doesn't mention. QUIET WINDOW: no line plays during a loud/major physical event — a reaction line starts only after the event has finished. LOAD BUDGET: a 10s clip carries 8-22 total spoken words (~0.4s/word + gaps) — if the locked turns exceed this, keep the timing honest and flag it in continuity_note instead of squeezing speech. STAGING: give every visible character one concrete physical business (a named hand action serving the story) and name exact micro-expressions (an eyebrow raise, a suppressed smile) — never write "reacts"; the camera move must differ from the neighbouring clips' moves and travel calmly across the whole 10s, easing in and out, never a rushed 1-second whip. Do NOT quote the spoken words inside motion_prompt.
 3. Rewrite the "beats" (EXACTLY ${beatsPerSegment} beats) as the progressive camera framings of that one continuous action, aligned with the turn windows.
