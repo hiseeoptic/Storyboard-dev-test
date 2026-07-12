@@ -18,7 +18,7 @@ export interface RuleDefinition {
   does_not_apply_when: string[];
   conflicts_with: string[];
   exception_policy: string;
-  enforced_by: RuleEnforcement[];
+  enforced_by: readonly RuleEnforcement[];
   violation_code: string;
   violation_severity: "error" | "warning";
   autofix: string;

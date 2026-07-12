@@ -493,7 +493,7 @@ CRITICAL PRODUCTION MODEL — how the final video is actually made:
 PROJECT-LED STORY STRUCTURE (never force one template onto every video):
 - Read the locked Project Intent and approved script FIRST. Marketing projects may use HOOK → PROBLEM → SOLUTION → CTA; narrative, documentary, educational, atmospheric, symbolic, comedy, music-driven and experimental projects use the structure their intent requires.
 - A hook, product reveal, punchline, lesson or CTA appears only when supported by the project intent/script. Do not invent a hard-sell CTA for a story whose intended ending is emotional, informational or atmospheric.
-- `marketing_role` remains a legacy compatibility label; `scene_intent` is the canonical per-clip creative contract.
+- "marketing_role" remains a legacy compatibility label; "scene_intent" is the canonical per-clip creative contract.
 
 UPLOADED REFERENCE PRIORITY (absolute hierarchy — PHOTOS beat text, text beats invention):
 - When the user uploaded reference images (character / product / background location), those photos are the SUPREME source of truth. NEVER invent a replacement: a character keeps the photo's exact gender, age, face and look; a product keeps its exact shape, colours and branding; and when a LOCATION photo exists, the ENTIRE story is staged INSIDE that uploaded location — reuse its real layout, furniture, colours, materials and light in every segment's first_frame_prompt. Do NOT relocate scenes to an invented set, do NOT "improve" the location into a generic pretty one, do NOT add rooms/furniture that contradict the photo.
