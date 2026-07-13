@@ -300,6 +300,52 @@ function validateOutput(data: unknown): data is StoryboardGenerationOutput {
   );
 }
 
+/**
+ * Restore only envelope fields that already have deterministic defaults later
+ * in this pipeline. A locally repaired/truncated Gemini object often preserves
+ * the expensive segments but loses the small tail field `style_guide`; it must
+ * not be rejected before the existing defaulting code gets a chance to run.
+ * No segment, dialogue, prompt or user-authored value is rewritten here.
+ */
+function prepareOutputForValidation(data: unknown): unknown {
+  if (typeof data !== "object" || data === null) return data;
+  const d = data as Record<string, unknown>;
+
+  if (!Array.isArray(d.character_locks)) {
+    d.character_locks = [];
+  }
+
+  if (typeof d.style_guide !== "object" || d.style_guide === null) {
+    d.style_guide = {
+      color_palette: [],
+      art_direction: "",
+      visual_references: "",
+      consistency_notes: "",
+    };
+  } else {
+    const style = d.style_guide as Record<string, unknown>;
+    if (!Array.isArray(style.color_palette)) style.color_palette = [];
+    if (typeof style.art_direction !== "string") style.art_direction = "";
+    if (typeof style.visual_references !== "string") style.visual_references = "";
+    if (typeof style.consistency_notes !== "string") style.consistency_notes = "";
+  }
+
+  return d;
+}
+
+/** Safe schema diagnostic: field names/types only, never user prompt values. */
+function describeOutputMismatch(data: unknown): string {
+  if (typeof data !== "object" || data === null) return "root is not an object";
+  const d = data as Record<string, unknown>;
+  const invalid: string[] = [];
+  if (typeof d.title !== "string") invalid.push("title");
+  if (typeof d.synopsis !== "string") invalid.push("synopsis");
+  if (!Array.isArray(d.segments) || d.segments.length === 0) invalid.push("segments");
+  if (!Array.isArray(d.character_locks)) invalid.push("character_locks");
+  if (typeof d.style_guide !== "object" || d.style_guide === null) invalid.push("style_guide");
+  return invalid.length > 0 ? `invalid fields: ${invalid.join(", ")}` : "unknown envelope mismatch";
+}
+
 function sanitizeJsonResponse(text: string): string {
   let cleaned = text.trim();
 
@@ -673,10 +719,12 @@ export async function generateStoryboardBreakdown(
         throw new Error(`Empty response from ${provider}`);
       }
 
-      const parsed = parseJsonResponse(rawContent);
+      const parsed = prepareOutputForValidation(parseJsonResponse(rawContent));
 
       if (!validateOutput(parsed)) {
-        throw new Error("Response does not match expected schema");
+        throw new Error(
+          `Response does not match expected schema (${describeOutputMismatch(parsed)})`
+        );
       }
 
       // Gemini's STRING response schema used to turn a JSON null into the
