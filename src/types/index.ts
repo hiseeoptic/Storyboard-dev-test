@@ -1,5 +1,6 @@
 import type { ResolvedVideoContext } from "@/lib/video-context/types";
 import type { SceneIntentIR } from "@/lib/scene-intent/types";
+import type { CookingRecipeIR, CookingStyle } from "@/lib/cooking/types";
 
 // ─── Plans ──────────────────────────────────────────────────────────────────
 
@@ -135,6 +136,10 @@ export interface StoryboardGenerationInput {
   /** Numerology (and topic) script tone: emotional/inspiring, sharp behavioral
    * analysis, or both blended. Defaults to "balanced". */
   numerology_style?: "inspirational" | "analytical" | "balanced";
+  /** Cooking-only canonical data. It MUST be ignored unless genre === cooking. */
+  cooking_recipe?: CookingRecipeIR;
+  /** Cooking-only directing profile. It MUST be ignored unless genre === cooking. */
+  cooking_style?: CookingStyle;
   /** Spoken-line language for every segment (ISO-ish name, e.g. "Vietnamese"). */
   dialogue_language?: string;
   /** When true, every segment MUST carry a spoken line in dialogue_language. */
@@ -143,7 +148,9 @@ export interface StoryboardGenerationInput {
   character_descriptions?: CharacterDescription[];
   character_images?: ImageReference[];
   product_images?: ImageReference[];
-  /** Named auxiliary/ingredient images (herbs, components) — referenced by name. */
+  /** Legacy shared upload field, routed strictly by genre: cooking => food
+   * ingredients; every other genre => named auxiliary objects/components.
+   * Non-cooking references must never be interpreted as food ingredients. */
   ingredient_images?: ImageReference[];
   background_images?: ImageReference[];
   /** Skip generating a character reference sheet (e.g. references already approved in the Image Studio). */
@@ -248,6 +255,10 @@ export interface CharacterDescription {
   role: string;
   /** True when this character is a child (đứa trẻ) — locked age bracket. */
   is_child?: boolean;
+  /** User-entered real height. Kept structured so relative scale is stable. */
+  height_cm?: number;
+  /** User-selected silhouette; independent from face-image analysis. */
+  body_type?: "slim" | "standard" | "stocky";
 }
 
 export interface ImageReference {

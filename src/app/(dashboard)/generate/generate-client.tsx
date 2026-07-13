@@ -35,6 +35,7 @@ import { Progress } from "@/components/ui/progress";
 import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploader";
 import {
   generateStoryboardPlan,
+  analyzeCookingRecipe,
   generateBoardImage,
   finalizeScript,
   rewriteSegment,
@@ -56,6 +57,7 @@ import type {
   AspectRatio,
   VideoGoal,
 } from "@/types";
+import type { CookingRecipeIR, CookingStyle } from "@/lib/cooking";
 
 // ─── Bilingual Labels ──────────────────────────────────────────────────────
 
@@ -771,10 +773,24 @@ interface CharacterEntry {
   name: string;
   role: string;
   appearance: string;
+  heightCm?: string;
+  bodyType: "slim" | "standard" | "stocky";
   /** True when this character is a child (khoá độ tuổi trẻ em). */
   isChild?: boolean;
   images: UploadedImage[];
 }
+
+const BODY_TYPE_TEXT: Record<CharacterEntry["bodyType"], string> = {
+  slim: "slim build",
+  standard: "standard proportional build",
+  stocky: "stocky/full build",
+};
+
+const BODY_TYPE_LABEL: Record<CharacterEntry["bodyType"], Record<Lang, string>> = {
+  slim: { vi: "Gầy", en: "Slim" },
+  standard: { vi: "Chuẩn", en: "Standard" },
+  stocky: { vi: "Mập / đậm người", en: "Stocky / full" },
+};
 
 interface ProductEntry {
   name: string;
@@ -945,11 +961,16 @@ export function GenerateClient() {
     return String(val);
   };
 
-  const steps = t.steps[lang];
-
   // Step 1: Story
   const [storyIdea, setStoryIdea] = useState("");
   const [genre, setGenre] = useState("advertising");
+  const steps = t.steps[lang].map((label, index) =>
+    genre === "cooking" && index === 2
+      ? lang === "vi"
+        ? "Công thức & thành phẩm"
+        : "Recipe & finished dish"
+      : label
+  );
   // Setting & tone are now dropdown-driven (with a custom free-text option).
   const [settingSel, setSettingSel] = useState("");
   const [settingCustom, setSettingCustom] = useState("");
@@ -986,6 +1007,8 @@ export function GenerateClient() {
   const [charName, setCharName] = useState("");
   const [charRole, setCharRole] = useState("");
   const [charIsChild, setCharIsChild] = useState(false);
+  const [charHeightCm, setCharHeightCm] = useState("");
+  const [charBodyType, setCharBodyType] = useState<CharacterEntry["bodyType"]>("standard");
   const [charAppearance, setCharAppearance] = useState("");
   const [charApprSel, setCharApprSel] = useState("");
   const [charImages, setCharImages] = useState<UploadedImage[]>([]);
@@ -1001,6 +1024,20 @@ export function GenerateClient() {
   const [ingName, setIngName] = useState("");
   const [ingDesc, setIngDesc] = useState("");
   const [ingImages, setIngImages] = useState<UploadedImage[]>([]);
+
+  // Cooking-only intake. The source photos/text are OCR'd once into Recipe IR;
+  // only the compact, reviewable IR enters the storyboard compiler.
+  const [cookingSourceText, setCookingSourceText] = useState("");
+  const [cookingSourceImages, setCookingSourceImages] = useState<UploadedImage[]>([]);
+  // Neutral default. Nature ASMR is an explicit choice, never inferred merely
+  // because the user once supplied an outdoor creator as style inspiration.
+  const [cookingStyle, setCookingStyle] = useState<CookingStyle>("kitchen_asmr");
+  const [cookingRecipe, setCookingRecipe] = useState<CookingRecipeIR | null>(null);
+  const [cookingAnalyzing, setCookingAnalyzing] = useState(false);
+  const [cookingAnalysisError, setCookingAnalysisError] = useState<string | null>(null);
+  const cookingHandsOnly =
+    genre === "cooking" &&
+    ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle);
 
   // Step 4: Backgrounds
   const [backgrounds, setBackgrounds] = useState<BackgroundEntry[]>([]);
@@ -1085,11 +1122,21 @@ export function GenerateClient() {
     if (!charName.trim()) return;
     setCharacters((prev) => [
       ...prev,
-      { name: charName, role: charRole, appearance: effectiveCharAppearance, isChild: charIsChild, images: charImages },
+      {
+        name: charName,
+        role: charRole,
+        appearance: effectiveCharAppearance,
+        heightCm: charHeightCm,
+        bodyType: charBodyType,
+        isChild: charIsChild,
+        images: charImages,
+      },
     ]);
     setCharName("");
     setCharRole("");
     setCharIsChild(false);
+    setCharHeightCm("");
+    setCharBodyType("standard");
     setCharAppearance("");
     setCharApprSel("");
     setCharImages([]);
@@ -1118,6 +1165,56 @@ export function GenerateClient() {
     setIngImages([]);
   };
 
+  const runCookingAnalysis = async (): Promise<CookingRecipeIR | null> => {
+    // A dish name alone is not a recipe. Preserve the legacy convenience only
+    // when the main idea box clearly contains a substantial pasted recipe.
+    const sourceText =
+      cookingSourceText.trim() || (storyIdea.trim().length >= 80 ? storyIdea.trim() : "");
+    if (!sourceText && cookingSourceImages.length === 0) {
+      setCookingAnalysisError(
+        lang === "vi"
+          ? "Hãy dán công thức hoặc tải ảnh trang sách trước."
+          : "Paste a recipe or upload cookbook pages first."
+      );
+      return null;
+    }
+
+    setCookingAnalyzing(true);
+    setCookingAnalysisError(null);
+    try {
+      const compressed = await downscaleRefImages([
+        {
+          name: "Recipe source",
+          images: cookingSourceImages.map((image) => image.base64),
+        },
+      ]);
+      const response = await analyzeCookingRecipe({
+        text: sourceText,
+        images: compressed[0]?.images ?? [],
+      });
+      if (!response.success) {
+        setCookingAnalysisError(response.error);
+        return null;
+      }
+      setCookingRecipe(response.data);
+      if (!storyIdea.trim() && response.data.dish_name) setStoryIdea(response.data.dish_name);
+      if (!prodName.trim() && response.data.dish_name)
+        setProdName(`${response.data.dish_name} — ảnh thành phẩm`);
+      return response.data;
+    } catch (analysisError) {
+      const message =
+        analysisError instanceof Error
+          ? analysisError.message
+          : lang === "vi"
+            ? "Không phân tích được công thức."
+            : "Could not analyze the recipe.";
+      setCookingAnalysisError(message);
+      return null;
+    } finally {
+      setCookingAnalyzing(false);
+    }
+  };
+
   const addBackground = () => {
     if (!bgName.trim()) return;
     setBackgrounds((prev) => [
@@ -1138,14 +1235,38 @@ export function GenerateClient() {
     setProgressPercent(5);
     setProgressMessage(L("preparing"));
 
+    // Cooking has a mandatory compile boundary: raw chat/OCR sources are parsed
+    // once, reviewed as Recipe IR, then only that IR proceeds. Other genres
+    // never receive any cooking fields, even if stale UI state still exists.
+    let recipeForInput = cookingRecipe;
+    if (genre === "cooking" && !recipeForInput) {
+      setProgressMessage(lang === "vi" ? "Đang đọc công thức và định lượng..." : "Reading recipe quantities...");
+      recipeForInput = await runCookingAnalysis();
+      if (!recipeForInput) {
+        setPhase("input");
+        setStep(2);
+        return;
+      }
+    }
+
     // Auto-include uploads still sitting in the form (user may not have
     // clicked "Add ...") so reference photos are never silently dropped.
-    const effectiveCharacters = [
-      ...characters,
-      ...(charImages.length > 0
-        ? [{ name: charName.trim() || "Main character", role: charRole, appearance: effectiveCharAppearance, isChild: charIsChild, images: charImages }]
-        : []),
-    ];
+    const effectiveCharacters = cookingHandsOnly
+      ? []
+      : [
+          ...characters,
+          ...(charImages.length > 0
+            ? [{
+                name: charName.trim() || "Main character",
+                role: charRole,
+                appearance: effectiveCharAppearance,
+                heightCm: charHeightCm,
+                bodyType: charBodyType,
+                isChild: charIsChild,
+                images: charImages,
+              }]
+            : []),
+        ];
     const effectiveProducts = [
       ...products,
       ...(prodImages.length > 0
@@ -1165,7 +1286,14 @@ export function GenerateClient() {
 
     const rawProductImages: ImageReference[] = effectiveProducts
       .filter((p) => p.images.length > 0)
-      .map((p) => ({ name: p.name, description: p.description, images: p.images.map((i) => i.base64) }));
+      .map((p) => ({
+        name:
+          genre === "cooking" && recipeForInput?.dish_name
+            ? `${recipeForInput.dish_name} — ảnh thành phẩm`
+            : p.name,
+        description: p.description,
+        images: p.images.map((i) => i.base64),
+      }));
 
     const rawBackgroundImages: ImageReference[] = effectiveBackgrounds
       .filter((b) => b.images.length > 0)
@@ -1173,8 +1301,16 @@ export function GenerateClient() {
 
     const effectiveIngredients = [
       ...ingredients,
-      ...(ingImages.length > 0 && ingName.trim()
-        ? [{ name: ingName.trim(), description: ingDesc, images: ingImages }]
+      ...(ingImages.length > 0 && (ingName.trim() || genre === "cooking")
+        ? [{
+            name: ingName.trim() || `Bộ nguyên liệu ${recipeForInput?.dish_name || "món ăn"}`,
+            description:
+              ingDesc ||
+              (genre === "cooking"
+                ? "Ảnh tham chiếu hình dáng và trạng thái thật của các nguyên liệu trong Recipe IR."
+                : ""),
+            images: ingImages,
+          }]
         : []),
     ];
     const rawIngredientImages: ImageReference[] = effectiveIngredients
@@ -1280,19 +1416,44 @@ export function GenerateClient() {
     }
 
     const input: StoryboardGenerationInput = {
-      story_idea: storyIdea,
+      story_idea: storyIdea.trim() || recipeForInput?.dish_name || "",
       genre: genre as StoryboardGenerationInput["genre"],
       style,
       scene_count: segmentCount,
       segment_count: segmentCount,
       beats_per_segment: beatsPerSegment,
-      video_goal: videoGoal,
+      video_goal: genre === "cooking" ? "cooking" : videoGoal,
       script_provider: scriptProvider,
       numerology_style: numerologyStyle,
-      dialogue_language: forceVietnameseDialogue ? "Vietnamese" : undefined,
-      force_dialogue: forceVietnameseDialogue,
+      dialogue_language:
+        genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)
+          ? undefined
+          : forceVietnameseDialogue
+            ? "Vietnamese"
+            : undefined,
+      force_dialogue:
+        genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)
+          ? false
+          : forceVietnameseDialogue,
+      cooking_recipe: genre === "cooking" ? recipeForInput ?? undefined : undefined,
+      cooking_style: genre === "cooking" ? cookingStyle : undefined,
       character_descriptions: effectiveCharacters.length > 0
-        ? effectiveCharacters.map((c) => ({ name: c.name, appearance: c.appearance, personality: "", role: c.role, is_child: c.isChild }))
+        ? effectiveCharacters.map((c) => {
+            const parsedHeight = Number.parseInt(c.heightCm ?? "", 10);
+            const physicalLock = [
+              Number.isFinite(parsedHeight) ? `height approximately ${parsedHeight} cm` : "",
+              BODY_TYPE_TEXT[c.bodyType],
+            ].filter(Boolean).join(", ");
+            return {
+              name: c.name,
+              appearance: [c.appearance, physicalLock].filter(Boolean).join(". "),
+              personality: "",
+              role: c.role,
+              is_child: c.isChild,
+              height_cm: Number.isFinite(parsedHeight) ? parsedHeight : undefined,
+              body_type: c.bodyType,
+            };
+          })
         : undefined,
       character_images: cappedCharacterImages.length > 0 ? cappedCharacterImages : undefined,
       product_images: cappedProductImages.length > 0 ? cappedProductImages : undefined,
@@ -2882,11 +3043,19 @@ export function GenerateClient() {
                   <Select value={genre} onChange={(e) => {
                     const g = e.target.value;
                     setGenre(g);
-                    // Topic/demonstration genres drive the matching framework goal.
+                    // Genre is the hard router. Reset stale specialist goals so
+                    // Cooking can never leak into numerology/film/etc.
                     if (g === "numerology") setVideoGoal("numerology");
                     else if (g === "health") setVideoGoal("health");
-                    else if (g === "cooking") setVideoGoal("cooking");
+                    else if (g === "cooking") {
+                      setVideoGoal("cooking");
+                      setSegmentCount(6);
+                      setForceVietnameseDialogue(false);
+                      setAspectRatio("9:16");
+                    }
                     else if (g === "fitness") setVideoGoal("fitness");
+                    else if (AD_GENRES.has(g)) setVideoGoal("product_ad");
+                    else setVideoGoal("storytelling");
                   }} options={GENRE_OPTIONS[lang]} />
                 </div>
                 <div className="space-y-2">
@@ -2986,8 +3155,8 @@ export function GenerateClient() {
                   <p className="text-xs text-muted-foreground">
                     {genre === "cooking"
                       ? (lang === "vi"
-                          ? 'Gõ TÊN MÓN vào ô ý tưởng ở trên (vd "cơm chiên trứng", "bánh mì chảo"). AI dựng theo: Money shot → Nguyên liệu → Các bước → Thành phẩm → Lưu công thức. Món ăn là "ngôi sao" hình ảnh.'
-                          : 'Type the DISH in the idea box above (e.g. "egg fried rice"). The AI builds: money shot → ingredients → steps → reveal → save. The food is the star.')
+                          ? "Nhập tên món ở trên, sau đó sang bước Sản phẩm để dán toàn bộ công thức hoặc tải ảnh trang sách. AI sẽ đọc định lượng thành Recipe IR để bạn duyệt trước khi dựng: Hook thành phẩm 3-5s → mise en place → các biến đổi chính → plating/payoff."
+                          : "Enter the dish name, then use the Product step to paste the full recipe or upload cookbook pages. AI extracts a reviewable Recipe IR before directing: 3-5s finished-dish Hook → mise en place → key transformations → plating/payoff.")
                       : (lang === "vi"
                           ? 'Gõ MỤC TIÊU/BÀI TẬP vào ô ý tưởng ở trên (vd "giảm mỡ bụng", "3 động tác cho mông"). AI dựng theo: Mục tiêu/lỗi sai → Động tác đúng → Kết quả → Lưu tập theo. Đúng form, an toàn.'
                           : 'Type the GOAL/workout in the idea box above (e.g. "lose belly fat"). The AI builds: goal/mistake → correct moves → result → save. Correct form, safe.')}
@@ -3072,6 +3241,16 @@ export function GenerateClient() {
           {/* ── Step 2: Characters ────────────────────────────────── */}
           {step === 1 && (
             <>
+              {cookingHandsOnly && (
+                <div className="flex items-start gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                  <span>
+                    {lang === "vi"
+                      ? "Phong cách Cooking ASMR đang chọn là tay/POV: có thể bỏ qua toàn bộ bước nhân vật. Ảnh khuôn mặt đang có sẽ không được gửi sang Vision hay chèn vào video."
+                      : "The selected Cooking ASMR profile is hands/POV. You may skip characters; existing face photos will not be sent to Vision or inserted into the video."}
+                  </span>
+                </div>
+              )}
               {fromStudio && (
                 <div className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm text-primary">
                   <Sparkles className="h-4 w-4 shrink-0" />
@@ -3108,6 +3287,9 @@ export function GenerateClient() {
                         <div>
                           <p className="font-medium">{c.name}{c.isChild ? " 👶" : ""}</p>
                           <p className="text-xs text-muted-foreground">{c.isChild ? (lang === "vi" ? "Trẻ em · " : "Child · ") : ""}{c.role}{c.appearance ? ` — ${c.appearance}` : ""}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {c.heightCm ? `${c.heightCm} cm · ` : ""}{BODY_TYPE_LABEL[c.bodyType][lang]}
+                          </p>
                           <p className="text-xs text-muted-foreground">{c.images.length} {L("photos")}</p>
                         </div>
                       </div>
@@ -3126,6 +3308,38 @@ export function GenerateClient() {
                 <div className="grid grid-cols-2 gap-2">
                   <Input value={charName} onChange={(e) => setCharName(e.target.value)} placeholder={L("charName")} />
                   <Input value={charRole} onChange={(e) => setCharRole(e.target.value)} placeholder={L("charRole")} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      {lang === "vi" ? "Chiều cao (cm)" : "Height (cm)"}
+                    </label>
+                    <Input
+                      type="number"
+                      min={50}
+                      max={230}
+                      value={charHeightCm}
+                      onChange={(e) => setCharHeightCm(e.target.value)}
+                      placeholder={lang === "vi" ? "VD: 170" : "e.g. 170"}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      {lang === "vi" ? "Vóc dáng" : "Body type"}
+                    </label>
+                    <Select
+                      value={charBodyType}
+                      onChange={(e) => setCharBodyType(e.target.value as CharacterEntry["bodyType"])}
+                      options={([
+                        "slim",
+                        "standard",
+                        "stocky",
+                      ] as CharacterEntry["bodyType"][]).map((value) => ({
+                        value,
+                        label: BODY_TYPE_LABEL[value][lang],
+                      }))}
+                    />
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -3163,6 +3377,13 @@ export function GenerateClient() {
                   }
                   hint={L("charPhotosHint")}
                 />
+                {charImages.length > 0 && (
+                  <p className="text-xs font-medium text-emerald-600">
+                    {lang === "vi"
+                      ? "Reference Lock đang bật: ảnh nhân vật sẽ được gửi trực tiếp vào model tạo hình, không chỉ chuyển thành mô tả chữ."
+                      : "Reference Lock is active: character photos go directly to the image model, not only into a text description."}
+                  </p>
+                )}
 
                 <CharacterStudio
                   sourceImages={charImages}
@@ -3198,6 +3419,262 @@ export function GenerateClient() {
           {/* ── Step 3: Products ──────────────────────────────────── */}
           {step === 2 && (
             <>
+              {genre === "cooking" ? (
+                <div className="space-y-5">
+                  <div className="rounded-xl border border-primary/40 bg-primary/[0.04] p-4">
+                    <div className="flex items-start gap-3">
+                      <BookOpen className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                      <div>
+                        <p className="font-semibold">
+                          {lang === "vi" ? "Cooking Intake — đọc công thức trước khi dựng" : "Cooking Intake — parse before directing"}
+                        </p>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {lang === "vi"
+                            ? "Dán nguyên liệu, định lượng và các bước. Có thể tải ảnh trang sách rõ nét; Gemini Vision sẽ OCR thành dữ liệu có cấu trúc để bạn kiểm tra. Ảnh sách không bị gửi lặp lại qua các bước dựng storyboard."
+                            : "Paste ingredients, quantities and steps, or upload clear cookbook pages. Gemini Vision converts them into reviewable structured data; source pages are not resent through storyboard stages."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 rounded-xl border p-4">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">
+                        {lang === "vi" ? "Công thức / nguyên liệu (ô nhập tự do)" : "Recipe / ingredients (free-form input)"}
+                      </label>
+                      <Textarea
+                        value={cookingSourceText}
+                        onChange={(e) => {
+                          setCookingSourceText(e.target.value);
+                          setCookingRecipe(null);
+                        }}
+                        rows={10}
+                        placeholder={
+                          lang === "vi"
+                            ? "Dán thẳng nội dung:\nKhẩu phần: 2\n- Udon đông lạnh: 2 phần, 120g/phần\n- Thịt băm: 150g\n...\nBước 1..."
+                            : "Paste the full recipe, quantities and ordered steps here..."
+                        }
+                        className="font-mono text-sm"
+                      />
+                    </div>
+
+                    <ImageUploader
+                      images={cookingSourceImages}
+                      onChange={(images) => {
+                        setCookingSourceImages(images);
+                        setCookingRecipe(null);
+                      }}
+                      maxImages={4}
+                      label={lang === "vi" ? "Ảnh trang sách / công thức để OCR" : "Cookbook / recipe pages for OCR"}
+                      hint={
+                        lang === "vi"
+                          ? "Tối đa 4 ảnh rõ chữ. Nên chụp thẳng trang, đủ sáng, không cắt mất cột nguyên liệu."
+                          : "Up to 4 legible pages. Shoot straight-on, well lit, with ingredient columns intact."
+                      }
+                    />
+
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">
+                        {lang === "vi" ? "Phong cách đạo diễn nấu ăn" : "Cooking direction style"}
+                      </label>
+                      <Select
+                        value={cookingStyle}
+                        onChange={(e) => {
+                          const nextStyle = e.target.value as CookingStyle;
+                          setCookingStyle(nextStyle);
+                          if (["nature_asmr", "kitchen_asmr", "pov_hands"].includes(nextStyle))
+                            setForceVietnameseDialogue(false);
+                        }}
+                        options={[
+                          { value: "nature_asmr", label: lang === "vi" ? "Thiên nhiên ASMR — tay/POV, lửa, cảnh quan" : "Nature ASMR — hands/POV, fire, landscape" },
+                          { value: "kitchen_asmr", label: lang === "vi" ? "Bếp ASMR — macro, tiếng dụng cụ/nguyên liệu" : "Kitchen ASMR — macro ingredient/tool sound" },
+                          { value: "pov_hands", label: lang === "vi" ? "POV đôi tay — góc nhìn người nấu" : "Hands POV — cook's viewpoint" },
+                          { value: "fast_cut", label: lang === "vi" ? "Công thức nhanh — tiết tấu dồn, speed-ramp" : "Fast recipe — brisk visual speed ramps" },
+                          { value: "cinematic_food", label: lang === "vi" ? "Food film điện ảnh — chất liệu, hơi nóng, ánh sáng" : "Cinematic food film — texture, steam, light" },
+                        ]}
+                      />
+                    </div>
+
+                    <Button
+                      type="button"
+                      onClick={() => void runCookingAnalysis()}
+                      disabled={cookingAnalyzing || (!cookingSourceText.trim() && cookingSourceImages.length === 0 && storyIdea.trim().length < 80)}
+                      className="w-full gap-2"
+                    >
+                      {cookingAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {cookingAnalyzing
+                        ? lang === "vi" ? "Đang OCR và chuẩn hóa định lượng..." : "Reading and normalizing quantities..."
+                        : lang === "vi" ? "Phân tích nguyên liệu & định lượng" : "Analyze ingredients & quantities"}
+                    </Button>
+                    {cookingAnalysisError && (
+                      <div className="flex gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>{cookingAnalysisError}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {cookingRecipe && (
+                    <div className="space-y-4 rounded-xl border border-emerald-500/40 bg-emerald-500/[0.03] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="grid flex-1 gap-2 sm:grid-cols-[minmax(0,1fr)_140px]">
+                          <Input
+                            value={cookingRecipe.dish_name}
+                            onChange={(e) => setCookingRecipe((current) => current ? { ...current, dish_name: e.target.value } : current)}
+                            placeholder={lang === "vi" ? "Tên món" : "Dish name"}
+                            className="font-semibold"
+                          />
+                          <Input
+                            value={cookingRecipe.servings}
+                            onChange={(e) => setCookingRecipe((current) => current ? { ...current, servings: e.target.value } : current)}
+                            placeholder={lang === "vi" ? "Khẩu phần" : "Servings"}
+                          />
+                          <p className="text-xs text-muted-foreground sm:col-span-2">
+                            OCR {Math.round(cookingRecipe.confidence * 100)}% · {lang === "vi" ? "hãy duyệt trước khi dựng" : "review before generation"}
+                          </p>
+                        </div>
+                        <Badge variant="secondary">
+                          {cookingRecipe.ingredients.length} {lang === "vi" ? "nguyên liệu" : "ingredients"} · {cookingRecipe.steps.length} {lang === "vi" ? "bước" : "steps"}
+                        </Badge>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">
+                          {lang === "vi" ? "Kiểm tra định lượng — có thể sửa trực tiếp" : "Review quantities — editable"}
+                        </p>
+                        {cookingRecipe.ingredients.map((ingredient, index) => (
+                          <div key={ingredient.id} className="grid grid-cols-12 gap-2 rounded-lg border bg-background p-2">
+                            <Input
+                              value={ingredient.name}
+                              onChange={(e) => setCookingRecipe((current) => current ? {
+                                ...current,
+                                ingredients: current.ingredients.map((item, itemIndex) => itemIndex === index ? { ...item, name: e.target.value } : item),
+                              } : current)}
+                              className="col-span-12 sm:col-span-5"
+                              aria-label={lang === "vi" ? "Tên nguyên liệu" : "Ingredient name"}
+                            />
+                            <Input
+                              value={ingredient.amount}
+                              onChange={(e) => setCookingRecipe((current) => current ? {
+                                ...current,
+                                ingredients: current.ingredients.map((item, itemIndex) => itemIndex === index ? { ...item, amount: e.target.value } : item),
+                              } : current)}
+                              placeholder={lang === "vi" ? "Số lượng" : "Amount"}
+                              className="col-span-5 sm:col-span-2"
+                            />
+                            <Input
+                              value={ingredient.unit}
+                              onChange={(e) => setCookingRecipe((current) => current ? {
+                                ...current,
+                                ingredients: current.ingredients.map((item, itemIndex) => itemIndex === index ? { ...item, unit: e.target.value } : item),
+                              } : current)}
+                              placeholder={lang === "vi" ? "Đơn vị" : "Unit"}
+                              className="col-span-3 sm:col-span-2"
+                            />
+                            <Input
+                              value={ingredient.preparation}
+                              onChange={(e) => setCookingRecipe((current) => current ? {
+                                ...current,
+                                ingredients: current.ingredients.map((item, itemIndex) => itemIndex === index ? { ...item, preparation: e.target.value } : item),
+                              } : current)}
+                              placeholder={lang === "vi" ? "Sơ chế" : "Prep"}
+                              className="col-span-4 sm:col-span-3"
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">Mise en place</p>
+                          {cookingRecipe.mise_en_place.map((group) => (
+                            <div key={`${group.order}-${group.vessel}`} className="rounded-lg border bg-background p-2 text-xs">
+                              <span className="font-medium">{group.order}. {group.vessel}</span>
+                              <span className="text-muted-foreground"> — {group.ingredient_ids.map((id) => cookingRecipe.ingredients.find((item) => item.id === id)?.name ?? id).join(", ")}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">{lang === "vi" ? "Trình tự nấu đã khóa" : "Locked cooking order"}</p>
+                          {cookingRecipe.steps.map((recipeStep, stepIndex) => (
+                            <div key={recipeStep.order} className="space-y-1.5 rounded-lg border bg-background p-2 text-xs">
+                              <Input
+                                value={recipeStep.title}
+                                onChange={(e) => setCookingRecipe((current) => current ? {
+                                  ...current,
+                                  steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, title: e.target.value } : item),
+                                } : current)}
+                                className="h-8 font-medium"
+                                aria-label={lang === "vi" ? `Tên bước ${recipeStep.order}` : `Step ${recipeStep.order} title`}
+                              />
+                              <Textarea
+                                value={recipeStep.action}
+                                onChange={(e) => setCookingRecipe((current) => current ? {
+                                  ...current,
+                                  steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, action: e.target.value } : item),
+                                } : current)}
+                                rows={2}
+                                className="resize-none text-xs"
+                                aria-label={lang === "vi" ? `Thao tác bước ${recipeStep.order}` : `Step ${recipeStep.order} action`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {cookingRecipe.uncertainties.length > 0 && (
+                        <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-300">
+                          <p className="font-medium">{lang === "vi" ? "Cần kiểm tra lại từ ảnh" : "Needs source review"}</p>
+                          <ul className="mt-1 list-disc space-y-1 pl-4">
+                            {cookingRecipe.uncertainties.map((note, index) => <li key={index}>{note}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-3 rounded-xl border border-dashed p-4">
+                      <div>
+                        <p className="text-sm font-semibold">{lang === "vi" ? "Ảnh thành phẩm — dùng cho Hook và payoff" : "Finished dish — Hook and payoff reference"}</p>
+                        <p className="text-xs text-muted-foreground">{lang === "vi" ? "Đây là ảnh món hoàn chỉnh, không phải ảnh bao bì sản phẩm." : "This is a finished-dish reference, not product packaging."}</p>
+                      </div>
+                      <Input
+                        value={prodName}
+                        onChange={(e) => setProdName(e.target.value)}
+                        placeholder={lang === "vi" ? "Tên món / ảnh thành phẩm" : "Dish / finished photo name"}
+                      />
+                      <ImageUploader
+                        images={prodImages}
+                        onChange={setProdImages}
+                        maxImages={3}
+                        label={lang === "vi" ? "Ảnh món hoàn chỉnh" : "Finished-dish photos"}
+                        hint={lang === "vi" ? "1-3 góc; ảnh chính nên rõ hơi nóng, xốt và topping." : "1-3 angles; make steam, sauce and toppings legible."}
+                      />
+                    </div>
+
+                    <div className="space-y-3 rounded-xl border border-dashed p-4">
+                      <div>
+                        <p className="text-sm font-semibold">{lang === "vi" ? "Ảnh nguyên liệu — tùy chọn" : "Ingredient reference — optional"}</p>
+                        <p className="text-xs text-muted-foreground">{lang === "vi" ? "Dùng để khóa màu sắc, hình dạng và trạng thái thật; định lượng lấy từ Recipe IR." : "Locks real colour/form/state; quantities come from Recipe IR."}</p>
+                      </div>
+                      <Input
+                        value={ingName}
+                        onChange={(e) => setIngName(e.target.value)}
+                        placeholder={lang === "vi" ? "VD: Bộ nguyên liệu Udon" : "e.g. Udon ingredient set"}
+                      />
+                      <ImageUploader
+                        images={ingImages}
+                        onChange={setIngImages}
+                        maxImages={2}
+                        label={lang === "vi" ? "Ảnh tổng hợp / ảnh từng nguyên liệu" : "Ingredient set / individual references"}
+                        hint={lang === "vi" ? "Không bắt buộc phải gõ tên nếu đã có Recipe IR." : "A name is optional once Recipe IR exists."}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Package className="h-4 w-4 shrink-0" />
                 <span>{L("prodHint")}</span>
@@ -3252,6 +3729,13 @@ export function GenerateClient() {
                   label={L("prodPhotos")}
                   hint={L("prodPhotosHint")}
                 />
+                {prodImages.length > 0 && (
+                  <p className="text-xs font-medium text-emerald-600">
+                    {lang === "vi"
+                      ? "Product Reference Lock đang bật: hình dáng, màu sắc và chi tiết sản phẩm tải lên là nguồn ưu tiên cao nhất."
+                      : "Product Reference Lock is active: the uploaded design, colour and details are authoritative."}
+                  </p>
+                )}
                 <Button variant="outline" size="sm" onClick={addProduct} disabled={!prodName.trim()}>
                   {L("addProduct")}
                 </Button>
@@ -3306,12 +3790,23 @@ export function GenerateClient() {
                   {L("addIngredient")}
                 </Button>
               </div>
+                </>
+              )}
             </>
           )}
 
           {/* ── Step 4: Background ───────────────────────────────── */}
           {step === 3 && (
             <>
+              {genre === "cooking" && (
+                <div className="rounded-lg border border-primary/30 bg-primary/[0.03] p-3 text-xs leading-relaxed text-muted-foreground">
+                  {lang === "vi"
+                    ? cookingStyle === "nature_asmr"
+                      ? "Ảnh ở bước này là địa điểm thật bạn muốn dùng cho video, không phải ảnh chụp kênh tham khảo phong cách. Nếu không tải, hệ thống chỉ dùng bối cảnh bạn đã mô tả và không tự mặc định núi, tuyết, hồ, rừng hay bếp đá."
+                      : "Ảnh ở bước này khóa đúng không gian nấu của dự án. Hệ thống không lấy địa điểm, đạo cụ hay bố cục từ ảnh của một kênh tham khảo phong cách."
+                    : "This step locks the project's actual cooking location. Style inspiration never supplies a creator's location, props or exact composition."}
+                </div>
+              )}
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <MapPin className="h-4 w-4 shrink-0" />
                 <span>{L("bgHint")}</span>
@@ -3366,6 +3861,13 @@ export function GenerateClient() {
                   label={L("bgPhotos")}
                   hint={L("bgPhotosHint")}
                 />
+                {bgImages.length > 0 && (
+                  <p className="text-xs font-medium text-emerald-600">
+                    {lang === "vi"
+                      ? "Environment Reference Lock đang bật: storyboard bắt buộc có preview tổng thể và bám đúng bố cục, vật liệu, cửa, đồ đạc và ánh sáng của ảnh này."
+                      : "Environment Reference Lock is active: the storyboard must include an overview and preserve this layout, materials, openings, furniture and light."}
+                  </p>
+                )}
                 <Button variant="outline" size="sm" onClick={addBackground} disabled={!bgName.trim()}>
                   {L("addBackground")}
                 </Button>
@@ -3378,7 +3880,19 @@ export function GenerateClient() {
             <>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("videoGoalLabel")}</label>
-                <Select value={videoGoal} onChange={(e) => setVideoGoal(e.target.value as VideoGoal)} options={VIDEO_GOAL_OPTIONS[lang]} />
+                <Select
+                  value={genre === "cooking" ? "cooking" : videoGoal}
+                  onChange={(e) => setVideoGoal(e.target.value as VideoGoal)}
+                  options={VIDEO_GOAL_OPTIONS[lang]}
+                  disabled={genre === "cooking"}
+                />
+                {genre === "cooking" && (
+                  <p className="text-xs text-muted-foreground">
+                    {lang === "vi"
+                      ? "Đã khóa theo thể loại Nấu ăn; luật Cooking không thể tràn sang thể loại khác."
+                      : "Locked by the Cooking genre; this profile cannot leak into other genres."}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("visualStyle")}</label>
@@ -3428,13 +3942,24 @@ export function GenerateClient() {
                 <label className="flex cursor-pointer items-start gap-3">
                   <input
                     type="checkbox"
-                    checked={forceVietnameseDialogue}
+                    checked={
+                      genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)
+                        ? false
+                        : forceVietnameseDialogue
+                    }
                     onChange={(e) => setForceVietnameseDialogue(e.target.checked)}
+                    disabled={genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)}
                     className="mt-0.5 h-4 w-4 shrink-0"
                   />
                   <span>
                     <span className="text-sm font-medium">{L("forceDialogueLabel")}</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">{L("forceDialogueHint")}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)
+                        ? lang === "vi"
+                          ? "Phong cách ASMR đã khóa: không thoại, không voice-over, không nhạc."
+                          : "ASMR lock: no dialogue, voice-over or music."
+                        : L("forceDialogueHint")}
+                    </span>
                   </span>
                 </label>
               </div>

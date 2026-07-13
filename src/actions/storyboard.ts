@@ -13,6 +13,8 @@ import {
   generateThumbnail,
 } from "@/services/image-pipeline";
 import { analyzeReferenceImages } from "@/services/image-analyzer";
+import { generateCompactCookingScenePlan } from "@/services/cooking-planner";
+import { compileCookingStoryboard } from "@/lib/cooking";
 import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
@@ -265,6 +267,25 @@ function normalizeDialogue(breakdown: StoryboardGenerationOutput): void {
   }
 }
 
+/** Hard post-model guard for wordless cooking profiles. Prompt instructions are
+ * advisory; this clamp guarantees a model can never reintroduce narration. */
+function enforceCookingContract(
+  input: StoryboardGenerationInput,
+  breakdown: StoryboardGenerationOutput
+): void {
+  if (input.genre !== "cooking") return;
+  const wordless = ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(
+    input.cooking_style ?? ""
+  );
+  if (wordless) {
+    for (const segment of breakdown.segments) {
+      segment.dialogue = "";
+      segment.speaker = "";
+      segment.dialogue_lines = undefined;
+    }
+  }
+}
+
 /** Cast list for the board/keyframe builders (name + locked look + child flag). */
 function presentCastFor(
   seg: { characters_in_scene?: string[] },
@@ -304,6 +325,7 @@ async function runAnalysis(
         ingredients: input.ingredient_images,
         backgrounds: input.background_images,
         provider,
+        contentMode: input.genre === "cooking" ? "cooking" : "general",
       });
       analysis.characterDescriptions = a.characterDescriptions;
       analysis.productDescriptions = a.productDescriptions;
@@ -334,6 +356,9 @@ function buildIngredientsText(
   input: StoryboardGenerationInput,
   analysis: StoryboardAnalysis
 ): string | undefined {
+  if (input.genre === "cooking" && input.cooking_recipe) {
+    return `Use the canonical Recipe IR and the segment's visible action as the filter. Show only ingredient ids used in the current step (the full set appears only in the mise-en-place clip), preserving each ingredient's real state and causal raw→cut→cooked transition.`;
+  }
   const parts: string[] = [];
   for (const ing of input.ingredient_images ?? []) {
     const desc = analysis.ingredientDescriptions[ing.name] || ing.description;
@@ -381,14 +406,22 @@ function enhanceInput(
   const productNames = Object.keys(analysis.productDescriptions);
   if (productNames.length > 0) {
     extra.push(
-      `Products to feature: ${productNames
-        .map((n) => `"${n}": ${analysis.productDescriptions[n]}`)
-        .join(". ")}`
+      input.genre === "cooking"
+        ? `FINISHED-DISH VISUAL REFERENCE — use for the opening 3-5s money-shot hook and the final payoff, never treat it as retail packaging: ${productNames
+            .map((n) => `"${n}": ${analysis.productDescriptions[n]}`)
+            .join(". ")}`
+        : `Products to feature: ${productNames
+            .map((n) => `"${n}": ${analysis.productDescriptions[n]}`)
+            .join(". ")}`
     );
   }
   const ingredientsText = buildIngredientsText(input, analysis);
   if (ingredientsText) {
-    extra.push(`Named ingredients/components to show by name: ${ingredientsText}`);
+    extra.push(
+      input.genre === "cooking"
+        ? `Named cooking ingredients governed by the canonical Recipe IR and current step: ${ingredientsText}`
+        : `Named auxiliary objects/components to show only when the scene explicitly calls for them: ${ingredientsText}. These are ordinary props/components, NOT food or cooking ingredients.`
+    );
   }
   if (extra.length > 0) {
     enhanced.custom_instructions = [enhanced.custom_instructions, ...extra]
@@ -415,11 +448,15 @@ function enforceMenuCharacterContract(
           name: c.name.trim(),
           appearance: c.appearance,
           isChild: !!c.is_child,
+          heightCm: c.height_cm,
+          bodyType: c.body_type,
         }))
       : (input.character_images ?? []).map((c) => ({
           name: c.name.trim(),
           appearance: analysis.characterDescriptions[c.name] ?? "",
           isChild: false,
+          heightCm: undefined,
+          bodyType: undefined,
         }));
   const menu = menuCharacters.filter((c) => c.name);
   if (menu.length === 0) return;
@@ -430,7 +467,7 @@ function enforceMenuCharacterContract(
   const used = new Set<CharacterLock>();
   const renamed = new Map<string, string>();
 
-  const locks = menu.map((entry, index): CharacterLock => {
+  const menuLocks = menu.map((entry, index): CharacterLock => {
     const exact = modelLocks.find(
       (l) =>
         !used.has(l) &&
@@ -440,6 +477,18 @@ function enforceMenuCharacterContract(
     const existing = exact ?? positional;
     const visualDescription =
       analysis.characterDescriptions[entry.name] || entry.appearance || "";
+    const bodyType =
+      entry.bodyType === "slim"
+        ? "slim build"
+        : entry.bodyType === "stocky"
+          ? "stocky/full build"
+          : entry.bodyType === "standard"
+            ? "standard proportional build"
+            : "";
+    const physicalBuild = [
+      bodyType,
+      entry.heightCm ? `approximately ${entry.heightCm} cm tall` : "",
+    ].filter(Boolean).join(", ");
 
     if (existing) {
       used.add(existing);
@@ -451,6 +500,7 @@ function enforceMenuCharacterContract(
         ...existing,
         name: entry.name,
         is_child: entry.isChild || existing.is_child,
+        build: physicalBuild || existing.build,
         signature_features:
           existing.signature_features ||
           visualDescription ||
@@ -464,7 +514,7 @@ function enforceMenuCharacterContract(
       gender_age: entry.isChild
         ? "child matching the uploaded menu reference"
         : "adult matching the uploaded menu reference",
-      build: "match the uploaded menu reference",
+      build: physicalBuild || "match the uploaded menu reference",
       skin_tone: "match the uploaded menu reference",
       hair: "match the uploaded menu reference",
       eyes: "match the uploaded menu reference",
@@ -475,6 +525,20 @@ function enforceMenuCharacterContract(
       render_style: input.style,
     };
   });
+
+  // A partial menu is common: the user may upload a real portrait for Nam but
+  // let the script define Linh. The old reconciliation replaced the entire
+  // model cast with menu entries, so Linh still appeared in panels but had no
+  // identity pair in the storyboard library. Preserve every remaining named
+  // model lock as a separate generated character after menu identities.
+  const menuNames = new Set(menuLocks.map((lock) => lock.name.toLowerCase()));
+  const remainingModelLocks = modelLocks.filter(
+    (lock) =>
+      !used.has(lock) &&
+      !!lock.name.trim() &&
+      !menuNames.has(lock.name.trim().toLowerCase())
+  );
+  const locks = [...menuLocks, ...remainingModelLocks];
 
   breakdown.character_locks = locks;
   const canonicalByLower = new Map(locks.map((l) => [l.name.toLowerCase(), l.name]));
@@ -521,6 +585,7 @@ interface RefContext {
   dialogueLanguage: string;
   faceImg?: string;
   productImg?: string;
+  ingredientRefs: { img: string; name: string; desc?: string }[];
   bgImg?: string;
   faceDesc?: string;
   productDesc?: string;
@@ -542,6 +607,7 @@ interface RefContext {
   sceneBible?: SceneBible;
   productDnaText?: string;
   ingredientsText?: string;
+  isCooking: boolean;
 }
 
 function buildRefContext(
@@ -554,6 +620,13 @@ function buildRefContext(
   const faceImg = input.character_images?.[0]?.images?.[0];
   const productImg = input.product_images?.[0]?.images?.[0];
   const bgImg = input.background_images?.[0]?.images?.[0];
+  const ingredientRefs = (input.ingredient_images ?? []).flatMap((group) =>
+    group.images.slice(0, 2).map((img) => ({
+      img,
+      name: group.name,
+      desc: analysis.ingredientDescriptions[group.name] ?? group.description,
+    }))
+  );
 
   const faceName = input.character_images?.[0]?.name;
   const productName = input.product_images?.[0]?.name;
@@ -588,6 +661,10 @@ function buildRefContext(
   // from the text so it can't contradict the photo (the model kept adding
   // glasses to a man who wears none).
   const charDescForPoster = preserveRealFace ? stripEyewear(charDescForPosterRaw) : charDescForPosterRaw;
+  const fallbackSubject =
+    input.genre === "cooking"
+      ? "the food is the hero; show only the cook's physically necessary working hands when the recipe action requires contact, with no face or invented presenter"
+      : "the main character";
   const mainCostume = breakdown.character_locks[0]?.costume ?? "casual clothes";
   // Hard gender word (veoflow-aligned) prepended so the image model never
   // flips the subject's gender.
@@ -595,9 +672,9 @@ function buildRefContext(
   const genderWord = mainGender === "male" ? "man" : mainGender === "female" ? "woman" : "person";
   const charDesc = preserveRealFace
     ? `the exact ${genderWord} shown in the attached portrait photo (keep their real face, hair and look), wearing ${mainCostume}`
-    : charDescForPoster || "the main character";
+    : charDescForPoster || fallbackSubject;
   const mainDnaRaw = breakdown.character_locks[0]?.dna;
-  const charDescForShots = preserveRealFace ? charDesc : charDescForPoster || "the main character";
+  const charDescForShots = preserveRealFace ? charDesc : charDescForPoster || fallbackSubject;
   // IMAGE-FIRST: when a real photo locks the face, RELY ON THE PHOTO and drop
   // the AI-invented forensic DNA text entirely — it only ever contradicts the
   // photo (the root of the gender-flip and stray-glasses bugs). Use the text
@@ -648,6 +725,7 @@ function buildRefContext(
     dialogueLanguage: input.dialogue_language ?? "Vietnamese",
     faceImg,
     productImg,
+    ingredientRefs,
     bgImg,
     faceDesc,
     productDesc,
@@ -661,8 +739,13 @@ function buildRefContext(
     characterNames,
     sceneBible: breakdown.scene_bible,
     productDnaText:
-      breakdown.product_dna || productDesc || input.product_name || productName || undefined,
+      input.genre === "cooking"
+        ? `FINISHED HERO DISH (food reference, never packaging): ${
+            breakdown.product_dna || productDesc || productName || input.cooking_recipe?.hero_visual || input.cooking_recipe?.dish_name || ""
+          }`
+        : breakdown.product_dna || productDesc || input.product_name || productName || undefined,
     ingredientsText: buildIngredientsText(input, analysis),
+    isCooking: input.genre === "cooking",
   };
 }
 
@@ -674,7 +757,11 @@ const MAX_BOARD_REFS = 8;
 // `presentNames` (CAST-SYNC): when a segment declares characters_in_scene,
 // attach ONLY those characters' photos so absent people never leak into the
 // render. Unmatched names fall back to the full set.
-function buildBoardRefs(ctx: RefContext, presentNames?: string[]): {
+function buildBoardRefs(
+  ctx: RefContext,
+  presentNames?: string[],
+  options?: { includeFinishedDish?: boolean; includeIngredients?: boolean }
+): {
   images: { base64: string; mimeType?: string; label?: string }[];
   descriptors: RefDescriptor[];
 } {
@@ -691,21 +778,40 @@ function buildBoardRefs(ctx: RefContext, presentNames?: string[]): {
         ? ctx.characterRefs.filter((c) => wanted.includes(c.name.trim().toLowerCase()))
         : ctx.characterRefs;
     const pool = filtered.length > 0 ? filtered : ctx.characterRefs;
-    const reservedSlots = Number(!!ctx.bgImg) + Number(!!ctx.productImg);
-    const characterLimit = Math.max(1, MAX_BOARD_REFS - reservedSlots);
-    for (const c of pool.slice(0, characterLimit)) {
-      const viewLabel = c.view === "front" ? "FRONT PORTRAIT" : "PROFILE / 3-4 PORTRAIT";
-      images.push({
-        base64: c.img,
-        mimeType: "image/jpeg",
-        label: `HIGHEST-PRIORITY USER MENU REFERENCE — CHARACTER "${c.name}" — ${viewLabel}. Bind this face only to ${c.name}.`,
-      });
-      descriptors.push({
-        role: "character",
-        name: c.name,
-        description: c.desc,
-        view: c.view,
-      });
+    const reserveProduct =
+      !!ctx.productImg && (!ctx.isCooking || options?.includeFinishedDish !== false);
+    // Reserve only the two other identity-critical roles. Auxiliary references
+    // are useful but must never cut a FRONT+PROFILE pair in half or evict the
+    // third named character from the storyboard reference library.
+    const characterLimit = Math.max(
+      1,
+      MAX_BOARD_REFS - Number(!!ctx.bgImg) - Number(reserveProduct)
+    );
+    const grouped = new Map<string, typeof pool>();
+    for (const reference of pool) {
+      const key = reference.name.trim().toLowerCase();
+      const group = grouped.get(key) ?? [];
+      if (group.length < 2) group.push(reference);
+      grouped.set(key, group);
+    }
+    let characterSlotsUsed = 0;
+    for (const group of grouped.values()) {
+      if (characterSlotsUsed + group.length > characterLimit) break;
+      for (const c of group) {
+        const viewLabel = c.view === "front" ? "FRONT PORTRAIT" : "PROFILE / 3-4 PORTRAIT";
+        images.push({
+          base64: c.img,
+          mimeType: "image/jpeg",
+          label: `HIGHEST-PRIORITY USER MENU REFERENCE — CHARACTER "${c.name}" — ${viewLabel}. Bind this face only to ${c.name}.`,
+        });
+        descriptors.push({
+          role: "character",
+          name: c.name,
+          description: c.desc,
+          view: c.view,
+        });
+      }
+      characterSlotsUsed += group.length;
     }
   } else if (ctx.faceImg) {
     images.push({
@@ -723,13 +829,37 @@ function buildBoardRefs(ctx: RefContext, presentNames?: string[]): {
     });
     descriptors.push({ role: "setting", description: ctx.bgDesc });
   }
-  if (ctx.productImg && images.length < MAX_BOARD_REFS) {
+  if (
+    ctx.productImg &&
+    images.length < MAX_BOARD_REFS &&
+    (!ctx.isCooking || options?.includeFinishedDish !== false)
+  ) {
     images.push({
       base64: ctx.productImg,
       mimeType: "image/jpeg",
-      label: "HIGHEST-PRIORITY USER MENU REFERENCE — PRODUCT. Preserve its exact design and branding.",
+      label: ctx.isCooking
+        ? "HIGHEST-PRIORITY USER REFERENCE — FINISHED DISH. Preserve the real bowl/plate, food geometry, sauce, toppings, texture and steam. This is food, not packaging or branding."
+        : "HIGHEST-PRIORITY USER MENU REFERENCE — PRODUCT. Preserve its exact design and branding.",
     });
-    descriptors.push({ role: "product", description: ctx.productDesc });
+    descriptors.push({
+      role: ctx.isCooking ? "dish" : "product",
+      description: ctx.productDesc,
+    });
+  }
+  for (const ingredient of ctx.ingredientRefs) {
+    if (ctx.isCooking && options?.includeIngredients === false) break;
+    if (images.length >= MAX_BOARD_REFS) break;
+    images.push({
+      base64: ingredient.img,
+      mimeType: "image/jpeg",
+      label: ctx.isCooking
+        ? `USER FOOD INGREDIENT REFERENCE — "${ingredient.name}". Preserve only visible food colour, shape, cut/state, moisture and texture; use it only when the current recipe step calls for it.`
+        : `USER AUXILIARY OBJECT / COMPONENT REFERENCE — "${ingredient.name}". Preserve its visible physical form, material, colour, proportions and parts; use it only when the scene explicitly calls for this named object/component. It is NOT food and must never trigger cooking imagery.`,
+    });
+    descriptors.push({
+      role: ctx.isCooking ? "ingredient" : "component",
+      description: ingredient.desc,
+    });
   }
   return { images, descriptors };
 }
@@ -742,10 +872,25 @@ export async function generateStoryboardPlan(
 ): Promise<ActionResult<StoryboardPlan>> {
   const warnings: string[] = [];
   try {
+    // Defense in depth: specialist Cooking data is legal only behind the exact
+    // genre router, never merely because a stale goal/state contains cooking.
+    if (input.genre !== "cooking") {
+      input = { ...input, cooking_recipe: undefined, cooking_style: undefined };
+    } else if (["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")) {
+      // Hands/POV ASMR never needs a face identity. Drop face payloads before
+      // Vision so they cannot add latency or lure image generation into showing
+      // a presenter. This is a server-side guarantee, not only a UI convention.
+      input = {
+        ...input,
+        character_images: undefined,
+        character_descriptions: undefined,
+        main_character: undefined,
+      };
+    }
     const analysis = await runAnalysis(input, provider, warnings);
     const enhanced = enhanceInput(input, analysis);
 
-    // TWO-STAGE PIPELINE:
+    // GENERAL TWO-STAGE PIPELINE:
     //   Stage 1 — the SCRIPT (creative text) is written by input.script_provider
     //     (default Claude Opus 4.8), which is the strongest at Vietnamese
     //     numerology/health scripts.
@@ -755,10 +900,16 @@ export async function generateStoryboardPlan(
     // If Stage 1's model is unavailable (e.g. ANTHROPIC_API_KEY not set), we skip
     // the script and let Stage 2 write directly. If Stage 2 fails but we have a
     // script, we fall back to building the storyboard with the script model.
+    // Cooking deliberately bypasses the generic creative-script + giant JSON
+    // path. Recipe IR already is the approved script source; the model returns
+    // only a small scene plan and deterministic code compiles compatibility
+    // fields/laws. Other genres keep the established two-stage flow.
+    const compiledCooking =
+      enhanced.genre === "cooking" && !!enhanced.cooking_recipe;
     const scriptProvider = input.script_provider ?? provider;
 
     let sourceScript: string | null = null;
-    if (scriptProvider !== provider) {
+    if (!compiledCooking && scriptProvider !== provider) {
       try {
         sourceScript = await generateScript(enhanced, scriptProvider);
       } catch (e) {
@@ -785,20 +936,28 @@ export async function generateStoryboardPlan(
       );
     }
 
-    let breakdown;
-    try {
-      // Stage 2: Gemini flash expands the approved script into the storyboard.
-      breakdown = await generateStoryboardBreakdown(contextBoundInput, provider);
-    } catch (e) {
-      if (sourceScript && scriptProvider !== provider) {
-        // Storyboard model failed — build the storyboard with the script model
-        // itself so an approved script is never wasted.
-        warnings.push(
-          `${provider} không dựng được storyboard — đã dùng ${scriptProvider} để dựng. (${e instanceof Error ? e.message : String(e)})`
-        );
-        breakdown = await generateStoryboardBreakdown(contextBoundInput, scriptProvider);
-      } else {
-        throw e;
+    let breakdown: StoryboardGenerationOutput;
+    if (compiledCooking) {
+      const compactPlan = await generateCompactCookingScenePlan(
+        contextBoundInput,
+        provider
+      );
+      breakdown = compileCookingStoryboard(contextBoundInput, compactPlan);
+    } else {
+      try {
+        // Stage 2: main provider expands the approved script into storyboard JSON.
+        breakdown = await generateStoryboardBreakdown(contextBoundInput, provider);
+      } catch (e) {
+        if (sourceScript && scriptProvider !== provider) {
+          // Storyboard model failed — build the storyboard with the script model
+          // itself so an approved script is never wasted.
+          warnings.push(
+            `${provider} không dựng được storyboard — đã dùng ${scriptProvider} để dựng. (${e instanceof Error ? e.message : String(e)})`
+          );
+          breakdown = await generateStoryboardBreakdown(contextBoundInput, scriptProvider);
+        } else {
+          throw e;
+        }
       }
     }
 
@@ -818,6 +977,7 @@ export async function generateStoryboardPlan(
     // forms so downstream code (and the editor) is always consistent, and hard-
     // cap the multi-speaker feature so it can never over-constrain a Veo clip.
     normalizeDialogue(breakdown);
+    enforceCookingContract(input, breakdown);
 
     for (const lock of breakdown.character_locks) {
       const analyzed = analysis.characterDescriptions[lock.name];
@@ -929,7 +1089,7 @@ function assemblePlanPrompts(
       characterVoices[l.name.trim()] = (l.voice ?? "").trim() || defaultVoiceFor(l.gender, l.is_child);
     }
   }
-  for (const seg of breakdown.segments) {
+  for (const [segmentIndex, seg] of breakdown.segments.entries()) {
     seg.first_frame_url = null;
     // CAST-SYNC: in a multi-character scene, describe EVERY present character
     // (each with their locked look + child flag) instead of only the main one.
@@ -946,14 +1106,19 @@ function assemblePlanPrompts(
         : charDesc;
     // buildSegmentVeoPrompt now strips ALL hex from its own output (Veo burns
     // "#A9C7E8" onto the frame as a name tag), so no wrap needed here.
+    const cookingPayoffClip =
+      ctx.isCooking &&
+      (segmentIndex === 0 || segmentIndex === breakdown.segments.length - 1);
     seg.full_prompt = buildSegmentVeoPrompt({
       characterDescription: castDesc,
       realityProfile: breakdown.context_ir?.reality_profile,
       sceneIntent: seg.scene_intent,
       worldContext: breakdown.world_context,
       setting: makeVeoSafe(seg.first_frame_prompt ?? ""),
-      productDescription: productDesc,
-      ingredients: ctx.ingredientsText,
+      productDescription:
+        !ctx.isCooking || cookingPayoffClip ? productDesc : undefined,
+      ingredients:
+        !ctx.isCooking || !cookingPayoffClip ? ctx.ingredientsText : undefined,
       sceneBible: ctx.sceneBible,
       colorPalette: palette,
       motionPrompt: makeVeoSafe(seg.motion_prompt),
@@ -986,7 +1151,11 @@ function assemblePlanPrompts(
     characterVoices,
     ambientAudio,
     marketing: breakdown.marketing_structure,
-    segments: breakdown.segments.map((s) => ({
+    segments: breakdown.segments.map((s, segmentIndex) => {
+      const cookingPayoffClip =
+        ctx.isCooking &&
+        (segmentIndex === 0 || segmentIndex === breakdown.segments.length - 1);
+      return {
       segment_number: s.segment_number,
       title: s.title,
       role: s.marketing_role,
@@ -1001,7 +1170,12 @@ function assemblePlanPrompts(
       characters_in_scene: s.characters_in_scene,
       continuity_note: s.continuity_note,
       beats: s.beats,
-    })),
+      productDescription:
+        ctx.isCooking ? (cookingPayoffClip ? productDesc ?? null : null) : undefined,
+      ingredients:
+        ctx.isCooking ? (!cookingPayoffClip ? ctx.ingredientsText ?? null : null) : undefined,
+    };
+    }),
   });
 }
 
@@ -1127,13 +1301,26 @@ export async function generateBoardImage(params: {
   /** Base64 of a previously-rendered board, used to pin wardrobe/look across boards. */
   anchorImage?: string;
 }): Promise<ActionResult<{ url: string }>> {
-  const provider = params.provider ?? "gemini";
   const { input, breakdown, analysis } = params;
+  const hasUserVisualReferences =
+    (input.character_images?.length ?? 0) > 0 ||
+    (input.product_images?.length ?? 0) > 0 ||
+    (input.ingredient_images?.length ?? 0) > 0 ||
+    (input.background_images?.length ?? 0) > 0;
+  // DALL-E text-to-image cannot consume these uploads. Whenever the user has
+  // supplied a character, product or location photo, route the IMAGE call to
+  // Gemini automatically so "reference lock" is a real input mode rather than
+  // a text-only promise. Script/storyboard text provider remains unchanged.
+  const provider: AIProvider = hasUserVisualReferences
+    ? "gemini"
+    : params.provider ?? "gemini";
   const ctx = buildRefContext(input, breakdown, analysis, provider);
 
   try {
     if (params.kind === "master") {
-      const masterRefs = buildBoardRefs(ctx);
+      const masterRefs = buildBoardRefs(ctx, undefined, {
+        includeIngredients: false,
+      });
       const masterImages = [...masterRefs.images];
       const masterDescriptors = [...masterRefs.descriptors];
       if (
@@ -1231,11 +1418,23 @@ export async function generateBoardImage(params: {
     const i = params.segmentIndex ?? 0;
     const seg = breakdown.segments[i];
     if (!seg) return { success: false, error: `Segment ${i} not found` };
+    const cookingPayoffFrame =
+      ctx.isCooking && (i === 0 || i === breakdown.segments.length - 1);
+    const cookingRefOptions = ctx.isCooking
+      ? {
+          includeFinishedDish: cookingPayoffFrame,
+          includeIngredients: !cookingPayoffFrame,
+        }
+      : undefined;
+    const segmentProductDna =
+      !ctx.isCooking || cookingPayoffFrame ? ctx.productDnaText : undefined;
+    const segmentIngredients =
+      !ctx.isCooking || !cookingPayoffFrame ? ctx.ingredientsText : undefined;
 
     if (params.kind === "keyframe") {
       // Clean single first-frame (veoflow format) at the user's real aspect.
       // CAST-SYNC: attach ONLY the present characters' photos + cast block.
-      const kfRefs = buildBoardRefs(ctx, seg.characters_in_scene);
+      const kfRefs = buildBoardRefs(ctx, seg.characters_in_scene, cookingRefOptions);
       const r = await generateKeyframe({
         segmentNumber: seg.segment_number,
         sceneDescription: seg.first_frame_prompt || seg.title,
@@ -1244,8 +1443,8 @@ export async function generateBoardImage(params: {
         // identity-locked main description.
         characterDescription: ctx.characterNames.length > 1 ? ctx.charDescForPoster : ctx.charDescDna,
         presentCharacters: presentCastFor(seg, breakdown),
-        productDna: ctx.productDnaText,
-        ingredients: ctx.ingredientsText,
+        productDna: segmentProductDna,
+        ingredients: segmentIngredients,
         sceneBible: ctx.sceneBible,
         style: ctx.boardStyle,
         preserveRealFace: ctx.preserveRealFace,
@@ -1266,7 +1465,7 @@ export async function generateBoardImage(params: {
     // wardrobe drifting into a suit on one board, etc.). The anchor goes FIRST
     // so it's the dominant reference.
     // CAST-SYNC: attach only the PRESENT characters' reference photos.
-    const boardRefs = buildBoardRefs(ctx, seg.characters_in_scene);
+    const boardRefs = buildBoardRefs(ctx, seg.characters_in_scene, cookingRefOptions);
     let segImages = ctx.canChain && boardRefs.images.length > 0 ? boardRefs.images : [];
     let segDescriptors = ctx.canChain && boardRefs.descriptors.length > 0 ? boardRefs.descriptors : [];
     if (
@@ -1292,8 +1491,8 @@ export async function generateBoardImage(params: {
       beatsPerSegment: ctx.beatsPerSegment,
       characterDescription: ctx.charDescDna,
       presentCharacters: presentCastFor(seg, breakdown),
-      productDna: ctx.productDnaText,
-      ingredients: ctx.ingredientsText,
+      productDna: segmentProductDna,
+      ingredients: segmentIngredients,
       sceneBible: ctx.sceneBible,
       style: ctx.boardStyle,
       isFirst: i === 0,

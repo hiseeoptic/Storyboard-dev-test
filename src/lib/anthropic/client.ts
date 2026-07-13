@@ -34,6 +34,8 @@ export async function claudeGenerateText(params: {
   systemPrompt?: string;
   userPrompt: string;
   maxTokens?: number;
+  /** Optional fail-fast boundary for serverless request orchestration. */
+  timeoutMs?: number;
 }): Promise<string> {
   const apiKey = getApiKey();
 
@@ -52,6 +54,7 @@ export async function claudeGenerateText(params: {
       "content-type": "application/json",
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(params.timeoutMs ?? 120_000),
   });
 
   const json = (await res.json()) as ClaudeResponse;

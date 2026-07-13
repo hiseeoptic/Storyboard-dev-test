@@ -71,6 +71,8 @@ export async function geminiGenerateText(params: {
   temperature?: number;
   maxOutputTokens?: number;
   responseSchema?: Record<string, unknown>;
+  /** Fail fast instead of consuming the entire serverless execution window. */
+  timeoutMs?: number;
 }): Promise<string> {
   const apiKey = getApiKey();
 
@@ -114,6 +116,7 @@ export async function geminiGenerateText(params: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(params.timeoutMs ?? 120_000),
   });
 
   const json = (await res.json()) as GeminiResponse;

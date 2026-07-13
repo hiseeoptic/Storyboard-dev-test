@@ -29,6 +29,10 @@ import type {
 } from "@/types";
 
 const MAX_RETRIES = 3;
+// Full storyboard JSON is the expensive call. Re-running it three times can
+// consume Vercel's entire 300s window after a harmless JSON syntax miss. Local
+// repair runs first; at most one fresh retry is allowed.
+const STORYBOARD_MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
 const STRING_SCHEMA = { type: "STRING" };
 const INTEGER_SCHEMA = { type: "INTEGER" };
@@ -409,6 +413,28 @@ function parseJsonResponse(text: string): unknown {
   }
 }
 
+async function repairStoryboardJsonSyntax(
+  rawContent: string,
+  provider: AIProvider
+): Promise<unknown> {
+  // A syntax-only repair is far cheaper than regenerating the storyboard with
+  // its full system prompt, context IR and creative reasoning. Gemini is the
+  // normal structured-output provider; other providers fall through to their
+  // normal retry path.
+  if (provider !== "gemini") return parseJsonResponse(rawContent);
+
+  const repaired = await geminiGenerateText({
+    systemPrompt:
+      "You are a strict JSON syntax repair tool. Fix only JSON punctuation, quoting, commas, brackets and truncated closing delimiters. Preserve every key, value, array order and wording. Do not summarize, improve or regenerate content. Return JSON only.",
+    userPrompt: `Repair this malformed JSON without changing its data:\n${rawContent}`,
+    jsonMode: true,
+    temperature: 0,
+    maxOutputTokens: 16384,
+    timeoutMs: 30_000,
+  });
+  return parseJsonResponse(repaired);
+}
+
 /**
  * Stage 1.5 — resolve the project's neutral 10-layer context once.
  * Storyboard expansion then consumes this canonical IR instead of inventing a
@@ -440,6 +466,7 @@ export async function analyzeVideoContext(
           responseSchema: VIDEO_CONTEXT_RESPONSE_SCHEMA,
           temperature: 0.15,
           maxOutputTokens: 8192,
+          timeoutMs: 45_000,
         });
       } else {
         const openai = getOpenAIClient();
@@ -507,6 +534,7 @@ export async function generateScript(
           userPrompt,
           temperature: 0.85,
           maxOutputTokens: 4096,
+          timeoutMs: 45_000,
         });
       } else {
         // GPT-5-mini: strong creative writing at ~1/5 the price of gpt-4o.
@@ -557,7 +585,7 @@ export async function generateStoryboardBreakdown(
 ): Promise<StoryboardGenerationOutput> {
   let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt < STORYBOARD_MAX_RETRIES; attempt++) {
     try {
       let rawContent: string | null = null;
 
@@ -577,11 +605,15 @@ export async function generateStoryboardBreakdown(
           userPrompt: buildStoryboardUserPrompt(input),
           jsonMode: true,
           responseSchema: STORYBOARD_RESPONSE_SCHEMA,
-          temperature: 0.35,
+          temperature: attempt === 0 ? 0.25 : 0.1,
           // The storyboard JSON grew (dialogue_lines, cast/environment locks,
           // voice, forensic fields) — 8192 could truncate mid-array, which
           // surfaces as "Expected ',' or ']'" parse errors.
-          maxOutputTokens: 24576,
+          maxOutputTokens: Math.min(
+            24576,
+            Math.max(12288, (input.segment_count ?? input.scene_count ?? 5) * 2200)
+          ),
+          timeoutMs: 60_000,
         });
       } else {
         const openai = getOpenAIClient();
@@ -602,7 +634,16 @@ export async function generateStoryboardBreakdown(
         throw new Error(`Empty response from ${provider}`);
       }
 
-      const parsed = parseJsonResponse(rawContent);
+      let parsed: unknown;
+      try {
+        parsed = parseJsonResponse(rawContent);
+      } catch (syntaxError) {
+        console.warn(
+          "[AI Engine] Storyboard JSON syntax invalid; running compact syntax-only repair:",
+          syntaxError instanceof Error ? syntaxError.message : String(syntaxError)
+        );
+        parsed = await repairStoryboardJsonSyntax(rawContent, provider);
+      }
 
       if (!validateOutput(parsed)) {
         throw new Error("Response does not match expected schema");
@@ -816,17 +857,17 @@ export async function generateStoryboardBreakdown(
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       console.error(
-        `[AI Engine] Attempt ${attempt + 1}/${MAX_RETRIES} failed:`,
+        `[AI Engine] Attempt ${attempt + 1}/${STORYBOARD_MAX_RETRIES} failed:`,
         lastError.message
       );
-      if (attempt < MAX_RETRIES - 1) {
+      if (attempt < STORYBOARD_MAX_RETRIES - 1) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
       }
     }
   }
 
   throw new Error(
-    `Storyboard generation failed after ${MAX_RETRIES} attempts: ${lastError?.message}`
+    `Storyboard generation failed after ${STORYBOARD_MAX_RETRIES} attempts: ${lastError?.message}`
   );
 }
 

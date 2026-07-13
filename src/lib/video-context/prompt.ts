@@ -54,6 +54,26 @@ export function buildContextAnalysisUserPrompt(input: StoryboardGenerationInput)
     has_character_references: (input.character_images?.length ?? 0) > 0,
     has_product_references: (input.product_images?.length ?? 0) > 0,
     has_location_references: (input.background_images?.length ?? 0) > 0,
+    cooking_recipe:
+      input.genre === "cooking" && input.cooking_recipe
+        ? {
+            dish_name: input.cooking_recipe.dish_name,
+            servings: input.cooking_recipe.servings,
+            ingredients: input.cooking_recipe.ingredients.map((item) => ({
+              id: item.id,
+              name: item.name,
+              amount: item.amount,
+              unit: item.unit,
+              group: item.group,
+            })),
+            steps: input.cooking_recipe.steps.map((step) => ({
+              order: step.order,
+              action: step.action,
+              visible_end_state: step.visible_end_state,
+            })),
+            cooking_style: input.cooking_style ?? "kitchen_asmr",
+          }
+        : null,
     custom_instructions: input.custom_instructions ?? null,
   };
   return `Resolve the 10-layer Context IR from this project evidence:\n${JSON.stringify(evidence, null, 2)}`;

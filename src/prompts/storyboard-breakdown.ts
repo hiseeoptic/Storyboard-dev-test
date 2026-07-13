@@ -30,6 +30,7 @@ import {
   type RealityProfile,
 } from "@/lib/reality";
 import type { WorldContext } from "@/types";
+import { compileCookingRecipeDigest } from "@/lib/cooking";
 
 // Forbidden in every generated image/clip (the brief's negative list).
 // Phrased as plain descriptors (no instructive "no/don't") — Veo/Kling read the
@@ -307,49 +308,23 @@ HEALTH / WELLNESS STORYTELLING FRAMEWORK (follow this EXACTLY — kể chuyện:
   Notice: nhẹ nhàng, cụ thể, KHÔNG hù dọa, giải pháp nhỏ-dễ-làm, kết mở để tương tác. HIT THIS LEVEL. If a line sounds like a lecture or a hard sell, rewrite it warmer and more concrete.
 - Put ONE clear takeaway/core message in "synopsis". Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Add a ready-to-post caption (scroll-stopping first line) + 4-6 hashtags at the END of "synopsis".`;
 
-// Cooking / recipe short — THE FOOD is the hero. Demonstration content: each
-// clip = one continuous cooking action, ending on an irresistible reveal.
+// Cooking is an isolated compiler profile. It is injected only when the
+// canonical genre is exactly "cooking"; a stale video_goal may never activate it.
 const COOKING_FRAMEWORK = `
-COOKING / RECIPE SHORT FRAMEWORK (follow this EXACTLY — THE FOOD IS THE STAR):
-- SUBJECT: one dish/recipe (e.g. "cơm chiên trứng", "bánh mì chảo", "trà sữa nhà làm"). Keep it to ONE dish, doable, with a satisfying finish.
-- 📌 RECIPE CONTENT = SOURCE OF TRUTH: if the idea/topic content contains a structured recipe (lines like "CÔNG THỨC MÓN / NGUYÊN LIỆU / GIA VỊ / CÁC BƯỚC / ÂM THANH ASMR"), that data is ABSOLUTE. Use EXACTLY those ingredients and ONLY those — never invent, swap, add or drop an ingredient/spice; follow CÁC BƯỚC in order and map them onto beats 2-4; use the listed DỤNG CỤ (pot/pan type) verbatim; take each step's ASMR sound from ÂM THANH ASMR; end on the THÀNH PHẨM money shot. If no structured recipe is given, use only common, verifiable ingredients for that dish.
-- 🚫 ANTI-HIJACK (this is a COOKING video, NEVER a health/illness video): even if the idea/topic text mentions symptoms, diseases or health benefits, DO NOT build a sickness storyline — no character acting tired/ill, no rubbing temples or pressing the abdomen, no disease explanations, no "dấu hiệu/triệu chứng" hooks. The hook is the FOOD money shot, the arc is the MAKE. A health benefit may appear as at most ONE warm spoken line (e.g. "món này lại mát gan nữa"), never as the story.
-- 🥬 INGREDIENT FORENSIC DNA: in every first_frame_prompt, describe each visible ingredient with its REAL look — colour, texture, state (e.g. "sấu xanh vỏ sần hơi bóng", "thịt vịt chặt miếng, da vàng nhạt", "gừng thái lát vàng tươi, xơ rõ") — so the render shows the actual Vietnamese ingredient, not a generic lookalike; keep each ingredient's look IDENTICAL across all segments.
-
-- 🏔️ OUTDOOR / WILDERNESS ASMR MODE (activate when the idea/setting mentions ngoài trời / núi / suối / bản / cao nguyên / wilderness / outdoor — the "The Nikos Knife" formula, overrides the normal kitchen rules):
-  · SETTING: a fixed OUTDOOR Vietnamese landscape cooking spot — use environment_ref "vietnam_highland_cook_spot" (đồi núi Tây Bắc) or "vietnam_stream_rock_cook" (bờ suối rừng) for EVERY segment (NOT warm_home_kitchen). Composition law: the cooking action fills the LOWER THIRD of frame (board/bowl/fire in sharp focus), the Vietnamese vista fills the upper frame with real atmospheric depth.
-  · CHARACTER = HANDS ONLY, NO FACE EVER: the "character" is a pair of hands — lock their DNA like a face: skin tone, one jacket-sleeve cuff (colour + material), one accessory (e.g. dark field watch on left wrist). The SAME hands, cuff and watch appear in every segment. character_locks describes the hands/cuff/accessory; gender_age is the cook's hands' owner; NEVER show the face, body or reflection.
-  · CAMERA: near-POV high angle (~40-60° down) over the hands and board, or a low tabletop close-up along the board toward the vista; slow push-ins and gentle tilts only; the landscape horizon sits in the upper third.
-  · AUDIO = 100% DIEGETIC ASMR — THIS OVERRIDES ANY DIALOGUE REQUIREMENT: "dialogue" MUST be an empty string "" and "speaker" "" for EVERY segment. No voiceover, no music, no humming. The soundtrack is ONLY: knife sliding through the ingredient and landing on wood, chop thuds, grating, scraping, drizzling oil, whisking, fire crackle, sizzling, plus the location's nature bed (wind/stream/birds). In every motion_prompt NAME the sound-making contact explicitly (e.g. "the blade glides through the salmon and knocks softly against the board") — Veo generates the audio from the described action.
-  · FOOD REALISM: raw ingredients glisten wet and fresh (moist fish flesh, silver skin, juice beading on the cut face), steam in the cool air, smoke curling off coals — appetising, macro-level real.
-  · ARC (5 beats): finished-dish money shot over the vista → prep cuts on the board (the hero ASMR beat, slow) → sauce/marinade in the wooden bowl (grate + drizzle + stir) → cooking over the open fire (sizzle + smoke) → reveal + first cut/bite, no CTA speech — the CTA lives in the caption only.
-- HERO = THE FOOD, not the person: the camera loves the ingredients, the sizzle, the steam, the texture, the pour, the cheese-pull, the final plating. The cook is usually HANDS + voice (POV) or a warm host; identity matters less than appetite appeal.
-- SETTING = A KITCHEN, LOCKED & CONSISTENT: the whole video happens in ONE fixed kitchen (a warm, tidy home kitchen unless the idea says otherwise — stove/hob, wooden board, clean counter, natural window light). LOCK it into scene_bible.backdrop and repeat the SAME kitchen verbatim in every segment's first_frame_prompt — same counter, same stove, same props, same light. Never drift to an unrelated place; the cooking always happens on that counter/stove.
-- OVERVIEW SHOT (required): segment 1 (or its first beat) opens with a WIDE ESTABLISHING shot of the whole kitchen counter/setup — ingredients laid out, pan on the stove — so the viewer sees the space, THEN the clips move into the close-ups. (This is the "SCENE OVERVIEW" of the board.)
-- AUDIO = KITCHEN ASMR: every clip carries real cooking sound — sizzling/xèo xèo, chopping, bubbling, oil crackle, the pour, gentle kitchen ambience. Appetising, no music bed drowning it. (Veo generates this audio.)
-- VOICE = warm, friendly HOME-COOK HOST, second person, easy and inviting (like showing a friend) — never a dry TV-chef read-out.
-- PICK ONE CONTENT STYLE (vary across videos):
-  · Công thức nhanh (recipe-in-60s) — từng bước gọn gàng.
-  · ASMR / tiếng xèo (sizzle & sound) — cận cảnh, âm thanh nấu nướng.
-  · POV nấu ăn (chỉ có bàn tay) — người xem như đang tự nấu.
-  · "Món này làm 5 phút" — nhanh, tiện, ai cũng làm được.
-  · Mẹo bếp bất ngờ — 1 mẹo khiến món ngon/đẹp hơn hẳn.
-  · Trước → Sau — nguyên liệu thô → thành phẩm long lanh.
-  · Câu chuyện món ăn — kỷ niệm/quê hương gói trong món ăn.
-- THE 5-BEAT ARC (each beat = ONE continuous cooking action for one 10s clip):
-  1) HOOK (0-3s) — open on the FINISHED-DISH "money shot" (or the most dramatic step: cheese pull, sizzling pour) + a line that promises the payoff. NO slow intro.
-  2) NGUYÊN LIỆU — quick, appetising layout of what you need (few, accessible ingredients); tease the tastiest part.
-  3-4) CÁC BƯỚC CHÍNH — the key cooking actions, ONE per clip (đảo, chiên, rưới sốt, rắc topping), each shown close and satisfying; keep momentum, hold curiosity toward the result.
-  5) THÀNH PHẨM + CTA — the hero reveal (steam, cut-open, first bite/pull) + a save-worthy CTA ("Lưu công thức lại làm cuối tuần nhé", "Tag đứa bạn nấu ăn dở 😆").
-- SENSORY LANGUAGE: name taste/sound/texture ("giòn rụm", "thơm nức", "xèo xèo", "kéo phô mai", "nóng hổi"). Make the viewer HUNGRY.
-- DIALOGUE = SHORT voiceover narrating the step, second-person, ~8-14 words ("Đầu tiên, phi tỏi cho thơm…"). Warm, easy, encouraging — never a dry recipe read-out.
-- 🏆 GOLD-STANDARD EXAMPLE (món "cơm chiên trứng" — learn the voice, don't copy):
-  HOOK: "Cơm nguội đừng bỏ — 5 phút nữa nó thành đĩa cơm chiên vàng ươm này." (money shot + promise)
-  NGUYÊN LIỆU: "Chỉ cần cơm nguội, hai quả trứng, chút hành lá. Có vậy thôi." (few, accessible)
-  BƯỚC 1: "Đánh tan trứng, đổ vào chảo nóng, cho cơm vào đảo thật nhanh tay." (one clear action)
-  BƯỚC 2: "Nêm chút nước tương, đảo đều tới khi từng hạt cơm tơi và bóng." (sensory)
-  THÀNH PHẨM + CTA: "Vàng ươm, thơm nức mũi. Lưu lại làm bữa tối nay nhé!" (reveal + save-bait)
-- Fill "marketing_structure" (hook = the money shot promise, problem = the craving/need, solution = the make, cta = save). Ready-to-post caption + 4-6 hashtags at END of "synopsis".`;
+COOKING DIRECTOR PROFILE — ACTIVE ONLY FOR genre="cooking":
+- CANONICAL RECIPE: the supplied Recipe IR owns ingredients, quantities, preparation, tools and causal step order. Never add, drop, substitute or duplicate anything. Unspecified means unspecified — never guess.
+- ONE VISUAL JOB PER CLIP: show one primary physical operation and its visible end state. Preserve ingredient/container state across clips. A bowl, pan, knife or ingredient never appears, moves or changes state without a visible cause.
+- FIRST 3-5 SECONDS = FINISHED-DISH HOOK: clip 1 starts immediately on the real finished dish at its most appetising moment — steam, glossy sauce, noodle lift, crisp cut, bubbling edge or final pour. Macro/close food framing first; NEVER begin with a wide room overview, greeting, logo, ingredient list or exposition. The hook promises exactly the result the final clip delivers.
+- RETENTION ARC: money-shot preview → the Recipe IR's real causal operations → plating/final hero reveal. Allocate middle clips from the actual dish; mise en place, prep, heat and transformation may repeat or be omitted when the recipe requires. Never impose a generic six-step formula, change recipe order, or merge hook/final payoff into a middle operation.
+- MISE EN PLACE: display the exact recipe ingredients in small bowls/plates grouped by the step that uses them. Separate items added at different times. Keep vessel identity and ingredient amount visually stable. No on-screen labels are required.
+- PACING: prioritise visual information over explanation. Repetitive washing/chopping/stirring may use a deliberate speed ramp or time-compression montage BETWEEN causal states; do not make hands superhuman and never morph/teleport food. Slow down for tactile hero moments: first cut, sauce pour, sizzle, thickening, steam, plating.
+- FOOD PHYSICS: preserve raw→cut→heated→thickened/plated states; real moisture, fibres, starch viscosity, oil sheen, browning, steam and gravity. Do not show a final ingredient before its recipe step.
+- AUDIO: every motion names the actual contact that makes sound: blade-on-board, ingredient into bowl, whisk, pour, scrape, sizzle, bubbling, fire crackle, ceramic placement. No generic sound list disconnected from the visible action.
+- ASMR PROFILES: nature_asmr, kitchen_asmr and pov_hands require dialogue="", speaker="", no voice-over and no music in EVERY clip. Audio is 100% diegetic. Other profiles may use sparse optional narration, but never read the recipe aloud.
+- NATURE ASMR: derive one outdoor workstation from the user's setting/location reference and resolved context; never assume a mountain, snow, lake, forest, stone stove, wardrobe or fixed composition. Use hands-only tactile coverage and choose the food/location balance per operation. Keep the chosen hands/workstation/cookware/weather/light internally consistent. Style references contribute abstract sensory principles only; never imitate a creator's exact set, props, shot order, social-media UI, branding, advertisement, watermark or screenshot overlay.
+- KITCHEN ASMR: one locked workstation, same counter/hob/cookware/light throughout; food and hands are the heroes, not a presenter.
+- FINAL PAYOFF: reserve enough time for the last transformation, plating and finished-dish hero shot. End settled on the actual result; a save/follow CTA belongs in caption metadata only for voiceless ASMR.
+- ANTI-HIJACK: this profile must never introduce a health-symptom plot, unrelated lifestyle scene, product-ad arc or generic warm-home-kitchen preset that conflicts with the supplied recipe/style/context.`;
 
 // Fitness / workout short — demonstration + coaching. Motivating, correct form,
 // safe. Each clip = one exercise/movement performed with clean form.
@@ -385,9 +360,11 @@ FITNESS / WORKOUT SHORT FRAMEWORK (follow this EXACTLY — motivate, demonstrate
 - Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Ready-to-post caption + 4-6 hashtags at END of "synopsis".`;
 
 /** Genre-appropriate ambient sound for the Veo clip (Veo generates audio). */
-export function genreAmbientAudio(genre?: string, goal?: string): string | undefined {
-  const isCooking = genre === "cooking" || goal === "cooking";
-  const isFitness = genre === "fitness" || goal === "fitness";
+export function genreAmbientAudio(genre?: string, _goal?: string): string | undefined {
+  // Genre is the hard routing boundary. A stale UI goal must never leak a
+  // cooking/gym sound world into numerology, drama or any unrelated project.
+  const isCooking = genre === "cooking";
+  const isFitness = genre === "fitness";
   if (isCooking)
     return "real cooking ASMR, close-mic and clear — knife slicing through the ingredient and knocking on the wooden board, chopping, grating, drizzling, sizzling/xèo xèo, bubbling, oil crackle — plus the location's natural ambience (gentle kitchen room tone indoors; wind, birds, stream and fire crackle when cooking outdoors); no music, appetising and true";
   if (isFitness)
@@ -450,14 +427,18 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   const lang = input.dialogue_language ?? "Vietnamese";
   const isNumerology = goal === "numerology" || input.genre === "numerology";
   const isHealth = goal === "health" || input.genre === "health";
-  const isCooking = goal === "cooking" || input.genre === "cooking";
+  const isCooking = input.genre === "cooking";
   const isFitness = goal === "fitness" || input.genre === "fitness";
   const framework = isNumerology
     ? NUMEROLOGY_FRAMEWORK + numerologyToneDirective(input.numerology_style)
     : isHealth
       ? HEALTH_FRAMEWORK
       : isCooking
-        ? COOKING_FRAMEWORK
+        ? `${COOKING_FRAMEWORK}${
+            input.cooking_recipe
+              ? `\n${compileCookingRecipeDigest(input.cooking_recipe, input.cooking_style ?? "kitchen_asmr")}`
+              : "\nNo canonical Recipe IR was supplied. Do not invent quantities; keep missing recipe facts explicitly unspecified."
+          }`
         : isFitness
           ? FITNESS_FRAMEWORK
           : "";
@@ -476,9 +457,13 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
 
 Idea / Topic: ${input.story_idea}
 Genre: ${input.genre} · Goal: ${goal} — ${GOAL_GUIDANCE[goal]}
-Dialogue language: ${lang} (write ALL dialogue in ${lang}, natural and conversational).${briefBlock}${framework ? `\n${framework}` : ""}
+Dialogue language: ${
+    isCooking && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")
+      ? "NONE — every segment is wordless diegetic ASMR"
+      : `${lang} (when dialogue is justified, write it naturally in ${lang})`
+  }.${briefBlock}${framework ? `\n${framework}` : ""}
 
-Write the ${segmentCount}-segment script now in the exact output shape from the system prompt. Keep the emotional arc and one short, punchy ${lang} line per segment.`;
+Write the ${segmentCount}-segment script now in the exact output shape from the system prompt. For a wordless cooking ASMR profile, keep every DIALOGUE section empty and let the ACTION carry the clip; do not invent a line merely to fill time.`;
 }
 
 // ─── Step 1: Segment Breakdown + Character Lock ─────────────────────────────
@@ -549,7 +534,7 @@ ${lawsSystemDigest()}
 ENVIRONMENT ENGINE (locked world archetypes — pick one per segment):
 - The system has a library of LOCKED environment archetypes, each a physically-grounded world spec (real materials with surface physics, Kelvin+Lux lighting, atmosphere, micro-details, imperfections, ambient sound bed). When a segment's setting matches one, set that segment's "environment_ref" to the archetype id — the system then injects the full forensic world spec into the Veo prompt automatically, which is what makes the SETTING render real instead of CGI.
 ${environmentCatalogForPrompt()}
-- Rules: pick the id whose world matches the segment's setting and emotional beat (for numerology, prefer archetypes of the number's ngũ hành element). If NO archetype fits the setting you need, set "environment_ref": "custom" and instead write the material physics + Kelvin/Lux + imperfections yourself inside "first_frame_prompt". Cooking videos use warm_home_kitchen for every segment — EXCEPT outdoor/wilderness ASMR cooking, which uses vietnam_highland_cook_spot or vietnam_stream_rock_cook (one of them, same id for ALL segments); fitness ALWAYS modern_gym_daylight. Two consecutive segments in the same location MUST reuse the same environment_ref.
+- Rules: pick an id only when it is semantically compatible with the resolved context and approved script. If NO archetype fits, set "environment_ref": "custom" and write the required physical materials + Kelvin/Lux + imperfections inside "first_frame_prompt". Never infer a kitchen, gym, living room or outdoor location from a library default; cooking/fitness routing and any special location profile arrive explicitly in the USER prompt. Two consecutive segments in the same location SHOULD reuse the same compatible environment_ref.
 
 NEGATIVE (forbidden in every image/clip — plain descriptors): warped/changed label or logo text, brand-colour change, extra products or extra people, changed hair/wardrobe/accessories, human hands when the script does not call for them, on-screen text overlays, object/container morphing, teleporting, floating or levitating objects, objects passing through surfaces, deformed liquid, melted food, extra or fused fingers, malformed hands, face morphing, identity drift, plastic/CGI skin.
 
@@ -638,28 +623,31 @@ ${JSON.stringify(input.resolved_context, null, 2)}
   // OR the genre (whichever the user set).
   const isNumerology = goal === "numerology" || input.genre === "numerology";
   const isHealth = goal === "health" || input.genre === "health";
-  const isCooking = goal === "cooking" || input.genre === "cooking";
+  const isCooking = input.genre === "cooking";
   const isFitness = goal === "fitness" || input.genre === "fitness";
   const numerologyBlock = isNumerology
     ? `\n${NUMEROLOGY_FRAMEWORK}${numerologyToneDirective(input.numerology_style)}`
     : isHealth
       ? `\n${HEALTH_FRAMEWORK}`
       : isCooking
-        ? `\n${COOKING_FRAMEWORK}`
+        ? `\n${COOKING_FRAMEWORK}${
+            input.cooking_recipe
+              ? `\n${compileCookingRecipeDigest(input.cooking_recipe, input.cooking_style ?? "kitchen_asmr")}`
+              : "\nNo canonical Recipe IR was supplied. Do not invent quantities; keep missing recipe facts explicitly unspecified."
+          }`
         : isFitness
           ? `\n${FITNESS_FRAMEWORK}`
           : "";
 
   const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
-  // OUTDOOR ASMR cooking is voiceless by design — the framework's ASMR mode
-  // overrides the forced-dialogue requirement.
-  const asmrDialogueException = isCooking
-    ? ` EXCEPTION: if the OUTDOOR/WILDERNESS ASMR MODE of the cooking framework is active (idea/setting mentions ngoài trời/núi/suối/wilderness), "dialogue" and "speaker" MUST be empty strings for every segment — audio is 100% diegetic ASMR, no voiceover.`
-    : "";
-  const dialogueBlock =
-    input.force_dialogue === false
-      ? `\nDialogue: optional. When a segment has a spoken line, write it in ${dialogueLanguage}.${asmrDialogueException}`
-      : `\nDialogue: REQUIRED. EVERY segment MUST have a non-empty "dialogue" line spoken in ${dialogueLanguage} (natural, conversational ${dialogueLanguage} — not translated word-for-word). Keep each line short (about 5-12 words). Put the line ONLY in the "dialogue" field — do NOT quote it inside the "motion_prompt" (the system appends it once; repeating it makes the character say it twice).${asmrDialogueException}`;
+  const cookingAsmr =
+    isCooking &&
+    ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "");
+  const dialogueBlock = cookingAsmr
+    ? `\nDialogue: FORBIDDEN by the selected cooking ASMR profile. Set "dialogue" to "", "speaker" to "", omit dialogue_lines, and use no voice-over/music in EVERY segment.`
+    : input.force_dialogue === false
+      ? `\nDialogue: optional. When a segment has a spoken line, write it in ${dialogueLanguage}.`
+      : `\nDialogue: REQUIRED. EVERY segment MUST have a non-empty "dialogue" line spoken in ${dialogueLanguage} (natural, conversational ${dialogueLanguage} — not translated word-for-word). Keep each line short (about 5-12 words). Put the line ONLY in the "dialogue" field — do NOT quote it inside the "motion_prompt" (the system appends it once; repeating it makes the character say it twice).`;
 
   // Example beat list sized to the requested count.
   const beatExample = Array.from({ length: beatsPerSegment }, (_, i) => {
@@ -883,6 +871,10 @@ export function buildSegmentRewriteUserPrompt(params: {
   const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
   const continuityMode = breakdown.context_ir?.layers.motion_continuity.continuity_mode ?? "strict";
   const strictContinuity = /strict|one.?shot/i.test(continuityMode);
+  const cookingRewriteBlock =
+    input.genre === "cooking" && input.cooking_recipe
+      ? `\n${compileCookingRecipeDigest(input.cooking_recipe, input.cooking_style ?? "kitchen_asmr")}\nREWRITE ROUTER: preserve the current recipe operation and visible end state. ASMR profiles remain completely wordless; never add dialogue to fill time.`
+      : "";
 
   const castBlock = (breakdown.character_locks ?? [])
     .map(
@@ -922,6 +914,7 @@ ${castBlock || "- (voiceover only)"}
 
 SCENE BIBLE (identical in every clip): ${breakdown.scene_bible ? `${breakdown.scene_bible.lens}; ${breakdown.scene_bible.lighting}; ${breakdown.scene_bible.backdrop}; ${breakdown.scene_bible.color_grade}` : "n/a"}
 Visual style: ${input.style} · Genre: ${input.genre} · Dialogue language: ${dialogueLanguage}${worldContextLockBlock(breakdown.world_context) ? `\n${worldContextLockBlock(breakdown.world_context).trim()}` : ""}
+${cookingRewriteBlock}
 
 ${prevBlock}
 
@@ -980,7 +973,7 @@ function renderDirective(style: string, preserveRealFace: boolean): string {
   }`;
 }
 
-export type RefRole = "face" | "product" | "setting" | "character_sheet" | "anchor" | "character";
+export type RefRole = "face" | "product" | "dish" | "ingredient" | "component" | "setting" | "character_sheet" | "anchor" | "character";
 
 export interface RefDescriptor {
   role: RefRole;
@@ -1013,6 +1006,12 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
         return `• CHARACTER "${r.name ?? "person"}" — attached ${r.view === "profile" ? "PROFILE / THREE-QUARTER" : "FRONT"} portrait from the USER'S CHARACTER MENU${d}. This uploaded portrait is authoritative: bind its face, hair, skin tone and visible wardrobe to ${r.name ?? "this character"} ONLY. Do NOT omit, replace, merge, blend or swap this person with another character.`;
       case "product":
         return `• THE PRODUCT — feature the EXACT product shown in the attached product photo${d}. Keep its EXACT shape, silhouette, colour, material, proportions, handle/parts and branding identical in every single shot. Do NOT redesign, recolour, distort, resize, age, damage or swap it for a different object.`;
+      case "dish":
+        return `• FINISHED-DISH REFERENCE — the attached food photo${d} is authoritative for the real serving vessel, portion geometry, sauce colour/viscosity, topping placement, texture and steam. Use it for the opening Hook preview and final payoff; this is food, never packaging, branding or a retail product.`;
+      case "ingredient":
+        return `• FOOD INGREDIENT REFERENCE — the attached user photo${d} defines the real colour, shape, cut/state, moisture and texture of these ingredients. Render only ingredients required by the current recipe step; never copy the entire reference set into every frame and never infer quantities from the photo.`;
+      case "component":
+        return `• AUXILIARY OBJECT / COMPONENT REFERENCE — the attached user photo${d} defines this named ordinary object/component. Preserve its physical form, material, colour, proportions and visible parts. Include it only when the scene explicitly calls for it; it is NOT food and must never introduce cooking actions, kitchen imagery or recipe ingredients.`;
       case "setting":
         return `• THE LOCATION OVERVIEW — the attached USER MENU environment photo${d} is authoritative. Include one small overview reference panel and reproduce its real layout, colours, furniture, materials, windows, key props and lighting in every relevant action panel; do not invent a replacement location.`;
       case "anchor":
@@ -1108,6 +1107,7 @@ export function buildSegmentFirstFramePrompt(params: {
   const hasProduct =
     (params.references ?? []).some((r) => r.role === "product") || !!params.productDna;
   const hasSetting = (params.references ?? []).some((r) => r.role === "setting");
+  const hasFoodIngredients = (params.references ?? []).some((r) => r.role === "ingredient");
 
   const target = Math.min(5, Math.max(3, params.beatsPerSegment ?? params.beats.length ?? 3));
   const beats = params.beats.slice(0, target);
@@ -1157,7 +1157,7 @@ THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 ${panelLines}
 
 SCENE CONTEXT for all panels: ${params.firstFramePrompt}
-${params.productDna ? `PRODUCT DNA (identical in every panel, with exact colours): ${params.productDna}\n` : ""}${params.ingredients ? `NAMED INGREDIENTS (show each clearly and write its NAME label next to it): ${params.ingredients}\n` : ""}${tokens ? tokens + "\n" : ""}
+${params.productDna ? `HERO PRODUCT / DISH DNA (identical where present): ${params.productDna}\n` : ""}${params.ingredients ? `${hasFoodIngredients ? "RELEVANT FOOD INGREDIENTS" : "RELEVANT AUXILIARY OBJECTS / COMPONENTS"} (render physically; no written labels): ${params.ingredients}\n` : ""}${tokens ? tokens + "\n" : ""}
 ${continuity}
 ${directive}
 
@@ -1200,6 +1200,7 @@ export function buildKeyframePrompt(params: {
   const tokens = sceneBibleTokens(params.sceneBible);
   const env = resolveEnvironment(params.environmentRef, params.sceneDescription);
   const envBlock = env ? `${renderEnvironmentBlock(env)}\n` : "";
+  const hasFoodIngredients = (params.references ?? []).some((r) => r.role === "ingredient");
   const cast = params.presentCharacters ?? [];
   const castBlock =
     cast.length > 1
@@ -1233,7 +1234,7 @@ export function buildKeyframePrompt(params: {
 COMPOSITION (${params.shot || "[EYE]"}): ${params.sceneDescription}
 ${castBlock}SUBJECT — keep this exact forensic identity: ${params.characterDescription}
 ${prominence}${lipSync}
-${envBlock}${params.productDna ? `PRODUCT (exact, unchanged, with colours): ${params.productDna}\n` : ""}${params.ingredients ? `PROPS / INGREDIENTS (show clearly by name): ${params.ingredients}\n` : ""}${tokens ? tokens + "\n" : ""}${directive}
+${envBlock}${params.productDna ? `HERO PRODUCT / DISH (exact where present): ${params.productDna}\n` : ""}${params.ingredients ? `${hasFoodIngredients ? "RELEVANT FOOD INGREDIENTS" : "RELEVANT AUXILIARY OBJECTS / COMPONENTS"} (render physically; no written labels): ${params.ingredients}\n` : ""}${tokens ? tokens + "\n" : ""}${directive}
 
 RENDER RULES: a SINGLE static frame; the subject is sharp and frozen in the STARTING posture for the upcoming action (no motion blur, no camera-movement effect); ${ratioWord} aspect ratio, 1080p quality. Do NOT include timeline markers, multiple panels, split-screens, reference thumbnails, captions, subtitles, on-screen text or speech bubbles. ${grade}${isPhotoStyle(params.style) ? ` ${PHOTOREAL_REALISM}` : ""} ${SHARED_NEGATIVE}`;
 }
@@ -1290,9 +1291,16 @@ export function buildMasterBoardPrompt(params: {
     .join("\n");
 
   const charDesc =
-    params.characterDescription.length > 900
-      ? params.characterDescription.slice(0, 900) + "..."
-      : params.characterDescription;
+    cast.length > 0
+      ? cast
+          .map((character) => {
+            const compactLook = character.description.replace(/\s+/g, " ").trim();
+            return `${character.name}: ${compactLook.slice(0, 360)}${compactLook.length > 360 ? "..." : ""}`;
+          })
+          .join(" | ")
+      : params.characterDescription.length > 900
+        ? params.characterDescription.slice(0, 900) + "..."
+        : params.characterDescription;
 
   const colorBlock =
     params.colorPalette && params.colorPalette.length > 0
@@ -1304,20 +1312,20 @@ export function buildMasterBoardPrompt(params: {
       ? cast
           .map(
             (c) =>
-              `- "${c.name.toUpperCase()}"${c.isChild ? " (CHILD — preserve child age)" : ""}: exactly TWO HEAD-AND-SHOULDERS identity portraits — FRONT / chính diện + SIDE PROFILE or 3/4 / góc nghiêng. No full body, no back view. Look lock: ${c.description}`
+              `- "${c.name.toUpperCase()}"${c.isChild ? " (CHILD — preserve child age)" : ""}: exactly TWO HEAD-AND-SHOULDERS identity portraits — FRONT / chính diện + SIDE PROFILE or 3/4 / góc nghiêng. No full body, no back view. Look lock: ${c.description.replace(/\s+/g, " ").trim().slice(0, 420)}`
           )
           .join("\n")
       : `- "${(params.characterName ?? "MAIN CHARACTER").toUpperCase()}": exactly TWO HEAD-AND-SHOULDERS identity portraits — FRONT / chính diện + SIDE PROFILE or 3/4 / góc nghiêng. No full body, no back view.`;
 
   return `${refBlock}Professional production STORYBOARD DOCUMENT, ONE single horizontal image, clean white/light background, agency-quality layout with two zones. PURPOSE: this sheet is for HUMAN REVIEW, shot planning and continuity checking only. It must NEVER be used as an image-to-video start frame. Every menu-uploaded character must be represented in the reference library, every face must stay readable, and every panel number must be instantly readable at a glance.
 
-◀ LEFT / TOP REFERENCE LIBRARY (about 1/3 width) — "CHARACTER + ENVIRONMENT REFERENCES" (compact grid; uploaded menu refs have HIGHEST PRIORITY):
+◀ LEFT REFERENCE LIBRARY (about 40% width) — "CHARACTER + ENVIRONMENT REFERENCES" (fixed grid; uploaded menu refs have HIGHEST PRIORITY):
 - Header text "CHARACTER + ENVIRONMENT REFERENCES".
-- CHARACTER PORTRAITS: arrange compact portrait pairs by person. Each uploaded person gets the same visual weight; never show only the first/main person.
+- CHARACTER PORTRAITS: the upper part is a strict TWO-COLUMN grid. Each ROW belongs to one named person: FRONT at left, PROFILE/3-4 at right. Therefore one character = exactly 2 portraits, two characters = exactly 4, three characters = exactly 6. Each person gets equal visual weight; never show only the first/main person and never add a third portrait.
 ${characterRows}
-- Portraits use clean neutral backgrounds and keep faces tack-sharp. They may be smaller thumbnails so multiple characters fit, but remain readable. Never add full-body, back-view or expression-sheet cells.
-- ENVIRONMENT OVERVIEW: one SMALL wide thumbnail beneath/beside the portrait pairs. ${hasSettingRef ? "Reproduce the uploaded location overview exactly — same geometry, furniture, doors/windows, materials, colours and light." : "Derive one stable wide overview from the storyboard setting and reuse it consistently."}
-- COLOR PALETTE: a thin footer row of small swatches only: ${colorBlock}.
+- Every portrait is HEAD-AND-SHOULDERS only: crop from top of head to upper chest, face tack-sharp, clean neutral background. Never show waist, legs, full body, back view, turnaround or expression-sheet cells even when an uploaded source photo happens to be full-body.
+- ENVIRONMENT OVERVIEW (MANDATORY, NEVER OMIT): reserve a bordered WIDE 16:9 thumbnail across the full width of the left library directly below the character rows, occupying at least 18% of the whole board height. Label it "ENVIRONMENT OVERVIEW". ${hasSettingRef ? "Reproduce the uploaded location overview exactly — same room geometry, furniture placement, doors/windows, materials, colours, key props and light. This uploaded place is the only environment source." : "Derive one stable wide overview from the storyboard setting and reuse that same geometry in every panel."}
+- COLOR PALETTE: an optional ultra-thin footer of small swatches only: ${colorBlock}. It may shrink, but it may NEVER replace or shrink the environment overview.
 
 ▶ RIGHT ZONE (about 2/3 width) — "STORYBOARD — ${params.title.toUpperCase()}":
 - Grid of ${maxPanels} panels, ${cols} columns × ${rows} rows, thin clean borders. EACH panel carries a BIG, BOLD panel number badge ("1", "2", …) in its top-left corner — large solid dark badge with white numeral, readable even when the sheet is shrunk (these numbers are how each video clip is pointed at its panel).
@@ -1334,7 +1342,7 @@ Metadata footer: "${params.totalDuration}s • ${maxPanels} shots • ${params.m
 
 ${renderDirective(params.style, params.preserveRealFace ?? false)}
 
-RULES: ONE cohesive document image; exactly two portrait refs per menu-defined character plus one small environment overview; all uploaded characters remain separate named identities and appear whenever the panel script calls for them; never prioritise a generated anchor over uploaded menu references; ${isPhotoStyle(params.style) ? "photographic realism for both the reference library and all panel stills" : `${params.style} style for the panel art`}; panel numbers BIG and unmistakable; caption text small, clean and legible; no watermark. ${SHARED_NEGATIVE}`;
+RULES: ONE cohesive document image; exactly two HEAD-AND-SHOULDERS portrait refs per named character (front + profile/3-4, no full body/back/extra angle) plus the mandatory wide environment overview; all uploaded and script-defined characters remain separate named identities and appear whenever the panel script calls for them; never prioritise a generated anchor over uploaded menu references; ${isPhotoStyle(params.style) ? "photographic realism for both the reference library and all panel stills" : `${params.style} style for the panel art`}; panel numbers BIG and unmistakable; caption text small, clean and legible; no watermark. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Viral 9:16 THUMBNAIL / cover (funny, scroll-stopping, on-topic) ─────────
@@ -1480,9 +1488,11 @@ export function buildSegmentVeoPrompt(params: {
   const env = resolveEnvironment(params.environmentRef, params.setting);
   const envBlock = env ? ` ${renderEnvironmentBlock(env)}` : "";
   const product = params.productDescription
-    ? ` PRODUCT VISUAL IDENTITY: ${clean(params.productDescription)} Keep its physical shape, colour and material, but all brand names, logos, lettering and packaging copy are internal identifiers only and must be visually blank/non-readable in the rendered video.`
+    ? /^FINISHED HERO DISH/i.test(params.productDescription.trim())
+      ? ` FINISHED-DISH VISUAL IDENTITY: ${clean(params.productDescription)} Preserve the real serving vessel, food geometry, sauce, toppings, texture and steam; this is food, not packaging or branding.`
+      : ` PRODUCT VISUAL IDENTITY: ${clean(params.productDescription)} Keep its physical shape, colour and material, but all brand names, logos, lettering and packaging copy are internal identifiers only and must be visually blank/non-readable in the rendered video.`
     : "";
-  const ing = params.ingredients ? ` INGREDIENTS (show and name each): ${clean(params.ingredients)}.` : "";
+  const ing = params.ingredients ? ` SCENE-SCOPED MATERIAL / COMPONENT REFERENCE: ${clean(params.ingredients)}. Preserve the supplied type: cooking ingredients remain food governed by the recipe step; non-cooking props remain ordinary objects/components. Never cross-route between them. Render only items causally present in this clip; no written labels.` : "";
   // Style tokens are camera/render settings — flag them as internal so Veo
   // never draws "50mm / 4300K / 600 lux" as a spec card on the frame (it did).
   const tokens = params.sceneBible
@@ -1624,6 +1634,10 @@ export function buildVideoPromptText(params: {
     characters_in_scene?: string[];
     continuity_note: string;
     beats: { beat: string; camera: string }[];
+    /** Per-segment override. null explicitly suppresses the global value. */
+    productDescription?: string | null;
+    /** Per-segment override. null explicitly suppresses the global value. */
+    ingredients?: string | null;
   }[];
 }): string {
   const totalDuration = params.segments.reduce(
@@ -1642,8 +1656,12 @@ export function buildVideoPromptText(params: {
         realityProfile: params.realityProfile,
         sceneIntent: s.scene_intent,
         setting: s.setting,
-        productDescription: params.productDescription,
-        ingredients: params.ingredients,
+        productDescription:
+          s.productDescription === null
+            ? undefined
+            : s.productDescription ?? params.productDescription,
+        ingredients:
+          s.ingredients === null ? undefined : s.ingredients ?? params.ingredients,
         sceneBible: params.sceneBible,
         colorPalette: params.colorPalette,
         motionPrompt: s.motion_prompt,
