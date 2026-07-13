@@ -159,17 +159,18 @@ const t = {
   prodPhotos: { vi: "Ảnh sản phẩm", en: "Product Photos" },
   prodPhotosHint: { vi: "Tải lên 2-3 ảnh sản phẩm từ các góc khác nhau", en: "Upload 2-3 product photos from different angles" },
   addProduct: { vi: "Thêm sản phẩm", en: "Add Product" },
-  // Auxiliary / ingredient images
-  ingTitle: { vi: "Ảnh phụ / thành phần (gọi theo tên)", en: "Auxiliary / ingredient images (by name)" },
+  // Non-cooking auxiliary object/component references. Cooking has its own
+  // separate, explicitly-labelled ingredient intake UI below.
+  ingTitle: { vi: "Ảnh phụ / đồ vật tham chiếu (gọi theo tên)", en: "Auxiliary object/component references (by name)" },
   ingHint: {
-    vi: "Tải ảnh thành phần (thảo dược, nguyên liệu...) kèm TÊN. AI sẽ minh hoạ và gọi đúng tên trong prompt để Veo nhận diện.",
-    en: "Upload ingredient/component images WITH a name. The AI illustrates them and refers to each by name so Veo recognizes them.",
+    vi: "Tải ảnh đồ vật hoặc bộ phận cần xuất hiện (VD: móc áo, modem, chậu cây) kèm TÊN. Đây không phải nguyên liệu đồ ăn và không kích hoạt bối cảnh nấu ăn.",
+    en: "Upload a named object or component that must appear (e.g. coat hook, modem, plant pot). These are not food ingredients and never activate cooking imagery.",
   },
-  ingName: { vi: "Tên thành phần (VD: Hoa đu đủ đực)", en: "Ingredient name (e.g. Papaya flower)" },
+  ingName: { vi: "Tên đồ vật / bộ phận (VD: Móc áo gỗ)", en: "Object / component name (e.g. Wooden coat hook)" },
   ingDesc: { vi: "Mô tả ngắn (không bắt buộc)", en: "Short description (optional)" },
-  ingImage: { vi: "Ảnh thành phần", en: "Ingredient image" },
-  ingImageHint: { vi: "1-2 ảnh rõ nét của thành phần", en: "1-2 clear images of the ingredient" },
-  addIngredient: { vi: "Thêm thành phần", en: "Add ingredient" },
+  ingImage: { vi: "Ảnh đồ vật / bộ phận", en: "Object / component image" },
+  ingImageHint: { vi: "1-2 ảnh rõ nét; chỉ dùng khi cảnh gọi đúng tên đồ vật này", en: "1-2 clear images; used only when the scene calls for this named object" },
+  addIngredient: { vi: "Thêm đồ vật / bộ phận", en: "Add object / component" },
   // Review phase
   reviewTitle: { vi: "Duyệt ảnh tham chiếu nhân vật", en: "Review the character reference" },
   reviewHint: {
@@ -1013,13 +1014,14 @@ export function GenerateClient() {
   const [charApprSel, setCharApprSel] = useState("");
   const [charImages, setCharImages] = useState<UploadedImage[]>([]);
 
-  // Step 3: Products (main) + named ingredients (auxiliary)
+  // Step 3: Products (main) + genre-routed auxiliary references.
   const [products, setProducts] = useState<ProductEntry[]>([]);
   const [prodName, setProdName] = useState("");
   const [prodDesc, setProdDesc] = useState("");
   const [prodDescSel, setProdDescSel] = useState("");
   const [prodImages, setProdImages] = useState<UploadedImage[]>([]);
-  // Auxiliary/ingredient images — each named, referenced by name in prompts.
+  // Legacy shared state: non-cooking = named objects/components; cooking =
+  // food ingredients. The render branches and server router keep them apart.
   const [ingredients, setIngredients] = useState<ProductEntry[]>([]);
   const [ingName, setIngName] = useState("");
   const [ingDesc, setIngDesc] = useState("");
@@ -3741,7 +3743,7 @@ export function GenerateClient() {
                 </Button>
               </div>
 
-              {/* Auxiliary / ingredient images (named) */}
+              {/* Non-cooking auxiliary object/component references (named) */}
               <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
                 <Package className="h-4 w-4 shrink-0 text-primary" />
                 <div>
