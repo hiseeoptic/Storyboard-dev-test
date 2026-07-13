@@ -16,7 +16,7 @@ import type {
   SceneBible,
 } from "@/types";
 
-type RefImage = { base64: string; mimeType?: string };
+type RefImage = { base64: string; mimeType?: string; label?: string };
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
@@ -28,7 +28,7 @@ async function sleep(ms: number): Promise<void> {
 export interface ImageGenOptions {
   provider?: AIProvider;
   /** Base64 reference images for character/product consistency (Gemini only). */
-  referenceImages?: { base64: string; mimeType?: string }[];
+  referenceImages?: RefImage[];
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
   /** Resolution cap (Gemini). Boards pass "1K" to keep responses returnable. */
@@ -106,7 +106,7 @@ export async function generateCharacterRefSheet(params: {
   colorPalette?: string[];
   sceneBible?: SceneBible;
   /** Uploaded reference photos of the real person/character (Gemini). */
-  referenceImages?: { base64: string; mimeType?: string }[];
+  referenceImages?: RefImage[];
   references?: RefDescriptor[];
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
@@ -286,6 +286,8 @@ export async function generateMasterBoard(params: {
   }[];
   characterDescription: string;
   characterName?: string;
+  /** Every menu-defined character, used to render two portrait refs per person. */
+  presentCharacters?: { name: string; description: string; isChild?: boolean }[];
   style: string;
   colorPalette?: string[];
   dialogueLanguage?: string;
@@ -293,6 +295,7 @@ export async function generateMasterBoard(params: {
   preserveRealFace?: boolean;
   /** Reference images (e.g. the generated character sheet) for consistency. */
   referenceImages?: RefImage[];
+  references?: RefDescriptor[];
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
@@ -302,7 +305,7 @@ export async function generateMasterBoard(params: {
   let prompt = buildMasterBoardPrompt(params);
 
   if (hasRefs) {
-    prompt = `IMPORTANT: The attached reference image defines the character's exact appearance. Keep the same face, hair, costume and features IDENTICAL in the reference column and across every storyboard panel — never render a different face and never redraw the person as a cartoon.\n\n${prompt}`;
+    prompt = `REFERENCE PRIORITY CONTRACT: attached USER MENU character and location references are authoritative and appear first. Preserve every named person's face/hair and the uploaded environment layout; a later generated board anchor is secondary and may only reinforce wardrobe continuity. Never replace, omit, merge or swap uploaded characters.\n\n${prompt}`;
   }
 
   const url = await generateImage(prompt, {

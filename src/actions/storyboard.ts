@@ -374,7 +374,7 @@ function enhanceInput(
       .map((n) => `"${n}": ${analysis.characterDescriptions[n]}`)
       .join(" | ");
     extra.unshift(
-      `MAIN CHARACTER APPEARANCE LOCK — base each character_lock on these uploaded reference descriptions: keep the SAME gender, age range, skin tone, hair and build; do not invent a different gender or a different look. When writing "motion_prompt" and "first_frame_prompt", describe the character only by these visual attributes for consistency. DO NOT write phrases like "the same real person", "keep their real face", "same identity/face", "do not change the face", or "strictly follow the reference images" — those get the video rejected. Reference appearance: ${charLines}`
+      `USER MENU CAST CONTRACT — HIGHEST PRIORITY: the user defined ${charNames.length} separate named character group(s), in this exact order: ${charNames.join(", ")}. Create one character_lock per group and preserve every name-to-photo binding one-to-one. Never collapse the cast to only the first character, never merge or swap two people, and never replace an uploaded person with an invented look. Base each character_lock on the corresponding uploaded reference description: keep the same gender, age range, skin tone, hair and build. When writing motion_prompt and first_frame_prompt, use the named cast required by the scene and these visual attributes. DO NOT write deepfake-trigger phrases such as "the same real person", "keep their real face", "same identity/face", "do not change the face", or "strictly follow the reference images". Reference appearance: ${charLines}`
     );
   }
 
@@ -397,6 +397,113 @@ function enhanceInput(
   }
 
   return enhanced;
+}
+
+/**
+ * The setup menu is authoritative. Reconcile model-created locks back to the
+ * user's named character groups so a multi-character brief can never collapse
+ * to only the first person or silently rename/swap the cast.
+ */
+function enforceMenuCharacterContract(
+  input: StoryboardGenerationInput,
+  breakdown: StoryboardGenerationOutput,
+  analysis: StoryboardAnalysis
+): void {
+  const menuCharacters =
+    input.character_descriptions && input.character_descriptions.length > 0
+      ? input.character_descriptions.map((c) => ({
+          name: c.name.trim(),
+          appearance: c.appearance,
+          isChild: !!c.is_child,
+        }))
+      : (input.character_images ?? []).map((c) => ({
+          name: c.name.trim(),
+          appearance: analysis.characterDescriptions[c.name] ?? "",
+          isChild: false,
+        }));
+  const menu = menuCharacters.filter((c) => c.name);
+  if (menu.length === 0) return;
+
+  const modelLocks = Array.isArray(breakdown.character_locks)
+    ? breakdown.character_locks
+    : [];
+  const used = new Set<CharacterLock>();
+  const renamed = new Map<string, string>();
+
+  const locks = menu.map((entry, index): CharacterLock => {
+    const exact = modelLocks.find(
+      (l) =>
+        !used.has(l) &&
+        l.name.trim().toLowerCase() === entry.name.toLowerCase()
+    );
+    const positional = modelLocks.find((l, i) => i === index && !used.has(l));
+    const existing = exact ?? positional;
+    const visualDescription =
+      analysis.characterDescriptions[entry.name] || entry.appearance || "";
+
+    if (existing) {
+      used.add(existing);
+      const oldName = existing.name.trim();
+      if (oldName && oldName.toLowerCase() !== entry.name.toLowerCase()) {
+        renamed.set(oldName.toLowerCase(), entry.name);
+      }
+      return {
+        ...existing,
+        name: entry.name,
+        is_child: entry.isChild || existing.is_child,
+        signature_features:
+          existing.signature_features ||
+          visualDescription ||
+          "match the uploaded character menu reference",
+      };
+    }
+
+    return {
+      name: entry.name,
+      is_child: entry.isChild,
+      gender_age: entry.isChild
+        ? "child matching the uploaded menu reference"
+        : "adult matching the uploaded menu reference",
+      build: "match the uploaded menu reference",
+      skin_tone: "match the uploaded menu reference",
+      hair: "match the uploaded menu reference",
+      eyes: "match the uploaded menu reference",
+      costume: "match the visible wardrobe in the uploaded menu reference",
+      signature_features:
+        visualDescription || "match the uploaded character menu reference",
+      default_expression: "neutral natural expression",
+      render_style: input.style,
+    };
+  });
+
+  breakdown.character_locks = locks;
+  const canonicalByLower = new Map(locks.map((l) => [l.name.toLowerCase(), l.name]));
+  const remapName = (name?: string | null): string => {
+    const raw = (name ?? "").trim();
+    if (!raw) return raw;
+    return canonicalByLower.get(raw.toLowerCase()) ?? renamed.get(raw.toLowerCase()) ?? raw;
+  };
+
+  for (const seg of breakdown.segments) {
+    if (Array.isArray(seg.characters_in_scene)) {
+      seg.characters_in_scene = Array.from(
+        new Set(
+          seg.characters_in_scene
+            .map(remapName)
+            .filter((name) => canonicalByLower.has(name.toLowerCase()))
+        )
+      );
+    } else if (locks.length === 1) {
+      seg.characters_in_scene = [locks[0]!.name];
+    }
+    if (seg.speaker) seg.speaker = remapName(seg.speaker);
+    if (Array.isArray(seg.dialogue_lines)) {
+      seg.dialogue_lines = seg.dialogue_lines.map((line) => ({
+        ...line,
+        speaker: remapName(line.speaker),
+      }));
+    }
+  }
 }
 
 // ─── Reference context derived from input + analysis + breakdown ──────────
@@ -423,8 +530,13 @@ interface RefContext {
   charDesc: string;
   charDescDna: string;
   charDescVeo: string;
-  /** One reference per named character (multi-character binding). */
-  characterRefs: { img: string; name: string; desc?: string }[];
+  /** Up to two menu-uploaded references per named character, in menu order. */
+  characterRefs: {
+    img: string;
+    name: string;
+    desc?: string;
+    view: "front" | "profile";
+  }[];
   /** All character names in the project (to silence non-speakers). */
   characterNames: string[];
   sceneBible?: SceneBible;
@@ -501,22 +613,26 @@ function buildRefContext(
     ? stripHexCodes(stripEyewear(buildCleanCharLine(breakdown.character_locks[0])) || `a ${genderWord} wearing ${mainCostume}`)
     : charDescDna;
 
-  // Multi-character binding: pair each uploaded character photo with its named
-  // lock (match by name, else by index) so each face is bound to the right
-  // person in a 2-3 character scene. The vision description reinforces the photo.
+  // Menu references are the source of truth. Keep the first TWO uploads for
+  // each named character (front, then profile/3-4) so multi-character boards
+  // bind both identity angles to the correct person instead of silently using
+  // only the first person's first photo.
   const characterRefs = (input.character_images ?? [])
-    .map((grp) => {
-      const img = grp.images?.[0];
-      if (!img) return null;
+    .flatMap((grp, groupIndex) => {
       const lock =
-        breakdown.character_locks?.find((l) => l.name === grp.name) ??
-        breakdown.character_locks?.[(input.character_images ?? []).indexOf(grp)];
+        breakdown.character_locks?.find(
+          (l) => l.name.trim().toLowerCase() === grp.name.trim().toLowerCase()
+        ) ?? breakdown.character_locks?.[groupIndex];
       const desc =
         analysis.characterDescriptions[grp.name] ??
         (lock ? buildCleanCharLine(lock) : undefined);
-      return { img, name: lock?.name ?? grp.name, desc };
-    })
-    .filter((x) => x !== null) as { img: string; name: string; desc?: string }[];
+      return (grp.images ?? []).slice(0, 2).map((img, imageIndex) => ({
+        img,
+        name: lock?.name ?? grp.name,
+        desc,
+        view: imageIndex === 0 ? "front" as const : "profile" as const,
+      }));
+    });
   const characterNames = (breakdown.character_locks ?? [])
     .map((l) => l.name)
     .filter(Boolean);
@@ -550,23 +666,23 @@ function buildRefContext(
   };
 }
 
-// The board reference set: character portrait + product + setting (max 3).
+const MAX_BOARD_REFS = 8;
+
+// Board reference set priority: menu character refs first, then the uploaded
+// location overview, then product. Generated anchors are appended later and
+// can never displace a user-uploaded menu reference.
 // `presentNames` (CAST-SYNC): when a segment declares characters_in_scene,
 // attach ONLY those characters' photos so absent people never leak into the
 // render. Unmatched names fall back to the full set.
 function buildBoardRefs(ctx: RefContext, presentNames?: string[]): {
-  images: { base64: string; mimeType?: string }[];
+  images: { base64: string; mimeType?: string; label?: string }[];
   descriptors: RefDescriptor[];
 } {
-  const images: { base64: string; mimeType?: string }[] = [];
+  const images: { base64: string; mimeType?: string; label?: string }[] = [];
   const descriptors: RefDescriptor[] = [];
-  // Cap total references so the image request stays small (Nano Banana handles
-  // a handful of subjects; more than this hurts both payload and consistency).
-  const MAX_REFS = 5;
-  if (ctx.characterRefs.length > 1) {
-    // MULTI-CHARACTER: bind each uploaded photo to its named character so Veo
-    // never swaps faces between the 2-3 people in the scene. When the segment
-    // declares its cast, only the PRESENT characters' photos are attached.
+  if (ctx.characterRefs.length > 0) {
+    // Bind each uploaded photo to the exact named person. When a segment has an
+    // explicit cast, attach two angles for PRESENT characters only.
     const wanted = (presentNames ?? [])
       .map((n) => (n ?? "").trim().toLowerCase())
       .filter(Boolean);
@@ -575,23 +691,45 @@ function buildBoardRefs(ctx: RefContext, presentNames?: string[]): {
         ? ctx.characterRefs.filter((c) => wanted.includes(c.name.trim().toLowerCase()))
         : ctx.characterRefs;
     const pool = filtered.length > 0 ? filtered : ctx.characterRefs;
-    for (const c of pool) {
-      if (images.length >= MAX_REFS) break;
-      images.push({ base64: c.img, mimeType: "image/jpeg" });
-      descriptors.push({ role: "character", name: c.name, description: c.desc });
+    const reservedSlots = Number(!!ctx.bgImg) + Number(!!ctx.productImg);
+    const characterLimit = Math.max(1, MAX_BOARD_REFS - reservedSlots);
+    for (const c of pool.slice(0, characterLimit)) {
+      const viewLabel = c.view === "front" ? "FRONT PORTRAIT" : "PROFILE / 3-4 PORTRAIT";
+      images.push({
+        base64: c.img,
+        mimeType: "image/jpeg",
+        label: `HIGHEST-PRIORITY USER MENU REFERENCE — CHARACTER "${c.name}" — ${viewLabel}. Bind this face only to ${c.name}.`,
+      });
+      descriptors.push({
+        role: "character",
+        name: c.name,
+        description: c.desc,
+        view: c.view,
+      });
     }
   } else if (ctx.faceImg) {
-    // SINGLE CHARACTER (unchanged behaviour).
-    images.push({ base64: ctx.faceImg, mimeType: "image/jpeg" });
+    images.push({
+      base64: ctx.faceImg,
+      mimeType: "image/jpeg",
+      label: "HIGHEST-PRIORITY USER MENU REFERENCE — MAIN CHARACTER FRONT PORTRAIT.",
+    });
     descriptors.push({ role: "face", description: ctx.faceDesc ?? ctx.charDescForPoster });
   }
-  if (ctx.productImg && images.length < MAX_REFS) {
-    images.push({ base64: ctx.productImg, mimeType: "image/jpeg" });
-    descriptors.push({ role: "product", description: ctx.productDesc });
-  }
-  if (ctx.bgImg && images.length < MAX_REFS) {
-    images.push({ base64: ctx.bgImg, mimeType: "image/jpeg" });
+  if (ctx.bgImg && images.length < MAX_BOARD_REFS) {
+    images.push({
+      base64: ctx.bgImg,
+      mimeType: "image/jpeg",
+      label: "HIGHEST-PRIORITY USER MENU REFERENCE — LOCATION OVERVIEW. Preserve this layout, furniture, colours and lighting.",
+    });
     descriptors.push({ role: "setting", description: ctx.bgDesc });
+  }
+  if (ctx.productImg && images.length < MAX_BOARD_REFS) {
+    images.push({
+      base64: ctx.productImg,
+      mimeType: "image/jpeg",
+      label: "HIGHEST-PRIORITY USER MENU REFERENCE — PRODUCT. Preserve its exact design and branding.",
+    });
+    descriptors.push({ role: "product", description: ctx.productDesc });
   }
   return { images, descriptors };
 }
@@ -671,6 +809,10 @@ export async function generateStoryboardPlan(
       return { success: false, error: "AI không trả về cảnh nào. Vui lòng thử lại." };
     }
     if (!Array.isArray(breakdown.character_locks)) breakdown.character_locks = [];
+
+    // Deterministic post-model guard: menu names/photo groups win over any
+    // invented, omitted or renamed cast returned by the storyboard model.
+    enforceMenuCharacterContract(input, breakdown, analysis);
 
     // TẦNG 9 turn-taking normalisation + safety clamp. Reconcile the two dialogue
     // forms so downstream code (and the editor) is always consistent, and hard-
@@ -986,12 +1128,24 @@ export async function generateBoardImage(params: {
   const provider = params.provider ?? "gemini";
   const { input, breakdown, analysis } = params;
   const ctx = buildRefContext(input, breakdown, analysis, provider);
-  // Master board uses only the primary image; keyframe/segment build their own
-  // cast-scoped refs below (buildBoardRefs(ctx, seg.characters_in_scene)).
-  const { images } = buildBoardRefs(ctx);
 
   try {
     if (params.kind === "master") {
+      const masterRefs = buildBoardRefs(ctx);
+      const masterImages = [...masterRefs.images];
+      const masterDescriptors = [...masterRefs.descriptors];
+      if (
+        params.anchorImage &&
+        ctx.canChain &&
+        masterImages.length < MAX_BOARD_REFS
+      ) {
+        masterImages.push({
+          base64: params.anchorImage,
+          mimeType: "image/jpeg",
+          label: "SECONDARY GENERATED BOARD ANCHOR — use only for wardrobe continuity; never override the earlier user menu references.",
+        });
+        masterDescriptors.push({ role: "anchor" });
+      }
       const r = await generateMasterBoard({
         title: breakdown.title,
         totalDuration: breakdown.total_duration_seconds,
@@ -1013,6 +1167,11 @@ export async function generateBoardImage(params: {
         })),
         characterDescription: ctx.charDescDna,
         characterName: breakdown.character_locks?.[0]?.name,
+        presentCharacters: (breakdown.character_locks ?? []).map((l) => ({
+          name: l.name,
+          description: buildCleanCharLine(l),
+          isChild: !!l.is_child,
+        })),
         style: ctx.boardStyle,
         colorPalette: breakdown.style_guide?.color_palette ?? [],
         dialogueLanguage: ctx.dialogueLanguage,
@@ -1021,11 +1180,11 @@ export async function generateBoardImage(params: {
         aspectRatio: ctx.boardAspect,
         quality: ctx.quality,
         referenceImages:
-          params.anchorImage && ctx.canChain
-            ? [{ base64: params.anchorImage, mimeType: "image/jpeg" }]
-            : ctx.canChain && images.length > 0
-              ? [images[0]!]
-              : undefined,
+          ctx.canChain && masterImages.length > 0 ? masterImages : undefined,
+        references:
+          ctx.canChain && masterDescriptors.length > 0
+            ? masterDescriptors
+            : undefined,
       });
       return { success: true, data: { url: r.url } };
     }
@@ -1081,7 +1240,7 @@ export async function generateBoardImage(params: {
         shot: seg.beats?.[0]?.camera || "[EYE]",
         // Multi-character scene → describe ALL named characters; single → the
         // identity-locked main description.
-        characterDescription: ctx.characterRefs.length > 1 ? ctx.charDescForPoster : ctx.charDescDna,
+        characterDescription: ctx.characterNames.length > 1 ? ctx.charDescForPoster : ctx.charDescDna,
         presentCharacters: presentCastFor(seg, breakdown),
         productDna: ctx.productDnaText,
         ingredients: ctx.ingredientsText,
@@ -1108,9 +1267,20 @@ export async function generateBoardImage(params: {
     const boardRefs = buildBoardRefs(ctx, seg.characters_in_scene);
     let segImages = ctx.canChain && boardRefs.images.length > 0 ? boardRefs.images : [];
     let segDescriptors = ctx.canChain && boardRefs.descriptors.length > 0 ? boardRefs.descriptors : [];
-    if (params.anchorImage && ctx.canChain) {
-      segImages = [{ base64: params.anchorImage, mimeType: "image/jpeg" }, ...segImages];
-      segDescriptors = [{ role: "anchor" as const }, ...segDescriptors];
+    if (
+      params.anchorImage &&
+      ctx.canChain &&
+      segImages.length < MAX_BOARD_REFS
+    ) {
+      segImages = [
+        ...segImages,
+        {
+          base64: params.anchorImage,
+          mimeType: "image/jpeg",
+          label: "SECONDARY GENERATED BOARD ANCHOR — wardrobe continuity only; uploaded character/location menu references above remain authoritative.",
+        },
+      ];
+      segDescriptors = [...segDescriptors, { role: "anchor" as const }];
     }
 
     const r = await generateSegmentFrame({

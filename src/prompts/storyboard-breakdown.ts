@@ -512,7 +512,7 @@ PROJECT-LED STORY STRUCTURE (never force one template onto every video):
 - "marketing_role" remains a legacy compatibility label; "scene_intent" is the canonical per-clip creative contract.
 
 UPLOADED REFERENCE PRIORITY (absolute hierarchy — PHOTOS beat text, text beats invention):
-- When the user uploaded reference images (character / product / background location), those photos are the SUPREME source of truth. NEVER invent a replacement: a character keeps the photo's exact gender, age, face and look; a product keeps its exact shape, colours and branding; and when a LOCATION photo exists, the ENTIRE story is staged INSIDE that uploaded location — reuse its real layout, furniture, colours, materials and light in every segment's first_frame_prompt. Do NOT relocate scenes to an invented set, do NOT "improve" the location into a generic pretty one, do NOT add rooms/furniture that contradict the photo.
+- USER SETUP MENU CONTRACT (NON-NEGOTIABLE): every entered character name/role and every image group belongs together one-to-one, in menu order. Preserve ALL named characters as separate identities; never use only the first upload, never merge two people, never swap their faces, never omit a referenced character when the approved script places them in the scene, and never let generated defaults/anchors override menu uploads. Character menu photos, product photos and background/location photos are the SUPREME source of truth. A character keeps the uploaded gender, age, face, hair and look; a product keeps its exact shape, colours and branding; when a LOCATION photo exists, stage every relevant segment inside that uploaded place and reuse its real layout, furniture, colours, materials and light in every first_frame_prompt. Do NOT relocate scenes, "improve" the set, or invent contradictory rooms/furniture.
 - If the story idea and an uploaded photo conflict (e.g. the idea says villa but the photo shows a small apartment), THE PHOTO WINS — adapt the story to the real place/person/product.
 
 FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's video must not "look AI"):
@@ -529,7 +529,7 @@ MULTI-CHARACTER CASTING & DIALOGUE ASSIGNMENT (mandatory whenever the story/scri
 - If there is a hero PRODUCT, write "product_dna": exact shape, material, colours WITH RGB hex, label/logo text+colour, cap/parts — repeated verbatim.
 - Build a "scene_bible" (lens, lighting with Kelvin temps, backdrop with hex, colour grade) — the style fingerprint reused VERBATIM so lens, lighting, backdrop and tone never change.
 - One single set/location per segment; only camera framing and the action change.
-- A generated CHARACTER REFERENCE SHEET image (front / 3-4 / side / back + expressions) is attached as a reference to every shot — match it precisely.
+- Every storyboard board carries a compact REFERENCE LIBRARY: for EACH visible named character, exactly two face-readable head-and-shoulders views (FRONT + PROFILE/3-4), plus one small ENVIRONMENT OVERVIEW. No full-body/back turnaround cells are needed. Uploaded menu photos outrank any generated board anchor.
 
 PHYSICAL REALISM (every clip must look real, not "AI" — this is what eliminates the broken, impossible-motion look):
 - ONE primary physical action per 10s clip, performed SLOWLY and DELIBERATELY. Never stack multiple simultaneous or sequential actions into one clip — that is the #1 cause of morphing, teleporting, duplicated limbs and objects passing through each other.
@@ -1001,6 +1001,8 @@ export interface RefDescriptor {
   /** For role "character": the exact name of the person in this photo, so the
    * model binds the right face to the right named character in a 2-3 person scene. */
   name?: string;
+  /** Uploaded menu angle. First image is front; second is profile/three-quarter. */
+  view?: "front" | "profile";
 }
 
 /**
@@ -1020,18 +1022,18 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
       case "face":
         return `• THE CHARACTER — use the attached portrait ONLY as an appearance reference for an ORIGINAL FICTIONAL character (an ordinary invented person, NOT a real, famous or recognisable individual). Keep a natural, consistent face, hairstyle and skin tone across every shot (light natural retouch). Match eyewear to the photo — if there are no glasses in the photo, do NOT add glasses; if there are, keep them — consistent across shots. This is the main character.`;
       case "character":
-        return `• CHARACTER "${r.name ?? "person"}" — one attached portrait references the look of ${r.name ?? "this character"}${d}. Keep ${r.name ?? "their"} face, hair and skin tone consistent across every shot as an ORIGINAL FICTIONAL character (not a real or famous person). Bind this look to ${r.name ?? "this character"} ONLY — do NOT swap, merge or blend it with the other character(s).`;
+        return `• CHARACTER "${r.name ?? "person"}" — attached ${r.view === "profile" ? "PROFILE / THREE-QUARTER" : "FRONT"} portrait from the USER'S CHARACTER MENU${d}. This uploaded portrait is authoritative: bind its face, hair, skin tone and visible wardrobe to ${r.name ?? "this character"} ONLY. Do NOT omit, replace, merge, blend or swap this person with another character.`;
       case "product":
         return `• THE PRODUCT — feature the EXACT product shown in the attached product photo${d}. Keep its EXACT shape, silhouette, colour, material, proportions, handle/parts and branding identical in every single shot. Do NOT redesign, recolour, distort, resize, age, damage or swap it for a different object.`;
       case "setting":
-        return `• THE LOCATION — keep every scene in the same location shown in the attached interior photo${d}. Match its layout, colours, furniture and key props; keep it consistent across all shots.`;
+        return `• THE LOCATION OVERVIEW — the attached USER MENU environment photo${d} is authoritative. Include one small overview reference panel and reproduce its real layout, colours, furniture, materials, windows, key props and lighting in every relevant action panel; do not invent a replacement location.`;
       case "anchor":
         return `• WARDROBE & LOOK ANCHOR — the attached already-approved storyboard frame shows the character in the EXACT outfit, hairstyle and accessories to use. Copy the clothing (type, cut and colours) and every accessory (watch, glasses if any) EXACTLY in this board. Do NOT change the outfit — never switch to a suit, jacket, apron or a different shirt unless it appears in this anchor. It is the SAME character.`;
       default:
         return `• Reference — keep it consistent.`;
     }
   });
-  return `You are given reference photos. Use them as APPEARANCE REFERENCES to build ORIGINAL FICTIONAL characters (ordinary, made-up people — NOT real, famous or recognisable public figures). Do NOT output a copy of any reference photo; RE-CREATE new cinematic scenes with a consistent look (consistent character, same product, same place). Follow them:\n${lines.join("\n")}\n\n`;
+  return `REFERENCE PRIORITY CONTRACT — these references came from the user's setup menu and outrank generated anchors, inferred descriptions, defaults and aesthetic choices. Preserve every uploaded character as a separate named identity and preserve the uploaded location. Use them as appearance/environment references to build ORIGINAL FICTIONAL characters and new cinematic scenes; do not simply copy the source photo as the final frame. Follow them exactly:\n${lines.join("\n")}\n\n`;
 }
 
 // ─── Step 2: Character Reference Sheet Image Prompt ─────────────────────────
@@ -1068,19 +1070,21 @@ export function buildCharacterRefSheetPrompt(params: {
       ? params.colorPalette.slice(0, 6).join(", ")
       : "#F5E6D3, #8B4513, #2D5016, #FFFFFF, #1A1A1A, #D4A574";
 
-  return `${refBlock}Professional CHARACTER REFERENCE SHEET, single horizontal image, clean light studio background.
+  const hasSetting = (params.references ?? []).some((r) => r.role === "setting");
+
+  return `${refBlock}Professional compact CHARACTER REFERENCE SHEET, single horizontal image, clean light studio background.
 
 CHARACTER — ${c.name}: ${c.gender_age}, ${c.build} build, ${c.skin_tone} skin, ${c.hair} hair, ${c.eyes} eyes. Wearing ${c.costume}. ${c.signature_features}.
 ${c.dna ? `FORENSIC DNA (exact colours, keep identical everywhere): ${c.dna}.\n` : ""}${tokens ? tokens + "\n" : ""}
 EXACT LAYOUT (all in one image):
-■ LEFT ZONE: Large FULL BODY hero pose, ${c.default_expression} expression, head to toe.
-■ CENTER: "TURNAROUND" — 4 full-body views: FRONT, 3/4, SIDE, BACK; same scale, neutral pose, evenly lit, labeled.
-■ TOP-RIGHT: "EXPRESSIONS" — 6 head portraits 3×2 grid: HAPPY, CALM, SURPRISED, CONFIDENT, THOUGHTFUL, FRIENDLY.
-■ BOTTOM-RIGHT: "COLOR PALETTE" — 6 circular swatches: ${colorSwatches}.
+■ "FRONT / CHÍNH DIỆN": one large HEAD-AND-SHOULDERS portrait, ${c.default_expression} expression, face tack-sharp.
+■ "PROFILE / GÓC NGHIÊNG": one large HEAD-AND-SHOULDERS side-profile or 3/4 portrait of the SAME person.
+■ "ENVIRONMENT OVERVIEW": one small wide thumbnail ${hasSetting ? "reproducing the uploaded location reference exactly" : "showing the stable surrounding environment used by the story"}.
+■ THIN FOOTER: 6 small circular colour swatches: ${colorSwatches}.
 
 ${directive}
 
-RULES: it must be the SAME individual in every zone with identical face; small bold labels; one cohesive image. ${SHARED_NEGATIVE}`;
+RULES: exactly two identity portraits plus one small environment overview; NO full-body pose, NO back view, NO turnaround row, NO expression grid; the SAME individual has an identical face in both portraits; small bold labels; one cohesive image. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 3: Per-Segment Storyboard Strip (3 shots in one 10s clip) ──────────
@@ -1131,28 +1135,19 @@ export function buildSegmentFirstFramePrompt(params: {
     ? "This is the opening shot of the whole video."
     : "Action panel 1 must continue seamlessly from the previous shot's final action (same character, wardrobe, lighting, location).";
 
-  // CHARACTER REFERENCE: the references must be LARGE and legible so an
-  // image-to-video model (Veo) can actually read the identity. One full-body
-  // FRONT view + waist-up (half-body) angle views — never tiny distant heads.
-  const EXPRESSION_HEADS = ["calm neutral", "natural friendly smile", "confident"];
-  const expCount = Math.min(3, Math.max(0, params.referenceExpressions ?? 0));
-  const expClause =
-    expCount > 0
-      ? ` Add ${expCount} more WAIST-UP expression view${expCount > 1 ? "s" : ""} (${EXPRESSION_HEADS.slice(0, expCount).join(", ")}) with the SAME identical face — only the expression changes.`
-      : ` Keep a neutral relaxed expression on every reference view; do NOT add extra emotional head shots (per-shot emotion is driven by the action captions).`;
-  // CAST-SYNC: multi-character boards render one labelled reference column per
-  // PRESENT character (name badge on each), and lock the panels to exactly
-  // that cast — this is what stops "ghost people" and face/wardrobe swapping.
+  // Compact identity library: exactly two face-readable views per person. This
+  // leaves room for more named characters plus a location overview without
+  // wasting board area on full-body/back turnarounds.
   const cast = params.presentCharacters ?? [];
   const isMultiCast = cast.length > 1;
   const refStrip = isMultiCast
-    ? `reference portraits for EACH of the ${cast.length} characters in this shot, grouped per person and clearly LABELLED with their NAME: ${cast
+    ? `a compact 2-column portrait pair for EACH of the ${cast.length} characters in this shot, grouped per person and clearly LABELLED with their NAME: ${cast
         .map(
           (c) =>
-            `— "${c.name.toUpperCase()}"${c.isChild ? " (CHILD — small child proportions, correct age)" : ""}: one FULL-BODY FRONT view + one WAIST-UP 3/4 view, face sharp and readable`
+            `— "${c.name.toUpperCase()}"${c.isChild ? " (CHILD — correct child age and face)" : ""}: exactly TWO HEAD-AND-SHOULDERS portraits, (1) FRONT / chính diện and (2) SIDE PROFILE or 3/4 / góc nghiêng; face sharp and readable`
         )
-        .join("; ")}. Keep every person's face/hair/wardrobe identical to their description.`
-    : `LARGE, clearly-visible reference portraits of THE SAME main character — big enough that the face and clothing read clearly, NOT small distant thumbnails: (1) one FULL-BODY FRONT view, head to toe, standing naturally; and (2) two WAIST-UP (half-body) views — a 3/4 angle and a side profile — each showing the face sharply and at good size.${expClause}`;
+        .join("; ")}. Keep every person's face, hair and visible wardrobe identical to the uploaded menu references.`
+    : `exactly TWO clearly-visible HEAD-AND-SHOULDERS portraits of the SAME main character: (1) FRONT / chính diện and (2) SIDE PROFILE or 3/4 / góc nghiêng. Face, hair, skin tone and visible wardrobe must match the uploaded menu photos. NO full-body view, NO back view, NO extra expression grid.`;
   const castDescription = isMultiCast
     ? cast.map((c) => `${c.name}${c.isChild ? " (child)" : ""}: ${c.description}`).join(" | ")
     : params.characterDescription;
@@ -1166,9 +1161,9 @@ export function buildSegmentFirstFramePrompt(params: {
 
 THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 
-■ TOP-LEFT — "CHARACTER REFERENCE" block (REPEAT THIS IN EVERY SHOT, make it prominent and reasonably large): ${refStrip} Label "CHARACTER REF". Character${isMultiCast ? "s" : ""}: ${castDescription}.${castLock}
+■ TOP / LEFT — "CHARACTER REFERENCES" compact thumbnail grid (REPEAT THIS IN EVERY SHOT; reserve about 25-32% of the board): ${refStrip} Each portrait may be smaller than before, but every face remains sharp and readable. Uploaded menu portraits are HIGHEST PRIORITY. Label "CHARACTER REF". Character${isMultiCast ? "s" : ""}: ${castDescription}.${castLock}
 
-■ "SCENE OVERVIEW": one larger establishing panel showing the full location/environment of this shot (wide angle)${hasProduct ? ", with the product clearly visible on a surface" : ""}. ${hasSetting ? "CRITICAL: reproduce the EXACT location from the attached interior reference photo — the SAME cabinet style & colour, wall, tiles, countertop, window, appliances and overall layout. Do NOT invent or restyle a different kitchen. Keep this SAME room even in 'before/problem' shots — only the pan/food/props state changes, never the kitchen itself. This identical location must also appear behind every action panel." : "This tells Veo the setting."}
+■ SMALL "ENVIRONMENT OVERVIEW" REFERENCE: one compact wide establishing thumbnail showing the surrounding room/location before the action${hasProduct ? ", with the product visible at natural scale" : ""}. This overview is MANDATORY even when space is tight. ${hasSetting ? "Reproduce the EXACT uploaded location overview — same room geometry, furniture placement, doors/windows, materials, colours and lighting. This same environment must remain behind every action panel." : "Derive one stable environment from the scene context and reuse it behind every action panel."}
 
 ■ RIGHT / BOTTOM — "ACTION SEQUENCE": ${target} numbered action panels (${numberLabels}) laid out left → right showing the ${target} key moments across the 10 seconds, each a small ${isPhotoStyle(params.style) ? "PHOTOGRAPHIC cinematic still (a real photo frame — not a drawing or illustration)" : `${params.style} illustration`} with a SHORT caption under it describing the action:
 ${panelLines}
@@ -1178,7 +1173,7 @@ ${params.productDna ? `PRODUCT DNA (identical in every panel, with exact colours
 ${continuity}
 ${directive}
 
-RULES: ONE cohesive board image; ${isMultiCast ? `each of the ${cast.length} named characters keeps an IDENTICAL face, hair and the EXACT SAME outfit + accessories everywhere they appear (ref block, scene overview, every action panel) — never re-dress or swap faces between characters, and ONLY the named cast appears` : "the SAME individual (identical face, hair, and the EXACT SAME outfit + accessories — same shirt, trousers, watch; NEVER a suit, jacket, apron or different clothes)"} AND the SAME product appear in the character-ref block, the scene overview and all ${target} action panels;${params.preserveRealFace ? " match the man's eyewear to his reference portrait EXACTLY — if he is NOT wearing glasses in the photo, do NOT add glasses anywhere; if he is, keep the same ones;" : ""} ${hasSetting ? "the SAME exact kitchen/location from the interior reference photo" : "one single consistent location"} for this whole board; thin clean dividers and small numbered badges; captions short and legible. ${SHARED_NEGATIVE}`;
+RULES: ONE cohesive board image; reference area contains EXACTLY two portrait angles per visible character plus one environment overview — never full-body/back turnaround refs; ${isMultiCast ? `each of the ${cast.length} named characters keeps an IDENTICAL face, hair and the EXACT SAME outfit + accessories everywhere they appear (ref grid, environment overview, every action panel) — never omit a menu-uploaded cast member required by the scene, never re-dress or swap faces, and ONLY the named cast appears` : "the SAME individual (identical face, hair, and the EXACT SAME outfit + accessories — same shirt, trousers, watch; NEVER a suit, jacket, apron or different clothes)"} AND the SAME product appear consistently;${params.preserveRealFace ? " match eyewear to the uploaded portrait EXACTLY — if absent, never add it;" : ""} ${hasSetting ? "the SAME exact uploaded location" : "one single consistent location"} for this whole board; thin clean dividers and small numbered badges; captions short and legible. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Clean single KEYFRAME (veoflow handoff format) ─────────────────────────
@@ -1276,17 +1271,23 @@ export function buildMasterBoardPrompt(params: {
   }[];
   characterDescription: string;
   characterName?: string;
+  presentCharacters?: { name: string; description: string; isChild?: boolean }[];
   style: string;
   colorPalette?: string[];
   dialogueLanguage?: string;
   /** Real reference photo governs the face — hard photoreal + identity lock. */
   preserveRealFace?: boolean;
+  references?: RefDescriptor[];
 }): string {
   const maxPanels = Math.min(params.segments.length, 12);
   const panels = params.segments.slice(0, maxPanels);
   const cols = maxPanels <= 4 ? 2 : 3;
   const rows = Math.ceil(maxPanels / cols);
   const lang = params.dialogueLanguage ?? "Vietnamese";
+  const refs = params.references ?? [];
+  const refBlock = buildReferenceInstructions(refs);
+  const cast = params.presentCharacters ?? [];
+  const hasSettingRef = refs.some((r) => r.role === "setting");
 
   const panelLines = panels
     .map((s) => {
@@ -1301,8 +1302,8 @@ export function buildMasterBoardPrompt(params: {
     .join("\n");
 
   const charDesc =
-    params.characterDescription.length > 300
-      ? params.characterDescription.slice(0, 300) + "..."
+    params.characterDescription.length > 900
+      ? params.characterDescription.slice(0, 900) + "..."
       : params.characterDescription;
 
   const colorBlock =
@@ -1310,23 +1311,33 @@ export function buildMasterBoardPrompt(params: {
       ? params.colorPalette.slice(0, 6).join(", ")
       : "#F5E6D3, #8B4513, #2D5016, #FFFFFF, #1A1A1A";
 
-  return `Professional production STORYBOARD DOCUMENT, ONE single horizontal image, clean white/light background, agency-quality layout with two zones. PURPOSE: this single sheet is attached as a REFERENCE DOCUMENT to an image-to-video model for EVERY clip of the video — so the character references must be LARGE and razor-sharp, and every panel number must be instantly readable at a glance.
+  const characterRows =
+    cast.length > 0
+      ? cast
+          .map(
+            (c) =>
+              `- "${c.name.toUpperCase()}"${c.isChild ? " (CHILD — preserve child age)" : ""}: exactly TWO HEAD-AND-SHOULDERS identity portraits — FRONT / chính diện + SIDE PROFILE or 3/4 / góc nghiêng. No full body, no back view. Look lock: ${c.description}`
+          )
+          .join("\n")
+      : `- "${(params.characterName ?? "MAIN CHARACTER").toUpperCase()}": exactly TWO HEAD-AND-SHOULDERS identity portraits — FRONT / chính diện + SIDE PROFILE or 3/4 / góc nghiêng. No full body, no back view.`;
 
-◀ LEFT COLUMN (about 1/4 width) — "CHARACTER REFERENCE SHEET" (make this column the sharpest, most detailed zone of the whole sheet — the video model locks identity from HERE):
-- Header text "CHARACTER REFERENCE SHEET".
-- NEUTRAL BACKGROUND RULE (critical): EVERY reference view in this column stands on a CLEAN, SEAMLESS, plain light-grey STUDIO background — never inside any scene, location or landscape (no rooftop, no kitchen, no balcony, no city behind them). This column shows ONLY the character's angles and looks; real locations exist ONLY inside the numbered panels on the right.
-- FULL BODY: 3 standing turnaround views (front, side, back) of the character.
-- CLOSE UP / PORTRAIT: 3 LARGE head studies at different angles — faces big, tack-sharp, filling the column width; never small blurry thumbnails.
-- COLOR PALETTE: small circular swatches: ${colorBlock}.
-${params.characterName ? `- Small profile block with the name "${params.characterName}".` : ""}
+  return `${refBlock}Professional production STORYBOARD DOCUMENT, ONE single horizontal image, clean white/light background, agency-quality layout with two zones. PURPOSE: this single sheet is attached as a REFERENCE DOCUMENT to an image-to-video model for EVERY clip of the video — so every menu-uploaded character must be represented in the reference library, every face must stay readable, and every panel number must be instantly readable at a glance.
 
-▶ RIGHT ZONE (about 3/4 width) — "STORYBOARD — ${params.title.toUpperCase()}":
+◀ LEFT / TOP REFERENCE LIBRARY (about 1/3 width) — "CHARACTER + ENVIRONMENT REFERENCES" (compact grid; uploaded menu refs have HIGHEST PRIORITY):
+- Header text "CHARACTER + ENVIRONMENT REFERENCES".
+- CHARACTER PORTRAITS: arrange compact portrait pairs by person. Each uploaded person gets the same visual weight; never show only the first/main person.
+${characterRows}
+- Portraits use clean neutral backgrounds and keep faces tack-sharp. They may be smaller thumbnails so multiple characters fit, but remain readable. Never add full-body, back-view or expression-sheet cells.
+- ENVIRONMENT OVERVIEW: one SMALL wide thumbnail beneath/beside the portrait pairs. ${hasSettingRef ? "Reproduce the uploaded location overview exactly — same geometry, furniture, doors/windows, materials, colours and light." : "Derive one stable wide overview from the storyboard setting and reuse it consistently."}
+- COLOR PALETTE: a thin footer row of small swatches only: ${colorBlock}.
+
+▶ RIGHT ZONE (about 2/3 width) — "STORYBOARD — ${params.title.toUpperCase()}":
 - Grid of ${maxPanels} panels, ${cols} columns × ${rows} rows, thin clean borders. EACH panel carries a BIG, BOLD panel number badge ("1", "2", …) in its top-left corner — large solid dark badge with white numeral, readable even when the sheet is shrunk (these numbers are how each video clip is pointed at its panel).
 - Each panel: a ${isPhotoStyle(params.style) ? "PHOTOGRAPHIC cinematic still of that moment (a real photo frame — NOT a drawing, NOT an illustration)" : `${params.style} illustration of that moment`}, and BELOW the picture a small white caption band with two labeled lines of text:
   "Action:" the action description, then "Lời thoại:" the spoken ${lang} line in quotes.
 - Panels stage the character LARGE enough that face and wardrobe read clearly — medium/medium-close staging preferred over tiny wide figures.
 
-CHARACTER (THE SAME individual in the reference column AND every storyboard panel — identical face, hair, outfit): ${charDesc}
+CAST LOCK (the same named people in the reference library and every panel where they are scripted — identical face, hair and outfit; never omit, merge or swap them): ${charDesc}
 
 THE ${maxPanels} PANELS:
 ${panelLines}
@@ -1335,7 +1346,7 @@ Metadata footer: "${params.totalDuration}s • ${maxPanels} shots • ${params.m
 
 ${renderDirective(params.style, params.preserveRealFace ?? false)}
 
-RULES: ONE cohesive document image; same character everywhere — the reference column and EVERY panel show the SAME person with an identical face (never a different face, never a redrawn/cartoon face); ${isPhotoStyle(params.style) ? "photographic realism for both the reference column and all panel stills" : `${params.style} style for the panel art`}; panel numbers BIG and unmistakable; caption text small, clean and legible; no watermark. ${SHARED_NEGATIVE}`;
+RULES: ONE cohesive document image; exactly two portrait refs per menu-defined character plus one small environment overview; all uploaded characters remain separate named identities and appear whenever the panel script calls for them; never prioritise a generated anchor over uploaded menu references; ${isPhotoStyle(params.style) ? "photographic realism for both the reference library and all panel stills" : `${params.style} style for the panel art`}; panel numbers BIG and unmistakable; caption text small, clean and legible; no watermark. ${SHARED_NEGATIVE}`;
 }
 
 // ─── Viral 9:16 THUMBNAIL / cover (funny, scroll-stopping, on-topic) ─────────

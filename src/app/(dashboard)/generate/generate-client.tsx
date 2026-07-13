@@ -124,8 +124,8 @@ const t = {
 
   // Step 2: Characters
   charHint: {
-    vi: "Tải lên 2-3 ảnh nhân vật từ các góc chụp khác nhau để AI tạo hình ảnh nhất quán.",
-    en: "Upload 2-3 character photos from different angles for visual consistency.",
+    vi: "Mỗi nhân vật tải tối đa 2 ảnh: ảnh 1 chính diện, ảnh 2 góc nghiêng/3-4. Mỗi người phải được thêm thành một nhân vật riêng.",
+    en: "Upload up to 2 photos per character: photo 1 front-facing, photo 2 profile/three-quarter. Add each person as a separate character.",
   },
   charName: { vi: "Tên nhân vật", en: "Character name" },
   charRole: { vi: "Vai trò (VD: Nhân vật chính)", en: "Role (e.g. Main hero)" },
@@ -135,14 +135,14 @@ const t = {
   },
   refExprTitle: { vi: "Biểu cảm trong ảnh tham chiếu", en: "Expressions in the reference strip" },
   refExprHint: {
-    vi: "Mỗi board luôn có 3 góc mặt để khoá danh tính. Chọn thêm biểu cảm nếu muốn — nhưng nên để Veo tự diễn cảm xúc theo prompt (ít biểu cảm = mặt ít bị 'trôi', giống bạn hơn).",
-    en: "Every board always has 3 face angles to lock identity. Add expressions only if you want — best to let Veo act the emotion from the prompt (fewer expressions = less identity drift).",
+    vi: "Mỗi board dùng đúng 2 portrait cho từng người: chính diện + nghiêng, không toàn thân và không thêm lưới biểu cảm. Board còn có một overview bối cảnh nhỏ.",
+    en: "Each board uses exactly 2 portraits per person: front + profile, with no full-body or expression grid. A small environment overview is also included.",
   },
   refExpr0: { vi: "Không — để Veo tự diễn (khuyên dùng)", en: "None — let Veo act it (recommended)" },
   refExpr2: { vi: "2 biểu cảm", en: "2 expressions" },
   refExpr3: { vi: "3 biểu cảm", en: "3 expressions" },
   charPhotos: { vi: "Ảnh nhân vật", en: "Character Photos" },
-  charPhotosHint: { vi: "Tải lên 2-3 ảnh từ các góc khác nhau", en: "Upload 2-3 photos from different angles" },
+  charPhotosHint: { vi: "Ảnh 1: chính diện · Ảnh 2: nghiêng/3-4", en: "Photo 1: front · Photo 2: profile/three-quarter" },
   addCharacter: { vi: "Thêm nhân vật", en: "Add Character" },
   photos: { vi: "ảnh", en: "photo(s)" },
   remove: { vi: "Xóa", en: "Remove" },
@@ -1075,7 +1075,6 @@ export function GenerateClient() {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   // Expression heads in each board's character-reference strip (0 = let Veo act
   // the emotion from the prompt; 2-3 = include a small fixed set).
-  const [refExpressions, setRefExpressions] = useState(0);
   const [copiedSeg, setCopiedSeg] = useState<number | null>(null);
   const [zipping, setZipping] = useState(false);
 
@@ -1161,7 +1160,7 @@ export function GenerateClient() {
 
     const rawCharacterImages: ImageReference[] = effectiveCharacters
       .filter((c) => c.images.length > 0)
-      .map((c) => ({ name: c.name, images: c.images.map((i) => i.base64) }));
+      .map((c) => ({ name: c.name, images: c.images.slice(0, 2).map((i) => i.base64) }));
 
     const rawProductImages: ImageReference[] = effectiveProducts
       .filter((p) => p.images.length > 0)
@@ -1241,9 +1240,9 @@ export function GenerateClient() {
           out[i]!.images.push(first);
         }
       });
-      // Pass 2 — extra angles only while under budget.
+      // Pass 2 — keep only the second identity angle per character.
       refs.forEach((ref, i) => {
-        for (const b64 of ref.images.slice(1)) {
+        for (const b64 of ref.images.slice(1, 2)) {
           const bytes = b64Bytes(b64);
           if (payloadUsed + bytes <= PAYLOAD_BUDGET) {
             payloadUsed += bytes;
@@ -1310,7 +1309,7 @@ export function GenerateClient() {
       key_message: keyMessage || undefined,
       image_quality: imageQuality,
       aspect_ratio: aspectRatio,
-      reference_expressions: refExpressions,
+      reference_expressions: 0,
       character_render: characterRender,
     };
 
@@ -2999,8 +2998,8 @@ export function GenerateClient() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {lang === "vi"
-                    ? "Mỗi nhân vật: ① nhập TÊN (VD: Nam, Mai, bé Minh) → ② bật 👶 nếu là trẻ em → ③ tải 1-3 ảnh CỦA CHÍNH NGƯỜI ĐÓ → ④ bấm \"➕ Thêm nhân vật\". Lặp lại cho người tiếp theo — video gia đình 3 người = thêm 3 lần, mỗi người có bộ ảnh riêng. Tên nhân vật nên TRÙNG với vai trong kịch bản (Chồng = Nam, Vợ = Mai, Con = bé Minh) để hệ thống gán đúng lời thoại."
-                    : "For each character: ① enter their NAME → ② toggle 👶 if a child → ③ upload 1-3 photos of THAT person → ④ click \"➕ Add character\". Repeat for the next person — a 3-person family video = add 3 times, each with their own photos. Use the same names as the script roles so dialogue binds correctly."}
+                    ? "Mỗi nhân vật: ① nhập TÊN → ② bật 👶 nếu là trẻ em → ③ tải ảnh 1 CHÍNH DIỆN và ảnh 2 NGHIÊNG/3-4 của đúng người đó → ④ bấm \"➕ Thêm nhân vật\". Người tiếp theo phải thêm thành một nhân vật riêng. Tên nên trùng với vai trong kịch bản để hệ thống gán đúng mặt và lời thoại."
+                    : "For each character: ① enter their NAME → ② toggle 👶 if needed → ③ upload photo 1 FRONT and photo 2 PROFILE/3-4 of that person → ④ click \"➕ Add character\". Add the next person separately. Match script names so faces and dialogue bind correctly."}
                 </p>
               </div>
 
@@ -3069,18 +3068,18 @@ export function GenerateClient() {
                 <ImageUploader
                   images={charImages}
                   onChange={setCharImages}
-                  maxImages={3}
+                  maxImages={2}
                   label={
                     lang === "vi"
-                      ? `Ảnh của ${charName.trim() || "nhân vật này"} (1-3 ảnh — chỉ ảnh CHÍNH người này)`
-                      : `Photos of ${charName.trim() || "this character"} (1-3 — this person ONLY)`
+                      ? `Ảnh của ${charName.trim() || "nhân vật này"} (tối đa 2: chính diện + nghiêng)`
+                      : `Photos of ${charName.trim() || "this character"} (max 2: front + profile)`
                   }
                   hint={L("charPhotosHint")}
                 />
 
                 <CharacterStudio
                   sourceImages={charImages}
-                  onApprove={(img) => setCharImages((prev) => [...prev, img].slice(0, 6))}
+                  onApprove={(img) => setCharImages((prev) => [...prev, img].slice(0, 2))}
                 />
 
                 <Button onClick={addCharacter} disabled={!charName.trim()} className="w-full gap-2">
@@ -3099,18 +3098,11 @@ export function GenerateClient() {
                 </p>
               </div>
 
-              {/* Expression control for the board CHARACTER REFERENCE strip (global setting) */}
+              {/* Fixed identity-reference layout: two portraits per person + environment overview. */}
               <div className="space-y-1.5 rounded-lg border border-dashed p-3">
-                <label className="text-sm font-medium">{L("refExprTitle")}</label>
-                <Select
-                  value={String(refExpressions)}
-                  onChange={(e) => setRefExpressions(Number(e.target.value))}
-                  options={[
-                    { value: "0", label: L("refExpr0") },
-                    { value: "2", label: L("refExpr2") },
-                    { value: "3", label: L("refExpr3") },
-                  ]}
-                />
+                <label className="text-sm font-medium">
+                  {lang === "vi" ? "Bố cục ảnh tham chiếu cố định" : "Fixed reference layout"}
+                </label>
                 <p className="text-xs text-muted-foreground">{L("refExprHint")}</p>
               </div>
             </>
@@ -3467,4 +3459,3 @@ export function GenerateClient() {
     </div>
   );
 }
-
