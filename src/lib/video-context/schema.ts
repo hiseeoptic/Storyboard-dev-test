@@ -15,11 +15,30 @@ const locationSchema = z.object({
   sound_bed: text,
 });
 
+// RESILIENCE helpers (see reality/schema.ts) — near-miss values coerce
+// instead of hard-failing the whole 10-layer Context IR lock.
+const versionField = z.preprocess(() => "2.0", z.literal("2.0"));
+const stateField = z.preprocess(
+  (v) => (typeof v === "string" && v.trim().toLowerCase() === "locked" ? "locked" : "resolved"),
+  z.enum(["resolved", "locked"])
+);
+const confidenceField = z.preprocess((v) => {
+  const n = typeof v === "string" ? Number.parseFloat(v) : v;
+  if (typeof n !== "number" || Number.isNaN(n)) return 0.5;
+  const scaled = n > 1 && n <= 100 ? n / 100 : n;
+  return Math.min(1, Math.max(0, scaled));
+}, z.number().min(0).max(1));
+const positiveNumberField = (fallback: number) =>
+  z.preprocess((v) => {
+    const n = typeof v === "string" ? Number.parseFloat(v) : v;
+    return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : fallback;
+  }, z.number().positive());
+
 export const resolvedVideoContextSchema = z.object({
-  version: z.literal("2.0"),
-  state: z.enum(["resolved", "locked"]),
+  version: versionField,
+  state: stateField,
   analysis_summary: text,
-  confidence: z.number().min(0).max(1),
+  confidence: confidenceField,
   assumptions: textArray,
   evidence: textArray,
   reality_profile: realityProfileSchema,
@@ -28,7 +47,7 @@ export const resolvedVideoContextSchema = z.object({
       purpose: text,
       audience: text,
       platform: text,
-      duration_seconds: z.number().positive(),
+      duration_seconds: positiveNumberField(50),
       aspect_ratio: text,
       success_criteria: textArray,
     }),
