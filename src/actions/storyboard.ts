@@ -1075,8 +1075,10 @@ export async function generateStoryboardPlan(
     const raw = err instanceof Error ? err.message : "AI generation failed";
     // In production Next.js hides the real message behind a generic
     // "Server Components render" digest — show a clear, actionable message.
-    const friendly = /time budget|server timeout|aborted due to timeout|timed out/i.test(raw)
+    const friendly = /time budget|server timeout/i.test(raw)
       ? "AI phản hồi quá lâu nên hệ thống đã dừng an toàn trước giới hạn Vercel. JSON và cấu trúc storyboard không bị chuyển sang định dạng khác; vui lòng bấm Tạo Storyboard lại."
+      : /aborted due to timeout|timed out/i.test(raw)
+        ? "Nhà cung cấp AI không trả lời trong thời gian cho phép. Đây không phải lỗi giới hạn 300 giây của Vercel; vui lòng thử lại, hệ thống sẽ tiếp tục giữ nguyên cấu trúc JSON storyboard."
       : /server components render|digest/i.test(raw)
         ? "Máy chủ gặp lỗi tạm thời khi tạo kịch bản (có thể do AI quá tải hoặc ảnh quá lớn). Vui lòng bấm Tạo Storyboard lại sau vài giây."
         : `Tạo kịch bản thất bại: ${raw}`;
