@@ -688,12 +688,16 @@ export async function generateStoryboardBreakdown(
           jsonMode: true,
           responseSchema: STORYBOARD_RESPONSE_SCHEMA,
           temperature: attempt === 0 ? 0.25 : 0.1,
-          // The storyboard JSON grew (dialogue_lines, cast/environment locks,
-          // voice, forensic fields) — 8192 could truncate mid-array, which
-          // surfaces as "Expected ',' or ']'" parse errors.
+          // The storyboard JSON is LARGE: every segment now carries a full
+          // scene_intent block (~15 nested fields) on top of dialogue_lines,
+          // cast/environment locks, voice and forensic fields. At the old
+          // ~2200 tokens/segment the tail segment got truncated → jsonrepair
+          // salvaged it into a stub → the title-backfill turned it into garbage
+          // ("action" = "dialogue" = the title). Budget generously
+          // (~3800/segment, floor 20k) up to Gemini 2.5 Flash's 65536 ceiling.
           maxOutputTokens: Math.min(
-            24576,
-            Math.max(12288, (input.segment_count ?? input.scene_count ?? 5) * 2200)
+            48000,
+            Math.max(20000, (input.segment_count ?? input.scene_count ?? 5) * 3800)
           ),
           timeoutMs: boundedTimeoutMs(timing, 60_000, "Gemini storyboard generation"),
         });
@@ -724,6 +728,26 @@ export async function generateStoryboardBreakdown(
       if (!validateOutput(parsed)) {
         throw new Error(
           `Response does not match expected schema (${describeOutputMismatch(parsed)})`
+        );
+      }
+
+      // TRUNCATION GUARD (fixes the "Lời thương yêu" stub-segment bug):
+      // jsonrepair can salvage a token-truncated response into "valid" JSON
+      // whose TAIL segments are stubs (only a title, no real motion/scene).
+      // Those then get title-backfilled into garbage where action == dialogue
+      // == the title. Detect incomplete segments from the model's REAL output
+      // (or a short segment count) and RETRY for a complete script; accept a
+      // stub only on the final attempt as a last resort.
+      const requestedCount = input.segment_count ?? input.scene_count ?? 5;
+      const stubs = parsed.segments.filter(
+        (s) =>
+          !(typeof s.motion_prompt === "string" && s.motion_prompt.trim()) ||
+          !(typeof s.first_frame_prompt === "string" && s.first_frame_prompt.trim())
+      );
+      const tooFew = parsed.segments.length < requestedCount;
+      if ((stubs.length > 0 || tooFew) && attempt < maxAttempts - 1) {
+        throw new Error(
+          `Storyboard JSON incomplete — ${stubs.length} stub segment(s), ${parsed.segments.length}/${requestedCount} returned (likely output-token truncation); retrying`
         );
       }
 
