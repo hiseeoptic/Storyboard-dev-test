@@ -60,6 +60,11 @@ export interface StoryboardPlan {
   warnings: string[];
 }
 
+// Vercel stops this Server Action at 300s. Keep a safety margin for local JSON
+// validation, prompt assembly and returning the result to the browser.
+const PLAN_GENERATION_BUDGET_MS = 230_000;
+const MIN_PROVIDER_FALLBACK_BUDGET_MS = 20_000;
+
 /** Remove eyewear mentions from a description (used when a real face photo
  * is the source of truth, so invented "glasses" can't override it). */
 function stripEyewear(text: string): string {
@@ -871,6 +876,7 @@ export async function generateStoryboardPlan(
   provider: AIProvider = "gemini"
 ): Promise<ActionResult<StoryboardPlan>> {
   const warnings: string[] = [];
+  const generationDeadlineMs = Date.now() + PLAN_GENERATION_BUDGET_MS;
   try {
     // Defense in depth: specialist Cooking data is legal only behind the exact
     // genre router, never merely because a stale goal/state contains cooking.
@@ -911,7 +917,10 @@ export async function generateStoryboardPlan(
     let sourceScript: string | null = null;
     if (!compiledCooking && scriptProvider !== provider) {
       try {
-        sourceScript = await generateScript(enhanced, scriptProvider);
+        sourceScript = await generateScript(enhanced, scriptProvider, {
+          deadlineMs: generationDeadlineMs,
+          maxAttempts: 2,
+        });
       } catch (e) {
         warnings.push(
           `Không viết được kịch bản bằng ${scriptProvider} — ${provider} sẽ tự viết kịch bản luôn. (${e instanceof Error ? e.message : String(e)})`
@@ -928,7 +937,10 @@ export async function generateStoryboardPlan(
     // failure warns and falls back to the legacy direct storyboard path.
     let contextBoundInput = stage2Input;
     try {
-      const resolvedContext = await analyzeVideoContext(stage2Input, provider);
+      const resolvedContext = await analyzeVideoContext(stage2Input, provider, {
+        deadlineMs: generationDeadlineMs,
+        maxAttempts: 2,
+      });
       contextBoundInput = { ...stage2Input, resolved_context: resolvedContext };
     } catch (e) {
       warnings.push(
@@ -946,15 +958,28 @@ export async function generateStoryboardPlan(
     } else {
       try {
         // Stage 2: main provider expands the approved script into storyboard JSON.
-        breakdown = await generateStoryboardBreakdown(contextBoundInput, provider);
+        breakdown = await generateStoryboardBreakdown(contextBoundInput, provider, {
+          deadlineMs: generationDeadlineMs,
+        });
       } catch (e) {
         if (sourceScript && scriptProvider !== provider) {
+          const remainingMs = generationDeadlineMs - Date.now();
+          if (remainingMs < MIN_PROVIDER_FALLBACK_BUDGET_MS) {
+            throw new Error(
+              `Storyboard JSON could not be completed within the safe request budget; ` +
+                `stopped before the Vercel server timeout. Please retry storyboard generation.`
+            );
+          }
           // Storyboard model failed — build the storyboard with the script model
-          // itself so an approved script is never wasted.
+          // itself so an approved script is never wasted. The fallback gets one
+          // bounded attempt only; it may not consume the rest of Vercel's 300s.
           warnings.push(
             `${provider} không dựng được storyboard — đã dùng ${scriptProvider} để dựng. (${e instanceof Error ? e.message : String(e)})`
           );
-          breakdown = await generateStoryboardBreakdown(contextBoundInput, scriptProvider);
+          breakdown = await generateStoryboardBreakdown(contextBoundInput, scriptProvider, {
+            deadlineMs: generationDeadlineMs,
+            maxAttempts: 1,
+          });
         } else {
           throw e;
         }
@@ -1050,9 +1075,11 @@ export async function generateStoryboardPlan(
     const raw = err instanceof Error ? err.message : "AI generation failed";
     // In production Next.js hides the real message behind a generic
     // "Server Components render" digest — show a clear, actionable message.
-    const friendly = /server components render|digest/i.test(raw)
-      ? "Máy chủ gặp lỗi tạm thời khi tạo kịch bản (có thể do AI quá tải hoặc ảnh quá lớn). Vui lòng bấm Tạo Storyboard lại sau vài giây."
-      : `Tạo kịch bản thất bại: ${raw}`;
+    const friendly = /time budget|server timeout|aborted due to timeout|timed out/i.test(raw)
+      ? "AI phản hồi quá lâu nên hệ thống đã dừng an toàn trước giới hạn Vercel. JSON và cấu trúc storyboard không bị chuyển sang định dạng khác; vui lòng bấm Tạo Storyboard lại."
+      : /server components render|digest/i.test(raw)
+        ? "Máy chủ gặp lỗi tạm thời khi tạo kịch bản (có thể do AI quá tải hoặc ảnh quá lớn). Vui lòng bấm Tạo Storyboard lại sau vài giây."
+        : `Tạo kịch bản thất bại: ${raw}`;
     return { success: false, error: friendly };
   }
 }

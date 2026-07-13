@@ -1,6 +1,7 @@
 import { getOpenAIClient } from "@/lib/openai/client";
 import { geminiGenerateText } from "@/lib/gemini/client";
 import { claudeGenerateText } from "@/lib/anthropic/client";
+import { jsonrepair } from "jsonrepair";
 import {
   buildScriptWriterSystemPrompt,
   buildScriptWriterUserPrompt,
@@ -34,11 +35,38 @@ const MAX_RETRIES = 3;
 // repair runs first; at most one fresh retry is allowed.
 const STORYBOARD_MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
+const MIN_REMOTE_CALL_BUDGET_MS = 8_000;
 const STRING_SCHEMA = { type: "STRING" };
 const INTEGER_SCHEMA = { type: "INTEGER" };
 const NUMBER_SCHEMA = { type: "NUMBER" };
 const BOOLEAN_SCHEMA = { type: "BOOLEAN" };
 const STRING_ARRAY_SCHEMA = { type: "ARRAY", items: STRING_SCHEMA };
+
+interface GenerationTimingOptions {
+  /** Absolute wall-clock deadline shared by every AI stage in one request. */
+  deadlineMs?: number;
+  /** Optional narrower retry count for a fallback provider. */
+  maxAttempts?: number;
+}
+
+function boundedTimeoutMs(
+  options: GenerationTimingOptions | undefined,
+  preferredTimeoutMs: number,
+  phase: string
+): number {
+  if (!options?.deadlineMs) return preferredTimeoutMs;
+  const remainingMs = options.deadlineMs - Date.now();
+  if (remainingMs < MIN_REMOTE_CALL_BUDGET_MS) {
+    throw new Error(
+      `Generation time budget exhausted before ${phase}; stopped safely instead of waiting for the server timeout`
+    );
+  }
+  return Math.min(preferredTimeoutMs, remainingMs);
+}
+
+function attemptLimit(defaultLimit: number, options?: GenerationTimingOptions): number {
+  return Math.max(1, Math.min(defaultLimit, options?.maxAttempts ?? defaultLimit));
+}
 
 // One storyboard segment — shared by the full-storyboard schema and the
 // single-segment rewrite endpoint so the two can never drift apart.
@@ -409,30 +437,23 @@ function parseJsonResponse(text: string): unknown {
         }
       }
     }
+
+    // Final deterministic repair for malformed/truncated LLM JSON. This runs
+    // locally in milliseconds and preserves the JSON data; it never sends the
+    // 40k+ payload back to Gemini for a second, token-expensive repair call.
+    try {
+      const repaired = jsonrepair(sanitized);
+      const parsed = JSON.parse(repaired);
+      console.warn(
+        "[AI Engine] Repaired malformed storyboard JSON locally; no repair-model call was used."
+      );
+      return parsed;
+    } catch {
+      // Keep the original JSON.parse error because its byte/line position is
+      // the most useful diagnostic if every local repair strategy failed.
+    }
     throw err;
   }
-}
-
-async function repairStoryboardJsonSyntax(
-  rawContent: string,
-  provider: AIProvider
-): Promise<unknown> {
-  // A syntax-only repair is far cheaper than regenerating the storyboard with
-  // its full system prompt, context IR and creative reasoning. Gemini is the
-  // normal structured-output provider; other providers fall through to their
-  // normal retry path.
-  if (provider !== "gemini") return parseJsonResponse(rawContent);
-
-  const repaired = await geminiGenerateText({
-    systemPrompt:
-      "You are a strict JSON syntax repair tool. Fix only JSON punctuation, quoting, commas, brackets and truncated closing delimiters. Preserve every key, value, array order and wording. Do not summarize, improve or regenerate content. Return JSON only.",
-    userPrompt: `Repair this malformed JSON without changing its data:\n${rawContent}`,
-    jsonMode: true,
-    temperature: 0,
-    maxOutputTokens: 16384,
-    timeoutMs: 30_000,
-  });
-  return parseJsonResponse(repaired);
 }
 
 /**
@@ -442,13 +463,15 @@ async function repairStoryboardJsonSyntax(
  */
 export async function analyzeVideoContext(
   input: StoryboardGenerationInput,
-  provider: AIProvider = "gemini"
+  provider: AIProvider = "gemini",
+  timing?: GenerationTimingOptions
 ): Promise<ResolvedVideoContext> {
   const systemPrompt = buildContextAnalysisSystemPrompt();
   const userPrompt = buildContextAnalysisUserPrompt(input);
   let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const maxAttempts = attemptLimit(2, timing);
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       let rawContent: string | null = null;
 
@@ -457,6 +480,7 @@ export async function analyzeVideoContext(
           systemPrompt,
           userPrompt: `${userPrompt}\n\nReturn ONLY the JSON object — no markdown or commentary.`,
           maxTokens: 7000,
+          timeoutMs: boundedTimeoutMs(timing, 45_000, "Claude context analysis"),
         });
       } else if (provider === "gemini") {
         rawContent = await geminiGenerateText({
@@ -466,20 +490,23 @@ export async function analyzeVideoContext(
           responseSchema: VIDEO_CONTEXT_RESPONSE_SCHEMA,
           temperature: 0.15,
           maxOutputTokens: 8192,
-          timeoutMs: 45_000,
+          timeoutMs: boundedTimeoutMs(timing, 45_000, "Gemini context analysis"),
         });
       } else {
         const openai = getOpenAIClient();
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          temperature: 0.15,
-          max_tokens: 7000,
-          response_format: { type: "json_object" },
-        });
+        const completion = await openai.chat.completions.create(
+          {
+            model: "gpt-4o",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            temperature: 0.15,
+            max_tokens: 7000,
+            response_format: { type: "json_object" },
+          },
+          { timeout: boundedTimeoutMs(timing, 45_000, "OpenAI context analysis") }
+        );
         rawContent = completion.choices[0]?.message?.content ?? null;
       }
 
@@ -495,14 +522,14 @@ export async function analyzeVideoContext(
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       console.error(
-        `[AI Engine] Context analysis attempt ${attempt + 1}/2 failed:`,
+        `[AI Engine] Context analysis attempt ${attempt + 1}/${maxAttempts} failed:`,
         lastError.message
       );
-      if (attempt === 0) await sleep(RETRY_DELAY_MS);
+      if (attempt < maxAttempts - 1) await sleep(RETRY_DELAY_MS);
     }
   }
 
-  throw new Error(`Context analysis failed after 2 attempts: ${lastError?.message}`);
+  throw new Error(`Context analysis failed after ${maxAttempts} attempts: ${lastError?.message}`);
 }
 
 /**
@@ -512,13 +539,15 @@ export async function analyzeVideoContext(
  */
 export async function generateScript(
   input: StoryboardGenerationInput,
-  provider: AIProvider = "claude"
+  provider: AIProvider = "claude",
+  timing?: GenerationTimingOptions
 ): Promise<string> {
   const systemPrompt = buildScriptWriterSystemPrompt();
   const userPrompt = buildScriptWriterUserPrompt(input);
   let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+  const maxAttempts = attemptLimit(MAX_RETRIES, timing);
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       let text: string | null = null;
 
@@ -527,6 +556,7 @@ export async function generateScript(
           systemPrompt,
           userPrompt,
           maxTokens: 8000,
+          timeoutMs: boundedTimeoutMs(timing, 60_000, "Claude script generation"),
         });
       } else if (provider === "gemini") {
         text = await geminiGenerateText({
@@ -534,7 +564,7 @@ export async function generateScript(
           userPrompt,
           temperature: 0.85,
           maxOutputTokens: 4096,
-          timeoutMs: 45_000,
+          timeoutMs: boundedTimeoutMs(timing, 45_000, "Gemini script generation"),
         });
       } else {
         // GPT-5-mini: strong creative writing at ~1/5 the price of gpt-4o.
@@ -544,16 +574,19 @@ export async function generateScript(
         const openai = getOpenAIClient();
         const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5-mini";
         const isGpt5 = scriptModel.startsWith("gpt-5") || scriptModel.startsWith("o");
-        const completion = await openai.chat.completions.create({
-          model: scriptModel,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          ...(isGpt5
-            ? { max_completion_tokens: 8000 }
-            : { temperature: 0.85, max_tokens: 4000 }),
-        });
+        const completion = await openai.chat.completions.create(
+          {
+            model: scriptModel,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            ...(isGpt5
+              ? { max_completion_tokens: 8000 }
+              : { temperature: 0.85, max_tokens: 4000 }),
+          },
+          { timeout: boundedTimeoutMs(timing, 60_000, "OpenAI script generation") }
+        );
         text = completion.choices[0]?.message?.content ?? null;
       }
 
@@ -565,27 +598,29 @@ export async function generateScript(
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       console.error(
-        `[AI Engine] Script attempt ${attempt + 1}/${MAX_RETRIES} failed:`,
+        `[AI Engine] Script attempt ${attempt + 1}/${maxAttempts} failed:`,
         lastError.message
       );
-      if (attempt < MAX_RETRIES - 1) {
+      if (attempt < maxAttempts - 1) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
       }
     }
   }
 
   throw new Error(
-    `Script generation failed after ${MAX_RETRIES} attempts: ${lastError?.message}`
+    `Script generation failed after ${maxAttempts} attempts: ${lastError?.message}`
   );
 }
 
 export async function generateStoryboardBreakdown(
   input: StoryboardGenerationInput,
-  provider: AIProvider = "openai"
+  provider: AIProvider = "openai",
+  timing?: GenerationTimingOptions
 ): Promise<StoryboardGenerationOutput> {
   let lastError: Error | null = null;
+  const maxAttempts = attemptLimit(STORYBOARD_MAX_RETRIES, timing);
 
-  for (let attempt = 0; attempt < STORYBOARD_MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       let rawContent: string | null = null;
 
@@ -598,6 +633,7 @@ export async function generateStoryboardBreakdown(
             buildStoryboardUserPrompt(input) +
             "\n\nReturn ONLY the JSON object described above — no markdown, no code fences, no prose before or after.",
           maxTokens: 16000,
+          timeoutMs: boundedTimeoutMs(timing, 60_000, "Claude storyboard generation"),
         });
       } else if (provider === "gemini") {
         rawContent = await geminiGenerateText({
@@ -613,20 +649,23 @@ export async function generateStoryboardBreakdown(
             24576,
             Math.max(12288, (input.segment_count ?? input.scene_count ?? 5) * 2200)
           ),
-          timeoutMs: 60_000,
+          timeoutMs: boundedTimeoutMs(timing, 60_000, "Gemini storyboard generation"),
         });
       } else {
         const openai = getOpenAIClient();
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            { role: "system", content: buildStoryboardSystemPrompt() },
-            { role: "user", content: buildStoryboardUserPrompt(input) },
-          ],
-          temperature: 0.7,
-          max_tokens: 8000,
-          response_format: { type: "json_object" },
-        });
+        const completion = await openai.chat.completions.create(
+          {
+            model: "gpt-4o",
+            messages: [
+              { role: "system", content: buildStoryboardSystemPrompt() },
+              { role: "user", content: buildStoryboardUserPrompt(input) },
+            ],
+            temperature: 0.7,
+            max_tokens: 8000,
+            response_format: { type: "json_object" },
+          },
+          { timeout: boundedTimeoutMs(timing, 60_000, "OpenAI storyboard generation") }
+        );
         rawContent = completion.choices[0]?.message?.content ?? null;
       }
 
@@ -634,16 +673,7 @@ export async function generateStoryboardBreakdown(
         throw new Error(`Empty response from ${provider}`);
       }
 
-      let parsed: unknown;
-      try {
-        parsed = parseJsonResponse(rawContent);
-      } catch (syntaxError) {
-        console.warn(
-          "[AI Engine] Storyboard JSON syntax invalid; running compact syntax-only repair:",
-          syntaxError instanceof Error ? syntaxError.message : String(syntaxError)
-        );
-        parsed = await repairStoryboardJsonSyntax(rawContent, provider);
-      }
+      const parsed = parseJsonResponse(rawContent);
 
       if (!validateOutput(parsed)) {
         throw new Error("Response does not match expected schema");
@@ -857,17 +887,17 @@ export async function generateStoryboardBreakdown(
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       console.error(
-        `[AI Engine] Attempt ${attempt + 1}/${STORYBOARD_MAX_RETRIES} failed:`,
+        `[AI Engine] Attempt ${attempt + 1}/${maxAttempts} failed:`,
         lastError.message
       );
-      if (attempt < STORYBOARD_MAX_RETRIES - 1) {
+      if (attempt < maxAttempts - 1) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
       }
     }
   }
 
   throw new Error(
-    `Storyboard generation failed after ${STORYBOARD_MAX_RETRIES} attempts: ${lastError?.message}`
+    `Storyboard generation failed after ${maxAttempts} attempts: ${lastError?.message}`
   );
 }
 
