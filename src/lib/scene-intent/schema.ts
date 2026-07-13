@@ -97,6 +97,43 @@ const coerceSceneFunction = (v: unknown): unknown => {
 
 const sceneFunctionSchema = z.preprocess(coerceSceneFunction, z.enum(SCENE_FUNCTIONS));
 
+const HOOK_TYPES = [
+  "visual_interrupt",
+  "curiosity_gap",
+  "inciting_event",
+  "conflict",
+  "emotional_recognition",
+  "surprising_fact",
+  "question",
+  "sensory_moment",
+  "product_proof",
+  "transformation_preview",
+  "custom",
+] as const;
+type HookTypeValue = (typeof HOOK_TYPES)[number];
+
+const HOOK_TYPE_SYNONYMS: Record<string, HookTypeValue> = {
+  pattern_interrupt: "visual_interrupt",
+  visual_hook: "visual_interrupt",
+  open_loop: "curiosity_gap",
+  intrigue: "curiosity_gap",
+  story_event: "inciting_event",
+  emotional_hook: "emotional_recognition",
+  relatable_moment: "emotional_recognition",
+  fact: "surprising_fact",
+  bold_fact: "surprising_fact",
+  sensory_hook: "sensory_moment",
+  product_demo: "product_proof",
+  before_after: "transformation_preview",
+};
+
+const hookTypeSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return "custom";
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if ((HOOK_TYPES as readonly string[]).includes(normalized)) return normalized;
+  return HOOK_TYPE_SYNONYMS[normalized] ?? "custom";
+}, z.enum(HOOK_TYPES));
+
 export const sceneIntentSchema = z.object({
   intent_id: text,
   // Unknown lifecycle labels degrade to "inferred" instead of failing.
@@ -121,6 +158,21 @@ export const sceneIntentSchema = z.object({
     (v) => (Array.isArray(v) ? v.slice(0, 3) : []),
     z.array(sceneFunctionSchema).max(3)
   ).default([]),
+  hook_window: z.object({
+    enabled: z.boolean(),
+    duration_seconds: z.preprocess((value) => {
+      const number = typeof value === "string" ? Number.parseFloat(value) : value;
+      if (typeof number !== "number" || Number.isNaN(number)) return 0;
+      return Math.min(5, Math.max(0, number));
+    }, z.number().min(0).max(5)),
+    hook_type: hookTypeSchema,
+    core_promise: text,
+    immediate_visual_event: text,
+    immediate_audio_event: text,
+    dialogue_hook: text,
+    payoff_link: text,
+    forbidden_delays: textArray,
+  }),
   narrative_objective: text,
   audience_effect: z.object({
     attention: text,
@@ -188,6 +240,17 @@ export const SCENE_INTENT_RESPONSE_SCHEMA: Record<string, unknown> = objectOf({
   confidence: { type: "NUMBER" },
   primary_function: stringField(),
   secondary_functions: stringArray(),
+  hook_window: objectOf({
+    enabled: { type: "BOOLEAN" },
+    duration_seconds: { type: "NUMBER" },
+    hook_type: stringField(),
+    core_promise: stringField(),
+    immediate_visual_event: stringField(),
+    immediate_audio_event: stringField(),
+    dialogue_hook: stringField(),
+    payoff_link: stringField(),
+    forbidden_delays: stringArray(),
+  }),
   narrative_objective: stringField(),
   audience_effect: objectOf({
     attention: stringField(), emotion: stringField(), belief: stringField(), desired_action: stringField(),
@@ -211,4 +274,3 @@ export const SCENE_INTENT_RESPONSE_SCHEMA: Record<string, unknown> = objectOf({
     success_criteria: stringArray(), failure_conditions: stringArray(),
   }),
 });
-
