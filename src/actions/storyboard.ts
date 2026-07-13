@@ -968,8 +968,6 @@ function assemblePlanPrompts(
       ambientAudio,
       environmentRef: seg.environment_ref,
       hasLocationRef: !!ctx.bgImg,
-      // Master-sheet workflow: this clip = panel N on the master storyboard.
-      panelNumber: seg.segment_number,
     });
   }
   return buildVideoPromptText({
@@ -1019,6 +1017,10 @@ export async function finalizeScript(params: {
 }): Promise<ActionResult<{ breakdown: StoryboardGenerationOutput; videoPrompt: string }>> {
   const provider = params.provider ?? "gemini";
   try {
+    // The review editor can update either the legacy single-line field or the
+    // turn-taking array. Reconcile them once more at the approval boundary so
+    // stale generated dialogue can never outrank what the user currently sees.
+    normalizeDialogue(params.breakdown);
     const videoPrompt = assemblePlanPrompts(params.input, params.breakdown, params.analysis, provider);
     return { success: true, data: { breakdown: params.breakdown, videoPrompt } };
   } catch (err) {

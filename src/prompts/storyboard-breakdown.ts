@@ -63,8 +63,7 @@ const PHOTOREAL_REALISM =
 // manifest (src/lib/laws) — single source of truth, per the 9-layer canon.
 function veoConciseTail(
   hasProduct: boolean,
-  realityProfile?: RealityProfile | null,
-  visibleTextPolicy?: string | null
+  realityProfile?: RealityProfile | null
 ): string {
   const productNeg = hasProduct
     ? "warped or altered label/logo text, brand-colour change, extra or duplicated products, "
@@ -87,18 +86,8 @@ function veoConciseTail(
   const renderNeg = realWorld
     ? "plastic/CGI/wax/airbrushed skin, toy-like or 3D-render materials"
     : "unmotivated photoreal/stylized switching, accidental world-physics drift";
-  const policy = (visibleTextPolicy ?? "").trim();
-  const permitsText = !!policy && !/(none|forbid|zero|avoid readable|blur all|no text)/i.test(policy);
-  // CRITICAL: a language policy like "Vietnamese only, minimal" governs
-  // DIEGETIC SIGNAGE in the world (a shop sign, a book cover) — Veo once read
-  // it as permission to BURN THE VOICEOVER ONTO THE FRAME as Vietnamese
-  // subtitles. Subtitles/captions/dialogue transcription stay banned ALWAYS.
-  const textLaw = permitsText
-    ? `TEXT POLICY (diegetic signage only): the ONLY text that may ever be readable is a real in-world sign/label/object print EXPLICITLY described in the SCENE, in ${policy}. Everything else is FORBIDDEN — ABSOLUTELY no subtitles, no captions, no transcription of any spoken line or voiceover onto the frame, no karaoke/lyric text, no title cards, no floating text boxes, no watermarks, no spec cards/HUD/technical values. Spoken words are AUDIO ONLY and must NEVER appear as written words on screen.`
-    : hasProduct
-      ? "TEXT POLICY: the exact approved product label/logo may remain; all other readable text is forbidden — no subtitles, captions, dialogue transcription, title cards, watermarks, spec cards, HUD or technical values. Spoken words are AUDIO ONLY."
-      : "NO-TEXT POLICY: the frame contains no readable text — no subtitles, captions, dialogue transcription, title cards, logos, watermarks, spec cards, HUD or technical values. Spoken words are audio only.";
-  return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${textLaw} NO LABELS ON PEOPLE OR OBJECTS: never draw a character name tag, name badge, floating label, caption box, colour swatch, hex colour code (like "#A9C7E8") or any identifying text over a person, object or the frame — names and technical values in this prompt are internal only, never shown. Avoid: ${productNeg}character name tags or labels on screen, colour-code or hex-code text overlays, burned-in subtitles or captions, spoken words rendered as on-screen text, morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, ${renderNeg}.`;
+  const textLaw = "ZERO VISIBLE TEXT OR GRAPHICS: every frame is clean live footage with no readable letters, words, names, numbers, logos, labels or typography anywhere, including real-world signs and product printing. No subtitles, captions, dialogue transcription, title cards, name tags, floating boxes, badges, watermarks, HUD, camera data or technical overlays. All names, dialogue, brands, ages, temperatures, lens values and timing values in this prompt are INTERNAL instructions only. Spoken words are AUDIO ONLY.";
+  return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${textLaw} Avoid: ${productNeg}storyboard sheets, grids, panel borders, reference thumbnails, character name tags or labels on screen, colour-code or hex-code text overlays, burned-in subtitles or captions, spoken words rendered as on-screen text, morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, ${renderNeg}.`;
 }
 
 /** One-line "Scene Bible" style tokens. Keeps lens/lighting/grade constant so
@@ -514,6 +503,7 @@ PROJECT-LED STORY STRUCTURE (never force one template onto every video):
 UPLOADED REFERENCE PRIORITY (absolute hierarchy — PHOTOS beat text, text beats invention):
 - USER SETUP MENU CONTRACT (NON-NEGOTIABLE): every entered character name/role and every image group belongs together one-to-one, in menu order. Preserve ALL named characters as separate identities; never use only the first upload, never merge two people, never swap their faces, never omit a referenced character when the approved script places them in the scene, and never let generated defaults/anchors override menu uploads. Character menu photos, product photos and background/location photos are the SUPREME source of truth. A character keeps the uploaded gender, age, face, hair and look; a product keeps its exact shape, colours and branding; when a LOCATION photo exists, stage every relevant segment inside that uploaded place and reuse its real layout, furniture, colours, materials and light in every first_frame_prompt. Do NOT relocate scenes, "improve" the set, or invent contradictory rooms/furniture.
 - If the story idea and an uploaded photo conflict (e.g. the idea says villa but the photo shows a small apartment), THE PHOTO WINS — adapt the story to the real place/person/product.
+- VIDEO OUTPUT TEXT CONTRACT (NON-NEGOTIABLE): every generated VIDEO frame contains ZERO readable text or graphics. Set world_context.allowed_language_text to "none — zero readable text anywhere". Names, ages, dialogue, brands, captions, lens values, Kelvin/lux and timecodes are internal production data only; never request subtitles, captions, name tags, product lettering, logos, badges, title cards, HUD or overlays. Dialogue is AUDIO ONLY. Storyboard documents may contain planning labels, but they are NEVER video start frames.
 
 FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's video must not "look AI"):
 - Every object is locked to a "DNA" that NEVER drifts and is repeated VERBATIM in every board/keyframe and every motion prompt.
@@ -1157,7 +1147,7 @@ export function buildSegmentFirstFramePrompt(params: {
         .join(", ")} — and NOBODY else; no extra people, no duplicates of a character in the same panel; every action caption names WHO does the action; relative heights stay true (a child is clearly smaller than the adults).`
     : "";
 
-  return `${refBlock}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for ONE ~10 second video clip, presented as ONE single horizontal image. This board gives an image-to-video model (Veo) full context: who the character${isMultiCast ? "s are" : " is"} (from every angle), what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions that happen across the 10 seconds. ${params.style} style.
+  return `${refBlock}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for HUMAN REVIEW and planning of ONE ~10 second video clip, presented as ONE single horizontal image. This document shows who the character${isMultiCast ? "s are" : " is"}, what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions across the clip. It must NEVER be used as an image-to-video start frame; use the separate clean keyframe for that. ${params.style} style.
 
 THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 
@@ -1321,7 +1311,7 @@ export function buildMasterBoardPrompt(params: {
           .join("\n")
       : `- "${(params.characterName ?? "MAIN CHARACTER").toUpperCase()}": exactly TWO HEAD-AND-SHOULDERS identity portraits — FRONT / chính diện + SIDE PROFILE or 3/4 / góc nghiêng. No full body, no back view.`;
 
-  return `${refBlock}Professional production STORYBOARD DOCUMENT, ONE single horizontal image, clean white/light background, agency-quality layout with two zones. PURPOSE: this single sheet is attached as a REFERENCE DOCUMENT to an image-to-video model for EVERY clip of the video — so every menu-uploaded character must be represented in the reference library, every face must stay readable, and every panel number must be instantly readable at a glance.
+  return `${refBlock}Professional production STORYBOARD DOCUMENT, ONE single horizontal image, clean white/light background, agency-quality layout with two zones. PURPOSE: this sheet is for HUMAN REVIEW, shot planning and continuity checking only. It must NEVER be used as an image-to-video start frame. Every menu-uploaded character must be represented in the reference library, every face must stay readable, and every panel number must be instantly readable at a glance.
 
 ◀ LEFT / TOP REFERENCE LIBRARY (about 1/3 width) — "CHARACTER + ENVIRONMENT REFERENCES" (compact grid; uploaded menu refs have HIGHEST PRIORITY):
 - Header text "CHARACTER + ENVIRONMENT REFERENCES".
@@ -1463,33 +1453,25 @@ export function buildSegmentVeoPrompt(params: {
   /** TRUE when the user uploaded a real LOCATION photo — the set must be
    * rebuilt from that photo, not invented from text alone. */
   hasLocationRef?: boolean;
-  /** This clip's panel number on the MASTER STORYBOARD SHEET. When set, the
-   * prompt carries a REFERENCE MAP so Flow reads the attached sheet as a
-   * document and animates ONLY this panel's moment (never renders the grid). */
-  panelNumber?: number;
 }): string {
   const lang = params.dialogueLanguage ?? "Vietnamese";
   const clean = (s?: string) => (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
-  // SELF-CONTAINED prompt: repeat the FULL character + scene + style in EVERY
-  // clip so Veo renders correctly from the uploaded character PHOTO — no need to
-  // pre-generate a per-scene keyframe. The attached photo only locks the
-  // face/wardrobe; the scene is built from the text below — UNLESS the user
-  // also uploaded a LOCATION photo, in which case THAT photo is the set.
+  // SELF-CONTAINED prompt: repeat the full character, scene and style in every
+  // clip. A clean per-scene keyframe is the only image-to-video start frame;
+  // character/location portraits belong in separate Ingredients/References
+  // controls when available.
   const settingSource = params.hasLocationRef
     ? "An attached LOCATION photo shows the REAL set — rebuild THIS exact place as the scene (same layout, furniture, colours, materials and light); only the CHARACTER portrait's own background is ignored."
     : "build the described setting, do NOT copy the character photo's own background.";
   const lead =
-    `Keep every referenced subject visually consistent across the project — original characters/entities, not a public-figure imitation. Create ONE continuous 10-second shot in the scene described below; ${settingSource} Every technical value in this prompt is an INTERNAL production instruction, never an on-screen overlay; visible text follows only the locked text policy stated below.`;
+    `OUTPUT CONTRACT — CLEAN FULL-SCREEN VIDEO ONLY: create ONE continuous 10-second live-action shot filling the entire frame. ZERO visible text or graphics anywhere: no letters, words, names, ages, numbers, labels, logos, captions, subtitles, badges, cards, HUD or technical overlays. NEVER film, animate or reproduce a storyboard sheet, reference sheet, collage, grid, panel border, thumbnail strip or document page. Keep every referenced subject visually consistent across the project — original characters/entities, not a public-figure imitation; ${settingSource} Every name and technical value in this prompt is INTERNAL production data only and must never be drawn.`;
   const character = ` Primary subject/cast: ${clean(params.characterDescription)}.`;
-  // MASTER-SHEET WORKFLOW: one storyboard sheet (all panels + char refs) is
-  // attached to every clip; this block tells Flow which panel THIS clip is,
-  // and forbids rendering the sheet's grid/borders/numbers in the output.
-  const panelMap =
-    params.panelNumber != null
-      ? ` STORYBOARD REFERENCE MAP: if a multi-panel STORYBOARD SHEET image is attached, it is a REFERENCE DOCUMENT — not the shot itself. Use its CHARACTER REFERENCE column to lock the character's face, hair and wardrobe, and use PANEL ${params.panelNumber} (the panel with the big number ${params.panelNumber} badge) as the staging reference for THIS clip: same positions, poses, framing and location as that one panel, brought to life as full-screen live footage. Animate ONLY panel ${params.panelNumber}'s moment — ignore every other panel. NEVER render the sheet itself: no grid, no panel borders, no number badges, no caption bands, no split-screen — the output is one single full-frame cinematic shot.`
-      : "";
   // TẦNG 0 — the locked world every entity in this clip must belong to.
-  const contextLock = worldContextLockBlock(params.worldContext);
+  const contextLock = worldContextLockBlock(
+    params.worldContext
+      ? { ...params.worldContext, allowed_language_text: "none — zero readable text anywhere" }
+      : params.worldContext
+  );
   // The scene doubles as the clip's START STATE: planting props here is what
   // stops objects materialising mid-clip (the jacket-teleport bug).
   const setting = params.setting
@@ -1500,7 +1482,7 @@ export function buildSegmentVeoPrompt(params: {
   const env = resolveEnvironment(params.environmentRef, params.setting);
   const envBlock = env ? ` ${renderEnvironmentBlock(env)}` : "";
   const product = params.productDescription
-    ? ` PRODUCT (keep its exact shape, colour, material and branding): ${clean(params.productDescription)}.`
+    ? ` PRODUCT VISUAL IDENTITY: ${clean(params.productDescription)} Keep its physical shape, colour and material, but all brand names, logos, lettering and packaging copy are internal identifiers only and must be visually blank/non-readable in the rendered video.`
     : "";
   const ing = params.ingredients ? ` INGREDIENTS (show and name each): ${clean(params.ingredients)}.` : "";
   // Style tokens are camera/render settings — flag them as internal so Veo
@@ -1597,7 +1579,7 @@ export function buildSegmentVeoPrompt(params: {
     }
   }
   const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
-  const assembled = `${lead}${character}${castLine}${panelMap}${contextLock}${setting}${envBlock}${product}${ing}${tokens}${palette}${intentBlock} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription, params.realityProfile, params.worldContext?.allowed_language_text)}`;
+  const assembled = `${lead}${character}${castLine}${contextLock}${setting}${envBlock}${product}${ing}${tokens}${palette}${intentBlock} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription, params.realityProfile)}`;
   // DEFINITIVE hex-code scrub: Veo cannot read hex and burns any "#A9C7E8"
   // next to a name onto the frame as a name tag. Hex serves the boards, never
   // the video prompt — remove EVERY hex token from the final Veo text here so
@@ -1681,7 +1663,7 @@ export function buildVideoPromptText(params: {
       return `SEGMENT ${s.segment_number} — "${s.title}" [${s.role.toUpperCase()}] (${s.duration_seconds}s)
   Beats:
 ${beats}
-  ▶ FULL PROMPT TO PASTE into Veo/Seedance image-to-video (attach your CHARACTER PHOTO as the reference):
+  ▶ FULL PROMPT TO PASTE into Veo/Seedance image-to-video (use the CLEAN KEYFRAME as start frame; character/location photos only in a separate Ingredients/References area):
     ${fullPrompt}
   Continuity: ${s.continuity_note}`;
     })
@@ -1699,16 +1681,16 @@ Spoken language: ${dialogueLanguage} (lip-synced, no on-screen subtitles)
 
 ## Character (keep visually consistent in every clip — paste this wording into every prompt)
 ${params.characterDescription.replace(/\s*\(?#[0-9A-Fa-f]{3,8}\)?/g, "").replace(/\s{2,}/g, " ").replace(/\s+([,.;)])/g, "$1")}
-Use the generated CHARACTER REFERENCE SHEET as a reference image in every clip so the appearance and wardrobe stay consistent. (Colour hex codes are omitted on purpose — the reference image locks the colours; hex text pasted into Veo gets burned onto the frame as a label.)
+Use the uploaded character/location portraits only through a separate Ingredients/References control when the video tool provides one. Never use a character sheet, storyboard board or master sheet as the image-to-video start frame. (Colour hex codes are omitted on purpose because they can be burned onto the frame as labels.)
 
 ## Setting
 ${params.setting.replace(/\s*\(?#[0-9A-Fa-f]{3,8}\)?/g, "").replace(/\s{2,}/g, " ")}
 Colour theme (for your reference only, do NOT paste into Veo): ${params.colorPalette.join(", ")}
 
 ## HOW TO BUILD THE VIDEO (seamless chaining)
-Each shot has TWO images: (a) a CLEAN KEYFRAME — one single photographic scene — and (b) a multi-panel STORYBOARD BOARD (character angles + scene + captioned action sequence).
-TIP: for the SHARPEST, most on-model character, feed Veo the CLEAN KEYFRAME as the start frame. The multi-panel board also works as a storyboard reference, but because the character appears small and repeated across panels the face can come out softer.
-1. For each shot, upload its image (the clean keyframe is recommended) to Veo/Seedance (image-to-video) as the START frame, then paste that shot's motion prompt. Set aspect ratio ${params.aspectRatio}.
+Each shot has a CLEAN KEYFRAME (one single photographic scene) plus a multi-panel STORYBOARD BOARD used only for human review and planning.
+CRITICAL: use ONLY the CLEAN KEYFRAME as the image-to-video START frame. NEVER upload the storyboard board/master sheet as a start frame; otherwise the model will animate the document, its grid and its text.
+1. For each shot, upload its clean keyframe to Veo/Seedance as the START frame, then paste that shot's motion prompt. Character/location portraits may be added only in a separate Ingredients/References area when the tool provides one. Set aspect ratio ${params.aspectRatio}.
 2. The clips chain: shot N is written to END exactly where shot N+1 begins. For the tightest joins (Veo 3.1) use the LAST frame of clip N as the start image of clip N+1, or Veo "Extend".
 3. Keep the spoken ${dialogueLanguage} line exactly as written so the lip-sync matches. Generate all ${params.segments.length} clips in order, then stitch them (CapCut/ffmpeg) and add the CTA end card.
 
@@ -1820,8 +1802,6 @@ export function buildVeoJson(
         : null;
     return {
       id: seg.segment_number,
-      // Which panel of the attached master storyboard sheet this clip animates.
-      storyboard_panel: seg.segment_number,
       role: seg.marketing_role,
       scene_intent: seg.scene_intent ?? null,
       duration_seconds: seg.duration_seconds ?? clipSeconds,
@@ -1857,6 +1837,8 @@ export function buildVeoJson(
           ? `ambient bed (constant across clips in this location): ${env.sound_bed}; plus the spoken dialogue; no music bed drowning the voice; no on-screen text`
           : "spoken dialogue only with natural ambient sound; no music unless noted; no on-screen text",
       continuity_from_previous: oneLine(seg.continuity_note),
+      on_screen_text:
+        "ZERO — clean full-screen footage only; no readable letters, words, names, ages, numbers, logos, labels, captions, subtitles, badges, cards, HUD or technical overlays",
       negative_prompt: VEO_NEGATIVE_LIST,
       // Flattened, fully self-contained prompt (text mode fallback).
       prompt: oneLine(seg.full_prompt ?? seg.motion_prompt ?? ""),
@@ -1867,10 +1849,27 @@ export function buildVeoJson(
     version: "veo-3.1",
     // Canonical project-level source of truth. It is never expanded per clip;
     // target compilers select only the relevant layer fragments.
-    context_ir: breakdown.context_ir ?? null,
+    context_ir: breakdown.context_ir
+      ? {
+          ...breakdown.context_ir,
+          layers: {
+            ...breakdown.context_ir.layers,
+            ontology: {
+              ...breakdown.context_ir.layers.ontology,
+              visible_text_policy: "none — zero readable text or graphics anywhere",
+            },
+            visual_language: {
+              ...breakdown.context_ir.layers.visual_language,
+              text_overlay_policy: "forbidden — zero text, labels, logos or overlays",
+            },
+          },
+        }
+      : null,
     // TẦNG 0 — the locked world context every clip must belong to
     // (Context-Locked Video DNA: open during design, locked during generation).
-    locked_world_context: breakdown.world_context ?? null,
+    locked_world_context: breakdown.world_context
+      ? { ...breakdown.world_context, allowed_language_text: "none — zero readable text anywhere" }
+      : null,
     // The frozen 9-layer constitution these prompts were compiled under.
     production_laws: lawsForVeoJson(),
     output: {
@@ -1880,9 +1879,9 @@ export function buildVeoJson(
       total_clips: clips.length,
     },
     reference_image:
-      "Attach TWO references to EVERY clip: (1) the SAME uploaded character photo as the identity reference, and (2) the MASTER STORYBOARD SHEET (storyboard_overview.png) as the staging reference — each clip's prompt names its own panel number on that sheet. Do NOT copy either image's own background/grid — build each clip's scene from its `scene` field; never render the sheet's panels, borders or number badges in the output.",
+      "IMAGE-TO-VIDEO START FRAME: use ONLY that clip's clean keyframe_NN.jpg. NEVER use storyboard_overview.png or any multi-panel board/reference sheet as a start frame. Character and location portraits may be attached only through a separate Ingredients/References control when available; they must never be rendered as a collage, document, grid or overlay.",
     on_screen_text:
-      "FORBIDDEN — the rendered frame contains ZERO readable text, letters, numbers or typography: no subtitles, captions, karaoke/lyric text, title cards, watermarks or logos. Every technical value in this JSON (lens mm, f-stop, Kelvin, lux, timecodes) is an internal camera/render setting — NEVER draw it as on-screen text, a spec card, HUD or corner overlay.",
+      "ABSOLUTELY FORBIDDEN — every rendered frame contains ZERO readable text or graphics: no letters, words, names, ages, numbers, labels, logos, subtitles, captions, karaoke/lyric text, title cards, badges, watermarks, HUD or technical data. Every value in this JSON is internal only and must never be drawn.",
     global_style: {
       look: oneLine(breakdown.style_guide?.art_direction) || "cinematic realistic",
       lens: oneLine(sb?.lens),

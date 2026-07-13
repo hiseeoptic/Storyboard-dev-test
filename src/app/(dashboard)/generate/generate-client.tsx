@@ -258,8 +258,8 @@ const t = {
     en: "Each shot is its OWN 10s clip. Do NOT paste the big guide into Veo.",
   },
   howToStep2: {
-    vi: "Với mỗi thẻ shot bên dưới: tải ảnh board của shot đó + đính kèm Character Sheet → đưa vào Veo (image-to-video).",
-    en: "For each shot card below: upload that shot's board image + attach the Character Sheet → into Veo (image-to-video).",
+    vi: "Với mỗi shot: tạo/tải KEYFRAME sạch của shot đó rồi đưa KEYFRAME vào Veo làm start frame. Tuyệt đối không dùng board nhiều ô hoặc bảng tổng làm start frame.",
+    en: "For each shot: generate/download its clean KEYFRAME and use that KEYFRAME as Veo's start frame. Never use a multi-panel board or master sheet as the start frame.",
   },
   howToStep3: {
     vi: "Bấm 'Copy' ở thẻ đó để lấy 'Prompt Veo đầy đủ' (1 khối liền — copy nguyên, không tách mục) → dán vào Veo → tạo clip.",
@@ -276,10 +276,10 @@ const t = {
   newStoryboard: { vi: "Tạo mới", en: "New" },
   segments: { vi: "đoạn", en: "segments" },
   downloadAll: { vi: "Tải tất cả (ZIP)", en: "Download all (ZIP)" },
-  segmentsTitle: { vi: "Các shot ảnh (mỗi shot = 1 board cho Veo)", en: "Shot boards (one board per 10s clip)" },
+  segmentsTitle: { vi: "Các shot ảnh và keyframe sạch", en: "Shot boards and clean keyframes" },
   segmentsHint: {
-    vi: "Mỗi thẻ = 1 BOARD của clip 10s gồm: dải tham chiếu nhân vật (các góc + biểu cảm), ảnh tổng quan cảnh/sản phẩm, và 3-5 ô hành động theo mốc thời gian. Tải board → đưa vào Veo làm ảnh tham chiếu + dán motion prompt. Board N kết thúc đúng nơi board N+1 bắt đầu nên các clip nối liền thành câu chuyện.",
-    en: "Each card = a BOARD for the 10s clip: a character reference strip (angles + expressions), a scene/product overview, and 3-5 time-frame action panels. Send the board to Veo as the reference + paste the motion prompt. Board N ends where board N+1 begins so the clips chain into one story.",
+    vi: "Board nhiều ô chỉ dùng để duyệt bố cục. Để tạo video, dùng KEYFRAME sạch một khung của đúng shot làm start frame rồi dán prompt. Không tải board hoặc bảng tổng vào ô image-to-video vì Flow sẽ quay lại nguyên tờ storyboard.",
+    en: "Multi-panel boards are for layout review only. To make video, use that shot's clean single-frame KEYFRAME as the start frame and paste its prompt. Never put a board/master sheet into image-to-video or Flow will animate the document itself.",
   },
   dialogueLabel: { vi: "Lời thoại", en: "Dialogue" },
   actionLabel: { vi: "Hành động", en: "Action" },
@@ -1352,12 +1352,9 @@ export function GenerateClient() {
     setProgressPercent(12);
 
     const segCount = breakdown.segments.length;
-    // MASTER-BOARD-CENTRIC FLOW (user-approved 2026-07-12): auto-draw ONE
-    // master storyboard sheet (all panels + big character refs) instead of
-    // one board per segment (~5× cheaper). In Flow, each clip attaches the
-    // SAME master sheet + the user's character photo, and every clip prompt
-    // carries a STORYBOARD REFERENCE MAP pointing at its own panel number.
-    // Per-segment boards remain available on demand from the result screen.
+    // Auto-draw one master sheet for human review and continuity planning.
+    // It is never used as an image-to-video start frame; each clip uses its
+    // own clean keyframe, available from the result screen.
     const total = 1;
     let done = 0;
     const bump = () => {
@@ -1389,9 +1386,8 @@ export function GenerateClient() {
       return null;
     };
 
-    // ONE master storyboard sheet for the whole video: all panels + the big
-    // character-reference column. This single image is what gets attached
-    // (with the user's character photo) to EVERY clip in Flow.
+    // One master storyboard sheet for the whole video: all panels + the large
+    // character-reference column. This remains a review/planning document.
     setProgressMessage(
       lang === "vi"
         ? `Đang vẽ bảng storyboard tổng (${segCount} cảnh trong 1 ảnh)`
@@ -1452,7 +1448,18 @@ export function GenerateClient() {
     );
   const updateSeg = (i: number, field: string, value: string) =>
     setDraft((d) =>
-      d ? { ...d, segments: d.segments.map((s, idx) => (idx === i ? { ...s, [field]: value } : s)) } : d
+      d
+        ? {
+            ...d,
+            segments: d.segments.map((s, idx) =>
+              idx === i
+                ? field === "dialogue"
+                  ? { ...s, dialogue: value, dialogue_lines: undefined }
+                  : { ...s, [field]: value }
+                : s
+            ),
+          }
+        : d
     );
 
   // TẦNG 9 turn-taking editor: set a segment's dialogue_lines array (and keep
@@ -1469,7 +1476,7 @@ export function GenerateClient() {
               idx === i
                 ? {
                     ...s,
-                    dialogue_lines: turns.length > 1 ? turns : undefined,
+                    dialogue_lines: turns.length > 0 ? turns : undefined,
                     dialogue: turns[0]?.text ?? (turns.length === 0 ? "" : s.dialogue),
                     speaker: turns[0]?.speaker ?? s.speaker,
                   }
@@ -1699,7 +1706,7 @@ export function GenerateClient() {
       for (const seg of bd.segments) {
         masterLines.push(
           `[SEGMENT ${seg.segment_number} — ${(seg.marketing_role || "").toUpperCase()} — ${seg.duration_seconds ?? 10}s]`,
-          `REFERENCE: ${seg.keyframe_url ? kf(seg.segment_number) : "ảnh nhân vật bạn tải lên (character photo)"}`,
+          `START FRAME: ${seg.keyframe_url ? kf(seg.segment_number) : "CHƯA CÓ — hãy tạo keyframe sạch cho clip này; không dùng storyboard_overview.png"}`,
           `PROMPT: ${oneLine(seg.full_prompt ?? seg.motion_prompt ?? "")}`,
         );
         if (seg.dialogue) {
@@ -1779,18 +1786,19 @@ export function GenerateClient() {
         "CÁCH DÙNG BỘ PROMPT NÀY VỚI VEO / OMNI FLASH",
         "=============================================",
         "",
-        "Mỗi clip 10s làm ĐỘC LẬP. Với TỪNG clip đính kèm 2 ẢNH THAM CHIẾU GIỐNG NHAU:",
-        "  1) Mở Veo/Flow (image-to-video), đính kèm: ① ẢNH NHÂN VẬT của bạn (khoá mặt)",
-        "     + ② BẢNG STORYBOARD TỔNG (file storyboard_overview.png — khoá dàn cảnh).",
-        "     Cả " + bd.segments.length + " clip dùng CHUNG đúng 2 ảnh này, không cần vẽ board riêng từng cảnh.",
+        "Mỗi clip 10s làm ĐỘC LẬP:",
+        "  1) Mở Veo/Flow (image-to-video) và dùng KEYFRAME SẠCH của đúng clip",
+        "     (file keyframe_NN.jpg) làm START FRAME.",
+        "     TUYỆT ĐỐI KHÔNG dùng storyboard_overview.png hoặc board nhiều ô làm start frame",
+        "     vì Flow sẽ tạo video ngay bên trong tờ storyboard và có thể chép chữ/nhãn lên hình.",
+        "     Ảnh nhân vật/bối cảnh chỉ thêm ở mục Ingredients/References riêng nếu Flow có mục đó.",
         "  2) Dán ĐÚNG phần prompt của clip đó (dòng PROMPT trong master_prompt.txt,",
-        "     hoặc trường \"prompt\" của segment trong veo_prompts.json). Prompt đã tự trỏ",
-        "     đúng SỐ PANEL của clip đó trên bảng tổng (STORYBOARD REFERENCE MAP).",
+        "     hoặc trường \"prompt\" của segment trong veo_prompts.json).",
         "  3) Đặt tỉ lệ " + aspect + ", tạo clip. Lặp cho " + bd.segments.length + " clip rồi ghép (CapCut/ffmpeg).",
         "",
         "KHÔNG cần copy phần đầu JSON (title / character_locks / scene_bible / style_guide)",
         "vào Veo — mỗi prompt segment đã TỰ CHỨA đầy đủ nhân vật + bối cảnh + phong cách.",
-        "Không cần tạo keyframe riêng.",
+        "Mỗi clip cần một keyframe sạch nếu dùng chế độ image-to-video.",
         "",
         "\"continuity\" / \"Nối tiếp\": chỉ là GHI CHÚ cho bạn biết clip này nối với clip trước thế nào",
         "(để ghép mượt) — KHÔNG dán vào Veo. Segment 1 ghi 'opening shot' vì là cảnh mở đầu.",
@@ -1973,8 +1981,8 @@ export function GenerateClient() {
                       onClick={() => rewriteScene(i)}
                       title={
                         lang === "vi"
-                          ? "Sửa/thêm thoại xong, bấm để AI viết lại hành động + căn giờ của RIÊNG cảnh này cho khớp thoại mới (các cảnh khác giữ nguyên)."
-                          : "After editing the dialogue, let the AI re-write JUST this scene's action + timing to match (other scenes untouched)."
+                          ? "Không bắt buộc để lưu câu thoại. Chỉ bấm khi bạn muốn AI căn lại hành động + thời gian của riêng cảnh này theo thoại mới."
+                          : "Not required to save dialogue. Use only when you want AI to re-time this scene's action around the new lines."
                       }
                     >
                       {rewriteTarget === i ? (
@@ -1984,7 +1992,7 @@ export function GenerateClient() {
                       )}
                       {rewriteTarget === i
                         ? lang === "vi" ? "Đang viết lại..." : "Rewriting..."
-                        : lang === "vi" ? "Viết lại cảnh theo thoại" : "Rewrite scene to dialogue"}
+                        : lang === "vi" ? "Căn lại cảnh theo thoại" : "Re-time scene to dialogue"}
                     </Button>
                   </div>
                 </div>
@@ -2083,8 +2091,8 @@ export function GenerateClient() {
                         ))}
                         <p className="text-[11px] text-muted-foreground">
                           {lang === "vi"
-                            ? "Lần lượt từng người nói (không chồng tiếng), tự canh giờ gọn trong 10s. Thoại dài quá thì tách sang cảnh sau. Máy quay tự bám mặt người đang nói. 💡 Sau khi sửa/thêm thoại, bấm 'Viết lại cảnh theo thoại' ở góc trên để AI dựng lại hành động cho khớp."
-                            : "Speakers take turns (no overlap), auto-timed within 10s. Overflow spills to the next scene. Camera follows whoever speaks. 💡 After editing turns, hit 'Rewrite scene to dialogue' above so the AI re-choreographs the action to match."}
+                            ? "Câu đang hiển thị sẽ tự đi vào prompt khi bấm 'Dựng Storyboard', không cần bấm nút căn lại. Chỉ bấm 'Căn lại cảnh theo thoại' nếu bạn muốn AI sửa hành động và thời gian cho khớp câu mới."
+                            : "The lines shown here automatically go into the prompt when you click 'Build storyboard'; no extra save step is needed. Use 'Re-time scene to dialogue' only to update action and timing around the new lines."}
                         </p>
                       </div>
                     );
@@ -2237,8 +2245,8 @@ export function GenerateClient() {
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? `⭐ TẤM THAM CHIẾU CHÍNH cho Flow: với TỪNG clip, đính kèm ẢNH NHÂN VẬT của bạn + TẤM NÀY (1 ảnh dùng chung cho cả ${result.breakdown.segments.length} clip). Prompt mỗi clip đã tự trỏ đúng số panel của nó trên tấm này — Flow sẽ dựng cảnh theo panel đó, không hiện lưới.`
-                  : `⭐ THE reference sheet for Flow: for EACH clip, attach YOUR character photo + THIS sheet (one image shared by all ${result.breakdown.segments.length} clips). Every clip's prompt already points at its own panel number — Flow stages that panel without rendering the grid.`}
+                  ? "⚠️ BẢNG DUYỆT BỐ CỤC, KHÔNG ĐƯA VÀO IMAGE-TO-VIDEO. Nếu dùng tấm nhiều ô này làm start frame, Flow sẽ quay lại nguyên tờ storyboard. Hãy dùng keyframe sạch của từng shot ở bên dưới."
+                  : "⚠️ LAYOUT REVIEW ONLY. DO NOT PUT THIS INTO IMAGE-TO-VIDEO. Using this multi-panel sheet as a start frame makes Flow animate the storyboard document. Use each shot's clean keyframe below instead."}
               </p>
             </CardContent>
           </Card>
@@ -2251,8 +2259,8 @@ export function GenerateClient() {
               </p>
               <p className="mt-1 max-w-md text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? "Đây là TẤM THAM CHIẾU CHÍNH đính kèm cho từng clip trong Flow (cùng ảnh nhân vật của bạn) — hãy bấm tạo lại để có nó trước khi dựng video."
-                  : "This is THE reference sheet you attach to every clip in Flow (with your character photo) — retry generating it before making the video."}
+                  ? "Bảng tổng chỉ dùng để duyệt bố cục và tính liên tục, không phải ảnh start frame cho Flow."
+                  : "The master sheet is only for layout and continuity review, not a Flow start frame."}
               </p>
               {boardErrors["master"] && (
                 <p className="mt-1 max-w-md text-xs text-destructive/80">{boardErrors["master"]}</p>
@@ -2436,11 +2444,11 @@ export function GenerateClient() {
                     )}
                   </div>
 
-                  {/* Clean keyframe — THE image to feed Veo (the multi-panel board above is review-only) */}
+                  {/* Clean keyframe — the only image used as Veo's start frame. */}
                   <div className="rounded-md border-2 border-primary/50 bg-primary/5 p-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[11px] font-bold uppercase text-primary">
-                        {lang === "vi" ? "✅ Keyframe — nhân vật nét nhất cho Veo" : "✅ Keyframe — sharpest character for Veo"}
+                        {lang === "vi" ? "✅ START FRAME CHO VEO — KEYFRAME SẠCH" : "✅ VEO START FRAME — CLEAN KEYFRAME"}
                       </p>
                       <div className="flex gap-1.5">
                         <Button
@@ -2455,7 +2463,9 @@ export function GenerateClient() {
                           ) : (
                             <RotateCw className="h-3 w-3" />
                           )}
-                          {lang === "vi" ? "Tạo lại" : "Redo"}
+                          {seg.keyframe_url
+                            ? lang === "vi" ? "Tạo lại" : "Redo"
+                            : lang === "vi" ? "Tạo keyframe" : "Generate keyframe"}
                         </Button>
                         {seg.keyframe_url && (
                           <Button
@@ -2482,8 +2492,8 @@ export function GenerateClient() {
                     )}
                     <p className="mt-1 text-[10px] font-medium text-primary/80">
                       {lang === "vi"
-                        ? "⬆️ Đẩy ảnh này vào Veo (image-to-video) để nhân vật nét & giống nhất. Board ở trên cũng dùng được, nhưng mặt thường mềm hơn."
-                        : "⬆️ Feed this into Veo (image-to-video) for the sharpest, most on-model character. The board above also works, but faces tend to come out softer."}
+                        ? "⬆️ Chỉ dùng ảnh sạch này làm start frame trong Veo. Không dùng board nhiều ô hoặc bảng tổng làm start frame."
+                        : "⬆️ Use only this clean image as Veo's start frame. Never use the multi-panel board or master sheet as the start frame."}
                     </p>
                   </div>
                 </CardContent>
