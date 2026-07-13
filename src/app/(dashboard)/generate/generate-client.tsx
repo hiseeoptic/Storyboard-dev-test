@@ -258,8 +258,8 @@ const t = {
     en: "Each shot is its OWN 10s clip. Do NOT paste the big guide into Veo.",
   },
   howToStep2: {
-    vi: "Với mỗi shot: tạo/tải KEYFRAME sạch của shot đó rồi đưa KEYFRAME vào Veo làm start frame. Tuyệt đối không dùng board nhiều ô hoặc bảng tổng làm start frame.",
-    en: "For each shot: generate/download its clean KEYFRAME and use that KEYFRAME as Veo's start frame. Never use a multi-panel board or master sheet as the start frame.",
+    vi: "Dùng prompt JSON của từng cảnh trong Text-to-Video hoặc Ingredients/References. Chỉ cần 1 storyboard tổng để duyệt; không bắt buộc tạo keyframe AI cho từng cảnh.",
+    en: "Use each scene's JSON prompt in Text-to-Video or Ingredients/References. One master storyboard is enough for review; AI keyframes are optional.",
   },
   howToStep3: {
     vi: "Bấm 'Copy' ở thẻ đó để lấy 'Prompt Veo đầy đủ' (1 khối liền — copy nguyên, không tách mục) → dán vào Veo → tạo clip.",
@@ -278,8 +278,8 @@ const t = {
   downloadAll: { vi: "Tải tất cả (ZIP)", en: "Download all (ZIP)" },
   segmentsTitle: { vi: "Các shot ảnh và keyframe sạch", en: "Shot boards and clean keyframes" },
   segmentsHint: {
-    vi: "Board nhiều ô chỉ dùng để duyệt bố cục. Để tạo video, dùng KEYFRAME sạch một khung của đúng shot làm start frame rồi dán prompt. Không tải board hoặc bảng tổng vào ô image-to-video vì Flow sẽ quay lại nguyên tờ storyboard.",
-    en: "Multi-panel boards are for layout review only. To make video, use that shot's clean single-frame KEYFRAME as the start frame and paste its prompt. Never put a board/master sheet into image-to-video or Flow will animate the document itself.",
+    vi: "Storyboard tổng dùng để duyệt bố cục. Tạo video bằng prompt JSON từng cảnh; ảnh nhân vật/bối cảnh đưa vào Ingredients/References nếu có. Nếu dùng Frames-to-Video, có thể crop miễn phí đúng ô cảnh từ bảng tổng; keyframe AI chỉ là tùy chọn.",
+    en: "Use the master storyboard for layout review and each scene's JSON to generate video. Add character/location images through Ingredients/References. For Frames-to-Video, crop the matching panel from the master for free; AI keyframes are optional.",
   },
   dialogueLabel: { vi: "Lời thoại", en: "Dialogue" },
   actionLabel: { vi: "Hành động", en: "Action" },
@@ -801,6 +801,7 @@ export function GenerateClient() {
   const [progressMessage, setProgressMessage] = useState("");
   const [result, setResult] = useState<StoryboardResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedJson, setCopiedJson] = useState<string | null>(null);
 
   // Kept after a build so any board can be reviewed and re-rendered on demand
   // (the quality-review/redo gate) without rebuilding the whole storyboard.
@@ -1706,7 +1707,7 @@ export function GenerateClient() {
       for (const seg of bd.segments) {
         masterLines.push(
           `[SEGMENT ${seg.segment_number} — ${(seg.marketing_role || "").toUpperCase()} — ${seg.duration_seconds ?? 10}s]`,
-          `START FRAME: ${seg.keyframe_url ? kf(seg.segment_number) : "CHƯA CÓ — hãy tạo keyframe sạch cho clip này; không dùng storyboard_overview.png"}`,
+          `OPTIONAL START FRAME: ${seg.keyframe_url ? kf(seg.segment_number) : "crop đúng ô cảnh từ storyboard_overview.png hoặc dùng Text-to-Video/Ingredients"}`,
           `PROMPT: ${oneLine(seg.full_prompt ?? seg.motion_prompt ?? "")}`,
         );
         if (seg.dialogue) {
@@ -1724,25 +1725,32 @@ export function GenerateClient() {
         .join("\n\n");
       zip.file(`prompts.txt`, promptsOnly);
 
-      // ── Structured Veo 3.1 JSON (veoflow-style) — the primary deliverable ──
-      // A shared header (style / continuity / negative) + one STRUCTURED object
-      // per clip (scene / subject / shot / timeline / dialogue / negative). Veo
-      // Flow parses this far more reliably than a flat paragraph. Each clip also
-      // keeps a flattened self-contained `prompt` for text-mode users.
+      // ── Structured Flow/Veo JSON — one concise, independent object per clip. ──
       const veoJson = buildVeoJson(bd, {
         aspectRatio: aspect,
         dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
         ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
       });
       zip.file(`veo_prompts.json`, JSON.stringify(veoJson, null, 2));
-      // JSON Lines: one clip object per line — drop straight into a Veo batch flow.
       const clipArr = Array.isArray((veoJson as { clips?: unknown[] }).clips)
         ? ((veoJson as { clips: unknown[] }).clips as unknown[])
         : [];
+      // Human-readable blocks: one pretty JSON object, blank line, next object.
+      zip.file(
+        `veo_prompts_blocks.txt`,
+        clipArr.map((clip) => JSON.stringify(clip, null, 2)).join("\n\n")
+      );
+      // JSON Lines: exactly one complete compact prompt per physical line for
+      // bulk splitters/automation tools.
       zip.file(
         `veo_prompts.jsonl`,
         clipArr.map((c) => JSON.stringify(c)).join("\n")
       );
+      // Also provide one standalone JSON file per scene for direct copy/paste.
+      clipArr.forEach((clip, index) => {
+        const sceneNumber = String(index + 1).padStart(2, "0");
+        zip.file(`veo_json/scene_${sceneNumber}.json`, JSON.stringify(clip, null, 2));
+      });
 
       // ── Ready-to-post social captions (TikTok / YT Shorts / FB Reels) ──
       // Written by the AI together with the script, so each caption references
@@ -1786,19 +1794,18 @@ export function GenerateClient() {
         "CÁCH DÙNG BỘ PROMPT NÀY VỚI VEO / OMNI FLASH",
         "=============================================",
         "",
-        "Mỗi clip 10s làm ĐỘC LẬP:",
-        "  1) Mở Veo/Flow (image-to-video) và dùng KEYFRAME SẠCH của đúng clip",
-        "     (file keyframe_NN.jpg) làm START FRAME.",
-        "     TUYỆT ĐỐI KHÔNG dùng storyboard_overview.png hoặc board nhiều ô làm start frame",
-        "     vì Flow sẽ tạo video ngay bên trong tờ storyboard và có thể chép chữ/nhãn lên hình.",
-        "     Ảnh nhân vật/bối cảnh chỉ thêm ở mục Ingredients/References riêng nếu Flow có mục đó.",
-        "  2) Dán ĐÚNG phần prompt của clip đó (dòng PROMPT trong master_prompt.txt,",
-        "     hoặc trường \"prompt\" của segment trong veo_prompts.json).",
+        "Mỗi clip làm ĐỘC LẬP nhưng chỉ cần 1 storyboard tổng để duyệt:",
+        "  1) Ưu tiên Text-to-Video hoặc Ingredients/References và dán JSON của đúng cảnh.",
+        "     Ảnh nhân vật/bối cảnh thêm ở mục Ingredients/References nếu Flow có mục đó.",
+        "     Nếu dùng Frames-to-Video, crop miễn phí đúng ô cảnh từ storyboard_overview.png",
+        "     rồi dùng ảnh crop làm start frame; KHÔNG dùng cả bảng nhiều ô làm start frame.",
+        "  2) Dán ĐÚNG một object cảnh: file veo_json/scene_NN.json, một khối trong",
+        "     veo_prompts_blocks.txt, hoặc một dòng tương ứng trong veo_prompts.jsonl.",
         "  3) Đặt tỉ lệ " + aspect + ", tạo clip. Lặp cho " + bd.segments.length + " clip rồi ghép (CapCut/ffmpeg).",
         "",
-        "KHÔNG cần copy phần đầu JSON (title / character_locks / scene_bible / style_guide)",
-        "vào Veo — mỗi prompt segment đã TỰ CHỨA đầy đủ nhân vật + bối cảnh + phong cách.",
-        "Mỗi clip cần một keyframe sạch nếu dùng chế độ image-to-video.",
+        "Mỗi object cảnh đã TỰ CHỨA character_lock + background_lock + camera + hành động",
+        "+ âm thanh + dialogue. Chỉ dán MỘT object cho mỗi lần tạo video.",
+        "Không bắt buộc tạo keyframe AI; keyframe chỉ là lựa chọn thêm khi cần ảnh khởi đầu nét hơn.",
         "",
         "\"continuity\" / \"Nối tiếp\": chỉ là GHI CHÚ cho bạn biết clip này nối với clip trước thế nào",
         "(để ghép mượt) — KHÔNG dán vào Veo. Segment 1 ghi 'opening shot' vì là cảnh mở đầu.",
@@ -1807,14 +1814,13 @@ export function GenerateClient() {
         "  - prompts.txt        → GỌN NHẤT: chỉ có các prompt, mỗi prompt cách nhau 1 dòng",
         "      trống, KHÔNG tiêu đề/giới thiệu. Đưa thẳng file này vào tool tạo video, hoặc",
         "      copy từng đoạn (mỗi đoạn = 1 clip) rồi dán vào Veo (đính kèm ảnh nhân vật).",
-        "  - veo_prompts.json   → CHUẨN cho Veo Flow (JSON mode). Có phần đầu dùng chung",
-        "      (global_style / continuity / negative_prompt) + mảng \"clips\": mỗi clip là 1",
-        "      object có cấu trúc rõ ràng (scene / subject / shot / timeline / dialogue /",
-        "      negative_prompt). Dán cả object của clip vào ô JSON của Veo Flow — Veo hiểu",
-        "      từng trường nên ảnh ổn định, ÍT bị morphing/warping/teleport.",
-        "  - veo_prompts.jsonl  → mỗi dòng = 1 clip (JSON) — cho batch / tự động.",
-        "  - master_prompt.txt  → nếu Veo dùng chế độ TEXT: mỗi clip dán trường \"prompt\"",
-        "      (đã tự chứa đủ nhân vật + bối cảnh + phong cách + negative).",
+        "  - veo_prompts.json   → toàn bộ project, mảng \"clips\" chứa các prompt JSON gọn.",
+        "  - veo_prompts_blocks.txt → từng object JSON được xuống dòng đẹp, cách nhau 1 dòng",
+        "      trống; dùng để đọc và copy thủ công từng cảnh.",
+        "  - veo_prompts.jsonl  → mỗi DÒNG VẬT LÝ = 1 prompt JSON hoàn chỉnh; dùng để copy",
+        "      hàng loạt hoặc đưa vào công cụ tự chia dòng/batch.",
+        "  - veo_json/scene_NN.json → một file JSON độc lập cho từng cảnh, dán nguyên object.",
+        "  - master_prompt.txt  → bản prompt văn bản cũ dự phòng khi không dùng JSON.",
         "  - bai_dang_social.txt→ BÀI ĐĂNG viết sẵn cho TikTok / YouTube Shorts / Facebook",
         "      Reels (caption + hashtag SEO, bám đúng nội dung video này) — copy khi đăng.",
         "  - thumbnail_9x16.png → ẢNH BÌA dọc 9:16 (nếu bạn đã bấm 'Tạo thumbnail'): tiêu đề",
@@ -2123,6 +2129,23 @@ export function GenerateClient() {
     const hasCharSheet = !!result.characterRefSheetUrl;
     const hasPoster = !!result.storyboardPosterUrl;
     const hasWarnings = result.warnings && result.warnings.length > 0;
+    const resultVeoJson = buildVeoJson(result.breakdown, {
+      aspectRatio: genInput?.aspect_ratio ?? "9:16",
+      dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+      ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
+    });
+    const resultJsonClips = Array.isArray((resultVeoJson as { clips?: unknown[] }).clips)
+      ? ((resultVeoJson as { clips: unknown[] }).clips as unknown[])
+      : [];
+    const resultJsonLines = resultJsonClips.map((clip) => JSON.stringify(clip)).join("\n");
+    const resultJsonBlocks = resultJsonClips
+      .map((clip) => JSON.stringify(clip, null, 2))
+      .join("\n\n");
+    const copyJson = (key: string, text: string) => {
+      navigator.clipboard.writeText(text);
+      setCopiedJson(key);
+      setTimeout(() => setCopiedJson(null), 2000);
+    };
 
     return (
       <div className="space-y-8">
@@ -2245,8 +2268,8 @@ export function GenerateClient() {
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? "⚠️ BẢNG DUYỆT BỐ CỤC, KHÔNG ĐƯA VÀO IMAGE-TO-VIDEO. Nếu dùng tấm nhiều ô này làm start frame, Flow sẽ quay lại nguyên tờ storyboard. Hãy dùng keyframe sạch của từng shot ở bên dưới."
-                  : "⚠️ LAYOUT REVIEW ONLY. DO NOT PUT THIS INTO IMAGE-TO-VIDEO. Using this multi-panel sheet as a start frame makes Flow animate the storyboard document. Use each shot's clean keyframe below instead."}
+                  ? "Đây là storyboard tổng duy nhất để duyệt toàn bộ video. Không dùng nguyên bảng nhiều ô làm start frame; khi cần Frames-to-Video, crop đúng ô cảnh từ bảng này mà không tốn thêm lượt tạo ảnh AI."
+                  : "This is the single master storyboard for reviewing the whole video. Do not use the full multi-panel sheet as a start frame; crop the matching panel for Frames-to-Video without paying for another AI image."}
               </p>
             </CardContent>
           </Card>
@@ -2444,11 +2467,11 @@ export function GenerateClient() {
                     )}
                   </div>
 
-                  {/* Clean keyframe — the only image used as Veo's start frame. */}
+                  {/* Optional clean keyframe for users who want an extra AI-generated start frame. */}
                   <div className="rounded-md border-2 border-primary/50 bg-primary/5 p-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[11px] font-bold uppercase text-primary">
-                        {lang === "vi" ? "✅ START FRAME CHO VEO — KEYFRAME SẠCH" : "✅ VEO START FRAME — CLEAN KEYFRAME"}
+                        {lang === "vi" ? "Keyframe sạch tùy chọn" : "Optional clean keyframe"}
                       </p>
                       <div className="flex gap-1.5">
                         <Button
@@ -2486,14 +2509,14 @@ export function GenerateClient() {
                         {keyframeBusy === result.breakdown.segments.indexOf(seg) ? (
                           <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {lang === "vi" ? "Đang tạo..." : "Generating..."}</>
                         ) : (
-                          <span>{lang === "vi" ? "Chưa có — bấm Tạo lại" : "Missing — press Redo"}</span>
+                          <span>{lang === "vi" ? "Chưa tạo (không bắt buộc)" : "Not generated (optional)"}</span>
                         )}
                       </div>
                     )}
                     <p className="mt-1 text-[10px] font-medium text-primary/80">
                       {lang === "vi"
-                        ? "⬆️ Chỉ dùng ảnh sạch này làm start frame trong Veo. Không dùng board nhiều ô hoặc bảng tổng làm start frame."
-                        : "⬆️ Use only this clean image as Veo's start frame. Never use the multi-panel board or master sheet as the start frame."}
+                        ? "Không bắt buộc tạo ảnh này. Bạn có thể dùng prompt JSON với Text-to-Video/Ingredients hoặc crop ô cảnh từ storyboard tổng để tiết kiệm chi phí."
+                        : "This image is optional. Use the JSON prompt with Text-to-Video/Ingredients or crop the scene panel from the master storyboard to save cost."}
                     </p>
                   </div>
                 </CardContent>
@@ -2501,6 +2524,60 @@ export function GenerateClient() {
             ))}
           </div>
         </div>
+
+        {/* Structured Flow/Veo JSON prompts */}
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Film className="h-5 w-5" />
+                  {lang === "vi" ? "Prompt JSON cho Flow / Veo" : "Flow / Veo JSON prompts"}
+                </CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Mỗi object là một cảnh độc lập. Copy hàng loạt dùng JSONL: đúng một prompt trên mỗi dòng để công cụ batch tự chia."
+                    : "Each object is one independent scene. Bulk copy uses JSONL: exactly one prompt per line for automatic batch splitting."}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => copyJson("all", resultJsonLines)}
+                className="gap-1.5"
+              >
+                {copiedJson === "all" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copiedJson === "all"
+                  ? lang === "vi" ? "Đã copy" : "Copied"
+                  : lang === "vi" ? "Copy hàng loạt JSONL" : "Copy all JSONL"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {resultJsonClips.map((clip, index) => {
+                const key = `scene-${index + 1}`;
+                return (
+                  <Button
+                    key={key}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => copyJson(key, JSON.stringify(clip, null, 2))}
+                    className="gap-1.5"
+                  >
+                    {copiedJson === key ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copiedJson === key
+                      ? lang === "vi" ? `Đã copy cảnh ${index + 1}` : `Copied scene ${index + 1}`
+                      : lang === "vi" ? `Copy cảnh ${index + 1}` : `Copy scene ${index + 1}`}
+                  </Button>
+                );
+              })}
+            </div>
+            <pre className="max-h-96 overflow-auto whitespace-pre rounded-lg bg-muted p-4 text-xs font-mono">
+              {resultJsonBlocks}
+            </pre>
+          </CardContent>
+        </Card>
 
         {/* Assembly Guide */}
         <Card>

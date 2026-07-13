@@ -8,7 +8,6 @@ import type {
 import {
   resolveEnvironment,
   renderEnvironmentBlock,
-  environmentToJson,
   environmentCatalogForPrompt,
 } from "@/lib/environment";
 import {
@@ -16,7 +15,6 @@ import {
   clipMotionLawLine,
   clipCameraLawLine,
   clipAudioLawLine,
-  lawsForVeoJson,
   defaultVoiceFor,
   worldContextLockBlock,
 } from "@/lib/laws";
@@ -1663,7 +1661,7 @@ export function buildVideoPromptText(params: {
       return `SEGMENT ${s.segment_number} — "${s.title}" [${s.role.toUpperCase()}] (${s.duration_seconds}s)
   Beats:
 ${beats}
-  ▶ FULL PROMPT TO PASTE into Veo/Seedance image-to-video (use the CLEAN KEYFRAME as start frame; character/location photos only in a separate Ingredients/References area):
+  ▶ FULL TEXT PROMPT TO PASTE into Veo/Seedance (character/location photos belong in a separate Ingredients/References area):
     ${fullPrompt}
   Continuity: ${s.continuity_note}`;
     })
@@ -1681,16 +1679,15 @@ Spoken language: ${dialogueLanguage} (lip-synced, no on-screen subtitles)
 
 ## Character (keep visually consistent in every clip — paste this wording into every prompt)
 ${params.characterDescription.replace(/\s*\(?#[0-9A-Fa-f]{3,8}\)?/g, "").replace(/\s{2,}/g, " ").replace(/\s+([,.;)])/g, "$1")}
-Use the uploaded character/location portraits only through a separate Ingredients/References control when the video tool provides one. Never use a character sheet, storyboard board or master sheet as the image-to-video start frame. (Colour hex codes are omitted on purpose because they can be burned onto the frame as labels.)
+Use the uploaded character/location portraits through a separate Ingredients/References control when the video tool provides one. The single master storyboard is for review; if Frames-to-Video needs a start frame, crop the matching scene panel from it instead of uploading the whole sheet. (Colour hex codes are omitted because they can be burned onto the frame as labels.)
 
 ## Setting
 ${params.setting.replace(/\s*\(?#[0-9A-Fa-f]{3,8}\)?/g, "").replace(/\s{2,}/g, " ")}
 Colour theme (for your reference only, do NOT paste into Veo): ${params.colorPalette.join(", ")}
 
 ## HOW TO BUILD THE VIDEO (seamless chaining)
-Each shot has a CLEAN KEYFRAME (one single photographic scene) plus a multi-panel STORYBOARD BOARD used only for human review and planning.
-CRITICAL: use ONLY the CLEAN KEYFRAME as the image-to-video START frame. NEVER upload the storyboard board/master sheet as a start frame; otherwise the model will animate the document, its grid and its text.
-1. For each shot, upload its clean keyframe to Veo/Seedance as the START frame, then paste that shot's motion prompt. Character/location portraits may be added only in a separate Ingredients/References area when the tool provides one. Set aspect ratio ${params.aspectRatio}.
+The project needs only ONE master storyboard for human review and planning. Per-scene AI keyframes are optional.
+1. Prefer Text-to-Video or Ingredients/References and paste the scene's structured JSON/text prompt. Character/location portraits belong in the separate Ingredients/References area. For Frames-to-Video, crop the matching panel from the master storyboard and use that crop as the start frame; NEVER upload the whole multi-panel sheet as a start frame. Set aspect ratio ${params.aspectRatio}.
 2. The clips chain: shot N is written to END exactly where shot N+1 begins. For the tightest joins (Veo 3.1) use the LAST frame of clip N as the start image of clip N+1, or Veo "Extend".
 3. Keep the spoken ${dialogueLanguage} line exactly as written so the lip-sync matches. Generate all ${params.segments.length} clips in order, then stitch them (CapCut/ffmpeg) and add the CTA end card.
 
@@ -1718,12 +1715,8 @@ interface VeoJsonOptions {
   ambientAudio?: string;
 }
 
-/**
- * Build a structured Veo-3.1 JSON project from a finished breakdown. Returns a
- * plain object (caller serialises it). Every clip carries structured fields
- * (scene / subject / shot / timeline / dialogue / negative) PLUS a flattened
- * self-contained `prompt` string for users who paste plain text.
- */
+/** Build concise, paste-ready Flow/Veo JSON objects using the user's proven
+ * scene schema. Analysis-only metadata stays out of the prompt payload. */
 export function buildVeoJson(
   breakdown: StoryboardGenerationOutput,
   opts: VeoJsonOptions
@@ -1741,167 +1734,191 @@ export function buildVeoJson(
       .trim();
   const lang = opts.dialogueLanguage ?? "Vietnamese";
   const locks = breakdown.character_locks ?? [];
-  const clipSeconds = 10;
-
-  const characters = locks.map((l) => ({
-    name: l.name,
-    gender: l.gender ?? "",
-    is_child: !!l.is_child,
-    // TẦNG 9: full locked voice profile (never a bare reference).
-    voice: oneLine(l.voice) || defaultVoiceFor(l.gender, l.is_child),
-    appearance: [l.gender_age, l.build, l.skin_tone, l.hair, l.eyes]
-      .map((x) => noHex(x))
-      .filter(Boolean)
-      .join(", "),
-    // Forensic realism locks (ported from veoflow-web) — keep skin/eyes/materials
-    // real, not CGI, across every clip.
-    skin_texture: noHex(l.skin_texture),
-    eye_details: noHex(l.eye_details),
-    wardrobe: noHex(l.costume),
-    wardrobe_materials: noHex(l.wardrobe_materials),
-    signature_features: noHex(l.signature_features),
-    default_expression: oneLine(l.default_expression),
-    dna: noHex(l.dna),
-  }));
-
   const sb = breakdown.scene_bible;
+  const culture = oneLine(breakdown.world_context?.culture);
+  const charIds = new Map(
+    locks.map((lock, index) => [lock.name.trim().toLowerCase(), `CHAR_${index + 1}`])
+  );
+  const splitOutfit = (costume?: string) => {
+    const parts = noHex(costume)
+      .split(/[,;]\s*/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    return {
+      top: parts[0] || "Match the attached character reference",
+      bottom: parts.slice(1).join(", ") || "Match the attached character reference",
+    };
+  };
+  const cameraParts = (cameraText: string) => {
+    const lower = cameraText.toLowerCase();
+    const framing = /extreme close|ecu/.test(lower)
+      ? "ECU"
+      : /close|\bcu\b/.test(lower)
+        ? "CU"
+        : /medium|\bms\b/.test(lower)
+          ? "MS"
+          : /wide|\bws\b|establish/.test(lower)
+            ? "WS"
+            : "MS";
+    const angle = /low angle|\blow\b/.test(lower)
+      ? "low angle"
+      : /high angle|overhead|top-down/.test(lower)
+        ? "high angle"
+        : "eye level";
+    const movement = /static|locked/.test(lower)
+      ? "static"
+      : cameraText || "single slow, smooth camera move";
+    return { framing, angle, movement };
+  };
 
   const clips = breakdown.segments.map((seg) => {
     const beats = Array.isArray(seg.beats) ? seg.beats : [];
-    const n = Math.max(1, beats.length);
-    // Split the 10s clip evenly across the beats so each gets a timecode.
-    const timeline = beats.map((b, i) => {
-      const start = Math.round((i * clipSeconds) / n);
-      const end = Math.round(((i + 1) * clipSeconds) / n);
-      return {
-        time: `${start}-${end}s`,
-        camera: oneLine(b.camera),
-        action: oneLine(b.beat),
-      };
-    });
-    const speaker = oneLine(seg.speaker) || characters[0]?.name || "";
-    // Locked world spec for this clip (veoflow-web environment master_state).
+    const clipSeconds = Math.max(1, seg.duration_seconds || 10);
+    const speaker = oneLine(seg.speaker);
     const env = resolveEnvironment(seg.environment_ref, seg.first_frame_prompt);
     const onScreen = (seg.characters_in_scene ?? []).map((n) => oneLine(n)).filter(Boolean);
-    const voiceFor = (nm: string) => characters.find((c) => c.name === nm)?.voice ?? null;
-    // TẦNG 9 turn-taking: timed, non-overlapping spoken turns (each with its
-    // locked voice) so a short exchange fits one clip.
-    const turns = (seg.dialogue_lines ?? []).filter((t) => oneLine(t.text));
-    const dialogueLines =
-      turns.length > 1
-        ? turns.map((t) => {
-            const nm = oneLine(t.speaker);
-            return {
-              speaker: nm || "VOICEOVER (off-screen narration — no on-screen mouth moves)",
-              line: oneLine(t.text),
-              start_s: t.start_s ?? null,
-              end_s: t.end_s ?? null,
-              voice: nm ? voiceFor(nm) : null,
-            };
-          })
-        : null;
+    const visibleLocks =
+      onScreen.length > 0
+        ? locks.filter((lock) =>
+            onScreen.some((name) => name.toLowerCase() === lock.name.trim().toLowerCase())
+          )
+        : locks;
+    const entryState = oneLine(seg.scene_intent?.entry_exit?.entry_state) || oneLine(seg.first_frame_prompt);
+    const exitState = oneLine(seg.scene_intent?.entry_exit?.exit_state) || oneLine(seg.continuity_note);
+    const mainAction =
+      oneLine(seg.motion_prompt) || oneLine(seg.scene_intent?.performance?.physical_behavior);
+    const characterLock = Object.fromEntries(
+      visibleLocks.map((lock) => {
+        const id = charIds.get(lock.name.trim().toLowerCase()) || "CHAR_1";
+        const outfit = splitOutfit(lock.costume);
+        return [
+          id,
+          {
+            id,
+            name: lock.name,
+            species: `Human${culture ? ` - ${culture}` : ""}${lock.is_child ? " child" : ""}`,
+            gender: lock.gender === "male" ? "Male" : lock.gender === "female" ? "Female" : "Unspecified",
+            age: noHex(lock.gender_age),
+            voice_personality: oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child),
+            body_build: noHex(lock.build),
+            face_shape: "Match the attached reference; preserve locked facial geometry",
+            hair: noHex(lock.hair),
+            eyes: noHex(lock.eye_details || lock.eyes),
+            skin_or_fur_color: noHex(lock.skin_tone),
+            skin_texture: noHex(lock.skin_texture),
+            signature_feature: noHex(lock.signature_features),
+            outfit_top: outfit.top,
+            outfit_bottom: outfit.bottom,
+            outfit_materials: noHex(lock.wardrobe_materials),
+            helmet_or_hat: "None unless visible in the attached reference",
+            shoes_or_footwear: "Match the attached reference; do not invent or change",
+            props: "Only props explicitly planted in background_lock.setting and action_flow",
+            body_metrics: "cons=no-auto-rescale,lock-proportions,keep-relative-height",
+            position: "Use the exact starting position in background_lock.setting",
+            orientation: "Use the exact orientation in background_lock.setting",
+            pose: "Use the exact starting pose in background_lock.setting",
+            foot_placement: "Physically grounded, stable contact with the floor",
+            hand_detail: "Natural hands; correct contact with named props; no fused or extra fingers",
+            expression: noHex(lock.default_expression),
+            action_flow: {
+              pre_action: "Hold the exact starting pose assigned in scene_action.start_state",
+              main_action: `Perform only ${lock.name}'s actions in scene_action.motion; do not steal another character's action or dialogue`,
+              post_action: "Finish in the exact state assigned in scene_action.end_state",
+            },
+          },
+        ];
+      })
+    );
+    const rawTurns =
+      seg.dialogue_lines && seg.dialogue_lines.length > 0
+        ? seg.dialogue_lines
+        : seg.dialogue
+          ? [{ speaker, text: seg.dialogue, start_s: undefined, end_s: undefined }]
+          : [];
+    const dialogue = rawTurns
+      .filter((turn) => oneLine(turn.text))
+      .map((turn) => {
+        const name = oneLine(turn.speaker);
+        const lock = locks.find((item) => item.name.trim().toLowerCase() === name.toLowerCase());
+        return {
+          speaker_id: name ? charIds.get(name.toLowerCase()) || name : "VOICEOVER",
+          speaker_name: name || "VOICEOVER",
+          text: oneLine(turn.text),
+          language: lang,
+          start_sec: turn.start_s ?? null,
+          end_sec: turn.end_s ?? null,
+          voice_personality: lock
+            ? oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child)
+            : "off-screen narrator",
+        };
+      });
+    const cameraText = beats.map((beat) => oneLine(beat.camera)).filter(Boolean).join(" -> ");
+    const camera = cameraParts(cameraText);
+    const ambience = [env?.sound_bed, opts.ambientAudio].filter(
+      (value): value is string => !!value
+    );
     return {
-      id: seg.segment_number,
-      role: seg.marketing_role,
-      scene_intent: seg.scene_intent ?? null,
-      duration_seconds: seg.duration_seconds ?? clipSeconds,
-      scene: oneLine(seg.first_frame_prompt),
-      characters_in_scene: onScreen.length > 0 ? onScreen : null,
-      environment: env ? environmentToJson(env) : null,
-      subject: speaker ? `${speaker} (keep identical to continuity.characters)` : "the main character",
-      shot: {
-        camera_motion: "one continuous take — a single slow, smooth camera move (push-in / pan / orbit); no hard cuts",
-        framing: timeline.length ? timeline.map((t) => t.camera).filter(Boolean).join(" → ") : "",
+      scene_id: String(seg.segment_number),
+      duration_sec: String(clipSeconds),
+      visual_style: [
+        noHex(breakdown.style_guide?.art_direction),
+        noHex(sb?.lens),
+        noHex(sb?.color_grade),
+        noHex(sb?.film_grain),
+      ]
+        .filter(Boolean)
+        .join("; "),
+      scene_role: seg.marketing_role,
+      character_lock: characterLock,
+      background_lock: {
+        id: seg.environment_ref || `BACKGROUND_${seg.segment_number}`,
+        name: env?.display_name || seg.title,
+        setting: oneLine(seg.first_frame_prompt),
+        scenery: oneLine(sb?.backdrop),
+        props: noHex(breakdown.product_dna) || "Only props explicitly named in setting and action",
+        lighting: [oneLine(sb?.lighting), env ? `${env.lighting.key_kelvin}K, ~${env.lighting.ambient_lux} lux` : ""]
+          .filter(Boolean)
+          .join("; "),
       },
-      timeline,
-      action: oneLine(seg.motion_prompt),
-      dialogue: seg.dialogue
-        ? {
-            speaker,
-            language: lang,
-            line: oneLine(seg.dialogue),
-            // TẦNG 9: bind the locked voice to the line (anti voice-swap).
-            voice: voiceFor(speaker),
-            // Multi-speaker turn-taking (null when the clip is single-speaker).
-            turns: dialogueLines,
-            turn_taking: dialogueLines
-              ? "sequential, non-overlapping, camera on active speaker; STRICT line ownership — each line is spoken ONLY by its named speaker (never reassigned to another character, voices never swapped); while a line plays its speaker holds a stable pose facing camera — large body actions (standing up, walking, turning) happen in the gaps between lines, never during a line; dialogue windows override the motion timeline on any conflict"
-              : null,
-            lip_sync: true,
-            subtitles: false,
-          }
-        : null,
-      audio: opts.ambientAudio
-        ? `${opts.ambientAudio}; plus the spoken dialogue; no on-screen text`
-        : env
-          ? `ambient bed (constant across clips in this location): ${env.sound_bed}; plus the spoken dialogue; no music bed drowning the voice; no on-screen text`
-          : "spoken dialogue only with natural ambient sound; no music unless noted; no on-screen text",
-      continuity_from_previous: oneLine(seg.continuity_note),
-      on_screen_text:
-        "ZERO — clean full-screen footage only; no readable letters, words, names, ages, numbers, logos, labels, captions, subtitles, badges, cards, HUD or technical overlays",
+      camera: {
+        framing: camera.framing,
+        angle: camera.angle,
+        movement: camera.movement,
+        focus: "cinematic natural depth of field; active speaker and interacted prop stay sharp",
+      },
+      scene_action: {
+        start_state: entryState,
+        motion: mainAction,
+        end_state: exitState,
+        continuity_from_previous: oneLine(seg.continuity_note),
+      },
+      foley_and_ambience: {
+        ambience,
+        fx: ["natural clothing, footsteps and prop-contact sounds synchronized to visible action"],
+        music:
+          opts.ambientAudio && !/no music/i.test(opts.ambientAudio)
+            ? opts.ambientAudio
+            : "None unless explicitly required by the scene",
+      },
+      dialogue,
+      lip_sync_director_note:
+        dialogue.length > 0
+          ? "One speaker at a time; exact line ownership; active speaker faces camera in a stable pose with natural lip sync; listeners keep mouths closed; dialogue is audio only."
+          : "No spoken dialogue; all visible mouths remain naturally closed.",
+      output_rules: {
+        frame: "one clean full-screen continuous shot; never render a storyboard sheet, grid, panel, reference strip or document",
+        on_screen_text: "ZERO — no letters, words, names, ages, numbers, labels, logos, captions, subtitles, badges, cards, HUD or technical overlays",
+        reference_priority: "uploaded character and location menu references are authoritative; never merge, omit or swap identities",
+      },
       negative_prompt: VEO_NEGATIVE_LIST,
-      // Flattened, fully self-contained prompt (text mode fallback).
-      prompt: oneLine(seg.full_prompt ?? seg.motion_prompt ?? ""),
     };
   });
 
   return {
-    version: "veo-3.1",
-    // Canonical project-level source of truth. It is never expanded per clip;
-    // target compilers select only the relevant layer fragments.
-    context_ir: breakdown.context_ir
-      ? {
-          ...breakdown.context_ir,
-          layers: {
-            ...breakdown.context_ir.layers,
-            ontology: {
-              ...breakdown.context_ir.layers.ontology,
-              visible_text_policy: "none — zero readable text or graphics anywhere",
-            },
-            visual_language: {
-              ...breakdown.context_ir.layers.visual_language,
-              text_overlay_policy: "forbidden — zero text, labels, logos or overlays",
-            },
-          },
-        }
-      : null,
-    // TẦNG 0 — the locked world context every clip must belong to
-    // (Context-Locked Video DNA: open during design, locked during generation).
-    locked_world_context: breakdown.world_context
-      ? { ...breakdown.world_context, allowed_language_text: "none — zero readable text anywhere" }
-      : null,
-    // The frozen 9-layer constitution these prompts were compiled under.
-    production_laws: lawsForVeoJson(),
-    output: {
-      aspect_ratio: opts.aspectRatio,
-      duration_seconds_per_clip: clipSeconds,
-      fps: 24,
-      total_clips: clips.length,
-    },
-    reference_image:
-      "IMAGE-TO-VIDEO START FRAME: use ONLY that clip's clean keyframe_NN.jpg. NEVER use storyboard_overview.png or any multi-panel board/reference sheet as a start frame. Character and location portraits may be attached only through a separate Ingredients/References control when available; they must never be rendered as a collage, document, grid or overlay.",
-    on_screen_text:
-      "ABSOLUTELY FORBIDDEN — every rendered frame contains ZERO readable text or graphics: no letters, words, names, ages, numbers, labels, logos, subtitles, captions, karaoke/lyric text, title cards, badges, watermarks, HUD or technical data. Every value in this JSON is internal only and must never be drawn.",
-    global_style: {
-      look: oneLine(breakdown.style_guide?.art_direction) || "cinematic realistic",
-      lens: oneLine(sb?.lens),
-      lighting: oneLine(sb?.lighting),
-      backdrop: oneLine(sb?.backdrop),
-      color_grade: oneLine(sb?.color_grade),
-      film_grain: oneLine(sb?.film_grain),
-      color_palette: breakdown.style_guide?.color_palette ?? [],
-      mood: breakdown.mood_tags ?? [],
-      // Realism spine repeated into every clip's flattened prompt (anti-CGI).
-      render_spec: PHOTOREAL_REALISM,
-    },
-    continuity: {
-      characters,
-      product_dna: breakdown.product_dna ? noHex(breakdown.product_dna) : null,
-    },
-    negative_prompt: VEO_NEGATIVE_LIST,
-    title: breakdown.title,
-    synopsis: oneLine(breakdown.synopsis),
-    marketing_structure: breakdown.marketing_structure ?? null,
+    format: "flow-veo-scene-json-v2",
+    usage: "Each item in clips is one independent prompt. Paste one object per generation. For bulk tools, use the JSONL export where each physical line is one complete prompt.",
+    aspect_ratio: opts.aspectRatio,
+    clip_count: clips.length,
     clips,
   };
 }
