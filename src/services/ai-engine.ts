@@ -17,11 +17,7 @@ import {
   VIDEO_CONTEXT_RESPONSE_SCHEMA,
   type ResolvedVideoContext,
 } from "@/lib/video-context";
-import {
-  SCENE_INTENT_RESPONSE_SCHEMA,
-  sceneIntentSchema,
-  validateSceneIntent,
-} from "@/lib/scene-intent";
+import { sceneIntentSchema } from "@/lib/scene-intent";
 import type {
   AIProvider,
   StoryboardGenerationInput,
@@ -77,7 +73,9 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
     duration_seconds: INTEGER_SCHEMA,
     title: STRING_SCHEMA,
     marketing_role: STRING_SCHEMA,
-    scene_intent: SCENE_INTENT_RESPONSE_SCHEMA,
+    // scene_intent (the codex 10-layer ~15-field object) is NO LONGER requested
+    // here: it ballooned the JSON so the tail segment truncated (stub scenes)
+    // and the whole call timed out. The video prompts render fine without it.
     beats: {
       type: "ARRAY",
       items: {
@@ -117,7 +115,6 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
     "duration_seconds",
     "title",
     "marketing_role",
-    "scene_intent",
     "beats",
     "first_frame_prompt",
     "motion_prompt",
@@ -688,16 +685,12 @@ export async function generateStoryboardBreakdown(
           jsonMode: true,
           responseSchema: STORYBOARD_RESPONSE_SCHEMA,
           temperature: attempt === 0 ? 0.25 : 0.1,
-          // The storyboard JSON is LARGE: every segment now carries a full
-          // scene_intent block (~15 nested fields) on top of dialogue_lines,
-          // cast/environment locks, voice and forensic fields. At the old
-          // ~2200 tokens/segment the tail segment got truncated → jsonrepair
-          // salvaged it into a stub → the title-backfill turned it into garbage
-          // ("action" = "dialogue" = the title). Budget generously
-          // (~3800/segment, floor 20k) up to Gemini 2.5 Flash's 65536 ceiling.
+          // scene_intent removed from the schema → the JSON is light again, so
+          // a modest budget (~2400/segment, floor 12k) is plenty and keeps the
+          // call fast enough to avoid the provider timeout.
           maxOutputTokens: Math.min(
-            48000,
-            Math.max(20000, (input.segment_count ?? input.scene_count ?? 5) * 3800)
+            24576,
+            Math.max(12288, (input.segment_count ?? input.scene_count ?? 5) * 2400)
           ),
           timeoutMs: boundedTimeoutMs(timing, 60_000, "Gemini storyboard generation"),
         });
@@ -760,33 +753,13 @@ export async function generateStoryboardBreakdown(
         parsed.product_dna = undefined;
       }
 
-      // SCENE INTENT — RESILIENT VALIDATION. scene_intent is auxiliary creative
-      // metadata: a malformed one must NEVER kill the whole (expensive) 3-attempt
-      // generation the user already paid for. The schema now coerces near-miss
-      // values; if it STILL cannot parse, drop that segment's intent (prompts
-      // render fine without it). Semantic issues are logged as warnings only.
-      for (const [index, segment] of parsed.segments.entries()) {
+      // SCENE INTENT is no longer requested from the model (it bloated the JSON
+      // into truncation + timeouts). If a model still echoes one, keep it when
+      // it parses; otherwise just drop it — the prompts render fine without it.
+      for (const segment of parsed.segments) {
+        if (segment.scene_intent == null) continue;
         const intent = sceneIntentSchema.safeParse(segment.scene_intent);
-        if (!intent.success) {
-          const issue = intent.error.issues[0];
-          console.warn(
-            `[AI Engine] Segment ${index + 1} scene_intent unparseable — dropped${issue ? ` (${issue.path.join(".")}: ${issue.message})` : ""}`
-          );
-          segment.scene_intent = undefined;
-          continue;
-        }
-        segment.scene_intent = intent.data;
-        const intentIssues = validateSceneIntent(intent.data, {
-          segmentIndex: index,
-          segmentCount: parsed.segments.length,
-          charactersInScene: segment.characters_in_scene,
-          projectPurpose: input.resolved_context?.layers.project_intent.purpose,
-        });
-        for (const issue of intentIssues) {
-          console.warn(
-            `[AI Engine] Segment ${index + 1} scene_intent ${issue.severity}: ${issue.code} — ${issue.message}`
-          );
-        }
+        segment.scene_intent = intent.success ? intent.data : undefined;
       }
 
       // Stage 1.5 is canonical. The storyboard model may echo a different
@@ -1047,24 +1020,12 @@ export async function rewriteStoryboardSegment(params: {
       if (!validateSegment(parsed)) {
         throw new Error("Response does not match the segment schema");
       }
-      const rewrittenIntent = sceneIntentSchema.safeParse(parsed.scene_intent);
-      if (!rewrittenIntent.success) {
-        throw new Error("Rewritten segment is missing a valid scene_intent contract");
+      // scene_intent is optional now (removed from the schema to keep the JSON
+      // light) — keep it only when the model still supplies a valid one.
+      if (parsed.scene_intent != null) {
+        const rewrittenIntent = sceneIntentSchema.safeParse(parsed.scene_intent);
+        parsed.scene_intent = rewrittenIntent.success ? rewrittenIntent.data : undefined;
       }
-      const rewrittenIntentIssues = validateSceneIntent(rewrittenIntent.data, {
-        segmentIndex: params.segmentIndex,
-        segmentCount: params.breakdown.segments.length,
-        charactersInScene: parsed.characters_in_scene,
-        projectPurpose: params.breakdown.context_ir?.layers.project_intent.purpose,
-      }).filter((item) => item.severity === "error");
-      if (rewrittenIntentIssues.length > 0) {
-        throw new Error(
-          `Rewritten scene_intent failed validation: ${rewrittenIntentIssues
-            .map((item) => item.code)
-            .join(", ")}`
-        );
-      }
-      parsed.scene_intent = rewrittenIntent.data;
 
       // HARD CONSTRAINTS enforced in code (never trust the model for these):
       // identity/position fields stay exactly as the original segment's.

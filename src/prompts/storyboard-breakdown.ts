@@ -664,7 +664,7 @@ ${JSON.stringify(input.resolved_context, null, 2)}
     "social_short",
   ]).has(goal);
   const structureDirective = hardMarketingArc
-    ? "This project intent requires an attention-opening first segment and an earned CTA in the final segment; their exact form must still follow the approved script and each scene_intent contract."
+    ? "This project intent requires an attention-opening first segment and an earned CTA in the final segment; their exact form must still follow the approved script and story logic."
     : "The first segment still requires an intent-appropriate 3-5 second Hook Window, but do NOT turn it into generic marketing clickbait and do NOT automatically add a CTA. The final segment performs only the ending function justified by the approved script.";
   const activeSceneIntentRulesBlock = `\n\n${selectedSceneIntentRulesDigest({
     projectPurpose: input.resolved_context?.layers.project_intent.purpose,
@@ -764,67 +764,7 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
       "segment_number": 1,
       "duration_seconds": 8,
       "title": "string — short segment title",
-      "marketing_role": "hook|problem|solution|body|cta",
-      "scene_intent": {
-        "intent_id": "scene_intent_01 — stable project-local id",
-        "state": "inferred|confirmed|locked — inferred unless explicitly approved in the supplied script/context",
-        "evidence": ["short facts from the approved script/project intent that justify this intent — never generic template claims"],
-        "confidence": 0.9,
-        "primary_function": "hook|introduce_world|introduce_character|introduce_product|establish_desire|show_problem|create_conflict|escalate|reveal|educate|demonstrate|prove_benefit|build_trust|create_metaphor|create_suspense|deliver_punchline|emotional_hit|transform|show_consequence|resolve|call_to_action|close_loop|atmosphere|custom",
-        "secondary_functions": ["0-3 additional functions from the same vocabulary; empty when unnecessary"],
-        "hook_window": {
-          "enabled": "boolean — true only for segment 1; false later",
-          "duration_seconds": "number — segment 1: 3-5; later: 0",
-          "hook_type": "visual_interrupt|curiosity_gap|inciting_event|conflict|emotional_recognition|surprising_fact|question|sensory_moment|product_proof|transformation_preview|custom",
-          "core_promise": "ONE honest promise/question; later segments use 'not_applicable'",
-          "immediate_visual_event": "concrete event visible immediately; later use 'not_applicable'",
-          "immediate_audio_event": "immediate sound/line or 'none'; later use 'not_applicable'",
-          "dialogue_hook": "exact opening line or 'none'; later use 'not_applicable'",
-          "payoff_link": "later reveal/result fulfilling the promise; later use 'not_applicable'",
-          "forbidden_delays": ["segment 1: greeting, logo-first, context dump, unrelated beauty shot, vague setup; later: empty"]
-        },
-        "narrative_objective": "why this clip must exist in this exact project",
-        "audience_effect": {
-          "attention": "what specifically earns/holds attention",
-          "emotion": "the intended audience emotion",
-          "belief": "what understanding or belief changes",
-          "desired_action": "what the audience should do, or 'none' when no action is intended"
-        },
-        "story_change": {
-          "state_before": "story/knowledge/emotion state entering the clip",
-          "trigger": "the event or information that creates change",
-          "state_after": "state leaving the clip",
-          "information_revealed": "new information, or 'none'",
-          "if_removed_what_breaks": "the concrete narrative/emotional/informational/atmospheric loss"
-        },
-        "performance": {
-          "point_of_view_character": "exact character name or 'audience/observer'",
-          "character_objective": "what the POV character wants now",
-          "obstacle": "what blocks it",
-          "tactic": "how the character tries to get it",
-          "stakes": "why it matters now",
-          "subtext": "what is meant/felt beneath literal dialogue",
-          "emotion_start": "specific observable emotional state",
-          "emotion_end": "specific motivated end state",
-          "performance_intensity": "restrained|natural|heightened|stylized plus a short justification",
-          "physical_behavior": "one concise bodily behavior proving objective/subtext — not camera choreography"
-        },
-        "proof": {
-          "must_show": ["smallest visible evidence needed to prove intent"],
-          "must_hear": ["smallest audible evidence needed; empty if silent"],
-          "must_not_distract_with": ["unrelated spectacle/details that would weaken this intent"]
-        },
-        "entry_exit": {
-          "entry_state": "canonical input state",
-          "exit_state": "canonical output state",
-          "continuity_anchors": ["body|object|eye-line|motion|emotion|sound|light|symbol|dialogue|location — only anchors required by continuity mode"],
-          "exit_hook": "specific reason to continue, or 'none' for a resolved ending"
-        },
-        "validation": {
-          "success_criteria": ["observable/testable checks"],
-          "failure_conditions": ["observable ways the clip could miss or contradict its intent"]
-        }
-      },
+      "marketing_role": "hook|problem|solution|body|cta — the clip's function; segment 1 opens/hooks, the last segment carries any CTA the project needs",
       "beats": [
 ${beatExample}
       ],
@@ -921,7 +861,6 @@ ${prevBlock}
 ${nextBlock}
 
 THE SEGMENT TO REWRITE — #${seg.segment_number} "${seg.title}" (marketing_role: ${seg.marketing_role}, duration: ${seg.duration_seconds || 10}s, environment_ref: ${seg.environment_ref ?? "custom"}):
-Current scene_intent contract: ${JSON.stringify(seg.scene_intent ?? null)}
 Current first_frame_prompt: ${seg.first_frame_prompt}
 Current motion_prompt (STALE — written before the dialogue changed): ${seg.motion_prompt}
 
@@ -929,14 +868,13 @@ LOCKED DIALOGUE TURNS (the user's final text — copy each line VERBATIM, same s
 ${turnsBlock}
 
 REWRITE RULES:
-0. Return a complete valid "scene_intent" contract. Preserve its primary function and story job unless the edited dialogue genuinely changes them; update performance, proof, entry/exit and validation. ${segmentIndex === 0 ? "Clip 1: hook_window.enabled=true, duration 3-5s, one honest promise linked to later payoff, no greeting/logo/context dump before it." : "Later clip: hook_window.enabled=false and duration_seconds=0; do not create another opening hook."} Never invent a CTA unless Project Intent requires it.
 1. Re-time the turns realistically (~0.4s per word + ~0.5s beat between speakers), strictly sequential and non-overlapping, finished by ~9s. Fill "dialogue_lines" with start_s/end_s for every turn; mirror turn 1 into "dialogue" and "speaker".
 2. Rewrite "motion_prompt" (70-110 words) as ONE continuous take whose physical action and camera are choreographed AROUND those timed turns: during each turn's window the camera holds the active speaker's face in medium-close/close-up with natural lip movement (gentle pan/reframe between speakers — never a hard cut), listeners keep their mouths closed and react. SPEAK-WHILE-STILL: a speaker NEVER performs a large body action (standing up, walking, turning away) during their own line — schedule big movements into the GAPS between turns, and while a line plays its speaker holds a stable pose facing camera. The motion timeline MUST use the same clock as the turn windows (the action at second X is what happens while the line at second X plays). Time left before/after/between the turns must be filled with meaningful physical action that advances the story — never dead air. CAUSAL CHAIN: write every object interaction as the full visible chain (hand reaches → fingers grip a named part → carried along one continuous path → released), never let an object appear in a hand; every effect (something falls/tips/spills) must be PRECEDED by its visible physical cause making contact; the whole clip stays in ONE location. PROP EXISTENCE: every object the motion uses must be planted in the first_frame_prompt start state (held, worn or placed) — update the first_frame_prompt if the new action needs a prop it doesn't mention. QUIET WINDOW: no line plays during a loud/major physical event — a reaction line starts only after the event has finished. LOAD BUDGET: a 10s clip carries 8-22 total spoken words (~0.4s/word + gaps) — if the locked turns exceed this, keep the timing honest and flag it in continuity_note instead of squeezing speech. STAGING: give every visible character one concrete physical business (a named hand action serving the story) and name exact micro-expressions (an eyebrow raise, a suppressed smile) — never write "reacts"; the camera move must differ from the neighbouring clips' moves and travel calmly across the whole 10s, easing in and out, never a rushed 1-second whip. Do NOT quote the spoken words inside motion_prompt.
 3. Rewrite the "beats" (EXACTLY ${beatsPerSegment} beats) as the progressive camera framings of that one continuous action, aligned with the turn windows.
 4. Update "first_frame_prompt" only as needed (same location/lighting; restate the present characters' looks from character_locks). Set "characters_in_scene" to the EXACT lock names visible — every speaker with a non-empty name must be included.
 5. HARD CONSTRAINTS: keep "segment_number" = ${seg.segment_number}, "duration_seconds" = ${seg.duration_seconds || 10}, "marketing_role" = "${seg.marketing_role}", "environment_ref" = "${seg.environment_ref ?? "custom"}". Locked continuity mode = "${continuityMode}". ${strictContinuity ? "Open from the previous segment's exact end state and close on the next segment's exact opening state." : "Preserve only the continuity anchors declared by scene_intent/context; location, time or pose may change when this continuity mode explicitly permits it."} Update continuity_note accordingly.
 
-Return ONLY the rewritten segment as ONE JSON object with the exact segment structure (segment_number, duration_seconds, title, marketing_role, scene_intent, beats[], first_frame_prompt, motion_prompt, dialogue, speaker, dialogue_lines[], characters_in_scene[], environment_ref, continuity_note) — no wrapper, no markdown, no prose.`;
+Return ONLY the rewritten segment as ONE JSON object with the exact segment structure (segment_number, duration_seconds, title, marketing_role, beats[], first_frame_prompt, motion_prompt, dialogue, speaker, dialogue_lines[], characters_in_scene[], environment_ref, continuity_note) — no wrapper, no markdown, no prose.`;
 }
 
 // ─── Render style helpers ───────────────────────────────────────────────────
