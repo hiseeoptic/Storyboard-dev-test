@@ -186,14 +186,37 @@ const COOKING_HANDS_ONLY_SUBJECT =
 // CAST-SYNC: resolve a segment's characters_in_scene to their locks (in the
 // listed order). Empty/missing list or unmatched names → empty array, and the
 // callers fall back to the legacy single-main-character behaviour.
+// MOTIVATED WARDROBE CHANGE: when the segment declares a wardrobe_state for a
+// character (shower → home clothes, etc.), return a CLONE of the lock with the
+// current outfit/hair — so every prompt, keyframe and board built for this
+// segment describes the new look instead of contradicting the base lock.
 function presentLocksFor(
-  seg: { characters_in_scene?: string[] },
+  seg: {
+    characters_in_scene?: string[];
+    wardrobe_state?: { character: string; outfit: string; outfit_materials?: string; hair?: string }[];
+  },
   breakdown: StoryboardGenerationOutput
 ): CharacterLock[] {
   const locks = breakdown.character_locks ?? [];
   const byName = new Map(locks.map((l) => [l.name.trim().toLowerCase(), l]));
+  const wardrobeByName = new Map(
+    (seg.wardrobe_state ?? [])
+      .filter((w) => w && (w.character ?? "").trim() && (w.outfit ?? "").trim())
+      .map((w) => [w.character.trim().toLowerCase(), w])
+  );
   return (seg.characters_in_scene ?? [])
-    .map((n) => byName.get((n ?? "").trim().toLowerCase()))
+    .map((n) => {
+      const lock = byName.get((n ?? "").trim().toLowerCase());
+      if (!lock) return undefined;
+      const wardrobe = wardrobeByName.get(lock.name.trim().toLowerCase());
+      if (!wardrobe) return lock;
+      return {
+        ...lock,
+        costume: wardrobe.outfit,
+        wardrobe_materials: wardrobe.outfit_materials || lock.wardrobe_materials,
+        hair: wardrobe.hair || lock.hair,
+      };
+    })
     .filter((l): l is CharacterLock => !!l);
 }
 
@@ -293,15 +316,23 @@ function normalizeDialogue(breakdown: StoryboardGenerationOutput): void {
       if (onScreen.size > 0) seg.characters_in_scene = Array.from(onScreen);
     }
 
-    // Write both forms back. Collapse to single-line when only one turn remains.
+    // Write both forms back. Collapse to single-line when only one turn remains
+    // — but KEEP the timed dialogue_lines entry so exports never emit
+    // start_sec/end_sec = null (Veo mis-times untimed lines).
     if (turns.length > 1) {
       seg.dialogue_lines = turns;
       seg.dialogue = turns[0]!.text;
       seg.speaker = turns[0]!.speaker;
     } else if (turns.length === 1) {
-      seg.dialogue_lines = undefined;
-      seg.dialogue = turns[0]!.text;
-      seg.speaker = turns[0]!.speaker;
+      const only = turns[0]!;
+      if (only.start_s == null || only.end_s == null || only.end_s <= only.start_s) {
+        const dur = Math.max(1.2, only.text.split(/\s+/).length * 0.42);
+        only.start_s = 0.3;
+        only.end_s = Math.round(Math.min(0.3 + dur, 9.5) * 10) / 10;
+      }
+      seg.dialogue_lines = [only];
+      seg.dialogue = only.text;
+      seg.speaker = only.speaker;
     } else {
       seg.dialogue_lines = undefined;
     }
@@ -1220,7 +1251,9 @@ function assemblePlanPrompts(
           ? presentLocks.length === 1
             ? makeVeoSafe(buildCleanCharLine(presentLocks[0]))
             : COOKING_HANDS_ONLY_SUBJECT
-          : charDesc;
+          : presentLocks.length === 1 && (seg.wardrobe_state?.length ?? 0) > 0
+            ? makeVeoSafe(buildCleanCharLine(presentLocks[0]))
+            : charDesc;
     // buildSegmentVeoPrompt now strips ALL hex from its own output (Veo burns
     // "#A9C7E8" onto the frame as a name tag), so no wrap needed here.
     // Cooking references: the HOOK is a finished-dish-only money shot; middle
@@ -1371,6 +1404,12 @@ export async function rewriteSegment(params: {
       segment.dialogue_lines = undefined;
       segment.dialogue = "";
       segment.speaker = "";
+    }
+
+    // A motivated wardrobe change must survive the rewrite even if the model
+    // forgets to echo it back — the original segment's state is authoritative.
+    if (!segment.wardrobe_state?.length && original.wardrobe_state?.length) {
+      segment.wardrobe_state = original.wardrobe_state;
     }
 
     // Same post-processing pipeline as a fresh breakdown, scoped to this segment.

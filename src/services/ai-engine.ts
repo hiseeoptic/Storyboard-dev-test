@@ -109,6 +109,23 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
     characters_in_scene: STRING_ARRAY_SCHEMA,
     environment_ref: STRING_SCHEMA,
     continuity_note: STRING_SCHEMA,
+    // MOTIVATED WARDROBE CHANGE: when the story physically changes a
+    // character's look (shower → home clothes, getting dressed, rain), the
+    // model declares the CURRENT look here for this and every later segment,
+    // overriding the base character_lock costume/hair.
+    wardrobe_state: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          character: STRING_SCHEMA,
+          outfit: STRING_SCHEMA,
+          outfit_materials: STRING_SCHEMA,
+          hair: STRING_SCHEMA,
+        },
+        required: ["character", "outfit"],
+      },
+    },
   },
   required: [
     "segment_number",

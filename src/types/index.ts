@@ -403,6 +403,17 @@ export interface VideoSegment {
    * which reference photos are attached and who may appear on screen — the
    * cast-sync mechanism for multi-character scenes. */
   characters_in_scene?: string[];
+  /** MOTIVATED WARDROBE CHANGE: when a story action physically changes a
+   * character's look (shower → home clothes, getting dressed, soaked by rain),
+   * this lists the character's CURRENT outfit/hair for THIS segment — it
+   * overrides the base character_lock costume in every prompt built for the
+   * segment. Declared on the first changed segment and every one after. */
+  wardrobe_state?: {
+    character: string;
+    outfit: string;
+    outfit_materials?: string;
+    hair?: string;
+  }[];
   /** How this segment visually connects to the previous one (seamless join). */
   continuity_note: string;
   /** Filled by the image pipeline — the generated start frame. */

@@ -690,8 +690,10 @@ DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlap
 - SINGLE-LINE CLIPS: if a beat is just one line, you may use "dialogue_lines" with one entry OR the plain "dialogue"+"speaker" fields — both work. For a longer monologue that fills the clip, one speaker is correct.
 - Mirror the FIRST turn into the top-level "dialogue" (its text) and "speaker" (its name) for compatibility.
 - NAME TOKENS ARE LOCKED: every character name is a fixed token spelled EXACTLY as in character_locks, identical in every field (title, first_frame_prompt, motion_prompt, beats, camera notes, dialogue speaker, continuity_note). NEVER invent a spelling variant, nickname or near-miss (if the cast is "Minh" and "Lan", then "MInh", "Linh" or "Lan Anh" must never appear anywhere — a near-miss name creates a THIRD person and breaks speaker mapping).
-- WARDROBE & HAIR ARE LOCKED FOR THE WHOLE VIDEO: each character wears ONE outfit and ONE hairstyle (the ones in their character_lock) in every segment, described with the SAME words in every first_frame_prompt — never restyle, recolour, change clothing items or hairstyle between segments unless the script explicitly stages a costume change on screen.
+- WARDROBE & HAIR ARE LOCKED — EXCEPT A MOTIVATED CHANGE: each character wears ONE outfit and ONE hairstyle (the ones in their character_lock), described with the SAME words in every first_frame_prompt. The ONLY exception is a story action that PHYSICALLY changes their look — showering ("để anh tắm đã" → wet hair + fresh home clothes), changing clothes, getting soaked by rain, dressing up to go out. When that happens: (a) fill the segment field "wardrobe_state" with the character's NEW look — a FULL outfit description as detailed as the original lock (garments + colours + materials, and hair state like "damp black hair, freshly towelled") — on the FIRST segment where the new look is visible AND every segment after; (b) describe the SAME new look in those segments' first_frame_prompt; (c) never mix old and new wardrobe wording in the same segment — after the change, the office shirt/tie must never be mentioned again. A look change may happen at most ONCE per video and only with an explicit on-screen or between-scenes cause.
 - ONE LOCATION, IDENTICAL IN EVERY SEGMENT: unless the script explicitly moves to a new declared location, every first_frame_prompt restates the SAME room/place with the SAME geometry, furniture positions, materials, colour palette and light sources — copy the location description consistently and change ONLY the characters' positions, poses and explicitly named props. The set must read as the same physical place in every clip; when the user uploaded a LOCATION photo, that photo's place is the only set.
+- TWO-PERSON BLOCKING (conversation geometry): when two characters share a dialogue scene, their bodies and gazes are oriented TOWARD EACH OTHER per the scene geometry — never both facing the same direction or both facing the camera in parallel like news anchors, unless the script explicitly stages it (e.g. one turns away in refusal, both watching something). State each character's facing direction in the first_frame_prompt ("Lan faces Minh across the table; Minh stands half-turned toward her").
+- CONTINUITY FREEZE-FRAME (what makes clip N cut smoothly into clip N+1): "continuity_note" must describe the EXACT physical freeze-frame at second 10 — who is where, facing which way, in what pose and expression, holding which props, and the light state. The NEXT segment's first_frame_prompt must open from EXACTLY that freeze-frame (same positions, poses, wardrobe state, light) unless the story declares a time/location jump — so the cut lands invisibly. Never write a vague emotional summary ("Minh nhận ra lỗi lầm") as the continuity_note.
 
 Camera codes: [EYE] eye-level, [LOW] low, [HIGH] high, [OVH] overhead, [DUTCH] dutch, [OTS] over-shoulder, [POV] first-person, [CLOSE] close-up, [SIDE] side profile.
 
@@ -915,7 +917,10 @@ ${beatExample}
       ],
       "characters_in_scene": ["REQUIRED — array of EXACT character_locks names VISIBLE in this segment (e.g. [\\"Nam\\", \\"Mai\\"]). Only these people appear on screen; the speaker must be listed here; others in the list react silently."],
       "environment_ref": "string — the environment archetype id from the ENVIRONMENT ENGINE list that matches this segment's setting (e.g. 'misty_mountain_ridge_dawn'), or 'custom' if none fits. Consecutive segments in the same place reuse the same id.",
-      "continuity_note": "string — how this segment visually continues from the previous segment (for segment 1 write 'opening shot')"
+      "wardrobe_state": [
+        { "character": "exact character_locks name", "outfit": "FULL current outfit description (garments + colours), as detailed as the base lock — e.g. 'clean dark grey cotton t-shirt, black soft home shorts'", "outfit_materials": "real fabric materials of the new outfit", "hair": "current hair state, e.g. 'damp black hair, freshly towelled'" }
+      ] /* OMIT this field entirely unless a MOTIVATED look change happened (shower/changing/rain); once it happens, include it on that segment and EVERY later segment */,
+      "continuity_note": "string — the EXACT physical freeze-frame at second 10: who is where, facing which way, pose, expression, held props and light state (the next segment opens from exactly this frame; for segment 1's field write the freeze-frame too, its continuity_from_previous is 'opening shot')"
     }
   ],
   "style_guide": {
@@ -1013,7 +1018,7 @@ REWRITE RULES:
 5. HARD CONSTRAINTS: keep "segment_number" = ${seg.segment_number}, "duration_seconds" = ${seg.duration_seconds || 10}, "marketing_role" = "${seg.marketing_role}", "environment_ref" = "${seg.environment_ref ?? "custom"}". Locked continuity mode = "${continuityMode}". ${strictContinuity ? "Open from the previous segment's exact end state and close on the next segment's exact opening state." : "Preserve only the continuity anchors declared by scene_intent/context; location, time or pose may change when this continuity mode explicitly permits it."} Update continuity_note accordingly.
 6. continuity_note = PHYSICAL SCENE STATE ONLY (who is where, holding what, in which pose/emotion, carried into the next shot). STRICTLY FORBIDDEN inside continuity_note, first_frame_prompt and motion_prompt: production/meta commentary of any kind — word counts, wpm or seconds-per-word math, "moved to segment N", "due to duration constraints", quoted dialogue lines, or notes to the editor. This text is rendered by the video model verbatim; meta commentary corrupts the clip.
 
-Return ONLY the rewritten segment as ONE JSON object with the exact segment structure (segment_number, duration_seconds, title, marketing_role, beats[], first_frame_prompt, motion_prompt, dialogue, speaker, dialogue_lines[], characters_in_scene[], environment_ref, continuity_note) — no wrapper, no markdown, no prose.`;
+Return ONLY the rewritten segment as ONE JSON object with the exact segment structure (segment_number, duration_seconds, title, marketing_role, beats[], first_frame_prompt, motion_prompt, dialogue, speaker, dialogue_lines[], characters_in_scene[], environment_ref, wardrobe_state[] — copy the segment's existing wardrobe_state unchanged if it has one, continuity_note) — no wrapper, no markdown, no prose.`;
 }
 
 // ─── Render style helpers ───────────────────────────────────────────────────
@@ -1650,7 +1655,7 @@ export function buildSegmentVeoPrompt(params: {
     // identity and speaking action, and explicitly allow reaction shots where
     // the speaker is heard off-screen while the camera holds on the listener.
     const ownership = ` LINE OWNERSHIP (STRICT): every line above belongs ONLY to its named speaker — bind it to that person's identity and speaking gesture (the one who turns/looks and talks), NEVER let a different character say it, never move another character's mouth to it, and never swap voices between characters (${speakersInTurns.length > 1 ? `${speakersInTurns.join(" and ")} have different voices — each line uses its owner's voice` : "the line stays with its owner"}). The line is tied to the ACTION, not to the framing: a character may speak while the camera favours someone else's face. STILLNESS: whenever the speaker's face IS on camera during their line, keep their speaking pose stable for clean lip-sync; any large body action (standing up, sitting down, walking, turning away) happens in the GAPS between lines, never during a line. If the MOTION timing and these DIALOGUE windows disagree, the DIALOGUE windows win — shift the action beats to fit around them.`;
-    spoken = ` DIALOGUE (turn-taking, ONE voice at a time, never overlapping; each line is spoken in its OWNER's voice and belongs only to that named person): ${lines}. VOICE FOLLOWS THE PERSON, NOT THE CAMERA: when the speaker's face is in frame, only THAT person's lips move in exact lip-sync; the camera is free to hold on the LISTENER to catch their reaction, and while it does the line is heard as the speaker's off-screen / over-the-shoulder voice with NO on-screen character moving their lips to it. SPEAKER GAZE: each speaker faces and looks toward the person they are addressing per the scene geometry — never automatically toward the camera, and never with their back turned to the person addressed. Whoever is not speaking keeps their mouth fully closed with no speech-like jaw movement and never mouths the other person's line. All lines in ${lang}, AUDIO ONLY — absolutely NO subtitles, captions or on-screen text. SAY IT ONCE: each line is spoken EXACTLY ONCE, straight through at a natural pace — never repeat, stutter, loop or echo any word or phrase of it (a word must never be said twice in a row); when the line ends, the voice stops cleanly and does not restart.${listenerNote}${ownership}`;
+    spoken = ` DIALOGUE (turn-taking, ONE voice at a time, never overlapping; each line is spoken in its OWNER's voice and belongs only to that named person): ${lines}. VOICE FOLLOWS THE PERSON, NOT THE CAMERA: when the speaker's face is in frame, only THAT person's lips move in exact lip-sync; the camera is free to hold on the LISTENER to catch their reaction, and while it does the line is heard as the speaker's off-screen / over-the-shoulder voice with NO on-screen character moving their lips to it. SPEAKER GAZE: each speaker faces and looks toward the person they are addressing per the scene geometry — never automatically toward the camera, and never with their back turned to the person addressed. Whoever is not speaking keeps their mouth fully closed with no speech-like jaw movement and never mouths the other person's line, their body and gaze naturally oriented toward the speaker — the two characters are never both facing the same direction side-by-side like presenters unless the script explicitly stages it. All lines in ${lang}, AUDIO ONLY — absolutely NO subtitles, captions or on-screen text. SAY IT ONCE: each line is spoken EXACTLY ONCE, straight through at a natural pace — never repeat, stutter, loop or echo any word or phrase of it (a word must never be said twice in a row); when the line ends, the voice stops cleanly and does not restart.${listenerNote}${ownership}`;
   } else if (turns.length === 1) {
     const t = turns[0]!;
     const nm = (t.speaker ?? "").trim();
@@ -1884,7 +1889,7 @@ export function buildVeoJson(
     const onScreen = (seg.characters_in_scene ?? []).map((n) => oneLine(n)).filter(Boolean);
     // An explicitly EMPTY cast list means nobody is on screen (hands-only
     // cooking clips); fall back to all locks only when the field is missing.
-    const visibleLocks =
+    const baseVisibleLocks =
       onScreen.length > 0
         ? locks.filter((lock) =>
             onScreen.some((name) => name.toLowerCase() === lock.name.trim().toLowerCase())
@@ -1892,6 +1897,24 @@ export function buildVeoJson(
         : seg.characters_in_scene && seg.characters_in_scene.length === 0
           ? []
           : locks;
+    // MOTIVATED WARDROBE CHANGE: a segment-level wardrobe_state (shower → home
+    // clothes, etc.) overrides the base lock's costume/hair so the JSON never
+    // contradicts the scene text ("office shirt" lock vs "dark t-shirt" scene).
+    const wardrobeByName = new Map(
+      (seg.wardrobe_state ?? [])
+        .filter((w) => w && (w.character ?? "").trim() && (w.outfit ?? "").trim())
+        .map((w) => [w.character.trim().toLowerCase(), w])
+    );
+    const visibleLocks = baseVisibleLocks.map((lock) => {
+      const wardrobe = wardrobeByName.get(lock.name.trim().toLowerCase());
+      if (!wardrobe) return lock;
+      return {
+        ...lock,
+        costume: wardrobe.outfit,
+        wardrobe_materials: wardrobe.outfit_materials || lock.wardrobe_materials,
+        hair: wardrobe.hair || lock.hair,
+      };
+    });
     const entryState = oneLine(seg.scene_intent?.entry_exit?.entry_state) || oneLine(seg.first_frame_prompt);
     const exitState = oneLine(seg.scene_intent?.entry_exit?.exit_state) || oneLine(seg.continuity_note);
     const mainAction =

@@ -695,6 +695,18 @@ const BG_DESC_PROMPT: Record<string, string> = {
 // sent back to the server as a wardrobe/look ANCHOR without bloating the request
 // body. Returns null on any failure (we then just skip the anchor — the text
 // wardrobe lock still applies). Never hangs.
+/** Vietnamese title → readable ASCII slug for export filenames:
+ * "Cái ôm đúng lúc" → "cai-om-dung-luc" (instead of "C_i__m__ng_l_c"). */
+function toAsciiSlug(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, (c) => (c === "đ" ? "d" : "D"))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function toAnchorBase64(uri: string, max = 1024, quality = 0.8): Promise<string | null> {
   return new Promise((resolve) => {
     if (typeof document === "undefined") return resolve(null);
@@ -1833,7 +1845,7 @@ export function GenerateClient() {
     try {
       const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
-      const safeTitle = result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 40);
+      const safeTitle = toAsciiSlug(result.breakdown.title).slice(0, 40);
 
       // Frames (board) + clean keyframes (Veo first-frame)
       for (const seg of result.breakdown.segments) {
@@ -2412,7 +2424,7 @@ export function GenerateClient() {
                   <Users className="h-5 w-5" />
                   {lang === "vi" ? "Bảng Tham Chiếu Nhân Vật" : "Character Reference Sheet"}
                 </CardTitle>
-                <Button variant="outline" size="sm" onClick={() => downloadImage(result.characterRefSheetUrl!, `character-ref-${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.png`)} className="gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => downloadImage(result.characterRefSheetUrl!, `character-ref-${toAsciiSlug(result.breakdown.title)}.png`)} className="gap-1.5">
                   <Download className="h-3.5 w-3.5" />
                   {lang === "vi" ? "Tải ảnh" : "Download"}
                 </Button>
@@ -2440,7 +2452,7 @@ export function GenerateClient() {
                     {regenTarget === "master" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
                     {lang === "vi" ? "Tạo lại" : "Redo"}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => downloadImage(result.storyboardPosterUrl!, `storyboard-${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.png`)} className="gap-1.5">
+                  <Button variant="outline" size="sm" onClick={() => downloadImage(result.storyboardPosterUrl!, `storyboard-${toAsciiSlug(result.breakdown.title)}.png`)} className="gap-1.5">
                     <Download className="h-3.5 w-3.5" />
                     {lang === "vi" ? "Tải ảnh" : "Download"}
                   </Button>
@@ -2495,7 +2507,7 @@ export function GenerateClient() {
                     {regenTarget === "thumbnail" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
                     {lang === "vi" ? "Tạo lại" : "Redo"}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => downloadImage(result.thumbnailUrl!, `thumbnail-${result.breakdown.title.replace(/[^a-zA-Z0-9]/g, "_")}.png`)} className="gap-1.5">
+                  <Button variant="outline" size="sm" onClick={() => downloadImage(result.thumbnailUrl!, `thumbnail-${toAsciiSlug(result.breakdown.title)}.png`)} className="gap-1.5">
                     <Download className="h-3.5 w-3.5" />
                     {lang === "vi" ? "Tải ảnh" : "Download"}
                   </Button>
