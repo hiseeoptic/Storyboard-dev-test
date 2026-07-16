@@ -86,7 +86,7 @@ function veoConciseTail(
     ? "plastic/CGI/wax/airbrushed skin, toy-like or 3D-render materials"
     : "unmotivated photoreal/stylized switching, accidental world-physics drift";
   const textLaw = "ZERO VISIBLE TEXT OR GRAPHICS: every frame is clean live footage with no readable letters, words, names, numbers, logos, labels or typography anywhere, including real-world signs and product printing. No subtitles, captions, dialogue transcription, title cards, name tags, floating boxes, badges, watermarks, HUD, camera data or technical overlays. All names, dialogue, brands, ages, temperatures, lens values and timing values in this prompt are INTERNAL instructions only. Spoken words are AUDIO ONLY.";
-  return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${textLaw} Avoid: ${productNeg}storyboard sheets, grids, panel borders, reference thumbnails, character name tags or labels on screen, colour-code or hex-code text overlays, burned-in subtitles or captions, spoken words rendered as on-screen text, morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, a third hand, an extra pair of hands, a disembodied hand entering the frame, the face changing, deformed food or liquid, ${renderNeg}.`;
+  return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${textLaw} Avoid: ${productNeg}storyboard sheets, grids, panel borders, reference thumbnails, character name tags or labels on screen, a character's name or age rendered as a floating label or info card, colour-code or hex-code text overlays, burned-in subtitles or captions, spoken words rendered as on-screen text, morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, a third hand, an extra pair of hands, a disembodied hand entering the frame, the face changing, deformed food or liquid, ${renderNeg}.`;
 }
 
 /** One-line "Scene Bible" style tokens. Keeps lens/lighting/grade constant so
@@ -1558,7 +1558,10 @@ export function buildSegmentVeoPrompt(params: {
   hasLocationRef?: boolean;
 }): string {
   const lang = params.dialogueLanguage ?? "Vietnamese";
-  const clean = (s?: string) => (s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+  const clean = (s?: string) =>
+    agesToWords(
+      stripBurnableTech((s ?? "").replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim())
+    );
   // SELF-CONTAINED prompt: repeat the full character, scene and style in every
   // clip. A clean per-scene keyframe is the only image-to-video start frame;
   // character/location portraits belong in separate Ingredients/References
@@ -1583,7 +1586,7 @@ export function buildSegmentVeoPrompt(params: {
   // Locked world spec (materials/Kelvin+Lux/atmosphere/imperfections) — the
   // veoflow-web environment payload that makes the SETTING render real.
   const env = resolveEnvironment(params.environmentRef, params.setting);
-  const envBlock = env ? ` ${renderEnvironmentBlock(env)}` : "";
+  const envBlock = env ? ` ${stripBurnableTech(renderEnvironmentBlock(env))}` : "";
   const product = params.productDescription
     ? /^FINISHED HERO DISH/i.test(params.productDescription.trim())
       ? ` FINISHED-DISH VISUAL IDENTITY: ${clean(params.productDescription)} Preserve the real serving vessel, food geometry, sauce, toppings, texture and steam; this is food, not packaging or branding.`
@@ -1593,7 +1596,7 @@ export function buildSegmentVeoPrompt(params: {
   // Style tokens are camera/render settings — flag them as internal so Veo
   // never draws "50mm / 4300K / 600 lux" as a spec card on the frame (it did).
   const tokens = params.sceneBible
-    ? ` ${sceneBibleTokens(params.sceneBible)} (These style values are internal camera settings — NEVER display them as text on screen.)`
+    ? ` ${stripBurnableTech(sceneBibleTokens(params.sceneBible))} (These style values are internal camera settings — NEVER display them as text on screen.)`
     : "";
   // Colour palette for Veo: strip raw hex (Veo cannot read hex and renders a
   // bare "#A9C7E8" as an on-screen colour-swatch label). Keep only real colour
@@ -1822,7 +1825,7 @@ Compatible with: Google Veo 3.1, Seedance 2.0, Kling, Runway, Pika`;
 
 /** The one comprehensive negative list, reused at project + clip level. */
 export const VEO_NEGATIVE_LIST =
-  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, exposure/Kelvin/lux/timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo, plastic or CGI skin";
+  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, floating character name tag, a character's name or age rendered as a label, character info card overlaid on the footage, colour-temperature or Kelvin label, exposure/Kelvin/lux/timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo, plastic or CGI skin";
 
 interface VeoJsonOptions {
   aspectRatio: string;
@@ -1832,6 +1835,55 @@ interface VeoJsonOptions {
   /** TRUE when the user uploaded a real LOCATION photo — the set must be
    * rebuilt from that photo in every clip, never re-invented from text. */
   hasLocationRef?: boolean;
+}
+
+// ─── BURN-PROOFING: Veo prints salient technical tokens straight onto the
+// frame ("MINH ~34 - 4000K" name/age/Kelvin badges, exactly like the old hex
+// name-tags). Negative prompts alone did NOT stop it — the only reliable fix
+// is to remove the burnable tokens from the payload itself: Kelvin/lux numbers
+// become descriptive words, and digit ages become word phrases (adults only —
+// child ages stay numeric for age-accuracy). Never applied to spoken dialogue.
+function kelvinWord(k: number): string {
+  if (k < 3200) return "warm golden tungsten light";
+  if (k < 4300) return "neutral warm-white light";
+  if (k < 5600) return "neutral daylight";
+  return "cool daylight";
+}
+function luxWord(lux: number): string {
+  if (lux < 150) return "dim, moody";
+  if (lux < 400) return "soft, gentle";
+  if (lux < 800) return "bright, even";
+  return "very bright";
+}
+export function stripBurnableTech(text?: string | null): string {
+  let out = (text ?? "").toString();
+  // "key 4000K", "~450 lux", "3000K, ~200 lux" → words
+  out = out.replace(/(?:key\s*)?~?\s*(\d{3,5})\s*K\b/g, (_m, k: string) => ` ${kelvinWord(parseInt(k, 10))}`);
+  out = out.replace(/~?\s*(\d{2,5})\s*lux\b/gi, (_m, l: string) => ` ${luxWord(parseInt(l, 10))} light level`);
+  return out.replace(/\s{2,}/g, " ").replace(/\s+([,.;)])/g, "$1").trim();
+}
+function ageBand(n: number): string {
+  const decade =
+    n < 20 ? "late teens" :
+    n < 30 ? "twenties" : n < 40 ? "thirties" : n < 50 ? "forties" :
+    n < 60 ? "fifties" : n < 70 ? "sixties" : "seventies";
+  if (n < 20) return "in their late teens";
+  const pos = n % 10 <= 3 ? "early" : n % 10 <= 6 ? "mid" : "late";
+  return `in their ${pos} ${decade}`;
+}
+export function agesToWords(text?: string | null): string {
+  let out = (text ?? "").toString();
+  // "~34 years old", "34 tuổi", "25-32 years old" → "in their mid-thirties".
+  // Ages under 18 keep the number (child age accuracy matters more than burn risk).
+  out = out.replace(
+    /~?\s*(\d{1,2})(?:\s*[-–~]\s*(\d{1,2}))?\s*(?:years?\s*old|tuổi)/gi,
+    (m, a: string, b?: string) => {
+      const n = b ? Math.round((parseInt(a, 10) + parseInt(b, 10)) / 2) : parseInt(a, 10);
+      if (!Number.isFinite(n) || n < 18) return m;
+      return ` ${ageBand(n)}`;
+    }
+  );
+  return out.replace(/\s{2,}/g, " ").replace(/\s+([,.;)])/g, "$1").trim();
 }
 
 /** Build concise, paste-ready Flow/Veo JSON objects using the user's proven
@@ -1851,6 +1903,10 @@ export function buildVeoJson(
       .replace(/\s{2,}/g, " ")
       .replace(/\s+([,.;)])/g, "$1")
       .trim();
+  // Full burn-proof scrub for PROSE fields (never dialogue): hex + Kelvin/lux
+  // numbers + digit ages all become words so Veo has no label-shaped tokens to
+  // print on the frame ("MINH ~34 - 4000K" badges).
+  const scrub = (s?: string | null) => agesToWords(stripBurnableTech(noHex(s)));
   const lang = opts.dialogueLanguage ?? "Vietnamese";
   const locks = breakdown.character_locks ?? [];
   const sb = breakdown.scene_bible;
@@ -1924,10 +1980,10 @@ export function buildVeoJson(
         hair: wardrobe.hair || lock.hair,
       };
     });
-    const entryState = oneLine(seg.scene_intent?.entry_exit?.entry_state) || oneLine(seg.first_frame_prompt);
-    const exitState = oneLine(seg.scene_intent?.entry_exit?.exit_state) || oneLine(seg.continuity_note);
+    const entryState = scrub(seg.scene_intent?.entry_exit?.entry_state) || scrub(seg.first_frame_prompt);
+    const exitState = scrub(seg.scene_intent?.entry_exit?.exit_state) || scrub(seg.continuity_note);
     const mainAction =
-      oneLine(seg.motion_prompt) || oneLine(seg.scene_intent?.performance?.physical_behavior);
+      scrub(seg.motion_prompt) || scrub(seg.scene_intent?.performance?.physical_behavior);
     const characterLock = Object.fromEntries(
       visibleLocks.map((lock) => {
         const id = charIds.get(lock.name.trim().toLowerCase()) || "CHAR_1";
@@ -1939,7 +1995,7 @@ export function buildVeoJson(
             name: lock.name,
             species: `Human${culture ? ` - ${culture}` : ""}${lock.is_child ? " child" : ""}`,
             gender: lock.gender === "male" ? "Male" : lock.gender === "female" ? "Female" : "Unspecified",
-            age: noHex(lock.gender_age),
+            age: scrub(lock.gender_age),
             voice_personality: oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child),
             body_build: noHex(lock.build),
             face_shape: "Match the attached reference; preserve locked facial geometry",
@@ -1947,7 +2003,7 @@ export function buildVeoJson(
             eyes: noHex(lock.eye_details || lock.eyes),
             skin_or_fur_color: noHex(lock.skin_tone),
             skin_texture: noHex(lock.skin_texture),
-            signature_feature: noHex(lock.signature_features),
+            signature_feature: scrub(lock.signature_features),
             outfit_top: outfit.top,
             outfit_bottom: outfit.bottom,
             outfit_materials: noHex(lock.wardrobe_materials),
@@ -2002,10 +2058,10 @@ export function buildVeoJson(
       scene_id: String(seg.segment_number),
       duration_sec: String(clipSeconds),
       visual_style: [
-        noHex(breakdown.style_guide?.art_direction),
-        noHex(sb?.lens),
-        noHex(sb?.color_grade),
-        noHex(sb?.film_grain),
+        scrub(breakdown.style_guide?.art_direction),
+        scrub(sb?.lens),
+        scrub(sb?.color_grade),
+        scrub(sb?.film_grain),
       ]
         .filter(Boolean)
         .join("; "),
@@ -2014,10 +2070,10 @@ export function buildVeoJson(
       background_lock: {
         id: seg.environment_ref || `BACKGROUND_${seg.segment_number}`,
         name: env?.display_name || seg.title,
-        setting: oneLine(seg.first_frame_prompt),
-        scenery: oneLine(sb?.backdrop),
+        setting: scrub(seg.first_frame_prompt),
+        scenery: scrub(sb?.backdrop),
         props: noHex(breakdown.product_dna) || "Only props explicitly named in setting and action",
-        lighting: [oneLine(sb?.lighting), env ? `${env.lighting.key_kelvin}K, ~${env.lighting.ambient_lux} lux` : ""]
+        lighting: [scrub(sb?.lighting), env ? scrub(`${env.lighting.key_kelvin}K, ~${env.lighting.ambient_lux} lux`) : ""]
           .filter(Boolean)
           .join("; "),
         persistence: opts.hasLocationRef
@@ -2027,14 +2083,15 @@ export function buildVeoJson(
       camera: {
         framing: camera.framing,
         angle: camera.angle,
-        movement: camera.movement,
+        movement: scrub(camera.movement),
         focus: "cinematic natural depth of field; focus follows the explicitly assigned camera subject in the movement plan, NOT the active speaker — a speaker may be off-camera or softly out of focus while the listener's reaction is the sharp focal subject; interacted props stay readable",
       },
       scene_action: {
         start_state: entryState,
         motion: mainAction,
         end_state: exitState,
-        continuity_from_previous: oneLine(seg.continuity_note),
+        continuity_from_previous: scrub(seg.continuity_note),
+        staging: "Conversation partners face EACH OTHER per the positions in background_lock.setting — a speaker never turns their back to the person addressed, and the two are never staged side-by-side facing the same direction like presenters, unless the motion explicitly stages it.",
       },
       foley_and_ambience: {
         ambience,
