@@ -316,6 +316,15 @@ export async function geminiGenerateImage(params: {
 
   let lastErr = "Unknown error";
 
+  // Transient overload (503 "high demand", 429 rate-limit) is NOT a reason to
+  // fail the whole call: retry the same model once after a short backoff, and
+  // if it is still busy fall through to the next model in the chain (the
+  // standard Nano Banana is usually fine when Pro spikes).
+  const isOverloaded = (status: number, msg?: string) =>
+    status === 503 ||
+    status === 429 ||
+    /high demand|overloaded|temporar|resource.?exhaust/i.test(msg ?? "");
+
   for (const model of models) {
     // Richest config first (aspect + size). On a 400 (model rejects a field)
     // step down: aspect-only, then no image config at all.
@@ -327,6 +336,11 @@ export async function geminiGenerateImage(params: {
     }
     if (res.status === 400 && topLevel >= 1) {
       ({ res, json } = await callApi(model, 0)); // drop image config entirely
+    }
+    if (!res.ok && isOverloaded(res.status, json.error?.message)) {
+      console.warn(`[Gemini] ${model} overloaded (${res.status}); retrying once after backoff`);
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      ({ res, json } = await callApi(model, topLevel));
     }
 
     if (res.ok && !json.error) {
@@ -356,6 +370,13 @@ export async function geminiGenerateImage(params: {
     // If this model is simply unavailable to the key, try the next one.
     if (isModelUnavailable(res.status, message)) {
       console.warn(`[Gemini] ${model} unavailable, falling back. ${lastErr}`);
+      continue;
+    }
+
+    // Still overloaded after the backoff retry → fall back to the next model
+    // in the chain instead of failing (Pro demand spikes rarely hit Standard).
+    if (isOverloaded(res.status, message)) {
+      console.warn(`[Gemini] ${model} still overloaded, falling back. ${lastErr}`);
       continue;
     }
 
