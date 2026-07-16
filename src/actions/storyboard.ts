@@ -270,6 +270,21 @@ function normalizeDialogue(breakdown: StoryboardGenerationOutput): void {
         end_s: typeof t.end_s === "number" ? t.end_s : undefined,
       }));
 
+    // MERGE CONSECUTIVE SAME-SPEAKER TURNS: two back-to-back turns by the same
+    // person read to Veo as "say it twice" and clutter the audio map — join
+    // them into one continuous line spanning both windows.
+    const mergedTurns: typeof turns = [];
+    for (const t of turns) {
+      const last = mergedTurns[mergedTurns.length - 1];
+      if (last && last.speaker.toLowerCase() === t.speaker.toLowerCase()) {
+        last.text = `${last.text} ${t.text}`.trim();
+        last.end_s = t.end_s ?? last.end_s;
+      } else {
+        mergedTurns.push({ ...t });
+      }
+    }
+    turns = mergedTurns;
+
     // Rebuild plausible sequential, non-overlapping windows within 10s whenever
     // timing is missing, inconsistent, or no longer matches the text length —
     // the user edits line TEXT in the preview without touching the old
@@ -543,14 +558,46 @@ function enforceMenuCharacterContract(
   const used = new Set<CharacterLock>();
   const renamed = new Map<string, string>();
 
+  // GENDER-AWARE PAIRING (the "Minh became female" catastrophe): when the
+  // model invents its own cast names ("Linh", "Nam"), blind POSITIONAL
+  // matching can staple the menu's male name onto the model's female body and
+  // vice versa — crossed voices, crossed wardrobe, chaos. Infer each side's
+  // gender (vision analysis text is authoritative for menu entries) and NEVER
+  // merge a menu entry with a model lock of the opposite gender.
+  const genderFromText = (t?: string | null): "male" | "female" | undefined =>
+    /\bfemale\b|phụ nữ|cô gái|\bnữ\b|\bwoman\b/i.test(t ?? "")
+      ? "female"
+      : /\bmale\b|đàn ông|chàng trai|\bnam giới\b|\bman\b/i.test(t ?? "")
+        ? "male"
+        : undefined;
+  const modelLockGender = (l: CharacterLock): "male" | "female" | undefined =>
+    l.gender ?? genderFromText(`${l.gender_age ?? ""} ${l.signature_features ?? ""}`);
+
   const menuLocks = menu.map((entry, index): CharacterLock => {
+    const entryGender = genderFromText(
+      analysis.characterDescriptions[entry.name] || entry.appearance
+    );
     const exact = modelLocks.find(
       (l) =>
         !used.has(l) &&
         l.name.trim().toLowerCase() === entry.name.toLowerCase()
     );
-    const positional = modelLocks.find((l, i) => i === index && !used.has(l));
-    const existing = exact ?? positional;
+    // Prefer an unused model lock with the SAME gender; fall back to the
+    // positional lock only when genders don't conflict. A conflicting
+    // positional lock is skipped entirely (fresh menu lock is safer than a
+    // cross-gender merge).
+    const sameGender = entryGender
+      ? modelLocks.find((l) => !used.has(l) && modelLockGender(l) === entryGender)
+      : undefined;
+    const positionalCandidate = modelLocks.find((l, i) => i === index && !used.has(l));
+    const positional =
+      positionalCandidate &&
+      (!entryGender ||
+        !modelLockGender(positionalCandidate) ||
+        modelLockGender(positionalCandidate) === entryGender)
+        ? positionalCandidate
+        : undefined;
+    const existing = exact ?? sameGender ?? positional;
     const visualDescription =
       analysis.characterDescriptions[entry.name] || entry.appearance || "";
     const bodyType =
@@ -575,6 +622,8 @@ function enforceMenuCharacterContract(
       return {
         ...existing,
         name: entry.name,
+        // The uploaded photo's analysed gender always wins over the model's.
+        gender: entryGender ?? existing.gender,
         is_child: entry.isChild || existing.is_child,
         build: physicalBuild || existing.build,
         signature_features:
@@ -586,6 +635,7 @@ function enforceMenuCharacterContract(
 
     return {
       name: entry.name,
+      gender: entryGender,
       is_child: entry.isChild,
       gender_age: entry.isChild
         ? "child matching the uploaded menu reference"

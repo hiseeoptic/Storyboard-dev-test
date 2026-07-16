@@ -1825,7 +1825,7 @@ Compatible with: Google Veo 3.1, Seedance 2.0, Kling, Runway, Pika`;
 
 /** The one comprehensive negative list, reused at project + clip level. */
 export const VEO_NEGATIVE_LIST =
-  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, floating character name tag, a character's name or age rendered as a label, character info card overlaid on the footage, colour-temperature or Kelvin label, exposure/Kelvin/lux/timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo, plastic or CGI skin";
+  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, both characters talking at once, overlapping or simultaneous voices, doubled voice, chorus, echo, a spoken line repeated or duplicated, listener lip movement, lip movement during voiceover, narrator voice coming from a visible character's mouth, wrong speaker lip sync, swapped voices, ad-lib speech, speech bubble, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, floating character name tag, a character's name or age rendered as a label, character info card overlaid on the footage, colour-temperature or Kelvin label, exposure/Kelvin/lux/timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo, plastic or CGI skin";
 
 interface VeoJsonOptions {
   aspectRatio: string;
@@ -2102,13 +2102,41 @@ export function buildVeoJson(
             : "None unless explicitly required by the scene",
       },
       dialogue,
-      lip_sync_director_note:
-        dialogue.length > 0
-          ? "DIALOGUE OWNERSHIP: each line belongs exclusively to its named speaker and is spoken in that person's voice from that person's physical position; no other character may produce any lip, jaw or speech-like mouth movement during that line. SPEAKER GAZE: the speaker looks toward the person they are addressing per the scene geometry — never automatically toward the camera, and never with their back to the person addressed. LISTENER: silent, lips naturally closed, reacting only through eyes, brows, breathing and posture. CAMERA INDEPENDENCE: camera subject, framing and focus are independent of dialogue ownership — the camera may hold the speaker, the listener's reaction, or both; when it holds the listener, the line continues as the speaker's off-screen voice and NO on-screen mouth moves to it. One voice at a time; dialogue is audio only."
-          : "No spoken dialogue; all visible mouths remain naturally closed.",
+      lip_sync_director_note: (() => {
+        if (dialogue.length === 0)
+          return "No spoken dialogue; all visible mouths remain naturally closed.";
+        // Deterministic SECOND-BY-SECOND AUDIO MAP (the discipline that made
+        // hand-fixed prompts work): silence gaps and exactly one owner per
+        // window, so Veo can never guess a speaker from the framing.
+        const fmt = (n: number) => (Math.round(n * 10) / 10).toString();
+        const windows = dialogue
+          .filter((t) => typeof t.start_sec === "number" && typeof t.end_sec === "number")
+          .slice()
+          .sort((a, b) => (a.start_sec as number) - (b.start_sec as number));
+        let timeline = "";
+        if (windows.length === dialogue.length && windows.length > 0) {
+          const parts: string[] = [];
+          let cursor = 0;
+          for (const w of windows) {
+            const s = w.start_sec as number;
+            const e = w.end_sec as number;
+            if (s - cursor > 0.15) parts.push(`${fmt(cursor)}-${fmt(s)}s silence`);
+            const who =
+              w.speaker_id === "VOICEOVER"
+                ? "VOICEOVER only (off-screen narrator; NO on-screen mouth moves)"
+                : `${String(w.speaker_name).toUpperCase()}/${w.speaker_id} only`;
+            parts.push(`${fmt(s)}-${fmt(e)}s ${who}`);
+            cursor = Math.max(cursor, e);
+          }
+          if (clipSeconds - cursor > 0.15) parts.push(`${fmt(cursor)}-${fmt(clipSeconds)}s silence`);
+          timeline = `STRICT SEQUENTIAL AUDIO — NEVER MIX OR OVERLAP VOICES: ${parts.join("; ")}. `;
+        }
+        return `${timeline}DIALOGUE OWNERSHIP: each line belongs exclusively to its named speaker and is spoken in that person's voice from that person's physical position; no other character may produce any lip, jaw or speech-like mouth movement during that line — each line is spoken EXACTLY ONCE, never repeated or echoed. SPEAKER GAZE: the speaker looks toward the person they are addressing per the scene geometry — never automatically toward the camera, and never with their back to the person addressed. LISTENER: silent, lips naturally closed, reacting only through eyes, brows, breathing and posture. VOICEOVER: comes from a fully off-screen narrator — neither visible character may move their lips during narration. CAMERA INDEPENDENCE: camera subject, framing and focus are independent of dialogue ownership — the camera may hold the speaker, the listener's reaction, or both; when it holds the listener, the line continues as the speaker's off-screen voice and NO on-screen mouth moves to it. One voice at a time; dialogue is audio only.`;
+      })(),
       output_rules: {
         frame: "one clean full-screen continuous shot; never render a storyboard sheet, grid, panel, reference strip or document",
         on_screen_text: "ZERO — no letters, words, names, ages, numbers, labels, logos, captions, subtitles, badges, cards, HUD or technical overlays",
+        audio: "Dialogue and voiceover are spoken audio only. Exactly ONE voice at a time following the dialogue start_sec/end_sec windows; silent gaps between lines are mandatory; no simultaneous voices, chorus, echo, duplicated or repeated line, and no extra ad-lib speech.",
         reference_priority: "uploaded character and location menu references are authoritative; never merge, omit or swap identities",
       },
       negative_prompt: VEO_NEGATIVE_LIST,
