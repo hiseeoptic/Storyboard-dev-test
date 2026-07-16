@@ -136,6 +136,11 @@ export interface StoryboardGenerationInput {
   /** Numerology (and topic) script tone: emotional/inspiring, sharp behavioral
    * analysis, or both blended. Defaults to "balanced". */
   numerology_style?: "inspirational" | "analytical" | "balanced";
+  /** Numerology hook mode. "situation" (default): the hook is a real-life
+   * situation with NO numbers — the number is revealed at beat 3 as the
+   * explanation (reaches cold viewers). "number_callout": legacy hook that
+   * names the number in line 1 (retargeting followers). */
+  numerology_hook_mode?: "situation" | "number_callout";
   /** Cooking-only canonical data. It MUST be ignored unless genre === cooking. */
   cooking_recipe?: CookingRecipeIR;
   /** Cooking-only directing profile. It MUST be ignored unless genre === cooking. */

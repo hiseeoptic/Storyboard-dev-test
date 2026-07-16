@@ -868,6 +868,18 @@ export function GenerateClient() {
   const [numerologyStyle, setNumerologyStyle] = useState<
     "inspirational" | "analytical" | "balanced"
   >("balanced");
+  // Hook mode: "situation" (default) opens on a real-life scene with NO numbers
+  // (the number is revealed at beat 3); "number_callout" is the legacy
+  // number-first hook for retargeting followers. Persisted.
+  const [numerologyHookMode, setNumerologyHookModeState] = useState<
+    "situation" | "number_callout"
+  >("situation");
+  const setNumerologyHookMode = (m: "situation" | "number_callout") => {
+    setNumerologyHookModeState(m);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("sb_numerology_hook_mode", m);
+    }
+  };
 
   // ─── Script model (default GPT-5-mini — user's choice for cost + quality;
   // images always stay on Gemini/Nano Banana).
@@ -903,6 +915,13 @@ export function GenerateClient() {
         : null;
     if (savedStyle === "inspirational" || savedStyle === "analytical" || savedStyle === "balanced") {
       setNumerologyStyle(savedStyle);
+    }
+    const savedHookMode =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("sb_numerology_hook_mode")
+        : null;
+    if (savedHookMode === "situation" || savedHookMode === "number_callout") {
+      setNumerologyHookModeState(savedHookMode);
     }
   }, []);
 
@@ -1253,9 +1272,9 @@ export function GenerateClient() {
 
     // Auto-include uploads still sitting in the form (user may not have
     // clicked "Add ...") so reference photos are never silently dropped.
-    const effectiveCharacters = cookingHandsOnly
-      ? []
-      : [
+    // Hands-only cooking styles KEEP uploaded characters: the compiler scopes
+    // them to the final clip only (the eating payoff, face visible).
+    const effectiveCharacters = [
           ...characters,
           ...(charImages.length > 0
             ? [{
@@ -1427,6 +1446,7 @@ export function GenerateClient() {
       video_goal: genre === "cooking" ? "cooking" : videoGoal,
       script_provider: scriptProvider,
       numerology_style: numerologyStyle,
+      numerology_hook_mode: numerologyHookMode,
       dialogue_language:
         genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)
           ? undefined
@@ -1893,6 +1913,7 @@ export function GenerateClient() {
         aspectRatio: aspect,
         dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
         ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
+        hasLocationRef: (genInput?.background_images?.length ?? 0) > 0,
       });
       zip.file(`veo_prompts.json`, JSON.stringify(veoJson, null, 2));
       const clipArr = Array.isArray((veoJson as { clips?: unknown[] }).clips)
@@ -2296,6 +2317,7 @@ export function GenerateClient() {
       aspectRatio: genInput?.aspect_ratio ?? "9:16",
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
       ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
+      hasLocationRef: (genInput?.background_images?.length ?? 0) > 0,
     });
     const resultJsonClips = Array.isArray((resultVeoJson as { clips?: unknown[] }).clips)
       ? ((resultVeoJson as { clips: unknown[] }).clips as unknown[])
@@ -3100,6 +3122,11 @@ export function GenerateClient() {
                       ? 'Loại này lấy nội dung từ "Kho chủ đề" ở Bước 1 (chọn chủ đề → nội dung đổ vào ô ý tưởng). AI sẽ viết theo khung 5 nhịp Hook → Giải mã → CTA.'
                       : 'This type pulls content from the Topic Library in Step 1. The AI writes it in the 5-beat Hook → Insight → CTA framework.'}
                   </p>
+                  <p className="rounded-md bg-primary/5 p-2 text-xs text-muted-foreground">
+                    {lang === "vi"
+                      ? '💡 Chỉ cần gõ ngắn gọn, ghép 2-3 chỉ số tuỳ ý: "Hành trình của cô gái có Số Chủ Đạo 1, Sứ Mệnh 5" / "chàng trai Nội Tâm 7, Sứ Mệnh 9" / "Nội Tâm 2, Chủ Đạo 8, Sứ Mệnh 3"… (hỗ trợ Chủ Đạo, Sứ Mệnh, Nội Tâm, Linh Hồn, Nhân Cách, Thái Độ, Trưởng Thành, Ngày Sinh, Đam Mê). App tự nhận diện và tự dựng bối cảnh, môi trường, đạo cụ, hành động, lời thoại theo hồ sơ năng lượng từng số + quan hệ ngũ hành giữa chúng. Không cần mô tả gì thêm.'
+                      : '💡 Just type a short line combining any 2-3 indices: "Journey of a girl with Life Path 1, Mission 5" / "a guy with Soul Urge 7, Mission 9"… The app detects the numbers and auto-builds setting, environment, props, actions and dialogue from each number\'s stored energy profile (including element relationships). No extra description needed.'}
+                  </p>
                   {genre === "numerology" && (
                     <div className="space-y-2 pt-1">
                       <label className="text-xs font-medium">
@@ -3138,6 +3165,46 @@ export function GenerateClient() {
                             <div className="flex items-center justify-between gap-1">
                               <span className="text-xs font-medium">{o.t}</span>
                               {numerologyStyle === o.v && <Check className="h-3.5 w-3.5 text-primary" />}
+                            </div>
+                            <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground">{o.d}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <label className="pt-1 text-xs font-medium">
+                        {lang === "vi" ? "Kiểu hook mở đầu" : "Hook mode"}
+                      </label>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {(
+                          [
+                            {
+                              v: "situation",
+                              t: lang === "vi" ? "Tình huống đời thực (khuyên dùng)" : "Real-life situation (recommended)",
+                              d: lang === "vi"
+                                ? "Mở bằng cảnh gây sốc/đồng cảm, KHÔNG nhắc số — con số chỉ xuất hiện ở nhịp giải mã. Hút cả người chưa biết thần số học."
+                                : "Open on a shocking/relatable scene with NO numbers — the number appears only at the reveal beat. Reaches cold viewers.",
+                            },
+                            {
+                              v: "number_callout",
+                              t: lang === "vi" ? "Gọi thẳng con số" : "Number call-out",
+                              d: lang === "vi"
+                                ? "Mở bằng \"Nếu bạn là Số X…\" — dành cho video retarget người đã biết số của mình."
+                                : "Open with \"If you're Number X…\" — for retargeting followers who know their numbers.",
+                            },
+                          ] as const
+                        ).map((o) => (
+                          <button
+                            key={o.v}
+                            type="button"
+                            onClick={() => setNumerologyHookMode(o.v)}
+                            className={`rounded-lg border p-2 text-left transition ${
+                              numerologyHookMode === o.v
+                                ? "border-primary bg-primary/10"
+                                : "border-border hover:border-primary/50"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-medium">{o.t}</span>
+                              {numerologyHookMode === o.v && <Check className="h-3.5 w-3.5 text-primary" />}
                             </div>
                             <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground">{o.d}</span>
                           </button>
@@ -3248,8 +3315,8 @@ export function GenerateClient() {
                   <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                   <span>
                     {lang === "vi"
-                      ? "Phong cách Cooking ASMR đang chọn là tay/POV: có thể bỏ qua toàn bộ bước nhân vật. Ảnh khuôn mặt đang có sẽ không được gửi sang Vision hay chèn vào video."
-                      : "The selected Cooking ASMR profile is hands/POV. You may skip characters; existing face photos will not be sent to Vision or inserted into the video."}
+                      ? "Phong cách Cooking ASMR đang chọn là tay/POV: các cảnh nấu chỉ quay tay. Nếu bạn tải ảnh nhân vật, người đó sẽ CHỈ xuất hiện ở clip cuối — ngồi vào bàn và nếm miếng đầu tiên, quay rõ mặt."
+                      : "The selected Cooking ASMR profile is hands/POV: cooking scenes show hands only. If you upload a character, they appear ONLY in the final clip — seated at the table tasting the first bite, face clearly visible."}
                   </span>
                 </div>
               )}

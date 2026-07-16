@@ -36,7 +36,10 @@ function buildSceneIntent(
   const isHook = segmentIndex === 0;
   const recipe = input.cooking_recipe!;
   const sound = scene.asmr_cues.join(", ") || "natural sound caused by the visible cooking contact";
-  const promise = `See ${recipe.dish_name} reach the finished texture and presentation shown in the opening preview`;
+  const promise = `See ${recipe.dish_name} reach the finished texture and presentation shown in the opening money shot`;
+  const eatingCook = ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")
+    ? (input.character_descriptions ?? [])[0]?.name?.trim()
+    : undefined;
   return {
     intent_id: `cooking_${scene.function}_${String(segmentIndex + 1).padStart(2, "0")}`,
     state: "locked",
@@ -56,9 +59,9 @@ function buildSceneIntent(
       immediate_visual_event: isHook ? scene.start_frame : "No secondary hook; continue from the entry state",
       immediate_audio_event: isHook ? sound : "No separate hook audio event",
       dialogue_hook: "none — cooking action and diegetic sound carry the scene",
-      payoff_link: isHook ? `The final clip resolves on ${recipe.hero_visual || recipe.dish_name}` : "Supports the locked cooking order",
+      payoff_link: isHook ? `The final clip resolves on ${recipe.hero_visual || recipe.dish_name} served into the eating vessel` : "Supports the locked cooking order",
       forbidden_delays: isHook
-        ? ["wide room overview", "greeting", "logo", "ingredient roll-call", "title card"]
+        ? ["wide room overview", "greeting", "logo", "flat ingredient roll-call list", "title card"]
         : ["new opening hook", "unrelated exposition"],
     },
     narrative_objective: `Perform ${scene.title} as one readable causal cooking operation.`,
@@ -72,11 +75,11 @@ function buildSceneIntent(
       state_before: scene.start_frame,
       trigger: scene.action_timeline,
       state_after: isHook
-        ? `${scene.end_state}; the next clip uses an explicit editorial cut back to the recipe beginning`
+        ? `${scene.end_state}; the next clip cuts back to the raw-ingredient display at the recipe's start (explicit editorial reset — the only allowed non-causal jump)`
         : scene.end_state,
       information_revealed: `The viewer sees how this operation changes the dish toward ${recipe.dish_name}`,
       if_removed_what_breaks: isHook
-        ? "The video loses its finished-dish promise"
+        ? "The video loses its appetite-grabbing finished-dish promise"
         : "The recipe loses a necessary visual or causal transition",
     },
     performance: {
@@ -101,9 +104,11 @@ function buildSceneIntent(
       exit_state: scene.end_state,
       continuity_anchors: [scene.continuity_note, ...scene.visible_ingredient_ids],
       exit_hook: isHook
-        ? "hold the finished-dish promise, then make an explicit editorial cut back to the recipe start; never morph finished food into raw ingredients inside a shot"
+        ? "hold the finished-dish money shot to the end; the next clip opens on the raw-ingredient display via an explicit editorial cut — never morph finished food into raw ingredients inside a shot"
         : segmentIndex === segmentCount - 1
-          ? "settle on the finished dish"
+          ? eatingCook
+            ? `settle on ${eatingCook} tasting the first bite of the served dish, face clearly visible toward camera`
+            : "settle on the finished dish served into the eating vessel, ready to eat"
           : "leave the next recipe state visibly ready",
     },
     validation: {
@@ -117,7 +122,7 @@ function buildSceneIntent(
         "ingredient appears before its recipe step",
         "food or tool teleports/morphs",
         "multiple unrelated actions are crammed into the clip",
-        "the opening preview reset is depicted as an in-shot morph or teleport",
+        "the editorial reset is depicted as an in-shot morph or teleport",
         "style inspiration is copied as a fixed set or creator identity",
       ],
     },
@@ -158,7 +163,14 @@ export function compileCookingStoryboard(
   const handsOnly = ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(
     input.cooking_style ?? ""
   );
+  // The uploaded cook appears ONLY in the final clip (eating payoff, face
+  // visible); every other hands-only clip stays faceless.
+  const mainCook = handsOnly
+    ? (input.character_descriptions ?? [])[0]?.name?.trim()
+    : undefined;
   const segments = plan.segments.map((scene, index) => {
+    const isFinalSegment = index === plan.segments.length - 1;
+    const isEatingPayoff = isFinalSegment && !!mainCook;
     const beats = scene.beats.slice(0, beatCount).map((item) => ({
       beat: item.action,
       camera: item.camera,
@@ -172,9 +184,48 @@ export function compileCookingStoryboard(
     ];
     while (beats.length < beatCount) beats.push(defaults[beats.length]!);
     const visibleIds = scene.visible_ingredient_ids.filter((id) => validIngredientIds.has(id));
+    // Diegetic audio is the hook for cooking: mix the real contact sounds
+    // forward, layered and crisp, so each clip is immersive rather than sparse.
     const soundLine = scene.asmr_cues.length
-      ? `Audible physical contacts: ${scene.asmr_cues.join(", ")}.`
-      : "Use only the natural sound caused by the visible contact.";
+      ? `Audio: layer these real contact sounds up-front, crisp and close-miked for an immersive ASMR mix — ${scene.asmr_cues.join(", ")}.`
+      : "Audio: bring the natural cooking contact sound forward, crisp and close-miked, for an immersive ASMR feel.";
+    // Middle clips (not the ingredient hook, not the final plating) are the
+    // engine of the video — drive them faster and tighter on the transformation.
+    const isMiddle = index !== 0 && index !== plan.segments.length - 1;
+    const pacingLine = isMiddle
+      ? " PACE: fast and energetic — brisk match-on-action, visible time-compression/speed ramp on any repetitive motion (chopping runs, stirring), quick smooth reframes, tight macro push-ins locked on the ingredient transformation (blade contact, sizzle, bubbling, colour/texture/steam change); no dead frames — every second shows material visibly changing."
+      : "";
+    // Hands-only ASMR formats: Veo's worst failure here is a third hand — lock
+    // one pair hard in every clip. POV framing keeps the real setting alive
+    // behind the food work instead of context-free macro closeups.
+    // The eating-payoff clip shows the cook's face, so the hands-only POV and
+    // one-pair rules give way to a clean front framing there.
+    const handsLine =
+      handsOnly && !isEatingPayoff
+        ? " HANDS LOCK: exactly ONE cook — at most ONE PAIR of hands on screen (two hands total, identical skin tone and sleeves for the whole clip); the two hands never do two things in two separate places at once; never a third hand, never a second person's hands, never a disembodied hand entering from an impossible edge."
+        : "";
+    const povLine =
+      (handsOnly || (input.background_images?.length ?? 0) > 0) && !isEatingPayoff
+        ? " CAMERA POV: first-person from the cook's viewpoint — hands and food working in the lower foreground while the real setting stays alive and visible in the upper depth of frame (its light, weather and ambient motion present behind the action)."
+        : "";
+    // HOOK / OPENING / PAYOFF structures are enforced here deterministically —
+    // the plan model has repeatedly ignored them, so the compiler pins the
+    // timing regardless of its output. Hook = finished dish ONLY (cramming the
+    // ingredient pan into the same 10s produced rushed, poor shots); the
+    // ingredient display now OPENS segment 2; the uploaded cook appears only in
+    // the final clip to taste the dish, face clearly visible.
+    const hookLine =
+      index === 0
+        ? ` HOOK TIMING (mandatory, overrides any conflicting timing above): the whole 10s stays on the finished ${input.cooking_recipe!.dish_name} as one appetising money shot — 0-4s an immediate craveable TRIGGER INTERACTION on its most seductive element (chopsticks lifting glossy strands, a spoon breaking the soft egg yolk so it flows, a cheese pull, sauce drizzling, steam bursting); 4-10s keep exploring ONLY the same dish (slow push, texture, gloss, steam). No raw ingredients, no prep, no cooking action in this clip.`
+        : "";
+    const openingLine =
+      index === 1
+        ? ` OPENING (mandatory): this clip is an explicit editorial cut back to the recipe's beginning — 0-3s: the dish's FULL raw-ingredient arrangement, every ingredient fresh in separate bowls and kitchen vessels, held as a styled hero display; 3-10s: the first prep operation begins on those same ingredients. This is a cut between clips, never an in-shot morph of finished food into raw ingredients.`
+        : "";
+    const eatingLine =
+      isFinalSegment && mainCook
+        ? ` EATING PAYOFF (mandatory final beats): ${mainCook}, matching the attached character reference, is seated at the table behind the served dish from second 0, FACE fully visible to camera (never cropped, never turned away, never hidden behind the bowl or steam); in the last 3-4 seconds ${mainCook} lifts the first bite with the dish's utensil, tastes it, and reacts with visible genuine delight while facing the camera.`
+        : "";
     return {
       segment_number: index + 1,
       duration_seconds: 10,
@@ -182,12 +233,22 @@ export function compileCookingStoryboard(
       marketing_role: marketingRole(scene.function),
       scene_intent: buildSceneIntent(scene, input, index, plan.segments.length),
       beats,
-      first_frame_prompt: scene.start_frame,
-      motion_prompt: `${scene.action_timeline} End visibly and steadily on: ${scene.end_state}. ${soundLine}`,
+      // Segment 2 opens on the ingredient hero display; the final clip seats
+      // the eating character — both must exist in the start frame to render.
+      first_frame_prompt:
+        index === 1 &&
+        !/raw ingredient|nguyên liệu|arranged in (bowls|vessels|kitchen)|mise en place/i.test(scene.start_frame)
+          ? `The dish's full set of raw ingredients laid out fresh in separate bowls and kitchen vessels as a styled hero display. ${scene.start_frame}`
+          : isFinalSegment && mainCook && !new RegExp(mainCook, "i").test(scene.start_frame)
+            ? `${scene.start_frame} ${mainCook}, matching the attached character reference, sits at the table behind the served dish, face clearly visible toward camera.`
+            : scene.start_frame,
+      motion_prompt: `${scene.action_timeline} End visibly and steadily on: ${scene.end_state}.${hookLine}${openingLine}${eatingLine}${pacingLine}${handsLine}${povLine} ${soundLine}`,
       dialogue: "",
       speaker: "",
       characters_in_scene: handsOnly
-        ? []
+        ? isFinalSegment && mainCook
+          ? [mainCook]
+          : []
         : (input.character_descriptions ?? []).slice(0, 1).map((character) => character.name),
       environment_ref: "custom",
       continuity_note: `${scene.continuity_note}${visibleIds.length ? ` Ingredient state ids: ${visibleIds.join(", ")}.` : ""}`,
@@ -204,9 +265,9 @@ export function compileCookingStoryboard(
     world_context: context ? contextIrToWorldContext(context) : undefined,
     context_ir: context,
     marketing_structure: {
-      hook: `Finished-dish sensory preview: ${recipe.hero_visual || recipe.dish_name}`,
-      problem: "Raw ingredients require the exact ordered transformations in Recipe IR",
-      solution: "Mise en place and causal cooking operations build the dish visibly",
+      hook: `Finished-dish money shot with one craveable trigger interaction: ${recipe.hero_visual || recipe.dish_name}`,
+      problem: "Raw ingredients (revealed as a hero display opening clip 2) require the exact ordered transformations in Recipe IR",
+      solution: `Causal cooking operations build the dish visibly, then serve it into the eating vessel${mainCook ? ` — and ${mainCook} tastes the first bite, face visible` : ""}: ${recipe.hero_visual || recipe.dish_name}`,
       cta: ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")
         ? "Caption-only save prompt; no spoken CTA"
         : "Optional concise save-the-recipe prompt after the visual payoff",

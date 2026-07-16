@@ -86,7 +86,7 @@ function veoConciseTail(
     ? "plastic/CGI/wax/airbrushed skin, toy-like or 3D-render materials"
     : "unmotivated photoreal/stylized switching, accidental world-physics drift";
   const textLaw = "ZERO VISIBLE TEXT OR GRAPHICS: every frame is clean live footage with no readable letters, words, names, numbers, logos, labels or typography anywhere, including real-world signs and product printing. No subtitles, captions, dialogue transcription, title cards, name tags, floating boxes, badges, watermarks, HUD, camera data or technical overlays. All names, dialogue, brands, ages, temperatures, lens values and timing values in this prompt are INTERNAL instructions only. Spoken words are AUDIO ONLY.";
-  return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${textLaw} Avoid: ${productNeg}storyboard sheets, grids, panel borders, reference thumbnails, character name tags or labels on screen, colour-code or hex-code text overlays, burned-in subtitles or captions, spoken words rendered as on-screen text, morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, the face changing, deformed food or liquid, ${renderNeg}.`;
+  return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${textLaw} Avoid: ${productNeg}storyboard sheets, grids, panel borders, reference thumbnails, character name tags or labels on screen, colour-code or hex-code text overlays, burned-in subtitles or captions, spoken words rendered as on-screen text, morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, a third hand, an extra pair of hands, a disembodied hand entering the frame, the face changing, deformed food or liquid, ${renderNeg}.`;
 }
 
 /** One-line "Scene Bible" style tokens. Keeps lens/lighting/grade constant so
@@ -165,6 +165,105 @@ NGŨ HÀNH → MÔI TRƯỜNG & MÀU (dùng để dựng bối cảnh/ánh sáng
 · Kim (Metal): kim loại/kính/tối giản, đường nét sắc, chính xác; xám–trắng lạnh, tĩnh, sạch.
 · Hỏa (Fire): hoàng hôn/lửa/nến, ánh sáng rực; đỏ–cam ấm, đam mê, quầng sáng phát ra.`;
 
+// ─── AUTO NUMBER-PROFILE EXPANSION ──────────────────────────────────────────
+// The user should only need to type "Hành trình của cô gái có Số Chủ Đạo 1,
+// Sứ Mệnh 5". We detect the numbers in that one line and inject each number's
+// full VIDEO profile (signature environments, prop, reactive/conscious
+// gestures) plus the computed ngũ-hành relationship — so setting, environment,
+// actions and dialogue are all derived automatically from stored knowledge.
+const NUMBER_VIDEO_PROFILES: Record<
+  number,
+  { ten: string; hanh: string; moiTruong: string; prop: string; reactive: string; conscious: string }
+> = {
+  1: { ten: "Thủ Lĩnh", hanh: "Thủy", moiTruong: "sống núi mù sương, con đường chưa ai đi, bình minh trên đỉnh, người khác bắt đầu đi theo sau", prop: "áo khoác da sờn / la bàn", reactive: "ôm hết việc \"để tôi làm cho nhanh\", đi trước đám đông không ngoái lại, quai hàm siết khi việc chệch hướng, người cuối cùng tắt đèn", conscious: "chỉ đường rồi lùi lại cho người khác bước, đặt tay lên vai người đi sau, dấu chân đầu tiên in trên lối mới" },
+  2: { ten: "Yêu Thương", hanh: "Thổ", moiTruong: "bàn ăn gia đình, hai bàn tay đan nhau, quán cà phê ấm, khoảnh khắc hoà giải", prop: "hai tách trà / chiếc khăn choàng", reactive: "gật đầu dù không muốn, đọc lại tin nhắn ba lần trước khi gửi, nhường đến khi bùng nổ", conscious: "nắm tay hoà giải, nói \"không\" nhẹ mà chắc, hai bàn tay đan giữa bàn ăn" },
+  3: { ten: "Người Truyền Cảm Hứng", hanh: "Mộc", moiTruong: "sân khấu nhỏ, xưởng vẽ đầy màu, con phố rực rỡ, đám đông bật cười", prop: "chiếc mic nhỏ / cây cọ vẽ", reactive: "cười to giữa đám đông rồi im bặt khi về nhà, mở năm dự án bỏ dở cả năm", conscious: "một câu nói trên sân khấu nhỏ khiến một người bật khóc, hoàn thành trọn vẹn một tác phẩm" },
+  4: { ten: "Người Thầy", hanh: "Mộc", moiTruong: "công trường / xưởng mộc ngoài trời, xếp từng viên gạch, bản vẽ, nền móng vững", prop: "cây thước / cuộn bản vẽ", reactive: "sắp mọi thứ thẳng hàng, không rời checklist, cứng người khi kế hoạch đổi phút chót", conscious: "đặt viên gạch đầu tiên cho người khác xây tiếp, trao cuộn bản vẽ cho học trò" },
+  5: { ten: "Phiêu Du", hanh: "Thổ", moiTruong: "ngã ba đường hoàng hôn, ga tàu, vách đá nhìn biển, con đường vô tận", prop: "ba lô bạc màu / tấm bản đồ gấp", reactive: "2 giờ sáng xếp đồ vào ba lô, thề \"lần này nghiêm túc\" rồi ba giây sau vớ lấy ba lô, lướt vé máy bay giữa cuộc họp", conscious: "dừng chân ở một bản làng để dạy học, mang câu chuyện từ mọi miền về cho một người ngồi nghe" },
+  6: { ten: "Gia Đình", hanh: "Kim", moiTruong: "căn bếp ấm, chăm em nhỏ, khu vườn, mâm cơm sum vầy", prop: "chiếc tạp dề / khung ảnh gia đình", reactive: "nửa đêm dọn phòng cho cả nhà, hỏi \"ăn chưa\" thay vì \"buồn không\", kiểm soát từng chi tiết nhỏ", conscious: "ngồi xuống ăn cùng thay vì đứng phục vụ, để con tự vấp rồi ôm con sau đó" },
+  7: { ten: "Chiêm Nghiệm", hanh: "Kim", moiTruong: "thư viện cổ, đỉnh đồi tĩnh lặng, bờ hồ sương sớm, thiền giữa rừng", prop: "cuốn sổ tay / cặp kính", reactive: "rời bữa tiệc sớm không chào ai, hai ngày sau mới trả lời tin nhắn, ánh mắt nhìn xuyên qua người đối diện", conscious: "mở một trang sổ tay chia sẻ với đúng một người, mời ai đó bước vào khoảng lặng của mình" },
+  8: { ten: "Kinh Doanh", hanh: "Thổ", moiTruong: "nóc toà nhà nhìn thành phố, cái bắt tay thương vụ, sân khấu trao giải — ngoài trời, tránh bàn giấy", prop: "chiếc đồng hồ / chùm chìa khoá", reactive: "trả lời email giữa đám cưới, đo mọi thứ bằng con số, vai gồng như vác két sắt", conscious: "ký bảng lương đầu tiên cho đội của mình, tắt điện thoại đúng sáu giờ tối để về ăn cơm" },
+  9: { ten: "Nhân Đạo", hanh: "Hỏa", moiTruong: "bản làng vùng cao, trao quà cho trẻ, đống lửa với người lạ, hoàng hôn bao dung", prop: "thùng quà / chiếc khăn quàng", reactive: "cho đến đồng cuối cùng rồi khóc một mình, ôm nỗi buồn của cả thế giới về nhà", conscious: "trao món quà và chịu NHẬN lại một cái ôm, ngồi bên đống lửa lắng nghe người lạ" },
+  11: { ten: "Người Khai Sáng", hanh: "Thủy", moiTruong: "không gian rộng nhiều ánh sáng, căn phòng tối có một ngọn đèn, mặt nước phản chiếu bình minh", prop: "ngọn đèn dầu / cây nến", reactive: "mất ngủ vì trực giác quá tải, cảm nhận trước điều chưa xảy ra và sợ chính nó", conscious: "nói đúng một câu người kia cần nghe, thắp đèn trong căn phòng tối cho người khác bước vào" },
+  22: { ten: "Người Kiến Tạo", hanh: "Thổ", moiTruong: "công trình lớn đang dựng, bản thiết kế trải trên nền đất, thành phố nhìn từ giàn giáo", prop: "mô hình kiến trúc / bản thiết kế", reactive: "gánh cả công trình trên vai, trắng đêm vì \"phải lớn hơn nữa\"", conscious: "đặt móng cho công trình trăm người sẽ ở, đứng lùi nhìn thứ mình xây sáng đèn" },
+  33: { ten: "Người Chữa Lành", hanh: "Hỏa", moiTruong: "hiên nhà chiều muộn, trạm xá nhỏ, vòng tròn người quanh bếp lửa, khu vườn thuốc", prop: "tách trà nóng / chiếc chăn mỏng", reactive: "kiệt sức vì ai cũng dựa vào mình, quên mất chính mình cũng cần được hỏi han", conscious: "băng bó cho người khác xong tự cho phép mình ngồi nghỉ, dạy một người cách tự chữa lành" },
+};
+const SINH: Record<string, string> = { "Mộc": "Hỏa", "Hỏa": "Thổ", "Thổ": "Kim", "Kim": "Thủy", "Thủy": "Mộc" };
+const KHAC: Record<string, string> = { "Mộc": "Thổ", "Thổ": "Thủy", "Thủy": "Hỏa", "Hỏa": "Kim", "Kim": "Mộc" };
+
+function nguHanhRelation(a: number, b: number): string {
+  const ha = NUMBER_VIDEO_PROFILES[a]?.hanh;
+  const hb = NUMBER_VIDEO_PROFILES[b]?.hanh;
+  if (!ha || !hb) return "";
+  if (ha === hb) return `${ha} (${a}) cùng hành ${hb} (${b}) → AMPLIFY: cùng đẩy một hướng — siêu năng lực chung + điểm mù chung.`;
+  if (SINH[ha] === hb) return `${ha} (${a}) SINH ${hb} (${b}) → tương sinh: năng lượng ${a} nuôi dưỡng con đường của ${b}.`;
+  if (SINH[hb] === ha) return `${hb} (${b}) SINH ${ha} (${a}) → tương sinh: năng lượng ${b} nuôi dưỡng bản chất của ${a}.`;
+  if (KHAC[ha] === hb) return `${ha} (${a}) KHẮC ${hb} (${b}) → tương khắc: căng thẳng nội tại nhưng là trục trưởng thành cao nhất — hai lực phải tích hợp.`;
+  if (KHAC[hb] === ha) return `${hb} (${b}) KHẮC ${ha} (${a}) → tương khắc: căng thẳng nội tại nhưng là trục trưởng thành cao nhất — hai lực phải tích hợp.`;
+  return "";
+}
+
+/** Detect numerology numbers + roles from the user's ONE-LINE idea, e.g.
+ * "Hành trình của cô gái có Số Chủ Đạo 1, Sứ Mệnh 5". */
+function detectNumerologyNumbers(text: string): { role: string; num: number }[] {
+  const found: { role: string; num: number }[] = [];
+  const seen = new Set<string>();
+  const push = (role: string, raw: string) => {
+    const num = parseInt(raw, 10);
+    if (!NUMBER_VIDEO_PROFILES[num]) return;
+    const key = `${role}:${num}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push({ role, num });
+  };
+  const patterns: [string, RegExp][] = [
+    ["Số Chủ Đạo", /ch[uủ]\s*[dđ][aạ]o\s*(?:s[oố]\s*)?(\d{1,2})/gi],
+    ["Sứ Mệnh", /s[uứ]\s*m[eệ]nh\s*(?:s[oố]\s*)?(\d{1,2})/gi],
+    ["Nội Tâm", /n[oộ]i\s*t[aâ]m\s*(?:s[oố]\s*)?(\d{1,2})/gi],
+    ["Linh Hồn", /linh\s*h[oồ]n\s*(?:s[oố]\s*)?(\d{1,2})/gi],
+    ["Nhân Cách", /nh[aâ]n\s*c[aá]ch\s*(?:s[oố]\s*)?(\d{1,2})/gi],
+    ["Thái Độ", /th[aá]i\s*[dđ][oộ]\s*(?:s[oố]\s*)?(\d{1,2})/gi],
+    ["Trưởng Thành", /tr[uư][oở]ng\s*th[aà]nh\s*(?:s[oố]\s*)?(\d{1,2})/gi],
+    ["Ngày Sinh", /ng[aà]y\s*sinh\s*(?:s[oố]\s*)?(\d{1,2})/gi],
+    ["Đam Mê Tiềm Ẩn", /[dđ]am\s*m[eê]\s*(?:ti[eề]m\s*[aẩ]n\s*)?(?:s[oố]\s*)?(\d{1,2})/gi],
+  ];
+  for (const [role, re] of patterns) {
+    for (const m of text.matchAll(re)) push(role, m[1]!);
+  }
+  // Bare "số 5" / "chỉ số 5" only when no role-tagged numbers were found.
+  if (found.length === 0) {
+    for (const m of text.matchAll(/(?:ch[iỉ]\s*)?s[oố]\s*(\d{1,2})/gi)) push("Chỉ số", m[1]!);
+  }
+  return found.slice(0, 3);
+}
+
+/** One-line idea → full auto-loaded production brief for the detected numbers. */
+function numerologyAutoProfileBlock(ideaText?: string): string {
+  const detected = detectNumerologyNumbers(ideaText ?? "");
+  if (detected.length === 0) return "";
+  const lines = detected.map(({ role, num }) => {
+    const p = NUMBER_VIDEO_PROFILES[num]!;
+    return `· ${role} ${num} — ${p.ten} (${p.hanh}): MÔI TRƯỜNG ĐẶC TRƯNG: ${p.moiTruong}. ĐẠO CỤ SIGNATURE: ${p.prop}. CỬ CHỈ BẢN NĂNG (dùng cho beat 1-2 / nỗi đau): ${p.reactive}. CỬ CHỈ TỈNH THỨC (dùng cho beat 3-4 / payoff): ${p.conscious}.`;
+  });
+  // With 3 indices, spell out every pairwise element relationship so the model
+  // can pick the dominant axis and let the third number soften/tip the balance.
+  const pairRelations: string[] = [];
+  for (let i = 0; i < detected.length; i++) {
+    for (let j = i + 1; j < detected.length; j++) {
+      const rel = nguHanhRelation(detected[i]!.num, detected[j]!.num);
+      if (rel) pairRelations.push(`  - ${detected[i]!.role} ${detected[i]!.num} × ${detected[j]!.role} ${detected[j]!.num}: ${rel}`);
+    }
+  }
+  const relation =
+    pairRelations.length > 0
+      ? `\n· QUAN HỆ NGŨ HÀNH (tính sẵn cho từng cặp — chọn cặp căng nhất làm trục chính, chỉ số còn lại làm lực làm mềm/nghiêng cán cân):\n${pairRelations.join("\n")}`
+      : "";
+  return `
+🎯 AUTO-LOADED NUMBER PROFILE (detected from the user's one-line idea — that line is the COMPLETE input; derive EVERYTHING else from this stored profile, do not ask for more):
+${lines.join("\n")}${relation}
+- YOUR JOB: from these profiles alone, design the settings (use the MÔI TRƯỜNG list), the character's wardrobe + signature prop, every physical action/gesture (reactive versions in the pain beats → conscious versions in the payoff), the lighting/colour from the number's ngũ hành, and dialogue lines that voice this exact energy. The user's idea sentence only supplies the protagonist (cô gái/chàng trai/người phụ nữ/người đàn ông...) and the numbers — never ask them to describe setting, environment or actions.`;
+}
+
 // Script tone selector for topic content. The user can keep every script both
 // inspiring AND behaviorally sharp ("balanced", default), or lean fully one way.
 function numerologyToneDirective(style?: string): string {
@@ -181,7 +280,17 @@ function numerologyToneDirective(style?: string): string {
 // Rich framework for topic-driven numerology / self-development shorts, modelled
 // on the proven "Số Chủ Đạo" script shape. Injected into the user prompt when
 // video_goal is "numerology" so the AI writes in this exact winning structure.
-const NUMEROLOGY_FRAMEWORK = `
+// Two hook modes:
+//  - "situation" (DEFAULT): the hook is a visceral real-life situation with NO
+//    numbers — the number enters only at beat 3 as the explanation. Reaches
+//    cold viewers who don't know/care about their number yet.
+//  - "number_callout": the legacy hook that names the number in line 1 — for
+//    retargeting followers who already know their numbers.
+function numerologyFramework(
+  hookMode: "situation" | "number_callout" = "situation"
+): string {
+  const callout = hookMode === "number_callout";
+  return `
 NUMEROLOGY SCRIPT FRAMEWORK (follow this EXACTLY — it is the proven winning shape):
 - SUBJECT: a numerology profile (e.g. "Số Chủ Đạo 5, Sứ Mệnh 9"). SOURCE OF TRUTH = the TOPIC CONTENT injected below (pulled from the numerology database) + the archetype reference table below; NEVER invent contradictory numerology. Read the topic content and pull out the number's real strengths, SHADOW and MISSION before writing.
 ${NUMEROLOGY_ARCHETYPES}
@@ -214,7 +323,8 @@ ${NUMEROLOGY_ARCHETYPES}
   · Add ONE relatable, lightly humorous everyday detail so it feels human (e.g. a Số 5 who swears "lần này nghiêm túc" then grabs the backpack 3 seconds later; a Số 1 who directs the whole team then carries every box himself "để tao làm cho nhanh").
   · Write each segment's setting + lighting explicitly in "first_frame_prompt" (a DIFFERENT place each beat). In "scene_bible" the "backdrop" field must describe the VARIED style of locations (e.g. "varied cinematic outdoor landscapes reflecting the number's element"), NOT one fixed room — only the lens, lighting mood and colour grade stay constant so the clips still feel like one film.
 
-- THE HOOK IS 80% OF THE VIDEO. The first 2-3 seconds decide everything. The opening SHOT + the opening LINE must both stop the scroll. Write the hook LAST, after you know the payoff, so it can promise exactly what the video delivers. Pick ONE of these proven hook formulas for beat 1 (vary it across videos — do not always use the same one):
+${callout
+  ? `- THE HOOK IS 80% OF THE VIDEO. The first 2-3 seconds decide everything. The opening SHOT + the opening LINE must both stop the scroll. Write the hook LAST, after you know the payoff, so it can promise exactly what the video delivers. Pick ONE of these proven hook formulas for beat 1 (vary it across videos — do not always use the same one):
   · CALL-OUT + STOP: name the exact viewer and freeze them — "Nếu bạn là Số [X], khoan lướt đã." / "Video này chỉ dành cho Số [X]."
   · UNCOMFORTABLE TRUTH: expose a hidden flaw they secretly feel — "Số [X], sự thật là bạn đang tự làm khổ mình."
   · CONTRADICTION / PATTERN-INTERRUPT: two clashing ideas — "Càng [strength], bạn càng [pain]. Vì sao?"
@@ -222,18 +332,32 @@ ${NUMEROLOGY_ARCHETYPES}
   · WARNING / NEGATIVITY BIAS: "Đây là cái bẫy lớn nhất của Số [X]."
   · MIND-READING: say the thing they never told anyone — "Bạn cười với cả thế giới, nhưng về nhà thì im lặng, đúng không?"
   · BOLD CLAIM: "Số [X] sinh ra không phải để [common assumption]."
-  The hook line MUST contain the number and speak to "bạn", the FIRST word is already the hook (never context), ≤ 10 words. No slow throat-clearing, no "Hôm nay mình sẽ nói về…", no logo/intro card. Combine at most 2 levers per hook.
+  The hook line MUST contain the number and speak to "bạn", the FIRST word is already the hook (never context), ≤ 10 words. No slow throat-clearing, no "Hôm nay mình sẽ nói về…", no logo/intro card. Combine at most 2 levers per hook.`
+  : `- THE HOOK IS 80% OF THE VIDEO — and it is a SITUATION, not a number. Viewers do not open TikTok thinking in numbers; they stop for THEMSELVES. HARD RULE: beats 1-2 must NOT mention any number, "Số Chủ Đạo", "Sứ Mệnh", "thần số học" or any numerology jargon — the number enters ONLY at beat 3 as the explanation. The opening SHOT is a visceral, concrete, FILMABLE real-life moment derived from this number's SHADOW at its most extreme (its reactive version caught in the act); the opening LINE says the thing they never told anyone. Write the hook LAST, after you know the payoff. Pick ONE formula (vary across videos):
+  · SHOCK ACTION: open mid-action on the behaviour at its extreme — "2 giờ sáng. Xếp đồ vào ba lô. Lần thứ ba trong năm."
+  · MIND-READING: "Bạn cười với cả thế giới. Nhưng đóng cửa phòng lại là im lặng, đúng không?"
+  · POV CONFLICT (2 people, one clashing line each): "Có chuyện gì thì nói luôn đi." / "Cho em thời gian đã." — freeze on the misunderstanding between them.
+  · REPEATED PATTERN: name the loop they keep repeating — "Đây là lần thứ mấy bạn nghỉ việc rồi?"
+  · UNCOMFORTABLE TRUTH (no number): "Bạn không lười. Bạn đang sống sai kiểu năng lượng của mình."
+  The FIRST word is already the hook (never context), ≤ 12 words, no logo/intro card. The hook SHOT must be a concrete physical action the camera can film (packing, deleting a message, walking out mid-sentence) — NEVER a presenter standing still lecturing at the camera.`}
 - WRITING TECHNIQUES (these are what make it feel "đúng là mình" and get shares):
   · MIRROR / BARNUM: describe a hyper-SPECIFIC behaviour the viewer secretly does, then attribute it to the number — "Bạn hay đọc lại tin nhắn 3 lần trước khi gửi. Đó là dấu ấn của Số [X]." Concrete behaviours ("thức khuya nghĩ lại điều mình đã nói") always beat abstract traits ("bạn nhạy cảm"). Pair a flattering trait with a mild vulnerability (flattering + hơi nhói) — that combo is the sweet spot for personality content.
   · "NHƯNG / VÌ THẾ" SPINE (never "rồi / và"): between every two beats you must be able to insert NHƯNG (đảo chiều) or VÌ THẾ (hệ quả). If only "rồi… rồi…" fits, the beats are dead — rewrite for reversal or consequence.
   · POWER WORDS front-loaded: bí mật, sự thật, sai lầm, đừng, chưa bao giờ, tại sao, cuối cùng, giấu kín, mặt tối. Trigger ONE clear emotion per video.
   · Vary rhythm: punchy fragment → medium line → punchy fragment. Read each line aloud; if it sounds like an essay or runs out of breath, cut it.
-- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count; each beat's SETTING follows the metaphor above). Every beat also opens an OPEN LOOP that the next beat pays off, so viewers cannot stop:
+${callout
+  ? `- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count; each beat's SETTING follows the metaphor above). Every beat also opens an OPEN LOOP that the next beat pays off, so viewers cannot stop:
   1) HOOK (0-3s) — fire one hook formula above straight to camera, in a location that instantly signals the number's element/essence. End on a question or a promise that beat 2 will answer.
   2) PAIN / NỖI ĐAU — dramatize the misunderstood struggle from the number's SHADOW as a metaphor scene; name the pain so precisely the viewer thinks "sao biết rõ mình vậy". Voice their self-doubt as a question, then tease that "nhưng đó chưa phải điều tệ nhất / lý do thật sự là…".
   3) INSIGHT / GIẢI MÃ — the turn. The reframe "Không phải bạn [flaw]… mà là [deeper truth from the MISSION]", in a spacious setting that visually opens up (a reveal, slow pull-back). This is the "aha" they'll want to share.
   4) PAYOFF / SỨ MỆNH — land the number's MISSION as a gift; a warm, human, giving moment; the character finally looks "at home" in a setting that rewards the number's nature. Deliver on the hook's promise.
-  5) CTA — a one-line takeaway that LOOPS back to the exact hook wording, + ONE low-effort engagement bait. Prefer SHARE bait (highest reach) — "Gửi cho một người Số [X] cần nghe điều này" — or COMMENT bait — "Thả số chủ đạo của bạn ở comment, mình đọc hết 👇" — or SAVE bait — "Lưu lại để lần sau nghi ngờ chính mình thì mở ra xem". Open, walk-away framing whose last frame could cut straight back to frame 1 (seamless loop). Write the last line so it flows straight back into the hook line.
+  5) CTA — a one-line takeaway that LOOPS back to the exact hook wording, + ONE low-effort engagement bait. Prefer SHARE bait (highest reach) — "Gửi cho một người Số [X] cần nghe điều này" — or COMMENT bait — "Thả số chủ đạo của bạn ở comment, mình đọc hết 👇" — or SAVE bait — "Lưu lại để lần sau nghi ngờ chính mình thì mở ra xem". Open, walk-away framing whose last frame could cut straight back to frame 1 (seamless loop). Write the last line so it flows straight back into the hook line.`
+  : `- THE 5-BEAT ARC (map onto the segments in order; scale to the requested segment count; each beat's SETTING follows the metaphor above). Every beat also opens an OPEN LOOP that the next beat pays off, so viewers cannot stop:
+  1) HOOK / TÌNH HUỐNG (0-3s) — fire one situation formula above as a FILMABLE scene (a physical action, not a lecture); NO numbers, no jargon. End on a question or a promise that beat 2 will answer.
+  2) MIRROR / NỖI ĐAU — escalate the "đúng là mình" effect: 2-3 hyper-specific Barnum behaviours from the number's SHADOW (still WITHOUT naming any number), then voice their self-doubt as a question ("Sao mình không thể yên một chỗ như người ta?") and tease "lý do thật sự là…".
+  3) REVEAL / GIẢI MÃ — the number enters HERE for the FIRST time, as the explanation of everything shown: "Trong thần số học, kiểu năng lượng này là dấu ấn của Số [X]…" + the reframe "Không phải bạn [flaw]… mà là [deeper truth from the MISSION]", in a spacious setting that visually opens up (a reveal, slow pull-back). This is the shareable "aha".
+  4) PAYOFF / SỨ MỆNH — land the number's MISSION as a gift; the CONSCIOUS version of the same energy; a warm, human, giving moment; the character finally looks "at home". Deliver on the hook's promise.
+  5) CTA / APP FUNNEL — a one-line takeaway that loops back to the hook's exact IMAGERY (not the number), then invite them to see their FULL personal chart on the app: "Đừng đoán mình từ một đặc điểm — xem đủ các chỉ số của bạn ảnh hưởng nhau thế nào trong app." Add ONE share bait tied to the situation ("Gửi cho người hay xách ba lô lên đi 👇"). NEVER ask viewers to post their birth date in comments — direct them into the app instead. Last frame could cut straight back to frame 1 (seamless loop).`}
 - DIALOGUE = SHORT VOICEOVER, second-person Vietnamese, ONE punchy "đắt giá" line per scene, MAX 16 words (ideal 8-14). Rules: talk to "bạn", be SPECIFIC not generic, use "không phải X mà là Y" reframes, pick emotional concrete words, and let the image carry the rest — SHOW don't tell. Never lecture, never list traits, never explain the theory. BAD (long, dull, listy): "Bạn khao khát được công nhận, được dẫn dắt, nhưng lại sợ cô đơn…". GOOD (short, sharp, visual): "Đứng đầu thì oai. Nhưng đỉnh núi nào mà chẳng lạnh."
 - ✍️ COPYWRITING TECHNIQUES FOR THE SPOKEN LINES (use them — this is what turns a soft line into a scroll-stopping one):
   · RULE OF THREE (liệt kê 3 nhịp CỤ THỂ, vế thứ 3 "đắt" nhất): "Bạn đổi việc, đổi đam mê, đổi cả những cuộc tình." — thắng xa "bạn hay thay đổi".
@@ -242,15 +366,24 @@ ${NUMEROLOGY_ARCHETYPES}
   · CONCRETE > ABSTRACT: một hành vi/hình ảnh cụ thể ("xếp đồ rời một căn phòng, gấp tấm bản đồ") luôn thắng một tính từ trừu tượng ("bồn chồn").
   · SELF-DOUBT AS QUESTION (nói hộ câu người xem thầm hỏi): "Sao mình không thể yên một chỗ như người ta?"
   · RHYTHM ngắn–ngắn–dài: một mệnh đề cụt rồi một câu mở ra; đọc to phải thấy "phanh" đúng chỗ.
-- 🏆 GOLD-STANDARD EXAMPLE — this is the QUALITY BAR every script must hit (topic Số 5 + Sứ Mệnh 9). LEARN the voice & techniques; do NOT copy it — write fresh for the actual numbers:
+${callout
+  ? `- 🏆 GOLD-STANDARD EXAMPLE — this is the QUALITY BAR every script must hit (topic Số 5 + Sứ Mệnh 9). LEARN the voice & techniques; do NOT copy it — write fresh for the actual numbers:
   HOOK: "Bạn là Số Chủ Đạo 5, Sứ Mệnh 9? Người ta bảo bạn cả thèm chóng chán. Nhưng sự thật phũ phàng hơn nhiều đấy." (call-out + challenge-the-label + open loop)
   PROBLEM: "Bạn đổi việc, đổi đam mê, đổi cả những cuộc tình. Rồi tự hỏi: sao mình không thể yên một chỗ như người ta?" (rule of three + self-doubt question)
   INSIGHT: "Không phải bạn thiếu định hướng đâu. Tâm hồn tự do của Số 5 đang đi tìm một điều đủ lớn để dâng hiến cả đời." (không-phải-X-mà-Y reframe)
   PAYOFF: "Đó là Sứ Mệnh 9. Bạn xê dịch không phải để chạy trốn — mà để mang cảm hứng và lòng nhân ái đi khắp thế gian." (antithesis + mission)
   CTA: "Tự do của bạn sinh ra để cho đi. Nếu thấy đúng, thả số chủ đạo của bạn ở comment nhé." (takeaway + comment bait)
-  Every line is SHORT, CONCRETE, has rhythm and a twist — never vague, never a lecture. HIT THIS LEVEL. If a line sounds soft/generic (e.g. "bạn có bao giờ thấy cô đơn?", "sứ mệnh của bạn là truyền cảm hứng"), REWRITE it sharper using the techniques above.
+  Every line is SHORT, CONCRETE, has rhythm and a twist — never vague, never a lecture. HIT THIS LEVEL. If a line sounds soft/generic (e.g. "bạn có bao giờ thấy cô đơn?", "sứ mệnh của bạn là truyền cảm hứng"), REWRITE it sharper using the techniques above.`
+  : `- 🏆 GOLD-STANDARD EXAMPLE — this is the QUALITY BAR every script must hit (topic Số 5 + Sứ Mệnh 9). LEARN the voice & techniques; do NOT copy it — write fresh for the actual numbers:
+  HOOK: "2 giờ sáng. Xếp đồ vào ba lô. Lần thứ ba trong năm nay." (shock action, filmable, NO number)
+  MIRROR: "Bạn đổi việc, đổi đam mê, đổi cả những cuộc tình. Rồi tự hỏi: sao mình không thể yên một chỗ như người ta?" (rule of three + self-doubt question — still no number)
+  REVEAL: "Trong thần số học, đó là dấu ấn của Số 5. Không phải bạn thiếu định hướng — tâm hồn tự do này đang tìm một điều đủ lớn để dâng hiến cả đời." (the number enters + không-phải-X-mà-Y reframe)
+  PAYOFF: "Đó là Sứ Mệnh 9. Bạn xê dịch không phải để chạy trốn — mà để mang cảm hứng và lòng nhân ái đi khắp thế gian." (antithesis + mission)
+  CTA: "Đừng đoán mình từ một chiếc ba lô. Xem đủ biểu đồ của bạn trong app — và gửi video này cho người hay xách ba lô lên đi." (imagery loop + app funnel + share bait)
+  Every line is SHORT, CONCRETE, has rhythm and a twist — never vague, never a lecture. HIT THIS LEVEL. If a line sounds soft/generic (e.g. "bạn có bao giờ thấy cô đơn?", "sứ mệnh của bạn là truyền cảm hứng"), REWRITE it sharper using the techniques above.`}
 - RETENTION KILLERS TO AVOID: slow or generic openers, intro/logo cards, on-screen text walls, more than one idea per line, a payoff that doesn't match the hook's promise, and a flat ending with no loop or CTA.
 - Fill "marketing_structure" (hook = beat 1, problem = beat 2, solution = beat 3, cta = beat 5). Put a ready-to-post social caption (with a scroll-stopping first line) + 4-6 hashtags at the END of "synopsis".`;
+}
 
 // Health / wellness STORYTELLING framework — problem → gentle warning →
 // companion solution → CTA. Same 5-beat spine as numerology but health-voiced:
@@ -430,7 +563,9 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   const isCooking = input.genre === "cooking";
   const isFitness = goal === "fitness" || input.genre === "fitness";
   const framework = isNumerology
-    ? NUMEROLOGY_FRAMEWORK + numerologyToneDirective(input.numerology_style)
+    ? numerologyFramework(input.numerology_hook_mode) +
+      numerologyToneDirective(input.numerology_style) +
+      numerologyAutoProfileBlock(input.story_idea)
     : isHealth
       ? HEALTH_FRAMEWORK
       : isCooking
@@ -540,20 +675,23 @@ NEGATIVE (forbidden in every image/clip — plain descriptors): warped/changed l
 
 DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlapping):
 - Veo 3 generates real spoken audio. Write dialogue in the language requested. Keep each spoken line SHORT and natural.
-- Put spoken lines ONLY in the dialogue fields. Do NOT quote them inside "motion_prompt" (the system appends them once; repeating makes the character say it twice). In motion_prompt just note WHO speaks WHEN with natural lip movement (e.g. "0-4s Nam speaks; 4-7s Mai replies"), without quoting the words.
+- Put spoken lines ONLY in the dialogue fields. Do NOT quote them inside "motion_prompt" (the system appends them once; repeating makes the character say it twice). In motion_prompt, describe each speaking moment as a PHYSICAL GESTURE bound to its owner — WHO speaks WHEN, aimed at WHOM, and where the camera is (which may be on the LISTENER): e.g. "0-4s: Nam turns his head toward Mai and speaks, his lips moving naturally; 4-7s: Mai answers while looking down at the cup, camera holding on Nam's listening face, Nam's mouth closed". NEVER write a bare "Nam speaks" with no gesture/direction, and never quote the words.
 - FIT A SHORT EXCHANGE INTO ONE CLIP (this is the key rule — do NOT waste a whole 10s clip on one 3-word line): use the "dialogue_lines" array to place 1-3 SEQUENTIAL turns inside the same 10s clip when they belong to the same beat of conversation. Each turn = { "speaker": exact character_locks name (or "" for voiceover), "text": the line, "start_s": when they start, "end_s": when they finish }.
 - HARD SAFETY RULES (a video model CANNOT lip-sync two mouths at once — breaking these causes garbled clips):
   1. TURN-TAKING ONLY, NEVER OVERLAP: turns are strictly sequential — turn N's end_s ≤ turn N+1's start_s. Exactly ONE person's mouth moves at any instant; everyone else has their mouth closed, listening.
   2. FIT THE SECONDS: the whole exchange must finish by ~9s (leave breathing room). Budget realistically at a natural pace — roughly 0.4s per word plus a ~0.5s beat between speakers. A short line like "Thế anh đã vo gạo chưa?" ≈ 2.5s. If the exchange does NOT fit, keep only the turns that fit and PUSH the rest into the NEXT segment — never cram or speed up speech.
   3. MAX 3 turns and MAX 2 distinct speakers per clip (a third speaker like a child interjecting is allowed only as the LAST short turn). More than that → split across segments.
-  4. FACE-ON-CAMERA: whoever is speaking in a turn must have their face in medium-close/close-up during their start_s-end_s window; the motion_prompt and the beats must move the camera to the active speaker for each turn (a gentle pan/reframe between speakers, still ONE continuous take — no hard cut).
+  4. FOUR INDEPENDENT ELEMENTS PER TURN (mandatory — camera and speaker are NEVER coupled by default): for EVERY dialogue turn, the motion_prompt must state, in the turn's exact time window, all four of: (a) WHO speaks and WHO they look at ("Lan looks at Minh and speaks" — the speaker faces their conversational partner per the scene geometry, NEVER automatically toward the camera and never with their back to the person addressed unless the script demands it); (b) what the LISTENER does — mouth fully closed, no speech-like jaw or lip movement, reacting only with eyes/brows/breathing/posture; (c) the CAMERA SUBJECT — chosen freely and explicitly: it may be the speaker, OR the listener's reaction, OR both in frame; when the camera holds the listener, write it out ("6.0-7.9s: Lan continues speaking off-screen while the camera holds on Minh's silent reaction, his mouth closed"); (d) the same clock as the dialogue window. It is FORBIDDEN to let the camera simply follow whoever is speaking turn after turn — in a clip with 2+ turns, at least ONE turn must hold the camera on the listener's reaction while the other continues speaking on- or off-screen. Reframes between turns are gentle pans, still ONE continuous take — no hard cut.
   5. "characters_in_scene" must include every speaker; a voiceover speaker ("") is heard but not shown.
   6. SPEAK-WHILE-STILL (critical — the video model reassigns a line to whichever stable face is on camera if the named speaker is mid-action): a character NEVER delivers a line while performing a large body action (standing up, sitting down, walking, turning away, bending). Choreograph big movements into the GAPS between turns: move first THEN speak from a stable pose, or speak first THEN move. Small gestures while speaking are fine (a nod, lifting a spoon).
-  7. ONE SHARED CLOCK: the second-by-second timing in "motion_prompt" MUST use the exact same clock as the dialogue_lines start_s/end_s — the action described at second X must be what is physically happening while the line at second X plays (e.g. if Minh speaks 4-6s, the motion at 4-6s shows Minh stable and facing camera, NOT walking). Never write a motion timeline that contradicts the dialogue windows.
+  7. ONE SHARED CLOCK: the second-by-second timing in "motion_prompt" MUST use the exact same clock as the dialogue_lines start_s/end_s — the action described at second X must be what is physically happening while the line at second X plays (e.g. if Minh speaks 4-6s, the motion at 4-6s shows Minh stable in his speaking gesture, NOT walking — whether the camera is on him or on the listener). Never write a motion timeline that contradicts the dialogue windows.
   8. QUIET WINDOW: never schedule a line during a loud or major physical event (a crash, a fall, an impact, something breaking) — even if the speaker themselves is standing still. A reaction line starts AFTER the event has fully finished (e.g. the rack topples 5-7s → the wry comment starts at ~7.5s), so the voice is never buried under the event and the camera can be on the speaker's face.
   9. BALANCE THE LOAD ACROSS SEGMENTS (mandatory final audit — unbalanced clips are the #1 cause of dropped/garbled lines): before returning, COUNT the spoken words in every clip. Budget = ~0.4s/word + ~0.5s gap per speaker change + breathing room ⇒ a 10s clip carries 8-22 total spoken words. A clip OVER 22 words → move its last turn(s) into the next segment (and shift that segment's lighter lines down); a clip UNDER 8 words whose line belongs to the same conversation as an adjacent clip's line → merge them into one clip's dialogue_lines. A SINGLE turn longer than ~22 words must be that clip's ONLY line — never squeeze a 24-word line into a 4-second window and never pair it with another turn. The final distribution should feel even: no clip nearly silent while its neighbour is crammed.
 - SINGLE-LINE CLIPS: if a beat is just one line, you may use "dialogue_lines" with one entry OR the plain "dialogue"+"speaker" fields — both work. For a longer monologue that fills the clip, one speaker is correct.
 - Mirror the FIRST turn into the top-level "dialogue" (its text) and "speaker" (its name) for compatibility.
+- NAME TOKENS ARE LOCKED: every character name is a fixed token spelled EXACTLY as in character_locks, identical in every field (title, first_frame_prompt, motion_prompt, beats, camera notes, dialogue speaker, continuity_note). NEVER invent a spelling variant, nickname or near-miss (if the cast is "Minh" and "Lan", then "MInh", "Linh" or "Lan Anh" must never appear anywhere — a near-miss name creates a THIRD person and breaks speaker mapping).
+- WARDROBE & HAIR ARE LOCKED FOR THE WHOLE VIDEO: each character wears ONE outfit and ONE hairstyle (the ones in their character_lock) in every segment, described with the SAME words in every first_frame_prompt — never restyle, recolour, change clothing items or hairstyle between segments unless the script explicitly stages a costume change on screen.
+- ONE LOCATION, IDENTICAL IN EVERY SEGMENT: unless the script explicitly moves to a new declared location, every first_frame_prompt restates the SAME room/place with the SAME geometry, furniture positions, materials, colour palette and light sources — copy the location description consistently and change ONLY the characters' positions, poses and explicitly named props. The set must read as the same physical place in every clip; when the user uploaded a LOCATION photo, that photo's place is the only set.
 
 Camera codes: [EYE] eye-level, [LOW] low, [HIGH] high, [OVH] overhead, [DUTCH] dutch, [OTS] over-shoulder, [POV] first-person, [CLOSE] close-up, [SIDE] side profile.
 
@@ -626,7 +764,7 @@ ${JSON.stringify(input.resolved_context, null, 2)}
   const isCooking = input.genre === "cooking";
   const isFitness = goal === "fitness" || input.genre === "fitness";
   const numerologyBlock = isNumerology
-    ? `\n${NUMEROLOGY_FRAMEWORK}${numerologyToneDirective(input.numerology_style)}`
+    ? `\n${numerologyFramework(input.numerology_hook_mode)}${numerologyToneDirective(input.numerology_style)}${numerologyAutoProfileBlock(input.story_idea)}`
     : isHealth
       ? `\n${HEALTH_FRAMEWORK}`
       : isCooking
@@ -869,10 +1007,11 @@ ${turnsBlock}
 
 REWRITE RULES:
 1. Re-time the turns realistically (~0.4s per word + ~0.5s beat between speakers), strictly sequential and non-overlapping, finished by ~9s. Fill "dialogue_lines" with start_s/end_s for every turn; mirror turn 1 into "dialogue" and "speaker".
-2. Rewrite "motion_prompt" (70-110 words) as ONE continuous take whose physical action and camera are choreographed AROUND those timed turns: during each turn's window the camera holds the active speaker's face in medium-close/close-up with natural lip movement (gentle pan/reframe between speakers — never a hard cut), listeners keep their mouths closed and react. SPEAK-WHILE-STILL: a speaker NEVER performs a large body action (standing up, walking, turning away) during their own line — schedule big movements into the GAPS between turns, and while a line plays its speaker holds a stable pose facing camera. The motion timeline MUST use the same clock as the turn windows (the action at second X is what happens while the line at second X plays). Time left before/after/between the turns must be filled with meaningful physical action that advances the story — never dead air. CAUSAL CHAIN: write every object interaction as the full visible chain (hand reaches → fingers grip a named part → carried along one continuous path → released), never let an object appear in a hand; every effect (something falls/tips/spills) must be PRECEDED by its visible physical cause making contact; the whole clip stays in ONE location. PROP EXISTENCE: every object the motion uses must be planted in the first_frame_prompt start state (held, worn or placed) — update the first_frame_prompt if the new action needs a prop it doesn't mention. QUIET WINDOW: no line plays during a loud/major physical event — a reaction line starts only after the event has finished. LOAD BUDGET: a 10s clip carries 8-22 total spoken words (~0.4s/word + gaps) — if the locked turns exceed this, keep the timing honest and flag it in continuity_note instead of squeezing speech. STAGING: give every visible character one concrete physical business (a named hand action serving the story) and name exact micro-expressions (an eyebrow raise, a suppressed smile) — never write "reacts"; the camera move must differ from the neighbouring clips' moves and travel calmly across the whole 10s, easing in and out, never a rushed 1-second whip. Do NOT quote the spoken words inside motion_prompt.
+2. Rewrite "motion_prompt" (70-110 words) as ONE continuous take whose physical action and camera are choreographed AROUND those timed turns. FOUR INDEPENDENT ELEMENTS PER TURN: for every turn state (a) WHO speaks and WHO they look at ("Lan looks at Minh and speaks" — the speaker faces their conversational partner, never automatically the camera, never back-turned to the person addressed) — never a bare "X speaks"; (b) the LISTENER's state — mouth fully closed, no speech-like jaw movement, reacting only with eyes/brows/posture; (c) the CAMERA SUBJECT, chosen explicitly and independently — the speaker OR the listener's reaction (when the listener, write it out: "camera stays on Lan as Minh speaks off-screen; Lan's mouth stays closed"); with 2+ turns, at least one turn holds the camera on the listener — the camera must NOT simply follow whoever speaks; (d) the same clock as the turn windows (the action at second X is what happens while the line at second X plays). SPEAK-WHILE-STILL: a speaker NEVER performs a large body action (standing up, walking, turning away) during their own line — schedule big movements into the GAPS between turns, and while a line plays its speaker holds a stable speaking pose. Time left before/after/between the turns must be filled with meaningful physical action that advances the story — never dead air. CAUSAL CHAIN: write every object interaction as the full visible chain (hand reaches → fingers grip a named part → carried along one continuous path → released), never let an object appear in a hand; every effect (something falls/tips/spills) must be PRECEDED by its visible physical cause making contact; the whole clip stays in ONE location. PROP EXISTENCE: every object the motion uses must be planted in the first_frame_prompt start state (held, worn or placed) — update the first_frame_prompt if the new action needs a prop it doesn't mention. QUIET WINDOW: no line plays during a loud/major physical event — a reaction line starts only after the event has finished. LOAD BUDGET: a 10s clip carries 8-22 total spoken words (~0.4s/word + gaps). ALL locked turns STAY in THIS segment — you cannot move, drop or defer a line to another segment. If the turns exceed the budget, keep a natural speaking pace and let the last line end as late as 10s; NEVER squeeze speech to an unnatural rate and NEVER write commentary about it. STAGING: give every visible character one concrete physical business (a named hand action serving the story) and name exact micro-expressions (an eyebrow raise, a suppressed smile) — never write "reacts"; the camera move must differ from the neighbouring clips' moves and travel calmly across the whole 10s, easing in and out, never a rushed 1-second whip. Do NOT quote the spoken words inside motion_prompt.
 3. Rewrite the "beats" (EXACTLY ${beatsPerSegment} beats) as the progressive camera framings of that one continuous action, aligned with the turn windows.
 4. Update "first_frame_prompt" only as needed (same location/lighting; restate the present characters' looks from character_locks). Set "characters_in_scene" to the EXACT lock names visible — every speaker with a non-empty name must be included.
 5. HARD CONSTRAINTS: keep "segment_number" = ${seg.segment_number}, "duration_seconds" = ${seg.duration_seconds || 10}, "marketing_role" = "${seg.marketing_role}", "environment_ref" = "${seg.environment_ref ?? "custom"}". Locked continuity mode = "${continuityMode}". ${strictContinuity ? "Open from the previous segment's exact end state and close on the next segment's exact opening state." : "Preserve only the continuity anchors declared by scene_intent/context; location, time or pose may change when this continuity mode explicitly permits it."} Update continuity_note accordingly.
+6. continuity_note = PHYSICAL SCENE STATE ONLY (who is where, holding what, in which pose/emotion, carried into the next shot). STRICTLY FORBIDDEN inside continuity_note, first_frame_prompt and motion_prompt: production/meta commentary of any kind — word counts, wpm or seconds-per-word math, "moved to segment N", "due to duration constraints", quoted dialogue lines, or notes to the editor. This text is rendered by the video model verbatim; meta commentary corrupts the clip.
 
 Return ONLY the rewritten segment as ONE JSON object with the exact segment structure (segment_number, duration_seconds, title, marketing_role, beats[], first_frame_prompt, motion_prompt, dialogue, speaker, dialogue_lines[], characters_in_scene[], environment_ref, continuity_note) — no wrapper, no markdown, no prose.`;
 }
@@ -1245,8 +1384,14 @@ export function buildMasterBoardPrompt(params: {
       ? params.colorPalette.slice(0, 6).join(", ")
       : "#F5E6D3, #8B4513, #2D5016, #FFFFFF, #1A1A1A";
 
-  const characterRows =
-    cast.length > 0
+  // Hands-only food videos have no on-camera character: rendering the portrait
+  // grid anyway produced empty labelled boxes on the board. Detect and skip.
+  const noFaceSubject =
+    cast.length === 0 &&
+    /hands|food is the hero|no face|faceless/i.test(params.characterDescription);
+  const characterRows = noFaceSubject
+    ? `- NO CHARACTER PORTRAITS: this is a hands-only food video with no on-camera person. Do NOT render any portrait row, empty portrait box or "MAIN CHARACTER" label. Give the entire library space to the ENVIRONMENT OVERVIEW plus one bordered thumbnail of the finished dish and one of the arranged ingredients.`
+    : cast.length > 0
       ? cast
           .map(
             (c) =>
@@ -1259,8 +1404,8 @@ export function buildMasterBoardPrompt(params: {
 
 ◀ LEFT REFERENCE LIBRARY (about 40% width) — "CHARACTER + ENVIRONMENT REFERENCES" (fixed grid; uploaded menu refs have HIGHEST PRIORITY):
 - Header text "CHARACTER + ENVIRONMENT REFERENCES".
-- CHARACTER PORTRAITS: the upper part is a strict TWO-COLUMN grid. Each ROW belongs to one named person: FRONT at left, PROFILE/3-4 at right. Therefore one character = exactly 2 portraits, two characters = exactly 4, three characters = exactly 6. Each person gets equal visual weight; never show only the first/main person and never add a third portrait.
-${characterRows}
+${noFaceSubject ? "" : `- CHARACTER PORTRAITS: the upper part is a strict TWO-COLUMN grid. Each ROW belongs to one named person: FRONT at left, PROFILE/3-4 at right. Therefore one character = exactly 2 portraits, two characters = exactly 4, three characters = exactly 6. Each person gets equal visual weight; never show only the first/main person and never add a third portrait.
+`}${characterRows}
 - Every portrait is HEAD-AND-SHOULDERS only: crop from top of head to upper chest, face tack-sharp, clean neutral background. Never show waist, legs, full body, back view, turnaround or expression-sheet cells even when an uploaded source photo happens to be full-body.
 - ENVIRONMENT OVERVIEW (MANDATORY, NEVER OMIT): reserve a bordered WIDE 16:9 thumbnail across the full width of the left library directly below the character rows, occupying at least 18% of the whole board height. Label it "ENVIRONMENT OVERVIEW". ${hasSettingRef ? "Reproduce the uploaded location overview exactly — same room geometry, furniture placement, doors/windows, materials, colours, key props and light. This uploaded place is the only environment source." : "Derive one stable wide overview from the storyboard setting and reuse that same geometry in every panel."}
 - COLOR PALETTE: an optional ultra-thin footer of small swatches only: ${colorBlock}. It may shrink, but it may NEVER replace or shrink the environment overview.
@@ -1271,7 +1416,7 @@ ${characterRows}
   "Action:" the action description, then "Lời thoại:" the spoken ${lang} line in quotes.
 - Panels stage the character LARGE enough that face and wardrobe read clearly — medium/medium-close staging preferred over tiny wide figures.
 
-CAST LOCK (the same named people in the reference library and every panel where they are scripted — identical face, hair and outfit; never omit, merge or swap them): ${charDesc}
+CAST LOCK (the same named people in the reference library and every panel where they are scripted — identical face, hair and outfit; never omit, merge or swap them): ${noFaceSubject ? "No on-camera cast — hands-only food video; panels show only the cook's working hands where the action requires contact." : charDesc}
 
 THE ${maxPanels} PANELS:
 ${panelLines}
@@ -1456,7 +1601,7 @@ export function buildSegmentVeoPrompt(params: {
   const absent = onScreen.length > 0 ? allNames.filter((n) => !onScreen.includes(n)) : [];
   const castLine =
     onScreen.length > 0
-      ? ` ON SCREEN: exactly ${onScreen.length} character${onScreen.length > 1 ? "s" : ""} — ${onScreen.join(", ")} — and NOBODY else; no extra people in frame or background. NO HUMAN TELEPORT: everyone listed is ALREADY in place at second 0 exactly as the START STATE positions them, and stays physically continuous for the whole clip — no person ever pops into frame, materialises in the background, or appears behind someone mid-clip; if the story needs someone to arrive or leave, they visibly WALK in/out through a real entrance as an explicitly described action.${absent.length > 0 ? ` ${absent.join(", ")} ${absent.length > 1 ? "are" : "is"} NOT in this scene and must not appear, not even in the background or as a reflection.` : ""}`
+      ? ` ON SCREEN: exactly ${onScreen.length} character${onScreen.length > 1 ? "s" : ""} — ${onScreen.join(", ")} — and NOBODY else; no extra people in frame or background, and each named character exists exactly ONCE — never duplicated, mirrored or repeated anywhere in the frame. NO HUMAN TELEPORT: everyone listed is ALREADY in place at second 0 exactly as the START STATE positions them, and stays physically continuous for the whole clip — no person ever pops into frame, materialises in the background, or appears behind someone mid-clip; if the story needs someone to arrive or leave, they visibly WALK in/out through a real entrance as an explicitly described action.${absent.length > 0 ? ` ${absent.join(", ")} ${absent.length > 1 ? "are" : "is"} NOT in this scene and must not appear, not even in the background or as a reflection.` : ""}`
       : "";
   const speakerLabel = speaker || "The character";
   const voices = params.characterVoices ?? {};
@@ -1499,12 +1644,13 @@ export function buildSegmentVeoPrompt(params: {
       listeners.length > 0
         ? ` While each person speaks, ${listeners.join(", ")} stay silent with mouths closed.`
         : "";
-    // LINE OWNERSHIP + STILLNESS: Veo reassigns a line to whichever face is
-    // stable on camera if the named speaker is mid-action (standing up,
-    // walking) during their window — so bind each line hard to its owner and
-    // freeze the big action while the mouth moves.
-    const ownership = ` LINE OWNERSHIP (STRICT): every line above belongs ONLY to its named speaker — NEVER let a different character say it, never move another character's mouth to it, and never swap voices between characters (${speakersInTurns.length > 1 ? `${speakersInTurns.join(" and ")} have different voices — each line uses its owner's voice and face` : "the line stays with its owner"}). SPEAK-WHILE-STILL RULE: during each line's time window its speaker HOLDS a stable pose, face toward camera, and delivers the line with clear lip-sync — any large body action (standing up, sitting down, walking, turning away) happens in the GAPS between lines, never during a line. If the MOTION timing and these DIALOGUE windows disagree, the DIALOGUE windows win — shift the action beats to fit around them.`;
-    spoken = ` DIALOGUE (turn-taking, ONE person speaks at a time, never overlapping; the camera is on whoever is speaking, their face in medium-close, mouth moving with exact lip-sync; the others keep mouths closed): ${lines}. All lines in ${lang}, AUDIO ONLY — absolutely NO subtitles, captions or on-screen text. SAY IT ONCE: each line is spoken EXACTLY ONCE, straight through at a natural pace — never repeat, stutter, loop or echo any word or phrase of it (a word must never be said twice in a row); when the line ends, the voice stops cleanly and does not restart.${listenerNote}${ownership}`;
+    // LINE OWNERSHIP tied to the PERSON + GESTURE, not the framing. The old
+    // "camera is on the speaker" rule made Veo lip-sync whichever face was on
+    // screen and mis-assign lines; instead bind each line to its owner's
+    // identity and speaking action, and explicitly allow reaction shots where
+    // the speaker is heard off-screen while the camera holds on the listener.
+    const ownership = ` LINE OWNERSHIP (STRICT): every line above belongs ONLY to its named speaker — bind it to that person's identity and speaking gesture (the one who turns/looks and talks), NEVER let a different character say it, never move another character's mouth to it, and never swap voices between characters (${speakersInTurns.length > 1 ? `${speakersInTurns.join(" and ")} have different voices — each line uses its owner's voice` : "the line stays with its owner"}). The line is tied to the ACTION, not to the framing: a character may speak while the camera favours someone else's face. STILLNESS: whenever the speaker's face IS on camera during their line, keep their speaking pose stable for clean lip-sync; any large body action (standing up, sitting down, walking, turning away) happens in the GAPS between lines, never during a line. If the MOTION timing and these DIALOGUE windows disagree, the DIALOGUE windows win — shift the action beats to fit around them.`;
+    spoken = ` DIALOGUE (turn-taking, ONE voice at a time, never overlapping; each line is spoken in its OWNER's voice and belongs only to that named person): ${lines}. VOICE FOLLOWS THE PERSON, NOT THE CAMERA: when the speaker's face is in frame, only THAT person's lips move in exact lip-sync; the camera is free to hold on the LISTENER to catch their reaction, and while it does the line is heard as the speaker's off-screen / over-the-shoulder voice with NO on-screen character moving their lips to it. SPEAKER GAZE: each speaker faces and looks toward the person they are addressing per the scene geometry — never automatically toward the camera, and never with their back turned to the person addressed. Whoever is not speaking keeps their mouth fully closed with no speech-like jaw movement and never mouths the other person's line. All lines in ${lang}, AUDIO ONLY — absolutely NO subtitles, captions or on-screen text. SAY IT ONCE: each line is spoken EXACTLY ONCE, straight through at a natural pace — never repeat, stutter, loop or echo any word or phrase of it (a word must never be said twice in a row); when the line ends, the voice stops cleanly and does not restart.${listenerNote}${ownership}`;
   } else if (turns.length === 1) {
     const t = turns[0]!;
     const nm = (t.speaker ?? "").trim();
@@ -1521,7 +1667,7 @@ export function buildSegmentVeoPrompt(params: {
       nm && others.length > 0
         ? ` Only ${nm} speaks; the other character${others.length > 1 ? "s" : ""} (${others.join(", ")}) stay silent and listen with mouths closed.`
         : "";
-    spoken = ` ${label}${vt} speaks to camera with natural mouth movement and accurate lip-sync — the voice emanates from ${nm ? `${nm}'s` : "the speaker's"} mouth — saying in ${lang}: "${(t.text ?? "").trim()}" — spoken EXACTLY ONCE, straight through at a natural pace (never repeat, stutter or loop any word or phrase; the voice stops cleanly when the line ends), delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence} While delivering the line, ${nm || "the speaker"} HOLDS a stable pose with the face toward camera — any large body action (standing up, walking, turning away) happens before or after the line, never during it; the line is NEVER reassigned to another character.`;
+    spoken = ` ${label}${vt} delivers this line in their OWN voice with accurate lip-sync — the voice belongs to and comes from ${nm ? `${nm}'s` : "the speaker's"} mouth — saying in ${lang}: "${(t.text ?? "").trim()}" — spoken EXACTLY ONCE, straight through at a natural pace (never repeat, stutter or loop any word or phrase; the voice stops cleanly when the line ends), delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.${silence} VOICE FOLLOWS THE PERSON, NOT THE CAMERA: when ${nm || "the speaker"}'s face is in frame their lips move with the line; the camera may instead hold on a listener's reaction, in which case the line is heard as ${nm || "the speaker"}'s off-screen / over-the-shoulder voice and NO on-screen character mouths it. Tie the line to ${nm || "the speaker"}'s speaking gesture (their look or turn toward the person addressed); any large body action (standing up, walking, turning away) happens before or after the line, never during it; the line is NEVER reassigned to another character.`;
     }
   }
   const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
@@ -1662,13 +1808,16 @@ Compatible with: Google Veo 3.1, Seedance 2.0, Kling, Runway, Pika`;
 
 /** The one comprehensive negative list, reused at project + clip level. */
 export const VEO_NEGATIVE_LIST =
-  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, exposure/Kelvin/lux/timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo, plastic or CGI skin";
+  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, exposure/Kelvin/lux/timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo, plastic or CGI skin";
 
 interface VeoJsonOptions {
   aspectRatio: string;
   dialogueLanguage?: string;
   /** Genre-appropriate ambient sound (kitchen sizzle, gym energy, …). */
   ambientAudio?: string;
+  /** TRUE when the user uploaded a real LOCATION photo — the set must be
+   * rebuilt from that photo in every clip, never re-invented from text. */
+  hasLocationRef?: boolean;
 }
 
 /** Build concise, paste-ready Flow/Veo JSON objects using the user's proven
@@ -1733,12 +1882,16 @@ export function buildVeoJson(
     const speaker = oneLine(seg.speaker);
     const env = resolveEnvironment(seg.environment_ref, seg.first_frame_prompt);
     const onScreen = (seg.characters_in_scene ?? []).map((n) => oneLine(n)).filter(Boolean);
+    // An explicitly EMPTY cast list means nobody is on screen (hands-only
+    // cooking clips); fall back to all locks only when the field is missing.
     const visibleLocks =
       onScreen.length > 0
         ? locks.filter((lock) =>
             onScreen.some((name) => name.toLowerCase() === lock.name.trim().toLowerCase())
           )
-        : locks;
+        : seg.characters_in_scene && seg.characters_in_scene.length === 0
+          ? []
+          : locks;
     const entryState = oneLine(seg.scene_intent?.entry_exit?.entry_state) || oneLine(seg.first_frame_prompt);
     const exitState = oneLine(seg.scene_intent?.entry_exit?.exit_state) || oneLine(seg.continuity_note);
     const mainAction =
@@ -1835,12 +1988,15 @@ export function buildVeoJson(
         lighting: [oneLine(sb?.lighting), env ? `${env.lighting.key_kelvin}K, ~${env.lighting.ambient_lux} lux` : ""]
           .filter(Boolean)
           .join("; "),
+        persistence: opts.hasLocationRef
+          ? "An attached LOCATION photo shows the REAL set — rebuild THIS exact place (same layout, furniture, colours, materials and light) identically in EVERY clip of this project; only the characters, their poses and explicitly named props change between clips."
+          : "This exact location — same geometry, furniture positions, materials, colour palette and light sources — is IDENTICAL in every clip of this project; only the characters, their poses and explicitly named props change between clips.",
       },
       camera: {
         framing: camera.framing,
         angle: camera.angle,
         movement: camera.movement,
-        focus: "cinematic natural depth of field; active speaker and interacted prop stay sharp",
+        focus: "cinematic natural depth of field; focus follows the explicitly assigned camera subject in the movement plan, NOT the active speaker — a speaker may be off-camera or softly out of focus while the listener's reaction is the sharp focal subject; interacted props stay readable",
       },
       scene_action: {
         start_state: entryState,
@@ -1859,7 +2015,7 @@ export function buildVeoJson(
       dialogue,
       lip_sync_director_note:
         dialogue.length > 0
-          ? "One speaker at a time; exact line ownership; active speaker faces camera in a stable pose with natural lip sync; listeners keep mouths closed; dialogue is audio only."
+          ? "DIALOGUE OWNERSHIP: each line belongs exclusively to its named speaker and is spoken in that person's voice from that person's physical position; no other character may produce any lip, jaw or speech-like mouth movement during that line. SPEAKER GAZE: the speaker looks toward the person they are addressing per the scene geometry — never automatically toward the camera, and never with their back to the person addressed. LISTENER: silent, lips naturally closed, reacting only through eyes, brows, breathing and posture. CAMERA INDEPENDENCE: camera subject, framing and focus are independent of dialogue ownership — the camera may hold the speaker, the listener's reaction, or both; when it holds the listener, the line continues as the speaker's off-screen voice and NO on-screen mouth moves to it. One voice at a time; dialogue is audio only."
           : "No spoken dialogue; all visible mouths remain naturally closed.",
       output_rules: {
         frame: "one clean full-screen continuous shot; never render a storyboard sheet, grid, panel, reference strip or document",

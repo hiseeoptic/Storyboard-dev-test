@@ -25,11 +25,11 @@ function deterministicBeats(
 ): CompactCookingBeat[] {
   const candidates: CompactCookingBeat[] = isHook
     ? [
-        { action: `Open immediately on ${startFrame}`, camera: "[MACRO] tight food-first texture reveal" },
-        { action: "Hold the same finished dish while steam, gloss and topping depth remain physically stable", camera: "[CLOSE] slow controlled push across the hero surface" },
-        { action: "Reveal one appetising texture interaction without changing the dish state", camera: "[POV] precise utensil or hand interaction at the serving edge" },
-        { action: `Settle back on ${endState}`, camera: "[CLOSE] restrained parallax finish on the same plate or bowl" },
-        { action: "Hold the fulfilled visual promise for the editorial reset", camera: "[EYE] stable end frame with no title or logo" },
+        { action: `Open immediately on the finished-dish money shot: ${startFrame}`, camera: "[MACRO] tight, glossy hero reveal of the finished dish" },
+        { action: "One appetising trigger interaction on the dish's most craveable element (utensil lifting glossy strands, yolk breaking and flowing, sauce drizzling, steam bursting)", camera: "[CLOSE] locked on the trigger interaction" },
+        { action: "Keep exploring only the same finished dish while steam, gloss and texture read clearly", camera: "[CLOSE] slow controlled push across the hero surface" },
+        { action: `Settle back on ${endState} without any new element entering frame`, camera: "[SIDE] restrained parallax across the same dish" },
+        { action: "Hold the finished-dish promise", camera: "[EYE] stable end frame with no title or logo" },
       ]
     : [
         { action: `Establish only the locked working state: ${startFrame}`, camera: "[CLOSE] readable tool, vessel and active ingredients" },
@@ -94,18 +94,21 @@ function buildDeterministicFallbackPlan(
   const causalSlotCount = Math.max(1, segmentCount - 1);
   const stepGroups = allocateStepGroups(recipe.steps, causalSlotCount);
   const heroState = recipe.hero_visual || `finished ${recipe.dish_name}`;
+  const ingredientNames = recipe.ingredients.map((item) => item.name).filter(Boolean);
+  const ingredientHero =
+    `the dish's fresh raw ingredients arranged as a styled hero display in separate bowls and kitchen vessels${ingredientNames.length ? `: ${ingredientNames.slice(0, 12).join(", ")}${ingredientNames.length > 12 ? ", and the remaining prepped ingredients" : ""}` : ""}`;
   const hook: CompactCookingScene = {
     segment_number: 1,
     function: "hook",
-    title: `${recipe.dish_name} — finished-dish preview`,
+    title: `${recipe.dish_name} — finished-dish money shot`,
     recipe_step_orders: [],
     visible_ingredient_ids: unique(recipe.steps.at(-1)?.ingredient_ids ?? []),
-    start_frame: heroState,
-    action_timeline: `0-4s: reveal the finished ${recipe.dish_name} immediately through steam, sauce, texture and topping depth; 4-10s: remain on the same dish for one restrained serving interaction and a steady hold`,
+    start_frame: `${heroState}, presented as an irresistible money shot on a clean surface`,
+    action_timeline: `0-4s: reveal the finished ${recipe.dish_name} with ONE trigger interaction on its most craveable element (utensil lifting glossy strands, soft yolk breaking and flowing, sauce drizzling, steam bursting); 4-10s: keep exploring only the same dish — slow push across texture, gloss and steam, then a steady hold. No raw ingredients, prep or cooking action in this clip`,
     end_state: heroState,
     beats: deterministicBeats(heroState, "Explore only the same finished dish", heroState, beatCount, true),
     asmr_cues: unique(recipe.steps.at(-1)?.asmr_cues ?? []).slice(0, 4),
-    continuity_note: "Editorial preview only. Hold the finished dish, then make an explicit cut back to the recipe start in segment 2; never morph the finished food into raw ingredients inside a shot.",
+    continuity_note: "Editorial preview only. Hold the finished dish; segment 2 opens on the raw-ingredient hero display via an explicit editorial cut — never morph finished food into raw ingredients inside a shot.",
   };
 
   let previousEnd = "the exact mise-en-place state required by the first recipe operation";
@@ -117,11 +120,13 @@ function buildDeterministicFallbackPlan(
       ? [endFromRecipe, recipe.plating, heroState].filter(Boolean).join("; finally ")
       : endFromRecipe;
     const startFrame = index === 0
-      ? `After an explicit editorial cut back from the finished-dish preview: ${previousEnd}`
+      ? `After an explicit editorial cut back from the finished-dish preview: ${ingredientHero}, held as a styled hero display for the first 2-3 seconds`
       : `Continue from the preceding locked state: ${previousEnd}`;
-    const action = isFinal
-      ? `${stepText}. Complete only the supplied plating instruction: ${recipe.plating || "place the finished food in its serving vessel"}`
-      : stepText;
+    const action = index === 0
+      ? `Open 0-3s on ${ingredientHero}, then begin: ${stepText}`
+      : isFinal
+        ? `${stepText}. Complete the plating and serve the finished dish into its eating vessel: ${recipe.plating || "place the finished food into the serving bowl or plate with the utensils it is eaten with"}`
+        : stepText;
     const functionName: CookingSceneFunction = isFinal
       ? "plating"
       : stepFunction(stepText, index, recipe.mise_en_place.length > 0);
@@ -137,9 +142,9 @@ function buildDeterministicFallbackPlan(
       beats: deterministicBeats(startFrame, action, endState, beatCount, false),
       asmr_cues: unique(group.flatMap((step) => step.asmr_cues)).slice(0, 6),
       continuity_note: index === 0
-        ? `This is the explicit editorial reset after the opening preview. From here onward continuity is strictly causal. Carry ${endState} into the next segment.`
+        ? `This is the explicit editorial reset after the finished-dish preview: open on the raw-ingredient hero display, then the first real operation. From here onward continuity is strictly causal. Carry ${endState} into the next segment.`
         : isFinal
-          ? `Resolve the opening promise on the actual finished ${recipe.dish_name}; no new ingredient or operation appears.`
+          ? `Resolve on the actual finished ${recipe.dish_name} served into the eating vessel, ready to eat; no new ingredient or operation appears.`
           : `Carry this exact end state into the next segment: ${endState}.`,
     };
     previousEnd = endState;

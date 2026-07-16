@@ -177,6 +177,12 @@ function buildCleanCharLine(lock?: CharacterLock): string {
 
 import { defaultVoiceFor, findLawViolations } from "@/lib/laws";
 
+/** Subject line for cooking clips whose cast is explicitly empty (hands-only):
+ * the uploaded character exists in the project but appears ONLY in the final
+ * eating-payoff clip, so every other clip must never describe a person. */
+const COOKING_HANDS_ONLY_SUBJECT =
+  "the food is the hero; show only the cook's physically necessary working hands when the recipe action requires contact, with no face or invented presenter";
+
 // CAST-SYNC: resolve a segment's characters_in_scene to their locks (in the
 // listed order). Empty/missing list or unmatched names → empty array, and the
 // callers fall back to the legacy single-main-character behaviour.
@@ -201,6 +207,27 @@ function presentLocksFor(
  *  - ensure every on-screen speaker is listed in characters_in_scene
  *  - if only ONE real turn remains, collapse back to the simple single-line form
  */
+/** The rewrite/generation model occasionally writes PRODUCTION COMMENTARY into
+ * continuity_note ("line moved to segment 4 due to word count", "248 wpm") —
+ * that text is fed to Veo verbatim and corrupts the clip. Detect meta notes
+ * and replace them with a clean physical-state carry-over. */
+function sanitizeContinuityNotes(breakdown: StoryboardGenerationOutput): void {
+  const META =
+    /moved to segment|word count|word-count|\bwpm\b|\bs\/word\b|\d+(\.\d+)?s per word|duration constraint|within the 10|10-second duration|speaking rate|to fit within|verbatim text|this segment ends with the dialogue|due to (word|time|duration)/i;
+  for (const seg of breakdown.segments) {
+    const note = (seg.continuity_note ?? "").trim();
+    const quotesALine =
+      !!note &&
+      [seg.dialogue ?? "", ...(seg.dialogue_lines ?? []).map((t) => t.text ?? "")]
+        .filter((t) => t.trim().length > 12)
+        .some((t) => note.includes(t.trim()));
+    if (note && (META.test(note) || quotesALine)) {
+      seg.continuity_note =
+        "Carry this segment's final physical state — positions, held props, poses and emotional register — unchanged into the next segment.";
+    }
+  }
+}
+
 function normalizeDialogue(breakdown: StoryboardGenerationOutput): void {
   const MAX_TURNS = 3;
   for (const seg of breakdown.segments) {
@@ -221,7 +248,15 @@ function normalizeDialogue(breakdown: StoryboardGenerationOutput): void {
       }));
 
     // Rebuild plausible sequential, non-overlapping windows within 10s whenever
-    // timing is missing or inconsistent (never trust raw model timings blindly).
+    // timing is missing, inconsistent, or no longer matches the text length —
+    // the user edits line TEXT in the preview without touching the old
+    // timings, which silently squeezes a long new line into a short window.
+    const paceMismatch = (t: { text: string; start_s?: number; end_s?: number }) => {
+      if (t.start_s == null || t.end_s == null) return false;
+      const dur = t.end_s - t.start_s;
+      const natural = Math.max(1.2, t.text.split(/\s+/).length * 0.42);
+      return dur < natural * 0.7 || dur > natural * 2;
+    };
     const needsRetime =
       turns.length > 1 &&
       turns.some((t, i) => {
@@ -230,7 +265,8 @@ function normalizeDialogue(breakdown: StoryboardGenerationOutput): void {
           t.start_s == null ||
           t.end_s == null ||
           t.end_s <= t.start_s ||
-          (prev && prev.end_s != null && t.start_s! < prev.end_s)
+          (prev && prev.end_s != null && t.start_s! < prev.end_s) ||
+          paceMismatch(t)
         );
       });
     if (needsRetime) {
@@ -412,7 +448,7 @@ function enhanceInput(
   if (productNames.length > 0) {
     extra.push(
       input.genre === "cooking"
-        ? `FINISHED-DISH VISUAL REFERENCE — use for the opening 3-5s money-shot hook and the final payoff, never treat it as retail packaging: ${productNames
+        ? `FINISHED-DISH VISUAL REFERENCE — use for the opening money-shot hook (the finished dish only, with one appetising trigger interaction) and again for the final plating payoff when the dish is served into the eating vessel; never treat it as retail packaging: ${productNames
             .map((n) => `"${n}": ${analysis.productDescriptions[n]}`)
             .join(". ")}`
         : `Products to feature: ${productNames
@@ -447,6 +483,10 @@ function enforceMenuCharacterContract(
   breakdown: StoryboardGenerationOutput,
   analysis: StoryboardAnalysis
 ): void {
+  // The user's menu is the single source of truth for character names: use
+  // each name VERBATIM as typed (never "correct", re-case or normalise it).
+  // Consistency is enforced the other way around — all generated text is
+  // rewritten to match THIS exact spelling.
   const menuCharacters =
     input.character_descriptions && input.character_descriptions.length > 0
       ? input.character_descriptions.map((c) => ({
@@ -553,6 +593,25 @@ function enforceMenuCharacterContract(
     return canonicalByLower.get(raw.toLowerCase()) ?? renamed.get(raw.toLowerCase()) ?? raw;
   };
 
+  // NAME-TOKEN NORMALISATION: the model keeps producing case/spelling variants
+  // of a locked name inside free text ("MInh" for Minh) — Veo then renders a
+  // THIRD person and mis-maps the speaker. Rewrite every case-insensitive
+  // exact occurrence of each lock name back to its canonical spelling across
+  // all prose fields. (True near-miss names like "Linh" vs "Lan" cannot be
+  // auto-fixed safely; the generation prompt forbids them at the source.)
+  const fixNameSpelling = (text?: string | null): string | undefined => {
+    if (!text) return text ?? undefined;
+    let out = text;
+    for (const lock of locks) {
+      const name = lock.name.trim();
+      if (!name) continue;
+      out = out.replace(
+        new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"),
+        name
+      );
+    }
+    return out;
+  };
   for (const seg of breakdown.segments) {
     if (Array.isArray(seg.characters_in_scene)) {
       seg.characters_in_scene = Array.from(
@@ -570,6 +629,17 @@ function enforceMenuCharacterContract(
       seg.dialogue_lines = seg.dialogue_lines.map((line) => ({
         ...line,
         speaker: remapName(line.speaker),
+      }));
+    }
+    seg.title = fixNameSpelling(seg.title) ?? seg.title;
+    seg.first_frame_prompt = fixNameSpelling(seg.first_frame_prompt) ?? seg.first_frame_prompt;
+    seg.motion_prompt = fixNameSpelling(seg.motion_prompt) ?? seg.motion_prompt;
+    seg.continuity_note = fixNameSpelling(seg.continuity_note) ?? seg.continuity_note;
+    if (Array.isArray(seg.beats)) {
+      seg.beats = seg.beats.map((b) => ({
+        ...b,
+        beat: fixNameSpelling(b.beat) ?? b.beat,
+        camera: fixNameSpelling(b.camera) ?? b.camera,
       }));
     }
   }
@@ -667,9 +737,7 @@ function buildRefContext(
   // glasses to a man who wears none).
   const charDescForPoster = preserveRealFace ? stripEyewear(charDescForPosterRaw) : charDescForPosterRaw;
   const fallbackSubject =
-    input.genre === "cooking"
-      ? "the food is the hero; show only the cook's physically necessary working hands when the recipe action requires contact, with no face or invented presenter"
-      : "the main character";
+    input.genre === "cooking" ? COOKING_HANDS_ONLY_SUBJECT : "the main character";
   const mainCostume = breakdown.character_locks[0]?.costume ?? "casual clothes";
   // Hard gender word (veoflow-aligned) prepended so the image model never
   // flips the subject's gender.
@@ -772,7 +840,13 @@ function buildBoardRefs(
 } {
   const images: { base64: string; mimeType?: string; label?: string }[] = [];
   const descriptors: RefDescriptor[] = [];
-  if (ctx.characterRefs.length > 0) {
+  // An explicitly EMPTY cast list means NOBODY is on screen (hands-only cooking
+  // clips) — attach no face photos there; fall back to all uploads only when
+  // the cast field is missing entirely (legacy segments).
+  const castIsExplicitlyEmpty =
+    Array.isArray(presentNames) &&
+    presentNames.filter((n) => (n ?? "").trim()).length === 0;
+  if (ctx.characterRefs.length > 0 && !castIsExplicitlyEmpty) {
     // Bind each uploaded photo to the exact named person. When a segment has an
     // explicit cast, attach two angles for PRESENT characters only.
     const wanted = (presentNames ?? [])
@@ -818,7 +892,7 @@ function buildBoardRefs(
       }
       characterSlotsUsed += group.length;
     }
-  } else if (ctx.faceImg) {
+  } else if (ctx.faceImg && !castIsExplicitlyEmpty) {
     images.push({
       base64: ctx.faceImg,
       mimeType: "image/jpeg",
@@ -962,27 +1036,31 @@ export async function generateStoryboardPlan(
           deadlineMs: generationDeadlineMs,
         });
       } catch (e) {
-        if (sourceScript && scriptProvider !== provider) {
-          const remainingMs = generationDeadlineMs - Date.now();
-          if (remainingMs < MIN_PROVIDER_FALLBACK_BUDGET_MS) {
-            throw new Error(
-              `Storyboard JSON could not be completed within the safe request budget; ` +
-                `stopped before the Vercel server timeout. Please retry storyboard generation.`
-            );
-          }
-          // Storyboard model failed — build the storyboard with the script model
-          // itself so an approved script is never wasted. The fallback gets one
-          // bounded attempt only; it may not consume the rest of Vercel's 300s.
-          warnings.push(
-            `${provider} không dựng được storyboard — đã dùng ${scriptProvider} để dựng. (${e instanceof Error ? e.message : String(e)})`
+        // Stage 2 failed (usually a provider timeout). ALWAYS give it one
+        // bounded rescue attempt on a DIFFERENT provider — retrying the same
+        // stalled provider tends to time out again, while the other one
+        // usually completes. Prefer the script model (it already knows the
+        // story); otherwise flip gemini↔openai.
+        const fallbackProvider: AIProvider =
+          scriptProvider !== provider
+            ? scriptProvider
+            : provider === "gemini"
+              ? "openai"
+              : "gemini";
+        const remainingMs = generationDeadlineMs - Date.now();
+        if (remainingMs < MIN_PROVIDER_FALLBACK_BUDGET_MS) {
+          throw new Error(
+            `Storyboard JSON could not be completed within the safe request budget; ` +
+              `stopped before the Vercel server timeout. Please retry storyboard generation.`
           );
-          breakdown = await generateStoryboardBreakdown(contextBoundInput, scriptProvider, {
-            deadlineMs: generationDeadlineMs,
-            maxAttempts: 1,
-          });
-        } else {
-          throw e;
         }
+        warnings.push(
+          `${provider} không dựng được storyboard — đã tự chuyển sang ${fallbackProvider} dựng tiếp. (${e instanceof Error ? e.message : String(e)})`
+        );
+        breakdown = await generateStoryboardBreakdown(contextBoundInput, fallbackProvider, {
+          deadlineMs: generationDeadlineMs,
+          maxAttempts: 1,
+        });
       }
     }
 
@@ -1002,6 +1080,7 @@ export async function generateStoryboardPlan(
     // forms so downstream code (and the editor) is always consistent, and hard-
     // cap the multi-speaker feature so it can never over-constrain a Veo clip.
     normalizeDialogue(breakdown);
+    sanitizeContinuityNotes(breakdown);
     enforceCookingContract(input, breakdown);
 
     for (const lock of breakdown.character_locks) {
@@ -1123,6 +1202,11 @@ function assemblePlanPrompts(
     // CAST-SYNC: in a multi-character scene, describe EVERY present character
     // (each with their locked look + child flag) instead of only the main one.
     const presentLocks = presentLocksFor(seg, breakdown);
+    // COOKING CAST SCOPING: per-segment cast is authoritative. Clips with an
+    // explicitly empty cast are hands-only (no face, no invented presenter);
+    // a listed character (the final eating payoff) uses their locked look —
+    // never the global charDesc fallback, which would leak the person into
+    // every hands-only clip now that uploads are kept for cooking.
     const castDesc =
       presentLocks.length > 1
         ? presentLocks
@@ -1132,12 +1216,19 @@ function assemblePlanPrompts(
               )
             )
             .join(" | ")
-        : charDesc;
+        : ctx.isCooking
+          ? presentLocks.length === 1
+            ? makeVeoSafe(buildCleanCharLine(presentLocks[0]))
+            : COOKING_HANDS_ONLY_SUBJECT
+          : charDesc;
     // buildSegmentVeoPrompt now strips ALL hex from its own output (Veo burns
     // "#A9C7E8" onto the frame as a name tag), so no wrap needed here.
-    const cookingPayoffClip =
-      ctx.isCooking &&
-      (segmentIndex === 0 || segmentIndex === breakdown.segments.length - 1);
+    // Cooking references: the HOOK is a finished-dish-only money shot; middle
+    // clips use ingredient references; the final plating clip resolves on the
+    // finished dish (and carries the eating character when one is uploaded).
+    const isFinalClip = segmentIndex === breakdown.segments.length - 1;
+    const showFinishedDish = ctx.isCooking && (segmentIndex === 0 || isFinalClip);
+    const showIngredientRefs = ctx.isCooking && segmentIndex > 0 && !isFinalClip;
     seg.full_prompt = buildSegmentVeoPrompt({
       characterDescription: castDesc,
       realityProfile: breakdown.context_ir?.reality_profile,
@@ -1145,9 +1236,9 @@ function assemblePlanPrompts(
       worldContext: breakdown.world_context,
       setting: makeVeoSafe(seg.first_frame_prompt ?? ""),
       productDescription:
-        !ctx.isCooking || cookingPayoffClip ? productDesc : undefined,
+        !ctx.isCooking || showFinishedDish ? productDesc : undefined,
       ingredients:
-        !ctx.isCooking || !cookingPayoffClip ? ctx.ingredientsText : undefined,
+        !ctx.isCooking || showIngredientRefs ? ctx.ingredientsText : undefined,
       sceneBible: ctx.sceneBible,
       colorPalette: palette,
       motionPrompt: makeVeoSafe(seg.motion_prompt),
@@ -1181,9 +1272,9 @@ function assemblePlanPrompts(
     ambientAudio,
     marketing: breakdown.marketing_structure,
     segments: breakdown.segments.map((s, segmentIndex) => {
-      const cookingPayoffClip =
-        ctx.isCooking &&
-        (segmentIndex === 0 || segmentIndex === breakdown.segments.length - 1);
+      const isFinalClip = segmentIndex === breakdown.segments.length - 1;
+      const showFinishedDish = ctx.isCooking && (segmentIndex === 0 || isFinalClip);
+      const showIngredientRefs = ctx.isCooking && segmentIndex > 0 && !isFinalClip;
       return {
       segment_number: s.segment_number,
       title: s.title,
@@ -1200,9 +1291,9 @@ function assemblePlanPrompts(
       continuity_note: s.continuity_note,
       beats: s.beats,
       productDescription:
-        ctx.isCooking ? (cookingPayoffClip ? productDesc ?? null : null) : undefined,
+        ctx.isCooking ? (showFinishedDish ? productDesc ?? null : null) : undefined,
       ingredients:
-        ctx.isCooking ? (!cookingPayoffClip ? ctx.ingredientsText ?? null : null) : undefined,
+        ctx.isCooking ? (showIngredientRefs ? ctx.ingredientsText ?? null : null) : undefined,
     };
     }),
   });
@@ -1224,6 +1315,7 @@ export async function finalizeScript(params: {
     // turn-taking array. Reconcile them once more at the approval boundary so
     // stale generated dialogue can never outrank what the user currently sees.
     normalizeDialogue(params.breakdown);
+    sanitizeContinuityNotes(params.breakdown);
     const videoPrompt = assemblePlanPrompts(params.input, params.breakdown, params.analysis, provider);
     return { success: true, data: { breakdown: params.breakdown, videoPrompt } };
   } catch (err) {
@@ -1296,6 +1388,7 @@ export async function rewriteSegment(params: {
     // TẦNG 9 turn-taking clamp on the single rewritten segment (retimes turns,
     // syncs characters_in_scene with the speakers, mirrors the single form).
     normalizeDialogue({ ...params.breakdown, segments: [segment] });
+    sanitizeContinuityNotes({ ...params.breakdown, segments: [segment] });
 
     const violations = findLawViolations(
       `${segment.motion_prompt ?? ""} ${segment.first_frame_prompt ?? ""}`
@@ -1447,18 +1540,22 @@ export async function generateBoardImage(params: {
     const i = params.segmentIndex ?? 0;
     const seg = breakdown.segments[i];
     if (!seg) return { success: false, error: `Segment ${i} not found` };
-    const cookingPayoffFrame =
-      ctx.isCooking && (i === 0 || i === breakdown.segments.length - 1);
+    // The HOOK (segment 0) is a finished-dish-only money shot; middle clips use
+    // ingredient references; the final plating clip resolves on the finished
+    // dish (with the eating character's portrait when one is uploaded).
+    const isFinalFrame = i === breakdown.segments.length - 1;
+    const showFinishedDish = ctx.isCooking && (i === 0 || isFinalFrame);
+    const showIngredientRefs = ctx.isCooking && i > 0 && !isFinalFrame;
     const cookingRefOptions = ctx.isCooking
       ? {
-          includeFinishedDish: cookingPayoffFrame,
-          includeIngredients: !cookingPayoffFrame,
+          includeFinishedDish: i === 0 || isFinalFrame,
+          includeIngredients: i > 0 && !isFinalFrame,
         }
       : undefined;
     const segmentProductDna =
-      !ctx.isCooking || cookingPayoffFrame ? ctx.productDnaText : undefined;
+      !ctx.isCooking || showFinishedDish ? ctx.productDnaText : undefined;
     const segmentIngredients =
-      !ctx.isCooking || !cookingPayoffFrame ? ctx.ingredientsText : undefined;
+      !ctx.isCooking || showIngredientRefs ? ctx.ingredientsText : undefined;
 
     if (params.kind === "keyframe") {
       // Clean single first-frame (veoflow format) at the user's real aspect.
@@ -1469,8 +1566,15 @@ export async function generateBoardImage(params: {
         sceneDescription: seg.first_frame_prompt || seg.title,
         shot: seg.beats?.[0]?.camera || "[EYE]",
         // Multi-character scene → describe ALL named characters; single → the
-        // identity-locked main description.
-        characterDescription: ctx.characterNames.length > 1 ? ctx.charDescForPoster : ctx.charDescDna,
+        // identity-locked main description. Cooking: an explicitly empty cast
+        // is a hands-only clip — never describe the uploaded person there.
+        characterDescription: ctx.isCooking
+          ? presentLocksFor(seg, breakdown).length > 0
+            ? ctx.charDescDna
+            : COOKING_HANDS_ONLY_SUBJECT
+          : ctx.characterNames.length > 1
+            ? ctx.charDescForPoster
+            : ctx.charDescDna,
         presentCharacters: presentCastFor(seg, breakdown),
         productDna: segmentProductDna,
         ingredients: segmentIngredients,
@@ -1518,7 +1622,11 @@ export async function generateBoardImage(params: {
       firstFramePrompt: seg.first_frame_prompt,
       beats: seg.beats,
       beatsPerSegment: ctx.beatsPerSegment,
-      characterDescription: ctx.charDescDna,
+      characterDescription: ctx.isCooking
+        ? presentLocksFor(seg, breakdown).length > 0
+          ? ctx.charDescDna
+          : COOKING_HANDS_ONLY_SUBJECT
+        : ctx.charDescDna,
       presentCharacters: presentCastFor(seg, breakdown),
       productDna: segmentProductDna,
       ingredients: segmentIngredients,

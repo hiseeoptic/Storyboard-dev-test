@@ -27,15 +27,15 @@ Return only the JSON object required by the response schema.`;
 export function cookingStyleDirective(style: CookingStyle): string {
   switch (style) {
     case "nature_asmr":
-      return "Nature ASMR: derive one real outdoor cooking place from the user's setting/location reference (never assume mountains, snow, lake, forest or stone stove). Use hands-only tactile coverage and let composition balance food action with that location as each operation requires; only diegetic ingredient/tool/fire/nature sound, no speech or music. Vary framing from the current recipe and terrain instead of copying a creator's sequence.";
+      return "Nature ASMR: derive one real outdoor cooking place from the user's setting/location reference (never assume mountains, snow, lake, forest or stone stove). Shoot POV-into-the-scene: ONE pair of hands works the food in the lower foreground while that location stays alive and visible in the upper depth of frame (weather, water, fire, foliage in motion). Brisk, no-dead-air tempo; only diegetic ingredient/tool/fire/nature sound, no speech or music. Vary framing from the current recipe and terrain instead of copying a creator's sequence.";
     case "kitchen_asmr":
-      return "Kitchen ASMR: hands and food are the heroes in one locked kitchen workstation, clean macro inserts, only close-mic cooking and room sound, no speech, no music.";
+      return "Kitchen ASMR: ONE pair of hands and the food are the heroes in one locked kitchen workstation, shot POV from the cook's viewpoint with the kitchen alive in the frame's depth; clean macro inserts, brisk no-dead-air tempo, only close-mic cooking and room sound, no speech, no music.";
     case "fast_cut":
       return "Fast visual recipe: brisk match-on-action pacing and speed ramps for repetitive prep only; never teleport ingredients or skip a causal cooking state; speech optional and minimal.";
     case "cinematic_food":
       return "Cinematic food film: controlled macro lighting, steam, gloss, texture and transformation payoff; restrained camera, sparse optional narration, cooking sound remains primary.";
     case "pov_hands":
-      return "POV hands: stable first-person workstation geography, identical hands/sleeves/tools throughout, tactile actions and cooking sound lead; no face required.";
+      return "POV hands: stable first-person workstation geography from the cook's own viewpoint, exactly ONE pair of hands with identical sleeves/tools throughout, the workspace and setting readable in the frame's depth; brisk tactile tempo, actions and cooking sound lead; no face required.";
   }
 }
 
