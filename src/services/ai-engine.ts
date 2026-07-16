@@ -702,14 +702,15 @@ export async function generateStoryboardBreakdown(
           jsonMode: true,
           responseSchema: STORYBOARD_RESPONSE_SCHEMA,
           temperature: attempt === 0 ? 0.25 : 0.1,
-          // scene_intent removed from the schema → the JSON is light again, so
-          // a modest budget (~2400/segment, floor 12k) is plenty and keeps the
-          // call fast enough to avoid the provider timeout.
+          // Segments grew richer (freeze-frame continuity notes, blocking,
+          // wardrobe_state, four-element dialogue timing) — the old 12k floor
+          // started truncating tails into stub scenes for EVERY genre. Budget
+          // ~3200/segment with a 16k floor; Gemini 2.5 Flash handles it fine.
           maxOutputTokens: Math.min(
-            24576,
-            Math.max(12288, (input.segment_count ?? input.scene_count ?? 5) * 2400)
+            30720,
+            Math.max(16384, (input.segment_count ?? input.scene_count ?? 5) * 3200)
           ),
-          timeoutMs: boundedTimeoutMs(timing, 60_000, "Gemini storyboard generation"),
+          timeoutMs: boundedTimeoutMs(timing, 75_000, "Gemini storyboard generation"),
         });
       } else {
         const openai = getOpenAIClient();
@@ -721,10 +722,12 @@ export async function generateStoryboardBreakdown(
               { role: "user", content: buildStoryboardUserPrompt(input) },
             ],
             temperature: 0.7,
-            max_tokens: 8000,
+            // Richer segments need more room — 8k truncated tails into stubs
+            // when this path runs as the rescue provider. gpt-4o caps at 16384.
+            max_tokens: 14000,
             response_format: { type: "json_object" },
           },
-          { timeout: boundedTimeoutMs(timing, 60_000, "OpenAI storyboard generation") }
+          { timeout: boundedTimeoutMs(timing, 75_000, "OpenAI storyboard generation") }
         );
         rawContent = completion.choices[0]?.message?.content ?? null;
       }

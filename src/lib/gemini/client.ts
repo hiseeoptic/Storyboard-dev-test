@@ -98,28 +98,50 @@ export async function geminiGenerateText(params: {
     }
   }
 
-  const body: Record<string, unknown> = {
-    contents: [{ role: "user", parts }],
-    generationConfig: {
-      temperature: params.temperature ?? 0.7,
-      maxOutputTokens: params.maxOutputTokens ?? 8192,
-      ...(params.jsonMode ? { responseMimeType: "application/json" } : {}),
-      ...(params.responseSchema ? { responseSchema: params.responseSchema } : {}),
-    },
+  const buildBody = (withSchema: boolean): Record<string, unknown> => {
+    const body: Record<string, unknown> = {
+      contents: [{ role: "user", parts }],
+      generationConfig: {
+        temperature: params.temperature ?? 0.7,
+        maxOutputTokens: params.maxOutputTokens ?? 8192,
+        ...(params.jsonMode ? { responseMimeType: "application/json" } : {}),
+        ...(withSchema && params.responseSchema
+          ? { responseSchema: params.responseSchema }
+          : {}),
+      },
+    };
+    if (params.systemPrompt) {
+      body.systemInstruction = { parts: [{ text: params.systemPrompt }] };
+    }
+    return body;
   };
 
-  if (params.systemPrompt) {
-    body.systemInstruction = { parts: [{ text: params.systemPrompt }] };
+  const doFetch = (withSchema: boolean) =>
+    fetch(`${API_BASE}/${TEXT_MODEL}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildBody(withSchema)),
+      signal: AbortSignal.timeout(params.timeoutMs ?? 120_000),
+    });
+
+  let res = await doFetch(true);
+  let json = (await res.json()) as GeminiResponse;
+
+  // SAFETY NET: if the structured-output schema itself is rejected (400
+  // INVALID_ARGUMENT — e.g. a schema feature this API version dislikes),
+  // retry once WITHOUT the schema in plain JSON mode instead of failing the
+  // whole generation; the downstream zod/shape validation still guards output.
+  if (
+    res.status === 400 &&
+    params.responseSchema &&
+    /INVALID_ARGUMENT|schema|Unknown name/i.test(json.error?.message ?? "")
+  ) {
+    console.error(
+      `[Gemini] responseSchema rejected (${json.error?.message?.slice(0, 200)}); retrying without schema`
+    );
+    res = await doFetch(false);
+    json = (await res.json()) as GeminiResponse;
   }
-
-  const res = await fetch(`${API_BASE}/${TEXT_MODEL}:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(params.timeoutMs ?? 120_000),
-  });
-
-  const json = (await res.json()) as GeminiResponse;
 
   if (!res.ok || json.error) {
     throw new Error(
