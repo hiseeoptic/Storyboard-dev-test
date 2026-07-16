@@ -765,10 +765,19 @@ ${JSON.stringify(input.resolved_context, null, 2)}
   const isHealth = goal === "health" || input.genre === "health";
   const isCooking = input.genre === "cooking";
   const isFitness = goal === "fitness" || input.genre === "fitness";
+  // PROMPT-SIZE GUARD (numerology kept timing out at Stage 2): when a Stage-1
+  // script already exists, Stage 2 only expands it VERBATIM into JSON — feeding
+  // it the entire creative framework again (~14k chars) just slows the call
+  // until it truncates/times out. Send the full framework only when Stage 2
+  // must write the script itself; otherwise a 3-line reminder is enough.
   const numerologyBlock = isNumerology
-    ? `\n${numerologyFramework(input.numerology_hook_mode)}${numerologyToneDirective(input.numerology_style)}${numerologyAutoProfileBlock(input.story_idea)}`
+    ? input.source_script
+      ? `\nNUMEROLOGY REMINDER (the approved script above is final — expand it verbatim): keep every segment's SETTING a DIFFERENT symbolic location as written in the script; colour/light follows the number's element; dialogue stays second-person, short and sharp; the number is revealed only where the script reveals it.`
+      : `\n${numerologyFramework(input.numerology_hook_mode)}${numerologyToneDirective(input.numerology_style)}${numerologyAutoProfileBlock(input.story_idea)}`
     : isHealth
-      ? `\n${HEALTH_FRAMEWORK}`
+      ? input.source_script
+        ? `\nHEALTH REMINDER (the approved script above is final — expand it verbatim): empathetic, trustworthy, no alarmism; keep the problem → root cause → habit/remedy → CTA spine as written.`
+        : `\n${HEALTH_FRAMEWORK}`
       : isCooking
         ? `\n${COOKING_FRAMEWORK}${
             input.cooking_recipe

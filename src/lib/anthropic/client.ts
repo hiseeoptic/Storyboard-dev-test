@@ -46,22 +46,38 @@ export async function claudeGenerateText(params: {
   };
   if (params.systemPrompt) body.system = params.systemPrompt;
 
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(params.timeoutMs ?? 120_000),
-  });
+  const doFetch = () =>
+    fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(params.timeoutMs ?? 120_000),
+    });
+
+  let res = await doFetch();
+  // 429 (rate limit) / 529 (Anthropic overloaded) / 503 are transient — the
+  // usual cause of "Claude lỗi dù còn tiền". One short backoff usually clears
+  // it without burning the caller's whole time budget.
+  if (res.status === 429 || res.status === 529 || res.status === 503) {
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    res = await doFetch();
+  }
 
   const json = (await res.json()) as ClaudeResponse;
 
   if (!res.ok || json.error) {
+    const hint =
+      res.status === 429 || res.status === 529
+        ? " (Anthropic đang quá tải/giới hạn tần suất — không phải hết tiền; thử lại sau ít phút)"
+        : res.status === 401 || res.status === 403
+          ? " (API key không hợp lệ hoặc chưa cấu hình đúng trên Vercel)"
+          : "";
     throw new Error(
-      `Claude generation failed (${res.status}): ${json.error?.message ?? "Unknown error"}`
+      `Claude generation failed (${res.status}): ${json.error?.message ?? "Unknown error"}${hint}`
     );
   }
 

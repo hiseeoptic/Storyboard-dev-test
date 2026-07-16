@@ -1021,15 +1021,36 @@ export async function generateStoryboardPlan(
 
     let sourceScript: string | null = null;
     if (!compiledCooking && scriptProvider !== provider) {
-      try {
-        sourceScript = await generateScript(enhanced, scriptProvider, {
-          deadlineMs: generationDeadlineMs,
-          maxAttempts: 2,
-        });
-      } catch (e) {
-        warnings.push(
-          `Không viết được kịch bản bằng ${scriptProvider} — ${provider} sẽ tự viết kịch bản luôn. (${e instanceof Error ? e.message : String(e)})`
-        );
+      // Script fallback chain: if the chosen script model fails (Claude
+      // overloaded, GPT timeout…), try the next-best writer before giving up —
+      // a good script is worth one extra bounded attempt.
+      const scriptChain: AIProvider[] = [
+        scriptProvider,
+        ...(["claude", "openai", "gemini"] as AIProvider[]).filter(
+          (p) => p !== scriptProvider && p !== provider
+        ),
+      ];
+      for (const [chainIndex, sp] of scriptChain.entries()) {
+        if (generationDeadlineMs - Date.now() < MIN_PROVIDER_FALLBACK_BUDGET_MS) break;
+        try {
+          sourceScript = await generateScript(enhanced, sp, {
+            deadlineMs: generationDeadlineMs,
+            maxAttempts: chainIndex === 0 ? 2 : 1,
+          });
+          if (chainIndex > 0) {
+            warnings.push(
+              `Kịch bản do ${sp} viết thay vì ${scriptProvider} (model chính không phản hồi).`
+            );
+          }
+          break;
+        } catch (e) {
+          warnings.push(
+            `Không viết được kịch bản bằng ${sp}. (${e instanceof Error ? e.message : String(e)})`
+          );
+        }
+      }
+      if (!sourceScript) {
+        warnings.push(`${provider} sẽ tự viết kịch bản luôn ở bước dựng storyboard.`);
       }
     }
 
