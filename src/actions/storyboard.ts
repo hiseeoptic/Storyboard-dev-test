@@ -565,9 +565,9 @@ function enforceMenuCharacterContract(
   // gender (vision analysis text is authoritative for menu entries) and NEVER
   // merge a menu entry with a model lock of the opposite gender.
   const genderFromText = (t?: string | null): "male" | "female" | undefined =>
-    /\bfemale\b|phụ nữ|cô gái|\bnữ\b|\bwoman\b/i.test(t ?? "")
+    /\bfemale\b|phụ nữ|cô gái|\bnữ\b|\bwoman\b|\bshe\b|\bher\b/i.test(t ?? "")
       ? "female"
-      : /\bmale\b|đàn ông|chàng trai|\bnam giới\b|\bman\b/i.test(t ?? "")
+      : /\bmale\b|đàn ông|chàng trai|\bnam giới\b|\bman\b|\bhe\b|\bhis\b|\bhim\b/i.test(t ?? "")
         ? "male"
         : undefined;
   const modelLockGender = (l: CharacterLock): "male" | "female" | undefined =>
@@ -669,46 +669,72 @@ function enforceMenuCharacterContract(
   breakdown.character_locks = locks;
   const canonicalByLower = new Map(locks.map((l) => [l.name.toLowerCase(), l.name]));
 
-  // STRAY-NAME REPAIR: the model sometimes borrows a rule-example name ("Nam",
-  // "Linh") for dialogue speakers and prose even though the locks themselves
-  // are correct — the speaker then matches no lock, the editor's dropdown
-  // falls back to the first option, and lines land on the wrong gender. When
-  // a stray speaker's gender (inferred from a common-Vietnamese-name table)
-  // matches exactly ONE lock, snap it to that lock and register the mapping so
-  // the free-text pass rewrites the prose identically.
-  const stripDiacritics = (s: string) =>
-    s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[đĐ]/g, (c) => (c === "đ" ? "d" : "D"));
-  // Unisex/ambiguous names (Thanh, Dung, Anh, Chi, Khánh…) are deliberately
-  // absent — the repair only fires on an unambiguous gender read.
-  const VI_MALE = new Set(["nam","minh","hung","tuan","quan","khoi","phong","son","duc","huy","khang","binh","thang","hai","long","kien","trung","viet","toan","phuc","dat","hoang","quang","tung","cuong","vinh","nghia","tri"]);
-  const VI_FEMALE = new Set(["linh","lan","mai","hoa","huong","thao","trang","ngoc","phuong","quynh","vy","my","hang","nhi","yen","loan","hue","dao","cuc","thuy","diep","tram","oanh","nga","tuyet","lien","nhung","hanh"]);
-  const nameGender = (name: string): "male" | "female" | undefined => {
-    const key = stripDiacritics(name.trim().toLowerCase()).split(/\s+/).pop() ?? "";
-    if (VI_MALE.has(key) && !VI_FEMALE.has(key)) return "male";
-    if (VI_FEMALE.has(key) && !VI_MALE.has(key)) return "female";
-    return undefined;
-  };
+  // STRAY-NAME REPAIR (MENU-DRIVEN — names themselves carry NO meaning): the
+  // model sometimes uses an invented name for dialogue speakers/prose. The
+  // user's menu cast is the only source of truth, so every stray name is
+  // FILLED IN with a menu name using, in order:
+  //   1. ELIMINATION — if only one menu lock is not already used as a speaker,
+  //      the stray must be that person;
+  //   2. the gender the MODEL ITSELF gave the stray in its own prose
+  //      ("Linh, a female ~30...") matched against each unclaimed lock's
+  //      photo-analysed gender;
+  //   3. order of first appearance across the remaining unclaimed locks.
+  // A name is NEVER interpreted by itself (a "Minh" can be any gender).
   const lockGender = (lock: CharacterLock): "male" | "female" | undefined =>
-    lock.gender ??
-    (/female|phụ nữ|cô gái|\bnữ\b/i.test(`${lock.gender_age} ${lock.signature_features}`)
-      ? "female"
-      : /\bmale\b|đàn ông|chàng trai|\bnam\b/i.test(`${lock.gender_age} ${lock.signature_features}`)
-        ? "male"
-        : nameGender(lock.name));
-  const straySpeakers = new Set<string>();
+    lock.gender ?? genderFromText(`${lock.gender_age ?? ""} ${lock.signature_features ?? ""}`);
+  const strayFirstSeen: string[] = [];
+  const straySeen = new Set<string>();
+  const usedLockNames = new Set<string>();
   for (const seg of breakdown.segments) {
     for (const raw of [seg.speaker, ...(seg.dialogue_lines ?? []).map((t) => t.speaker)]) {
       const name = (raw ?? "").trim();
       if (!name) continue;
       const lower = name.toLowerCase();
-      if (!canonicalByLower.has(lower) && !renamed.has(lower)) straySpeakers.add(name);
+      const canonical = canonicalByLower.get(lower) ?? renamed.get(lower);
+      if (canonical) {
+        usedLockNames.add(canonical);
+      } else if (!straySeen.has(lower)) {
+        straySeen.add(lower);
+        strayFirstSeen.push(name);
+      }
     }
   }
-  for (const stray of straySpeakers) {
-    const gender = nameGender(stray);
-    if (!gender) continue;
-    const matches = locks.filter((l) => lockGender(l) === gender);
-    if (matches.length === 1) renamed.set(stray.toLowerCase(), matches[0]!.name);
+  if (strayFirstSeen.length > 0) {
+    const allProse = breakdown.segments
+      .map((s) => `${s.title ?? ""}. ${s.first_frame_prompt ?? ""} ${s.motion_prompt ?? ""}`)
+      .join(" ");
+    // The model's own description of its invented character ("Linh, a female
+    // ~30 with...") — read gender from the 70 chars after each occurrence.
+    const strayProseGender = (stray: string): "male" | "female" | undefined => {
+      const re = new RegExp(
+        `\\b${stray.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b([^.]{0,70})`,
+        "gi"
+      );
+      for (const m of allProse.matchAll(re)) {
+        const g = genderFromText(m[1]);
+        if (g) return g;
+      }
+      return undefined;
+    };
+    let unclaimed = locks.map((l) => l.name).filter((n) => !usedLockNames.has(n));
+    for (const stray of strayFirstSeen) {
+      if (unclaimed.length === 0) break;
+      let target: string | undefined;
+      if (unclaimed.length === 1) {
+        target = unclaimed[0];
+      } else {
+        const g = strayProseGender(stray);
+        if (g) {
+          const byGender = unclaimed.filter(
+            (n) => lockGender(locks.find((l) => l.name === n)!) === g
+          );
+          if (byGender.length === 1) target = byGender[0];
+        }
+        if (!target) target = unclaimed[0];
+      }
+      renamed.set(stray.toLowerCase(), target!);
+      unclaimed = unclaimed.filter((n) => n !== target);
+    }
   }
 
   const remapName = (name?: string | null): string => {
