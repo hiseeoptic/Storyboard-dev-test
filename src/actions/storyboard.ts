@@ -618,6 +618,49 @@ function enforceMenuCharacterContract(
 
   breakdown.character_locks = locks;
   const canonicalByLower = new Map(locks.map((l) => [l.name.toLowerCase(), l.name]));
+
+  // STRAY-NAME REPAIR: the model sometimes borrows a rule-example name ("Nam",
+  // "Linh") for dialogue speakers and prose even though the locks themselves
+  // are correct — the speaker then matches no lock, the editor's dropdown
+  // falls back to the first option, and lines land on the wrong gender. When
+  // a stray speaker's gender (inferred from a common-Vietnamese-name table)
+  // matches exactly ONE lock, snap it to that lock and register the mapping so
+  // the free-text pass rewrites the prose identically.
+  const stripDiacritics = (s: string) =>
+    s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[đĐ]/g, (c) => (c === "đ" ? "d" : "D"));
+  // Unisex/ambiguous names (Thanh, Dung, Anh, Chi, Khánh…) are deliberately
+  // absent — the repair only fires on an unambiguous gender read.
+  const VI_MALE = new Set(["nam","minh","hung","tuan","quan","khoi","phong","son","duc","huy","khang","binh","thang","hai","long","kien","trung","viet","toan","phuc","dat","hoang","quang","tung","cuong","vinh","nghia","tri"]);
+  const VI_FEMALE = new Set(["linh","lan","mai","hoa","huong","thao","trang","ngoc","phuong","quynh","vy","my","hang","nhi","yen","loan","hue","dao","cuc","thuy","diep","tram","oanh","nga","tuyet","lien","nhung","hanh"]);
+  const nameGender = (name: string): "male" | "female" | undefined => {
+    const key = stripDiacritics(name.trim().toLowerCase()).split(/\s+/).pop() ?? "";
+    if (VI_MALE.has(key) && !VI_FEMALE.has(key)) return "male";
+    if (VI_FEMALE.has(key) && !VI_MALE.has(key)) return "female";
+    return undefined;
+  };
+  const lockGender = (lock: CharacterLock): "male" | "female" | undefined =>
+    lock.gender ??
+    (/female|phụ nữ|cô gái|\bnữ\b/i.test(`${lock.gender_age} ${lock.signature_features}`)
+      ? "female"
+      : /\bmale\b|đàn ông|chàng trai|\bnam\b/i.test(`${lock.gender_age} ${lock.signature_features}`)
+        ? "male"
+        : nameGender(lock.name));
+  const straySpeakers = new Set<string>();
+  for (const seg of breakdown.segments) {
+    for (const raw of [seg.speaker, ...(seg.dialogue_lines ?? []).map((t) => t.speaker)]) {
+      const name = (raw ?? "").trim();
+      if (!name) continue;
+      const lower = name.toLowerCase();
+      if (!canonicalByLower.has(lower) && !renamed.has(lower)) straySpeakers.add(name);
+    }
+  }
+  for (const stray of straySpeakers) {
+    const gender = nameGender(stray);
+    if (!gender) continue;
+    const matches = locks.filter((l) => lockGender(l) === gender);
+    if (matches.length === 1) renamed.set(stray.toLowerCase(), matches[0]!.name);
+  }
+
   const remapName = (name?: string | null): string => {
     const raw = (name ?? "").trim();
     if (!raw) return raw;
@@ -628,18 +671,20 @@ function enforceMenuCharacterContract(
   // of a locked name inside free text ("MInh" for Minh) — Veo then renders a
   // THIRD person and mis-maps the speaker. Rewrite every case-insensitive
   // exact occurrence of each lock name back to its canonical spelling across
-  // all prose fields. (True near-miss names like "Linh" vs "Lan" cannot be
-  // auto-fixed safely; the generation prompt forbids them at the source.)
+  // all prose fields, AND rewrite every renamed stray/model name ("Nam" →
+  // "Minh") the same way so prose and speaker fields stay consistent.
   const fixNameSpelling = (text?: string | null): string | undefined => {
     if (!text) return text ?? undefined;
     let out = text;
+    const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    for (const [oldLower, canonical] of renamed) {
+      if (oldLower === canonical.toLowerCase()) continue;
+      out = out.replace(new RegExp(`\\b${escapeRe(oldLower)}\\b`, "gi"), canonical);
+    }
     for (const lock of locks) {
       const name = lock.name.trim();
       if (!name) continue;
-      out = out.replace(
-        new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"),
-        name
-      );
+      out = out.replace(new RegExp(`\\b${escapeRe(name)}\\b`, "gi"), name);
     }
     return out;
   };
