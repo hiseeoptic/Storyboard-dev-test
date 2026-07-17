@@ -1145,13 +1145,6 @@ export async function generateStoryboardPlan(
       enhanced.genre === "cooking" && !!enhanced.cooking_recipe;
     const scriptProvider = input.script_provider ?? provider;
 
-    // MODEL-level gate (not provider-level): with the split model panel the
-    // user can pick two different models of the SAME vendor (e.g. script =
-    // Gemini 3.1 Pro, storyboard = Gemini 3 Flash) — those must still run as
-    // two stages, otherwise the storyboard model silently writes the script
-    // and the chosen script model is never called. Only when the exact same
-    // model is picked for both roles do we merge into one pass (cheaper).
-    const scriptModelId = input.script_model ?? scriptProvider;
     const storyboardModelId = input.storyboard_model ?? provider;
 
     let sourceScript: string | null = null;
@@ -1159,7 +1152,15 @@ export async function generateStoryboardPlan(
     // silent fallback (e.g. GPT failed → Claude wrote it → Claude got billed)
     // is always visible on the review screen.
     let actualScriptWriter: string | null = null;
-    if (!compiledCooking && scriptModelId !== storyboardModelId) {
+    // Stage 1 ALWAYS runs as its own (small, fast, reliable) call — even when
+    // the same model is picked for both roles. The old "same model → merge
+    // into one giant pass" optimization made the script hostage to the heavy
+    // 14k-token breakdown call: one connection drop there and the RESCUE
+    // provider (often Gemini) ended up writing the script itself — the exact
+    // quality regression the split model panel exists to prevent. With a
+    // separate Stage 1, a Stage-2 rescue only re-formats the already-approved
+    // script verbatim; the creative text keeps the chosen writer's voice.
+    if (!compiledCooking) {
       // Script fallback chain: if the chosen script model fails (overloaded,
       // timeout…), try the next-best writer before giving up — a good script
       // is worth one extra bounded attempt. Claude goes LAST: it's the most
@@ -1355,8 +1356,10 @@ export async function generateStoryboardPlan(
     }
 
     // Transparency line: which models actually ran (and get billed) this pass.
+    // actualScriptWriter is null only when every script model failed (or the
+    // cooking path compiled the script from the recipe IR).
     warnings.unshift(
-      `Model phiên này — kịch bản: ${actualScriptWriter ?? `${actualBreakdownModel} (viết kịch bản + storyboard chung 1 lượt)`} · storyboard: ${actualBreakdownModel}`
+      `Model phiên này — kịch bản: ${actualScriptWriter ?? `${actualBreakdownModel} (model storyboard tự viết)`} · storyboard: ${actualBreakdownModel}`
     );
 
     return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
