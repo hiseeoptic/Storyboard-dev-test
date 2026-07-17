@@ -893,10 +893,10 @@ export function GenerateClient() {
     }
   };
 
-  // ─── Script model (default GPT-5-mini — user's choice for cost + quality;
-  // images always stay on Gemini/Nano Banana).
+  // ─── Script model (default Claude Opus 4.8 — best script quality at ~$0.06
+  // each, and it works reliably; images always stay on Gemini/Nano Banana).
   // Switchable via the hidden panel (double-click the title, passcode 2502). ──
-  const [scriptProvider, setScriptProvider] = useState<AIProvider>("openai");
+  const [scriptProvider, setScriptProvider] = useState<AIProvider>("claude");
   const [modelPanelOpen, setModelPanelOpen] = useState(false);
   const [modelUnlocked, setModelUnlocked] = useState(false);
   const [modelPw, setModelPw] = useState("");
@@ -911,9 +911,8 @@ export function GenerateClient() {
     if (saved === "gemini" || saved === "openai") {
       setProvider(saved);
     }
-    // v2 key: the default moved claude → openai (GPT-5-mini). The old key's
-    // stored "claude" was just the old default, so it is deliberately ignored;
-    // manual choices made from now on persist under the new key.
+    // Default script writer is Claude Opus 4.8; a saved manual choice (any of
+    // claude/openai/gemini) still overrides it.
     const savedScript =
       typeof window !== "undefined"
         ? window.localStorage.getItem("sb_script_provider_v2")
