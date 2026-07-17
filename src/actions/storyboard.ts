@@ -1216,6 +1216,10 @@ export async function generateStoryboardPlan(
     }
 
     let breakdown: StoryboardGenerationOutput;
+    // Which model actually built the storyboard — when the Stage-2 rescue
+    // switches providers this must be reflected in the transparency line
+    // (it used to keep claiming the originally-chosen model).
+    let actualBreakdownModel = storyboardModelId;
     if (compiledCooking) {
       const compactPlan = await generateCompactCookingScenePlan(
         contextBoundInput,
@@ -1254,6 +1258,15 @@ export async function generateStoryboardPlan(
           deadlineMs: generationDeadlineMs,
           maxAttempts: 1,
         });
+        // The chosen model id only applies when its prefix matches the rescue
+        // provider; otherwise that provider's own default ran.
+        actualBreakdownModel =
+          input.storyboard_model &&
+          ((fallbackProvider === "openai" && input.storyboard_model.startsWith("gpt")) ||
+            (fallbackProvider === "gemini" && input.storyboard_model.startsWith("gemini")) ||
+            (fallbackProvider === "claude" && input.storyboard_model.startsWith("claude")))
+            ? input.storyboard_model
+            : fallbackProvider;
       }
     }
 
@@ -1343,7 +1356,7 @@ export async function generateStoryboardPlan(
 
     // Transparency line: which models actually ran (and get billed) this pass.
     warnings.unshift(
-      `Model phiên này — kịch bản: ${actualScriptWriter ?? `${storyboardModelId} (cùng model → viết kịch bản + storyboard chung 1 lượt)`} · storyboard: ${storyboardModelId}`
+      `Model phiên này — kịch bản: ${actualScriptWriter ?? `${actualBreakdownModel} (viết kịch bản + storyboard chung 1 lượt)`} · storyboard: ${actualBreakdownModel}`
     );
 
     return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
