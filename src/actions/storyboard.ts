@@ -1081,15 +1081,18 @@ function buildBoardRefs(
     // reverse/opposite angle of the one shown) so every panel — wherever the
     // camera sits — stays consistent with this same place.
     const distinctNames = new Set(ctx.bgRefs.map((b) => b.name.trim().toLowerCase()));
-    const multipleRooms = distinctNames.size > 1;
+    const multiplePlaces = distinctNames.size > 1;
+    // Neutral vocabulary: the place may be an INDOOR room OR an OUTDOOR scene
+    // (street, park, beach, mountain, field…). Describe landmarks/boundaries,
+    // not "walls/furniture", so the same rule fits either.
     const spatial =
-      "Treat it as a real 3D space: infer its full layout — including the reverse/opposite viewpoint not directly shown — and keep every panel consistent with this same place (same geometry, furniture positions, walls, windows, colours, materials, light direction). Do NOT invent a different room.";
+      "Treat it as a real 3D place — indoor or outdoor. Infer its full spatial layout, including the reverse/opposite viewpoint not directly shown, and keep every panel consistent with this same place: same overall geometry and depth, the relative position of every landmark (furniture, structures, trees, buildings, terrain, water), its boundaries (walls, fences, tree lines or horizon), colours, materials, and the direction + quality of light. Do NOT invent a different place.";
     for (const b of ctx.bgRefs) {
       if (images.length >= MAX_BOARD_REFS) break;
-      const which = multipleRooms
+      const which = multiplePlaces
         ? `LOCATION "${b.name}"`
         : b.angleTotal > 1
-          ? `LOCATION "${b.name}" — ANGLE ${b.angle} OF ${b.angleTotal} OF THE SAME PLACE (combine angles into one set)`
+          ? `LOCATION "${b.name}" — ANGLE ${b.angle} OF ${b.angleTotal} OF THE SAME PLACE (combine angles into one scene)`
           : `LOCATION "${b.name}"`;
       images.push({
         base64: b.img,
