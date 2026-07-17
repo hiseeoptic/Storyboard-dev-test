@@ -727,6 +727,11 @@ export async function generateStoryboardBreakdown(
             Math.max(16384, (input.segment_count ?? input.scene_count ?? 5) * 3200)
           ),
           model: chosenModel?.startsWith("gemini") ? chosenModel : undefined,
+          // "medium" (not the global "low" default): the breakdown is the
+          // quality-critical call — distributing dialogue turns across clips
+          // degraded visibly at "low" (one turn per scene instead of two).
+          // Still far faster than Gemini 3's dynamic-high default.
+          thinkingLevel: "medium",
           timeoutMs: boundedTimeoutMs(timing, 75_000, "Gemini storyboard generation"),
         });
       } else {
@@ -1039,6 +1044,9 @@ export async function rewriteStoryboardSegment(params: {
           responseSchema: SEGMENT_ITEM_SCHEMA,
           temperature: 0.35,
           maxOutputTokens: 4096,
+          // Quality-critical: re-choreographing one scene around edited
+          // dialogue needs more than the global "low" cap (same as Stage 2).
+          thinkingLevel: "medium",
         });
       } else {
         const openai = getOpenAIClient();

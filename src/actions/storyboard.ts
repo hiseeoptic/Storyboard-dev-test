@@ -1146,6 +1146,10 @@ export async function generateStoryboardPlan(
     const scriptProvider = input.script_provider ?? provider;
 
     let sourceScript: string | null = null;
+    // Which provider ACTUALLY wrote the script — surfaced to the user so a
+    // silent fallback (e.g. GPT failed → Claude wrote it → Claude got billed)
+    // is always visible on the review screen.
+    let actualScriptWriter: string | null = null;
     if (!compiledCooking && scriptProvider !== provider) {
       // Script fallback chain: if the chosen script model fails (Claude
       // overloaded, GPT timeout…), try the next-best writer before giving up —
@@ -1163,9 +1167,10 @@ export async function generateStoryboardPlan(
             deadlineMs: generationDeadlineMs,
             maxAttempts: chainIndex === 0 ? 2 : 1,
           });
+          actualScriptWriter = chainIndex === 0 ? (input.script_model ?? sp) : sp;
           if (chainIndex > 0) {
             warnings.push(
-              `Kịch bản do ${sp} viết thay vì ${scriptProvider} (model chính không phản hồi).`
+              `Kịch bản do ${sp.toUpperCase()} viết thay vì ${scriptProvider} (model bạn chọn không phản hồi) — chi phí tính cho ${sp.toUpperCase()}.`
             );
           }
           break;
@@ -1325,6 +1330,11 @@ export async function generateStoryboardPlan(
       console.error("[Storyboard] prompt assembly failed:", e);
       warnings.push("Một số prompt chưa dựng được, sẽ tạo lại khi bạn duyệt kịch bản.");
     }
+
+    // Transparency line: which models actually ran (and get billed) this pass.
+    warnings.unshift(
+      `Model phiên này — kịch bản: ${actualScriptWriter ?? "(model storyboard tự viết)"} · storyboard: ${input.storyboard_model ?? provider}`
+    );
 
     return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
   } catch (err) {

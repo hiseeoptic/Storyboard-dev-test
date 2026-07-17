@@ -2144,6 +2144,18 @@ export function GenerateClient() {
 
         {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
 
+        {/* Pipeline warnings — SHOW THEM HERE, not only on the result screen.
+            This is where "Kịch bản do claude viết thay vì openai (fallback)"
+            must be visible, otherwise a provider fallback silently bills a
+            different vendor than the one picked in the model panel. */}
+        {planWarnings.length > 0 && (
+          <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+            {planWarnings.map((w, i) => (
+              <p key={i}>⚠️ {w}</p>
+            ))}
+          </div>
+        )}
+
         {/* Title */}
         <Card>
           <CardContent className="space-y-2 p-4">
