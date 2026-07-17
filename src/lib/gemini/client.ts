@@ -15,12 +15,13 @@ const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // analysis (scripts default to Claude anyway). Overridable via GEMINI_TEXT_MODEL.
 const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash";
 
-// Only the STORYBOARD breakdown step opts into Gemini 3 Flash (via the `model`
-// param below) — it writes noticeably better structured JSON than 2.5 Flash.
-// Everything else (vision, script fallback) stays on TEXT_MODEL. Overridable
-// via GEMINI_STORYBOARD_MODEL if Google renames the id.
+// Storyboard breakdown model. Back on gemini-2.5-flash: gemini-3-flash-preview
+// returned truncated/stub JSON (1 scene, every field = the title) on this key,
+// so we reverted to the model that has reliably produced full breakdowns for
+// months. To trial a Gemini 3 model safely later, set GEMINI_STORYBOARD_MODEL
+// (e.g. "gemini-3.5-flash") — the thinking cap below keeps it from timing out.
 export const STORYBOARD_TEXT_MODEL =
-  process.env.GEMINI_STORYBOARD_MODEL || "gemini-3-flash-preview";
+  process.env.GEMINI_STORYBOARD_MODEL || "gemini-2.5-flash";
 
 // Image model fallback chains (newest first). If the API key doesn't have
 // access to a model (404 / not found), we automatically try the next one.
