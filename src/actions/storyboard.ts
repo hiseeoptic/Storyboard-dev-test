@@ -27,6 +27,7 @@ import type {
   AIProvider,
   AspectRatio,
   CharacterLock,
+  ImageProvider,
   ImageQuality,
   SceneBible,
   StoryboardGenerationInput,
@@ -841,9 +842,11 @@ function buildRefContext(
   input: StoryboardGenerationInput,
   breakdown: StoryboardGenerationOutput,
   analysis: StoryboardAnalysis,
-  provider: AIProvider
+  provider: AIProvider | ImageProvider
 ): RefContext {
-  const canChain = provider === "gemini";
+  // Reference-image chaining works on providers with image-to-image input:
+  // Gemini (Nano Banana) and Seedream. DALL-E is text-only.
+  const canChain = provider === "gemini" || provider === "seedream";
   const faceImg = input.character_images?.[0]?.images?.[0];
   const productImg = input.product_images?.[0]?.images?.[0];
   const bgImg = input.background_images?.[0]?.images?.[0];
@@ -1127,8 +1130,10 @@ export async function generateStoryboardPlan(
     //     (default Claude Opus 4.8), which is the strongest at Vietnamese
     //     numerology/health scripts.
     //   Stage 2 — the STORYBOARD (segments + JSON) is built by the main provider
-    //     (Gemini 2.5 Flash — cheap), which expands the approved script verbatim.
-    //   Images always stay on Nano Banana.
+    //     (default Gemini 3 Flash — cheap + solid JSON), which expands the
+    //     approved script verbatim.
+    //   Images go to input.image_provider (default Nano Banana; Seedream and
+    //   DALL-E selectable from the admin panel).
     // If Stage 1's model is unavailable (e.g. ANTHROPIC_API_KEY not set), we skip
     // the script and let Stage 2 write directly. If Stage 2 fails but we have a
     // script, we fall back to building the storyboard with the script model.
@@ -1600,7 +1605,8 @@ export async function generateBoardImage(params: {
   analysis: StoryboardAnalysis;
   kind: BoardKind;
   segmentIndex?: number;
-  provider?: AIProvider;
+  /** IMAGE provider (split from the text provider): gemini / seedream / openai. */
+  provider?: ImageProvider | AIProvider;
   /** Base64 of a previously-rendered board, used to pin wardrobe/look across boards. */
   anchorImage?: string;
 }): Promise<ActionResult<{ url: string }>> {
@@ -1612,11 +1618,12 @@ export async function generateBoardImage(params: {
     (input.background_images?.length ?? 0) > 0;
   // DALL-E text-to-image cannot consume these uploads. Whenever the user has
   // supplied a character, product or location photo, route the IMAGE call to
-  // Gemini automatically so "reference lock" is a real input mode rather than
-  // a text-only promise. Script/storyboard text provider remains unchanged.
-  const provider: AIProvider = hasUserVisualReferences
-    ? "gemini"
-    : params.provider ?? "gemini";
+  // an image-to-image provider so "reference lock" is a real input mode rather
+  // than a text-only promise (Seedream also accepts references, so an explicit
+  // Seedream choice is honoured). Text providers remain unchanged.
+  const requested = params.input.image_provider ?? params.provider ?? "gemini";
+  const provider: ImageProvider | AIProvider =
+    hasUserVisualReferences && requested !== "seedream" ? "gemini" : requested;
   const ctx = buildRefContext(input, breakdown, analysis, provider);
 
   try {

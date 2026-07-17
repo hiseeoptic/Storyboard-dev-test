@@ -11,9 +11,16 @@ import type { AspectRatio, ImageQuality } from "@/types";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 // Model names — change here if Google updates model identifiers.
-// gemini-2.5-flash = cheap + fast for the Gemini script fallback and all vision
-// analysis (scripts default to Claude anyway). Overridable via GEMINI_TEXT_MODEL.
-const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash";
+// Default text model upgraded 2.5-flash → Gemini 3 Flash: 2.5 Flash proved too
+// weak for the structured storyboard JSON (missing fields / broken prompts).
+// Overridable via GEMINI_TEXT_MODEL or per-call `model`. Like the image chain
+// below, unavailable models (404 / no access) fall through to the next entry.
+const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3-flash-preview";
+const TEXT_MODEL_FALLBACKS = [
+  "gemini-3-flash-preview", // Gemini 3 Flash — cheap + strong JSON
+  "gemini-3.5-flash",       // stable flagship flash
+  "gemini-2.5-flash",       // legacy last resort (always available)
+];
 
 // Image model fallback chains (newest first). If the API key doesn't have
 // access to a model (404 / not found), we automatically try the next one.
@@ -73,6 +80,9 @@ export async function geminiGenerateText(params: {
   responseSchema?: Record<string, unknown>;
   /** Fail fast instead of consuming the entire serverless execution window. */
   timeoutMs?: number;
+  /** Exact Gemini model id (e.g. "gemini-3.1-pro-preview"). Defaults to
+   * TEXT_MODEL; unavailable models fall through TEXT_MODEL_FALLBACKS. */
+  model?: string;
 }): Promise<string> {
   const apiKey = getApiKey();
 
@@ -116,49 +126,70 @@ export async function geminiGenerateText(params: {
     return body;
   };
 
-  const doFetch = (withSchema: boolean) =>
-    fetch(`${API_BASE}/${TEXT_MODEL}:generateContent?key=${apiKey}`, {
+  const doFetch = (model: string, withSchema: boolean) =>
+    fetch(`${API_BASE}/${model}:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(buildBody(withSchema)),
       signal: AbortSignal.timeout(params.timeoutMs ?? 120_000),
     });
 
-  let res = await doFetch(true);
-  let json = (await res.json()) as GeminiResponse;
+  // Model chain: requested model first, then the standard fallbacks — same
+  // resilience pattern as the image chain (404 / no-access falls through).
+  const primaryModel = params.model || TEXT_MODEL;
+  const modelChain = [
+    primaryModel,
+    ...TEXT_MODEL_FALLBACKS.filter((m) => m !== primaryModel),
+  ];
 
-  // SAFETY NET: if the structured-output schema itself is rejected (400
-  // INVALID_ARGUMENT — e.g. a schema feature this API version dislikes),
-  // retry once WITHOUT the schema in plain JSON mode instead of failing the
-  // whole generation; the downstream zod/shape validation still guards output.
-  if (
-    res.status === 400 &&
-    params.responseSchema &&
-    /INVALID_ARGUMENT|schema|Unknown name/i.test(json.error?.message ?? "")
-  ) {
-    console.error(
-      `[Gemini] responseSchema rejected (${json.error?.message?.slice(0, 200)}); retrying without schema`
-    );
-    res = await doFetch(false);
-    json = (await res.json()) as GeminiResponse;
+  let lastUnavailable = "";
+  for (const model of modelChain) {
+    let res = await doFetch(model, true);
+    let json = (await res.json()) as GeminiResponse;
+
+    // SAFETY NET: if the structured-output schema itself is rejected (400
+    // INVALID_ARGUMENT — e.g. a schema feature this API version dislikes),
+    // retry once WITHOUT the schema in plain JSON mode instead of failing the
+    // whole generation; the downstream zod/shape validation still guards output.
+    if (
+      res.status === 400 &&
+      params.responseSchema &&
+      /INVALID_ARGUMENT|schema|Unknown name/i.test(json.error?.message ?? "")
+    ) {
+      console.error(
+        `[Gemini] responseSchema rejected (${json.error?.message?.slice(0, 200)}); retrying without schema`
+      );
+      res = await doFetch(model, false);
+      json = (await res.json()) as GeminiResponse;
+    }
+
+    if (!res.ok || json.error) {
+      // Key has no access to this model id — try the next one in the chain.
+      if (isModelUnavailable(res.status, json.error?.message)) {
+        lastUnavailable = `${model}: ${json.error?.message ?? res.status}`;
+        console.error(`[Gemini] text model unavailable (${lastUnavailable}); trying next`);
+        continue;
+      }
+      throw new Error(
+        `Gemini text generation failed (${res.status}): ${json.error?.message ?? "Unknown error"}`
+      );
+    }
+
+    const text = json.candidates?.[0]?.content?.parts
+      ?.map((p) => p.text ?? "")
+      .join("")
+      .trim();
+
+    if (!text) {
+      throw new Error("Gemini returned an empty text response");
+    }
+
+    return text;
   }
 
-  if (!res.ok || json.error) {
-    throw new Error(
-      `Gemini text generation failed (${res.status}): ${json.error?.message ?? "Unknown error"}`
-    );
-  }
-
-  const text = json.candidates?.[0]?.content?.parts
-    ?.map((p) => p.text ?? "")
-    .join("")
-    .trim();
-
-  if (!text) {
-    throw new Error("Gemini returned an empty text response");
-  }
-
-  return text;
+  throw new Error(
+    `Gemini text generation failed: no accessible text model (${lastUnavailable})`
+  );
 }
 
 // ─── Image Generation (Nano Banana / Nano Banana Pro) ───────────────────────

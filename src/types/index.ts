@@ -10,6 +10,10 @@ export type Plan = "free" | "pro" | "enterprise";
 
 export type AIProvider = "openai" | "gemini" | "claude";
 
+/** Which service renders images. Split from the text AIProvider so the user
+ * can mix e.g. Claude text + Nano Banana images + Seedream fallback. */
+export type ImageProvider = "gemini" | "openai" | "seedream";
+
 /** Image quality tier — maps to different image models / cost. */
 export type ImageQuality = "standard" | "pro";
 
@@ -133,6 +137,16 @@ export interface StoryboardGenerationInput {
   /** Which model writes the SCRIPT (text). Images always stay on Gemini.
    * Defaults to the main provider. Switchable from the hidden admin panel. */
   script_provider?: AIProvider;
+  /** Exact model id for the Stage-1 script (e.g. "claude-opus-4-8",
+   * "gpt-5.4-mini", "gemini-3-flash-preview"). Overrides the provider's
+   * default model. Set from the hidden admin panel. */
+  script_model?: string;
+  /** Exact model id for the Stage-2 storyboard breakdown (segments + JSON).
+   * Same id space as script_model. Overrides the provider default. */
+  storyboard_model?: string;
+  /** Which service renders images (independent of the text providers).
+   * Defaults to "gemini" (Nano Banana). Set from the hidden admin panel. */
+  image_provider?: ImageProvider;
   /** Numerology (and topic) script tone: emotional/inspiring, sharp behavioral
    * analysis, or both blended. Defaults to "balanced". */
   numerology_style?: "inspirational" | "analytical" | "balanced";
