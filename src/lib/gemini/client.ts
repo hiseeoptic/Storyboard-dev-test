@@ -83,6 +83,12 @@ export async function geminiGenerateText(params: {
   /** Exact Gemini model id (e.g. "gemini-3.1-pro-preview"). Defaults to
    * TEXT_MODEL; unavailable models fall through TEXT_MODEL_FALLBACKS. */
   model?: string;
+  /** Gemini-3-only thinking depth. Defaults to "low": Gemini 3 ships with
+   * dynamic HIGH thinking, which is far slower than 2.5-flash and burns the
+   * output-token budget on thoughts — the exact recipe for truncated JSON +
+   * retries + blowing the 230s Vercel budget. Structured output does not need
+   * deep thinking (the responseSchema drives the shape). */
+  thinkingLevel?: "minimal" | "low" | "medium" | "high";
 }): Promise<string> {
   const apiKey = getApiKey();
 
@@ -108,7 +114,10 @@ export async function geminiGenerateText(params: {
     }
   }
 
-  const buildBody = (withSchema: boolean): Record<string, unknown> => {
+  const buildBody = (
+    withSchema: boolean,
+    withThinking: boolean
+  ): Record<string, unknown> => {
     const body: Record<string, unknown> = {
       contents: [{ role: "user", parts }],
       generationConfig: {
@@ -118,6 +127,11 @@ export async function geminiGenerateText(params: {
         ...(withSchema && params.responseSchema
           ? { responseSchema: params.responseSchema }
           : {}),
+        // Gemini 3 only: cap thinking (default dynamic HIGH is slow + eats
+        // the output budget). 2.5-era models don't accept thinkingLevel.
+        ...(withThinking
+          ? { thinkingConfig: { thinkingLevel: params.thinkingLevel ?? "low" } }
+          : {}),
       },
     };
     if (params.systemPrompt) {
@@ -126,11 +140,11 @@ export async function geminiGenerateText(params: {
     return body;
   };
 
-  const doFetch = (model: string, withSchema: boolean) =>
+  const doFetch = (model: string, withSchema: boolean, withThinking: boolean) =>
     fetch(`${API_BASE}/${model}:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildBody(withSchema)),
+      body: JSON.stringify(buildBody(withSchema, withThinking)),
       signal: AbortSignal.timeout(params.timeoutMs ?? 120_000),
     });
 
@@ -144,10 +158,27 @@ export async function geminiGenerateText(params: {
 
   let lastUnavailable = "";
   for (const model of modelChain) {
-    let res = await doFetch(model, true);
+    // Thinking control only exists on Gemini 3 — never send it to 2.5 models.
+    let withThinking = model.startsWith("gemini-3");
+    let res = await doFetch(model, true, withThinking);
     let json = (await res.json()) as GeminiResponse;
 
-    // SAFETY NET: if the structured-output schema itself is rejected (400
+    // SAFETY NET 1: if thinkingConfig itself is rejected (field renamed /
+    // model variant dislikes it), retry once without it.
+    if (
+      res.status === 400 &&
+      withThinking &&
+      /thinking/i.test(json.error?.message ?? "")
+    ) {
+      console.error(
+        `[Gemini] thinkingConfig rejected (${json.error?.message?.slice(0, 160)}); retrying without it`
+      );
+      withThinking = false;
+      res = await doFetch(model, true, false);
+      json = (await res.json()) as GeminiResponse;
+    }
+
+    // SAFETY NET 2: if the structured-output schema itself is rejected (400
     // INVALID_ARGUMENT — e.g. a schema feature this API version dislikes),
     // retry once WITHOUT the schema in plain JSON mode instead of failing the
     // whole generation; the downstream zod/shape validation still guards output.
@@ -159,7 +190,7 @@ export async function geminiGenerateText(params: {
       console.error(
         `[Gemini] responseSchema rejected (${json.error?.message?.slice(0, 200)}); retrying without schema`
       );
-      res = await doFetch(model, false);
+      res = await doFetch(model, false, withThinking);
       json = (await res.json()) as GeminiResponse;
     }
 
