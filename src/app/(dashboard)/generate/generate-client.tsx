@@ -4190,41 +4190,63 @@ export function GenerateClient() {
                 </div>
               </div>
 
-              {/* Image quality */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{L("imageQuality")}</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setImageQuality("standard")}
-                    className={`rounded-lg border-2 p-3 text-center text-xs font-medium transition ${
-                      imageQuality === "standard"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-muted text-muted-foreground hover:border-primary/40"
-                    }`}
-                  >
-                    {L("qualityStandard")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setImageQuality("pro")}
-                    className={`rounded-lg border-2 p-3 text-center text-xs font-medium transition ${
-                      imageQuality === "pro"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-muted text-muted-foreground hover:border-primary/40"
-                    }`}
-                  >
-                    {L("qualityPro")}
-                  </button>
+              {/* Image quality — the Standard/Pro tier only exists on Nano
+                  Banana (Gemini). When the model panel picked Seedream or
+                  DALL-E, swap the toggle for an info card so the user isn't
+                  offered dead options (and remembers which renderer runs). */}
+              {imageProvider === "gemini" ? (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{L("imageQuality")}</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setImageQuality("standard")}
+                      className={`rounded-lg border-2 p-3 text-center text-xs font-medium transition ${
+                        imageQuality === "standard"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-muted text-muted-foreground hover:border-primary/40"
+                      }`}
+                    >
+                      {L("qualityStandard")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImageQuality("pro")}
+                      className={`rounded-lg border-2 p-3 text-center text-xs font-medium transition ${
+                        imageQuality === "pro"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-muted text-muted-foreground hover:border-primary/40"
+                      }`}
+                    >
+                      {L("qualityPro")}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{L("qualityHint")}</p>
                 </div>
-                <p className="text-xs text-muted-foreground">{L("qualityHint")}</p>
-              </div>
+              ) : (
+                <div className="space-y-1 rounded-lg border bg-muted/40 p-3">
+                  <p className="text-sm font-medium">
+                    {L("imageQuality")}:{" "}
+                    {IMAGE_MODEL_OPTIONS.find((o) => o.id === imageProvider)?.label ?? imageProvider}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {lang === "vi"
+                      ? `Đang dùng model ảnh chọn trong bảng model (${IMAGE_MODEL_OPTIONS.find((o) => o.id === imageProvider)?.price ?? ""}). Mức Standard/Pro chỉ áp dụng cho Nano Banana. Đổi model ảnh: nhấp đúp tiêu đề trang, mã 2502.`
+                      : `Using the image model picked in the model panel (${IMAGE_MODEL_OPTIONS.find((o) => o.id === imageProvider)?.price ?? ""}). The Standard/Pro tier only applies to Nano Banana. To change: double-click the page title, code 2502.`}
+                  </p>
+                </div>
+              )}
 
               {/* Summary */}
               <div className="rounded-lg border bg-muted/50 p-4 text-sm space-y-1">
                 <p className="font-medium">{L("summary")}</p>
                 <p className="text-muted-foreground">
-                  <strong>{segmentCount}</strong> {L("segments")} (~{segmentCount * 10}s) · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong> · <strong>{imageQuality === "pro" ? "Pro" : "Standard"}</strong>
+                  <strong>{segmentCount}</strong> {L("segments")} (~{segmentCount * 10}s) · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong> ·{" "}
+                  <strong>
+                    {imageProvider === "gemini"
+                      ? imageQuality === "pro" ? "Nano Banana Pro" : "Nano Banana Standard"
+                      : imageProvider === "seedream" ? "Seedream 4.5" : "DALL-E 3"}
+                  </strong>
                   {characters.length > 0 && <> · {characters.length} {L("characters")}</>}
                   {products.length > 0 && <> · {products.length} {L("products")}</>}
                   {backgrounds.length > 0 && <> · {backgrounds.length} {L("locations")}</>}
