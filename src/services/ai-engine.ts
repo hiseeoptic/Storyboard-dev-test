@@ -1,5 +1,5 @@
 import { getOpenAIClient } from "@/lib/openai/client";
-import { geminiGenerateText } from "@/lib/gemini/client";
+import { geminiGenerateText, STORYBOARD_TEXT_MODEL } from "@/lib/gemini/client";
 import { claudeGenerateText } from "@/lib/anthropic/client";
 import { jsonrepair } from "jsonrepair";
 import {
@@ -611,17 +611,11 @@ export async function generateScript(
     try {
       let text: string | null = null;
 
-      // Exact model chosen in the admin panel (falls back to per-provider
-      // defaults). Only applied when the id belongs to this provider so a
-      // provider fallback (claude→openai…) never sends a foreign model id.
-      const chosenModel = input.script_model;
-
       if (provider === "claude") {
         text = await claudeGenerateText({
           systemPrompt,
           userPrompt,
           maxTokens: 8000,
-          model: chosenModel?.startsWith("claude") ? chosenModel : undefined,
           timeoutMs: boundedTimeoutMs(timing, 60_000, "Claude script generation"),
         });
       } else if (provider === "gemini") {
@@ -630,20 +624,15 @@ export async function generateScript(
           userPrompt,
           temperature: 0.85,
           maxOutputTokens: 4096,
-          model: chosenModel?.startsWith("gemini") ? chosenModel : undefined,
           timeoutMs: boundedTimeoutMs(timing, 45_000, "Gemini script generation"),
         });
       } else {
-        // GPT-5.4-mini: strong creative writing at a fraction of gpt-4o's
-        // price (replaced the older gpt-5-mini default).
+        // GPT-5-mini: strong creative writing at ~1/5 the price of gpt-4o.
         // GPT-5-series models take `max_completion_tokens` (NOT `max_tokens`)
         // and only support the default temperature — sending either legacy
         // param 400s the request. Overridable via OPENAI_SCRIPT_MODEL.
         const openai = getOpenAIClient();
-        const scriptModel =
-          (chosenModel?.startsWith("gpt") ? chosenModel : undefined) ||
-          process.env.OPENAI_SCRIPT_MODEL ||
-          "gpt-5.4-mini";
+        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5-mini";
         const isGpt5 = scriptModel.startsWith("gpt-5") || scriptModel.startsWith("o");
         const completion = await openai.chat.completions.create(
           {
@@ -695,10 +684,6 @@ export async function generateStoryboardBreakdown(
     try {
       let rawContent: string | null = null;
 
-      // Exact Stage-2 model from the admin panel (per-provider defaults when
-      // unset). Guarded by prefix so provider fallbacks never cross-send ids.
-      const chosenModel = input.storyboard_model;
-
       if (provider === "claude") {
         // Claude Opus 4.8 writes the best scripts. It returns text; the JSON is
         // extracted by sanitizeJsonResponse below (no responseMimeType on Claude).
@@ -708,7 +693,6 @@ export async function generateStoryboardBreakdown(
             buildStoryboardUserPrompt(input) +
             "\n\nReturn ONLY the JSON object described above — no markdown, no code fences, no prose before or after.",
           maxTokens: 16000,
-          model: chosenModel?.startsWith("claude") ? chosenModel : undefined,
           timeoutMs: boundedTimeoutMs(timing, 60_000, "Claude storyboard generation"),
         });
       } else if (provider === "gemini") {
@@ -721,38 +705,32 @@ export async function generateStoryboardBreakdown(
           // Segments grew richer (freeze-frame continuity notes, blocking,
           // wardrobe_state, four-element dialogue timing) — the old 12k floor
           // started truncating tails into stub scenes for EVERY genre. Budget
-          // ~3200/segment with a 16k floor.
+          // ~3200/segment with a 16k floor; Gemini 2.5 Flash handles it fine.
           maxOutputTokens: Math.min(
             30720,
             Math.max(16384, (input.segment_count ?? input.scene_count ?? 5) * 3200)
           ),
-          model: chosenModel?.startsWith("gemini") ? chosenModel : undefined,
-          // "medium" (not the global "low" default): the breakdown is the
-          // quality-critical call — distributing dialogue turns across clips
-          // degraded visibly at "low" (one turn per scene instead of two).
-          // Still far faster than Gemini 3's dynamic-high default.
-          thinkingLevel: "medium",
+          // Storyboard writing upgraded 2.5 Flash → Gemini 3 Flash for better
+          // structured JSON. thinkingLevel "low" keeps Gemini 3's default
+          // dynamic-HIGH thinking from eating the token budget (→ stub scenes)
+          // and blowing the request budget.
+          model: STORYBOARD_TEXT_MODEL,
+          thinkingLevel: "low",
           timeoutMs: boundedTimeoutMs(timing, 75_000, "Gemini storyboard generation"),
         });
       } else {
         const openai = getOpenAIClient();
-        const storyboardModel = chosenModel?.startsWith("gpt") ? chosenModel : "gpt-4o";
-        // GPT-5-series: `max_completion_tokens` + default temperature only
-        // (legacy params 400). Token budgets unchanged from the gpt-4o path.
-        const isGpt5 =
-          storyboardModel.startsWith("gpt-5") || storyboardModel.startsWith("o");
         const completion = await openai.chat.completions.create(
           {
-            model: storyboardModel,
+            model: "gpt-4o",
             messages: [
               { role: "system", content: buildStoryboardSystemPrompt() },
               { role: "user", content: buildStoryboardUserPrompt(input) },
             ],
+            temperature: 0.7,
             // Richer segments need more room — 8k truncated tails into stubs
             // when this path runs as the rescue provider. gpt-4o caps at 16384.
-            ...(isGpt5
-              ? { max_completion_tokens: 14000 }
-              : { temperature: 0.7, max_tokens: 14000 }),
+            max_tokens: 14000,
             response_format: { type: "json_object" },
           },
           { timeout: boundedTimeoutMs(timing, 75_000, "OpenAI storyboard generation") }
@@ -1044,9 +1022,10 @@ export async function rewriteStoryboardSegment(params: {
           responseSchema: SEGMENT_ITEM_SCHEMA,
           temperature: 0.35,
           maxOutputTokens: 4096,
-          // Quality-critical: re-choreographing one scene around edited
-          // dialogue needs more than the global "low" cap (same as Stage 2).
-          thinkingLevel: "medium",
+          // Same upgrade as the full breakdown: re-choreographing one scene is
+          // part of the storyboard step, so keep it on Gemini 3 Flash.
+          model: STORYBOARD_TEXT_MODEL,
+          thinkingLevel: "low",
         });
       } else {
         const openai = getOpenAIClient();

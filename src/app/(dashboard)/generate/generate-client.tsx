@@ -53,7 +53,6 @@ import type {
   StoryboardGenerationOutput,
   ImageReference,
   AIProvider,
-  ImageProvider,
   ImageQuality,
   AspectRatio,
   VideoGoal,
@@ -822,45 +821,6 @@ type Phase = "input" | "generating" | "script" | "result";
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-// ─── Model catalogs for the hidden model panel (double-click title, mã 2502) ─
-// Text prices: USD / 1M tokens (input / output). Image prices: USD / image.
-// Ids flow verbatim into the API clients — keep them EXACT.
-type TextModelOption = {
-  id: string;
-  provider: AIProvider;
-  label: string;
-  price: string;
-  note: string;
-};
-const TEXT_MODEL_OPTIONS: TextModelOption[] = [
-  { id: "claude-opus-4-8", provider: "claude", label: "Claude Opus 4.8", price: "$5 / $25", note: "Kịch bản hay nhất — mặc định VIẾT KỊCH BẢN" },
-  { id: "claude-fable-5", provider: "claude", label: "Claude Fable 5", price: "$10 / $50", note: "Model mạnh nhất của Anthropic (đắt gấp đôi Opus)" },
-  { id: "gpt-4o", provider: "openai", label: "GPT-4o", price: "$2.5 / $10", note: "Ổn định, JSON tốt" },
-  { id: "gpt-5.4-mini", provider: "openai", label: "GPT-5.4-mini", price: "$0.75 / $4.5", note: "Mới — thông minh hơn GPT-5-mini cũ, vẫn rẻ" },
-  { id: "gemini-3-flash-preview", provider: "gemini", label: "Gemini 3 Flash", price: "$0.5 / $3", note: "Rẻ + JSON ổn — mặc định DỰNG STORYBOARD" },
-  { id: "gemini-3.1-pro-preview", provider: "gemini", label: "Gemini 3.1 Pro", price: "$2 / $12", note: "Gemini mạnh nhất, vẫn hệ Google" },
-];
-const DEFAULT_SCRIPT_MODEL = "claude-opus-4-8";
-const DEFAULT_STORYBOARD_MODEL = "gemini-3-flash-preview";
-const isTextModelId = (v: string | null): v is string =>
-  !!v && TEXT_MODEL_OPTIONS.some((o) => o.id === v);
-const textProviderOf = (id: string): AIProvider =>
-  id.startsWith("claude") ? "claude" : id.startsWith("gpt") ? "openai" : "gemini";
-
-type ImageModelOption = {
-  id: ImageProvider;
-  label: string;
-  price: string;
-  note: string;
-};
-const IMAGE_MODEL_OPTIONS: ImageModelOption[] = [
-  { id: "gemini", label: "Nano Banana (Google)", price: "Pro ~$0.13–0.24 · Std ~$0.04 /ảnh", note: "Giữ mặt nhân vật tốt nhất — mặc định. Pro/Standard theo mục Chất lượng ảnh" },
-  { id: "seedream", label: "Seedream 4.5 (ByteDance)", price: "~$0.045 /ảnh", note: "Né quá tải 503 của Google, nhận 10 ảnh tham chiếu — cần ARK_API_KEY" },
-  { id: "openai", label: "DALL-E 3 (OpenAI)", price: "~$0.08 /ảnh HD", note: "Không nhận ảnh tham chiếu (mặt nhân vật sẽ không khớp)" },
-];
-const isImageProviderId = (v: string | null): v is ImageProvider =>
-  v === "gemini" || v === "seedream" || v === "openai";
-
 export function GenerateClient() {
   const [lang, setLang] = useState<Lang>("vi");
   const [phase, setPhase] = useState<Phase>("input");
@@ -907,16 +867,9 @@ export function GenerateClient() {
   // Set when reference images were handed off from the Image Studio.
   const [fromStudio, setFromStudio] = useState(false);
 
-  // ─── Admin: split model selection (script / storyboard / image) ──
-  // The three roles are now INDEPENDENT (chosen in the hidden model panel):
-  //  - scriptModel     → Stage 1: viết kịch bản preview (default Claude Opus 4.8)
-  //  - storyboardModel → Stage 2: dựng breakdown + JSON (default Gemini 3 Flash)
-  //  - imageProvider   → vẽ ảnh (default Nano Banana; Seedream/DALL-E tùy chọn)
-  const [scriptModel, setScriptModelState] = useState<string>(DEFAULT_SCRIPT_MODEL);
-  const [storyboardModel, setStoryboardModelState] = useState<string>(DEFAULT_STORYBOARD_MODEL);
-  const [imageProvider, setImageProviderState] = useState<ImageProvider>("gemini");
-  const scriptProvider: AIProvider = textProviderOf(scriptModel);
-  const storyboardProvider: AIProvider = textProviderOf(storyboardModel);
+  // ─── Admin: AI Provider Switch ──────────────────────────────────
+  // Default Gemini — required for face lock from uploaded photos.
+  const [provider, setProvider] = useState<AIProvider>("gemini");
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pwInput, setPwInput] = useState("");
@@ -940,33 +893,34 @@ export function GenerateClient() {
     }
   };
 
-  // Hidden model panel (double-click the title, passcode 2502).
+  // ─── Script model (default GPT-5-mini — user's choice for cost + quality;
+  // images always stay on Gemini/Nano Banana).
+  // Switchable via the hidden panel (double-click the title, passcode 2502). ──
+  const [scriptProvider, setScriptProvider] = useState<AIProvider>("openai");
   const [modelPanelOpen, setModelPanelOpen] = useState(false);
   const [modelUnlocked, setModelUnlocked] = useState(false);
   const [modelPw, setModelPw] = useState("");
   const [modelPwError, setModelPwError] = useState(false);
 
-  // Load saved model choices on mount.
-  // v3 keys: selection moved provider-level → model-level (exact model ids)
-  // and split into script / storyboard / image. Old sb_ai_provider /
-  // sb_script_provider_v2 values were provider-only defaults, deliberately
-  // ignored; choices made from now on persist under the new keys.
+  // Load saved provider choice on mount
   useEffect(() => {
-    const savedScriptModel =
+    const saved =
       typeof window !== "undefined"
-        ? window.localStorage.getItem("sb_script_model_v3")
+        ? window.localStorage.getItem("sb_ai_provider")
         : null;
-    if (isTextModelId(savedScriptModel)) setScriptModelState(savedScriptModel);
-    const savedStoryboardModel =
+    if (saved === "gemini" || saved === "openai") {
+      setProvider(saved);
+    }
+    // v2 key: the default moved claude → openai (GPT-5-mini). The old key's
+    // stored "claude" was just the old default, so it is deliberately ignored;
+    // manual choices made from now on persist under the new key.
+    const savedScript =
       typeof window !== "undefined"
-        ? window.localStorage.getItem("sb_storyboard_model_v3")
+        ? window.localStorage.getItem("sb_script_provider_v2")
         : null;
-    if (isTextModelId(savedStoryboardModel)) setStoryboardModelState(savedStoryboardModel);
-    const savedImageProvider =
-      typeof window !== "undefined"
-        ? window.localStorage.getItem("sb_image_provider_v3")
-        : null;
-    if (isImageProviderId(savedImageProvider)) setImageProviderState(savedImageProvider);
+    if (savedScript === "gemini" || savedScript === "openai" || savedScript === "claude") {
+      setScriptProvider(savedScript);
+    }
     const savedStyle =
       typeof window !== "undefined"
         ? window.localStorage.getItem("sb_numerology_style")
@@ -990,24 +944,17 @@ export function GenerateClient() {
     }
   };
 
-  const switchScriptModel = (id: string) => {
-    setScriptModelState(id);
+  const switchScriptProvider = (p: AIProvider) => {
+    setScriptProvider(p);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("sb_script_model_v3", id);
+      window.localStorage.setItem("sb_script_provider_v2", p);
     }
   };
 
-  const switchStoryboardModel = (id: string) => {
-    setStoryboardModelState(id);
+  const switchProvider = (p: AIProvider) => {
+    setProvider(p);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("sb_storyboard_model_v3", id);
-    }
-  };
-
-  const switchImageProvider = (id: ImageProvider) => {
-    setImageProviderState(id);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("sb_image_provider_v3", id);
+      window.localStorage.setItem("sb_ai_provider", p);
     }
   };
 
@@ -1510,9 +1457,6 @@ export function GenerateClient() {
       beats_per_segment: beatsPerSegment,
       video_goal: genre === "cooking" ? "cooking" : videoGoal,
       script_provider: scriptProvider,
-      script_model: scriptModel,
-      storyboard_model: storyboardModel,
-      image_provider: imageProvider,
       numerology_style: numerologyStyle,
       numerology_hook_mode: numerologyHookMode,
       dialogue_language:
@@ -1570,7 +1514,7 @@ export function GenerateClient() {
 
     try {
       // Phase 1: script + ready-to-paste prompts (fast, tiny payload).
-      const plan = await generateStoryboardPlan(input, storyboardProvider);
+      const plan = await generateStoryboardPlan(input, provider);
       if (!plan.success) {
         setError(plan.error);
         setPhase("input");
@@ -1646,7 +1590,7 @@ export function GenerateClient() {
         : `Drawing the master storyboard sheet (${segCount} panels in 1 image)`
     );
     const posterUrl = await genBoard(
-      { input, breakdown, analysis, kind: "master", provider: imageProvider },
+      { input, breakdown, analysis, kind: "master", provider },
       lang === "vi" ? "Bảng tổng" : "Master board",
       "master"
     );
@@ -1677,7 +1621,7 @@ export function GenerateClient() {
         input: genInput,
         breakdown: draft,
         analysis: genAnalysis,
-        provider: storyboardProvider,
+        provider,
       });
       if (!fin.success) {
         setError(fin.error);
@@ -1759,7 +1703,7 @@ export function GenerateClient() {
         input: genInput,
         breakdown: draft,
         segmentIndex: i,
-        provider: storyboardProvider,
+        provider,
       });
       if (r.success) {
         setDraft((d) =>
@@ -1802,7 +1746,7 @@ export function GenerateClient() {
         analysis: genAnalysis,
         kind: target === "master" ? "master" : target === "thumbnail" ? "thumbnail" : "segment",
         segmentIndex: typeof target === "number" ? target : undefined,
-        provider: imageProvider,
+        provider,
         anchorImage: anchorImage ?? undefined,
       });
       const key = typeof target === "number" ? `seg-${target}` : target;
@@ -1845,7 +1789,7 @@ export function GenerateClient() {
         analysis: genAnalysis,
         kind: "keyframe",
         segmentIndex: index,
-        provider: imageProvider,
+        provider,
       });
       if (r.success) {
         const segments = result.breakdown.segments.slice();
@@ -2143,18 +2087,6 @@ export function GenerateClient() {
         </div>
 
         {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
-
-        {/* Pipeline warnings — SHOW THEM HERE, not only on the result screen.
-            This is where "Kịch bản do claude viết thay vì openai (fallback)"
-            must be visible, otherwise a provider fallback silently bills a
-            different vendor than the one picked in the model panel. */}
-        {planWarnings.length > 0 && (
-          <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-            {planWarnings.map((w, i) => (
-              <p key={i}>⚠️ {w}</p>
-            ))}
-          </div>
-        )}
 
         {/* Title */}
         <Card>
@@ -2903,19 +2835,40 @@ export function GenerateClient() {
           </div>
         ) : (
           <div className="space-y-4">
-            {/* The old OpenAI/Gemini toggle moved into the model panel
-                (double-click the page title, mã 2502) where script /
-                storyboard / image models are now picked independently. */}
-            <p className="text-sm text-muted-foreground">
-              Việc chọn model đã chuyển sang bảng <strong>Chọn model API</strong>:
-              nhấp đúp vào tiêu đề trang, nhập mã <code>2502</code>. Ở đó chọn
-              riêng model <strong>kịch bản</strong>, <strong>storyboard</strong>{" "}
-              và <strong>tạo ảnh</strong> kèm bảng giá.
+            <div>
+              <p className="text-sm font-medium">{L("adminProviderLabel")}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{L("adminProviderHint")}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => switchProvider("openai")}
+                className={`rounded-lg border-2 p-3 text-center text-sm font-medium transition ${
+                  provider === "openai"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-muted text-muted-foreground hover:border-primary/40"
+                }`}
+              >
+                OpenAI
+                <span className="mt-0.5 block text-[10px] font-normal opacity-70">GPT-4o · DALL-E 3</span>
+              </button>
+              <button
+                onClick={() => switchProvider("gemini")}
+                className={`rounded-lg border-2 p-3 text-center text-sm font-medium transition ${
+                  provider === "gemini"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-muted text-muted-foreground hover:border-primary/40"
+                }`}
+              >
+                Gemini
+                <span className="mt-0.5 block text-[10px] font-normal opacity-70">Nano Banana Pro</span>
+              </button>
+            </div>
+
+            <p className="text-center text-xs text-muted-foreground">
+              {L("adminCurrentProvider")}: <strong className="uppercase">{provider}</strong>
             </p>
-            <p className="text-xs text-muted-foreground">
-              Đang dùng: kịch bản <strong>{scriptModel}</strong> · storyboard{" "}
-              <strong>{storyboardModel}</strong> · ảnh <strong>{imageProvider}</strong>
-            </p>
+
             <div className="flex justify-end pt-1">
               <Button size="sm" onClick={closeAdmin}>{L("adminClose")}</Button>
             </div>
@@ -2948,7 +2901,7 @@ export function GenerateClient() {
           onClick={() => setModelPanelOpen(false)}
         >
           <div
-            className="max-h-[85vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-lg border bg-background p-5 shadow-xl"
+            className="w-full max-w-sm space-y-3 rounded-lg border bg-background p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             {!modelUnlocked ? (
@@ -2977,100 +2930,33 @@ export function GenerateClient() {
               </>
             ) : (
               <>
-                <p className="text-sm font-semibold">Chọn model API</p>
+                <p className="text-sm font-medium">Model viết kịch bản</p>
                 <p className="text-xs text-muted-foreground">
-                  3 vai trò độc lập. Giá text: USD / 1 triệu token (vào / ra) —
-                  giá ảnh: USD / ảnh. Không chọn gì thì dùng mặc định (✓ sẵn).
+                  Chỉ đổi model VIẾT KỊCH BẢN. Ảnh vẫn dùng Gemini (Nano Banana).
                 </p>
-
-                {/* ── 1. Model VIẾT KỊCH BẢN (Stage 1 — preview để duyệt) ── */}
-                <div className="rounded-md border p-3">
-                  <p className="mb-1.5 text-sm font-medium">✍️ Model viết kịch bản (preview để duyệt)</p>
-                  <div className="space-y-1.5">
-                    {TEXT_MODEL_OPTIONS.map((o) => (
-                      <button
-                        key={`script-${o.id}`}
-                        type="button"
-                        onClick={() => switchScriptModel(o.id)}
-                        className={`flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                          scriptModel === o.id
-                            ? "border-primary bg-primary/10 font-medium"
-                            : "border-input hover:border-primary/50"
-                        }`}
-                      >
-                        <span className="min-w-0">
-                          {o.label}
-                          <span className="block text-[10px] font-normal text-muted-foreground">{o.note}</span>
-                        </span>
-                        <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-                          {o.price}
-                          {scriptModel === o.id && <Check className="h-4 w-4 text-primary" />}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+                <div className="space-y-1.5">
+                  {([
+                    { v: "openai" as AIProvider, label: "GPT-5-mini (mặc định — rẻ + kịch bản hay)" },
+                    { v: "claude" as AIProvider, label: "Claude Opus 4.8 (chất lượng cao nhất)" },
+                    { v: "gemini" as AIProvider, label: "Gemini 2.5 Flash (rẻ)" },
+                  ]).map((o) => (
+                    <button
+                      key={o.v}
+                      type="button"
+                      onClick={() => switchScriptProvider(o.v)}
+                      className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                        scriptProvider === o.v
+                          ? "border-primary bg-primary/10 font-medium"
+                          : "border-input hover:border-primary/50"
+                      }`}
+                    >
+                      {o.label}
+                      {scriptProvider === o.v && <Check className="h-4 w-4 text-primary" />}
+                    </button>
+                  ))}
                 </div>
-
-                {/* ── 2. Model DỰNG STORYBOARD (Stage 2 — segments + JSON) ── */}
-                <div className="rounded-md border p-3">
-                  <p className="mb-1.5 text-sm font-medium">🎬 Model dựng storyboard (breakdown + JSON)</p>
-                  <div className="space-y-1.5">
-                    {TEXT_MODEL_OPTIONS.map((o) => (
-                      <button
-                        key={`sb-${o.id}`}
-                        type="button"
-                        onClick={() => switchStoryboardModel(o.id)}
-                        className={`flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                          storyboardModel === o.id
-                            ? "border-primary bg-primary/10 font-medium"
-                            : "border-input hover:border-primary/50"
-                        }`}
-                      >
-                        <span className="min-w-0">
-                          {o.label}
-                          <span className="block text-[10px] font-normal text-muted-foreground">{o.note}</span>
-                        </span>
-                        <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-                          {o.price}
-                          {storyboardModel === o.id && <Check className="h-4 w-4 text-primary" />}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* ── 3. Model TẠO ẢNH (storyboard tổng / thumbnail / keyframe) ── */}
-                <div className="rounded-md border p-3">
-                  <p className="mb-1.5 text-sm font-medium">🖼️ Model tạo ảnh</p>
-                  <div className="space-y-1.5">
-                    {IMAGE_MODEL_OPTIONS.map((o) => (
-                      <button
-                        key={`img-${o.id}`}
-                        type="button"
-                        onClick={() => switchImageProvider(o.id)}
-                        className={`flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                          imageProvider === o.id
-                            ? "border-primary bg-primary/10 font-medium"
-                            : "border-input hover:border-primary/50"
-                        }`}
-                      >
-                        <span className="min-w-0">
-                          {o.label}
-                          <span className="block text-[10px] font-normal text-muted-foreground">{o.note}</span>
-                        </span>
-                        <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-                          {o.price}
-                          {imageProvider === o.id && <Check className="h-4 w-4 text-primary" />}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
                 <p className="text-[11px] text-muted-foreground">
-                  Claude cần <code>ANTHROPIC_API_KEY</code> · GPT cần{" "}
-                  <code>OPENAI_API_KEY</code> · Gemini cần <code>GEMINI_API_KEY</code> ·
-                  Seedream cần <code>ARK_API_KEY</code> (BytePlus Ark) trong Vercel.
+                  Claude cần <code>ANTHROPIC_API_KEY</code> trong Vercel. GPT-4o cần <code>OPENAI_API_KEY</code>.
                 </p>
                 <div className="flex justify-end">
                   <Button size="sm" onClick={() => setModelPanelOpen(false)}>
@@ -4190,63 +4076,41 @@ export function GenerateClient() {
                 </div>
               </div>
 
-              {/* Image quality — the Standard/Pro tier only exists on Nano
-                  Banana (Gemini). When the model panel picked Seedream or
-                  DALL-E, swap the toggle for an info card so the user isn't
-                  offered dead options (and remembers which renderer runs). */}
-              {imageProvider === "gemini" ? (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{L("imageQuality")}</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setImageQuality("standard")}
-                      className={`rounded-lg border-2 p-3 text-center text-xs font-medium transition ${
-                        imageQuality === "standard"
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-muted text-muted-foreground hover:border-primary/40"
-                      }`}
-                    >
-                      {L("qualityStandard")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setImageQuality("pro")}
-                      className={`rounded-lg border-2 p-3 text-center text-xs font-medium transition ${
-                        imageQuality === "pro"
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-muted text-muted-foreground hover:border-primary/40"
-                      }`}
-                    >
-                      {L("qualityPro")}
-                    </button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{L("qualityHint")}</p>
+              {/* Image quality */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{L("imageQuality")}</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setImageQuality("standard")}
+                    className={`rounded-lg border-2 p-3 text-center text-xs font-medium transition ${
+                      imageQuality === "standard"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-muted text-muted-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    {L("qualityStandard")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImageQuality("pro")}
+                    className={`rounded-lg border-2 p-3 text-center text-xs font-medium transition ${
+                      imageQuality === "pro"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-muted text-muted-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    {L("qualityPro")}
+                  </button>
                 </div>
-              ) : (
-                <div className="space-y-1 rounded-lg border bg-muted/40 p-3">
-                  <p className="text-sm font-medium">
-                    {L("imageQuality")}:{" "}
-                    {IMAGE_MODEL_OPTIONS.find((o) => o.id === imageProvider)?.label ?? imageProvider}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {lang === "vi"
-                      ? `Đang dùng model ảnh chọn trong bảng model (${IMAGE_MODEL_OPTIONS.find((o) => o.id === imageProvider)?.price ?? ""}). Mức Standard/Pro chỉ áp dụng cho Nano Banana. Đổi model ảnh: nhấp đúp tiêu đề trang, mã 2502.`
-                      : `Using the image model picked in the model panel (${IMAGE_MODEL_OPTIONS.find((o) => o.id === imageProvider)?.price ?? ""}). The Standard/Pro tier only applies to Nano Banana. To change: double-click the page title, code 2502.`}
-                  </p>
-                </div>
-              )}
+                <p className="text-xs text-muted-foreground">{L("qualityHint")}</p>
+              </div>
 
               {/* Summary */}
               <div className="rounded-lg border bg-muted/50 p-4 text-sm space-y-1">
                 <p className="font-medium">{L("summary")}</p>
                 <p className="text-muted-foreground">
-                  <strong>{segmentCount}</strong> {L("segments")} (~{segmentCount * 10}s) · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong> ·{" "}
-                  <strong>
-                    {imageProvider === "gemini"
-                      ? imageQuality === "pro" ? "Nano Banana Pro" : "Nano Banana Standard"
-                      : imageProvider === "seedream" ? "Seedream 4.5" : "DALL-E 3"}
-                  </strong>
+                  <strong>{segmentCount}</strong> {L("segments")} (~{segmentCount * 10}s) · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong> · <strong>{imageQuality === "pro" ? "Pro" : "Standard"}</strong>
                   {characters.length > 0 && <> · {characters.length} {L("characters")}</>}
                   {products.length > 0 && <> · {products.length} {L("products")}</>}
                   {backgrounds.length > 0 && <> · {backgrounds.length} {L("locations")}</>}

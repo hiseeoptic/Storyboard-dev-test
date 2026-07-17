@@ -1,6 +1,5 @@
 import { getOpenAIClient } from "@/lib/openai/client";
 import { geminiGenerateImage } from "@/lib/gemini/client";
-import { seedreamGenerateImage } from "@/lib/seedream/client";
 import {
   buildCharacterRefSheetPrompt,
   buildSegmentFirstFramePrompt,
@@ -13,14 +12,9 @@ import type {
   AIProvider,
   AspectRatio,
   CharacterLock,
-  ImageProvider,
   ImageQuality,
   SceneBible,
 } from "@/types";
-
-/** Image renderers accept either the split ImageProvider or (legacy) the text
- * AIProvider — "claude" has no image API and falls through to DALL-E. */
-type AnyImageProvider = ImageProvider | AIProvider;
 
 type RefImage = { base64: string; mimeType?: string; label?: string };
 
@@ -32,7 +26,7 @@ async function sleep(ms: number): Promise<void> {
 }
 
 export interface ImageGenOptions {
-  provider?: AnyImageProvider;
+  provider?: AIProvider;
   /** Base64 reference images for character/product consistency (Gemini only). */
   referenceImages?: RefImage[];
   aspectRatio?: AspectRatio;
@@ -63,17 +57,6 @@ async function generateImage(
           aspectRatio: opts.aspectRatio,
           quality: opts.quality,
           imageSize: opts.imageSize,
-        });
-      }
-
-      if (provider === "seedream") {
-        // Seedream 4.5 (BytePlus Ark) — independent of Google's infra, so it
-        // keeps working when Nano Banana is overloaded. Supports up to 10
-        // reference images for subject consistency. Returns a data URI.
-        return await seedreamGenerateImage({
-          prompt,
-          referenceImages: opts.referenceImages,
-          aspectRatio: opts.aspectRatio,
         });
       }
 
@@ -125,7 +108,7 @@ export async function generateCharacterRefSheet(params: {
   /** Uploaded reference photos of the real person/character (Gemini). */
   referenceImages?: RefImage[];
   references?: RefDescriptor[];
-  provider?: AnyImageProvider;
+  provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
   style?: string;
@@ -172,7 +155,7 @@ export async function generateSegmentFrame(params: {
   referenceImages?: RefImage[];
   references?: RefDescriptor[];
   referenceExpressions?: number;
-  provider?: AnyImageProvider;
+  provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
 }): Promise<{ url: string }> {
@@ -224,7 +207,7 @@ export async function generateKeyframe(params: {
   presentCharacters?: { name: string; description: string; isChild?: boolean }[];
   referenceImages?: RefImage[];
   references?: RefDescriptor[];
-  provider?: AnyImageProvider;
+  provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
 }): Promise<{ url: string }> {
@@ -273,7 +256,7 @@ export async function generateThumbnail(params: {
   preserveRealFace?: boolean;
   referenceImages?: RefImage[];
   references?: RefDescriptor[];
-  provider?: AnyImageProvider;
+  provider?: AIProvider;
   quality?: ImageQuality;
 }): Promise<{ url: string }> {
   const prompt = buildThumbnailPrompt(params);
@@ -313,7 +296,7 @@ export async function generateMasterBoard(params: {
   /** Reference images (e.g. the generated character sheet) for consistency. */
   referenceImages?: RefImage[];
   references?: RefDescriptor[];
-  provider?: AnyImageProvider;
+  provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
 }): Promise<{ url: string }> {

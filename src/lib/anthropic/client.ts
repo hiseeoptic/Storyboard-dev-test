@@ -36,15 +36,11 @@ export async function claudeGenerateText(params: {
   maxTokens?: number;
   /** Optional fail-fast boundary for serverless request orchestration. */
   timeoutMs?: number;
-  /** Exact Anthropic model id (e.g. "claude-opus-4-8", "claude-fable-5").
-   * Defaults to CLAUDE_MODEL. Both run fine with this params shape (no
-   * temperature/thinking fields — see the Opus 4.8 note above). */
-  model?: string;
 }): Promise<string> {
   const apiKey = getApiKey();
 
   const body: Record<string, unknown> = {
-    model: params.model || CLAUDE_MODEL,
+    model: CLAUDE_MODEL,
     max_tokens: params.maxTokens ?? 16000,
     messages: [{ role: "user", content: params.userPrompt }],
   };

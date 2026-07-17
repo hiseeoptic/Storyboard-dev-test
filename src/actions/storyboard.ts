@@ -27,7 +27,6 @@ import type {
   AIProvider,
   AspectRatio,
   CharacterLock,
-  ImageProvider,
   ImageQuality,
   SceneBible,
   StoryboardGenerationInput,
@@ -842,11 +841,9 @@ function buildRefContext(
   input: StoryboardGenerationInput,
   breakdown: StoryboardGenerationOutput,
   analysis: StoryboardAnalysis,
-  provider: AIProvider | ImageProvider
+  provider: AIProvider
 ): RefContext {
-  // Reference-image chaining works on providers with image-to-image input:
-  // Gemini (Nano Banana) and Seedream. DALL-E is text-only.
-  const canChain = provider === "gemini" || provider === "seedream";
+  const canChain = provider === "gemini";
   const faceImg = input.character_images?.[0]?.images?.[0];
   const productImg = input.product_images?.[0]?.images?.[0];
   const bgImg = input.background_images?.[0]?.images?.[0];
@@ -1130,10 +1127,8 @@ export async function generateStoryboardPlan(
     //     (default Claude Opus 4.8), which is the strongest at Vietnamese
     //     numerology/health scripts.
     //   Stage 2 — the STORYBOARD (segments + JSON) is built by the main provider
-    //     (default Gemini 3 Flash — cheap + solid JSON), which expands the
-    //     approved script verbatim.
-    //   Images go to input.image_provider (default Nano Banana; Seedream and
-    //   DALL-E selectable from the admin panel).
+    //     (Gemini 2.5 Flash — cheap), which expands the approved script verbatim.
+    //   Images always stay on Nano Banana.
     // If Stage 1's model is unavailable (e.g. ANTHROPIC_API_KEY not set), we skip
     // the script and let Stage 2 write directly. If Stage 2 fails but we have a
     // script, we fall back to building the storyboard with the script model.
@@ -1145,29 +1140,14 @@ export async function generateStoryboardPlan(
       enhanced.genre === "cooking" && !!enhanced.cooking_recipe;
     const scriptProvider = input.script_provider ?? provider;
 
-    const storyboardModelId = input.storyboard_model ?? provider;
-
     let sourceScript: string | null = null;
-    // Which model ACTUALLY wrote the script — surfaced to the user so a
-    // silent fallback (e.g. GPT failed → Claude wrote it → Claude got billed)
-    // is always visible on the review screen.
-    let actualScriptWriter: string | null = null;
-    // Stage 1 ALWAYS runs as its own (small, fast, reliable) call — even when
-    // the same model is picked for both roles. The old "same model → merge
-    // into one giant pass" optimization made the script hostage to the heavy
-    // 14k-token breakdown call: one connection drop there and the RESCUE
-    // provider (often Gemini) ended up writing the script itself — the exact
-    // quality regression the split model panel exists to prevent. With a
-    // separate Stage 1, a Stage-2 rescue only re-formats the already-approved
-    // script verbatim; the creative text keeps the chosen writer's voice.
-    if (!compiledCooking) {
-      // Script fallback chain: if the chosen script model fails (overloaded,
-      // timeout…), try the next-best writer before giving up — a good script
-      // is worth one extra bounded attempt. Claude goes LAST: it's the most
-      // expensive vendor, so it must never be the silent default rescue.
+    if (!compiledCooking && scriptProvider !== provider) {
+      // Script fallback chain: if the chosen script model fails (Claude
+      // overloaded, GPT timeout…), try the next-best writer before giving up —
+      // a good script is worth one extra bounded attempt.
       const scriptChain: AIProvider[] = [
         scriptProvider,
-        ...(["openai", "gemini", "claude"] as AIProvider[]).filter(
+        ...(["claude", "openai", "gemini"] as AIProvider[]).filter(
           (p) => p !== scriptProvider && p !== provider
         ),
       ];
@@ -1178,10 +1158,9 @@ export async function generateStoryboardPlan(
             deadlineMs: generationDeadlineMs,
             maxAttempts: chainIndex === 0 ? 2 : 1,
           });
-          actualScriptWriter = chainIndex === 0 ? (input.script_model ?? sp) : sp;
           if (chainIndex > 0) {
             warnings.push(
-              `Kịch bản do ${sp.toUpperCase()} viết thay vì ${scriptProvider} (model bạn chọn không phản hồi) — chi phí tính cho ${sp.toUpperCase()}.`
+              `Kịch bản do ${sp} viết thay vì ${scriptProvider} (model chính không phản hồi).`
             );
           }
           break;
@@ -1217,10 +1196,6 @@ export async function generateStoryboardPlan(
     }
 
     let breakdown: StoryboardGenerationOutput;
-    // Which model actually built the storyboard — when the Stage-2 rescue
-    // switches providers this must be reflected in the transparency line
-    // (it used to keep claiming the originally-chosen model).
-    let actualBreakdownModel = storyboardModelId;
     if (compiledCooking) {
       const compactPlan = await generateCompactCookingScenePlan(
         contextBoundInput,
@@ -1259,15 +1234,6 @@ export async function generateStoryboardPlan(
           deadlineMs: generationDeadlineMs,
           maxAttempts: 1,
         });
-        // The chosen model id only applies when its prefix matches the rescue
-        // provider; otherwise that provider's own default ran.
-        actualBreakdownModel =
-          input.storyboard_model &&
-          ((fallbackProvider === "openai" && input.storyboard_model.startsWith("gpt")) ||
-            (fallbackProvider === "gemini" && input.storyboard_model.startsWith("gemini")) ||
-            (fallbackProvider === "claude" && input.storyboard_model.startsWith("claude")))
-            ? input.storyboard_model
-            : fallbackProvider;
       }
     }
 
@@ -1354,13 +1320,6 @@ export async function generateStoryboardPlan(
       console.error("[Storyboard] prompt assembly failed:", e);
       warnings.push("Một số prompt chưa dựng được, sẽ tạo lại khi bạn duyệt kịch bản.");
     }
-
-    // Transparency line: which models actually ran (and get billed) this pass.
-    // actualScriptWriter is null only when every script model failed (or the
-    // cooking path compiled the script from the recipe IR).
-    warnings.unshift(
-      `Model phiên này — kịch bản: ${actualScriptWriter ?? `${actualBreakdownModel} (model storyboard tự viết)`} · storyboard: ${actualBreakdownModel}`
-    );
 
     return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
   } catch (err) {
@@ -1641,8 +1600,7 @@ export async function generateBoardImage(params: {
   analysis: StoryboardAnalysis;
   kind: BoardKind;
   segmentIndex?: number;
-  /** IMAGE provider (split from the text provider): gemini / seedream / openai. */
-  provider?: ImageProvider | AIProvider;
+  provider?: AIProvider;
   /** Base64 of a previously-rendered board, used to pin wardrobe/look across boards. */
   anchorImage?: string;
 }): Promise<ActionResult<{ url: string }>> {
@@ -1654,12 +1612,11 @@ export async function generateBoardImage(params: {
     (input.background_images?.length ?? 0) > 0;
   // DALL-E text-to-image cannot consume these uploads. Whenever the user has
   // supplied a character, product or location photo, route the IMAGE call to
-  // an image-to-image provider so "reference lock" is a real input mode rather
-  // than a text-only promise (Seedream also accepts references, so an explicit
-  // Seedream choice is honoured). Text providers remain unchanged.
-  const requested = params.input.image_provider ?? params.provider ?? "gemini";
-  const provider: ImageProvider | AIProvider =
-    hasUserVisualReferences && requested !== "seedream" ? "gemini" : requested;
+  // Gemini automatically so "reference lock" is a real input mode rather than
+  // a text-only promise. Script/storyboard text provider remains unchanged.
+  const provider: AIProvider = hasUserVisualReferences
+    ? "gemini"
+    : params.provider ?? "gemini";
   const ctx = buildRefContext(input, breakdown, analysis, provider);
 
   try {

@@ -11,16 +11,16 @@ import type { AspectRatio, ImageQuality } from "@/types";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 // Model names — change here if Google updates model identifiers.
-// Default text model upgraded 2.5-flash → Gemini 3 Flash: 2.5 Flash proved too
-// weak for the structured storyboard JSON (missing fields / broken prompts).
-// Overridable via GEMINI_TEXT_MODEL or per-call `model`. Like the image chain
-// below, unavailable models (404 / no access) fall through to the next entry.
-const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3-flash-preview";
-const TEXT_MODEL_FALLBACKS = [
-  "gemini-3-flash-preview", // Gemini 3 Flash — cheap + strong JSON
-  "gemini-3.5-flash",       // stable flagship flash
-  "gemini-2.5-flash",       // legacy last resort (always available)
-];
+// gemini-2.5-flash = cheap + fast for the Gemini script fallback and all vision
+// analysis (scripts default to Claude anyway). Overridable via GEMINI_TEXT_MODEL.
+const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash";
+
+// Only the STORYBOARD breakdown step opts into Gemini 3 Flash (via the `model`
+// param below) — it writes noticeably better structured JSON than 2.5 Flash.
+// Everything else (vision, script fallback) stays on TEXT_MODEL. Overridable
+// via GEMINI_STORYBOARD_MODEL if Google renames the id.
+export const STORYBOARD_TEXT_MODEL =
+  process.env.GEMINI_STORYBOARD_MODEL || "gemini-3-flash-preview";
 
 // Image model fallback chains (newest first). If the API key doesn't have
 // access to a model (404 / not found), we automatically try the next one.
@@ -80,17 +80,18 @@ export async function geminiGenerateText(params: {
   responseSchema?: Record<string, unknown>;
   /** Fail fast instead of consuming the entire serverless execution window. */
   timeoutMs?: number;
-  /** Exact Gemini model id (e.g. "gemini-3.1-pro-preview"). Defaults to
-   * TEXT_MODEL; unavailable models fall through TEXT_MODEL_FALLBACKS. */
+  /** Exact model id. Defaults to TEXT_MODEL. Used by the storyboard step to
+   * opt into STORYBOARD_TEXT_MODEL (Gemini 3 Flash). */
   model?: string;
-  /** Gemini-3-only thinking depth. Defaults to "low": Gemini 3 ships with
-   * dynamic HIGH thinking, which is far slower than 2.5-flash and burns the
-   * output-token budget on thoughts — the exact recipe for truncated JSON +
-   * retries + blowing the 230s Vercel budget. Structured output does not need
-   * deep thinking (the responseSchema drives the shape). */
+  /** Gemini-3-only thinking cap. Gemini 3 defaults to dynamic HIGH thinking,
+   * which is slow and eats the output-token budget → truncated JSON. For a
+   * schema-driven JSON step "low" is plenty. Ignored on 2.5-era models (they
+   * reject the field, so we only send it for gemini-3* ids). */
   thinkingLevel?: "minimal" | "low" | "medium" | "high";
 }): Promise<string> {
   const apiKey = getApiKey();
+  const model = params.model || TEXT_MODEL;
+  const sendThinking = model.startsWith("gemini-3") && !!params.thinkingLevel;
 
   const parts: GeminiPart[] = [{ text: params.userPrompt }];
   if (params.images) {
@@ -127,10 +128,8 @@ export async function geminiGenerateText(params: {
         ...(withSchema && params.responseSchema
           ? { responseSchema: params.responseSchema }
           : {}),
-        // Gemini 3 only: cap thinking (default dynamic HIGH is slow + eats
-        // the output budget). 2.5-era models don't accept thinkingLevel.
         ...(withThinking
-          ? { thinkingConfig: { thinkingLevel: params.thinkingLevel ?? "low" } }
+          ? { thinkingConfig: { thinkingLevel: params.thinkingLevel } }
           : {}),
       },
     };
@@ -140,7 +139,7 @@ export async function geminiGenerateText(params: {
     return body;
   };
 
-  const doFetch = (model: string, withSchema: boolean, withThinking: boolean) =>
+  const doFetch = (withSchema: boolean, withThinking: boolean) =>
     fetch(`${API_BASE}/${model}:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -148,79 +147,57 @@ export async function geminiGenerateText(params: {
       signal: AbortSignal.timeout(params.timeoutMs ?? 120_000),
     });
 
-  // Model chain: requested model first, then the standard fallbacks — same
-  // resilience pattern as the image chain (404 / no-access falls through).
-  const primaryModel = params.model || TEXT_MODEL;
-  const modelChain = [
-    primaryModel,
-    ...TEXT_MODEL_FALLBACKS.filter((m) => m !== primaryModel),
-  ];
+  let sendThinkingNow = sendThinking;
+  let res = await doFetch(true, sendThinkingNow);
+  let json = (await res.json()) as GeminiResponse;
 
-  let lastUnavailable = "";
-  for (const model of modelChain) {
-    // Thinking control only exists on Gemini 3 — never send it to 2.5 models.
-    let withThinking = model.startsWith("gemini-3");
-    let res = await doFetch(model, true, withThinking);
-    let json = (await res.json()) as GeminiResponse;
-
-    // SAFETY NET 1: if thinkingConfig itself is rejected (field renamed /
-    // model variant dislikes it), retry once without it.
-    if (
-      res.status === 400 &&
-      withThinking &&
-      /thinking/i.test(json.error?.message ?? "")
-    ) {
-      console.error(
-        `[Gemini] thinkingConfig rejected (${json.error?.message?.slice(0, 160)}); retrying without it`
-      );
-      withThinking = false;
-      res = await doFetch(model, true, false);
-      json = (await res.json()) as GeminiResponse;
-    }
-
-    // SAFETY NET 2: if the structured-output schema itself is rejected (400
-    // INVALID_ARGUMENT — e.g. a schema feature this API version dislikes),
-    // retry once WITHOUT the schema in plain JSON mode instead of failing the
-    // whole generation; the downstream zod/shape validation still guards output.
-    if (
-      res.status === 400 &&
-      params.responseSchema &&
-      /INVALID_ARGUMENT|schema|Unknown name/i.test(json.error?.message ?? "")
-    ) {
-      console.error(
-        `[Gemini] responseSchema rejected (${json.error?.message?.slice(0, 200)}); retrying without schema`
-      );
-      res = await doFetch(model, false, withThinking);
-      json = (await res.json()) as GeminiResponse;
-    }
-
-    if (!res.ok || json.error) {
-      // Key has no access to this model id — try the next one in the chain.
-      if (isModelUnavailable(res.status, json.error?.message)) {
-        lastUnavailable = `${model}: ${json.error?.message ?? res.status}`;
-        console.error(`[Gemini] text model unavailable (${lastUnavailable}); trying next`);
-        continue;
-      }
-      throw new Error(
-        `Gemini text generation failed (${res.status}): ${json.error?.message ?? "Unknown error"}`
-      );
-    }
-
-    const text = json.candidates?.[0]?.content?.parts
-      ?.map((p) => p.text ?? "")
-      .join("")
-      .trim();
-
-    if (!text) {
-      throw new Error("Gemini returned an empty text response");
-    }
-
-    return text;
+  // SAFETY NET 0: if thinkingConfig is rejected (field renamed / variant
+  // dislikes it), retry once without it so the call still succeeds.
+  if (
+    res.status === 400 &&
+    sendThinkingNow &&
+    /thinking/i.test(json.error?.message ?? "")
+  ) {
+    console.error(
+      `[Gemini] thinkingConfig rejected (${json.error?.message?.slice(0, 160)}); retrying without it`
+    );
+    sendThinkingNow = false;
+    res = await doFetch(true, false);
+    json = (await res.json()) as GeminiResponse;
   }
 
-  throw new Error(
-    `Gemini text generation failed: no accessible text model (${lastUnavailable})`
-  );
+  // SAFETY NET: if the structured-output schema itself is rejected (400
+  // INVALID_ARGUMENT — e.g. a schema feature this API version dislikes),
+  // retry once WITHOUT the schema in plain JSON mode instead of failing the
+  // whole generation; the downstream zod/shape validation still guards output.
+  if (
+    res.status === 400 &&
+    params.responseSchema &&
+    /INVALID_ARGUMENT|schema|Unknown name/i.test(json.error?.message ?? "")
+  ) {
+    console.error(
+      `[Gemini] responseSchema rejected (${json.error?.message?.slice(0, 200)}); retrying without schema`
+    );
+    res = await doFetch(false, sendThinkingNow);
+    json = (await res.json()) as GeminiResponse;
+  }
+
+  if (!res.ok || json.error) {
+    throw new Error(
+      `Gemini text generation failed (${res.status}): ${json.error?.message ?? "Unknown error"}`
+    );
+  }
+
+  const text = json.candidates?.[0]?.content?.parts
+    ?.map((p) => p.text ?? "")
+    .join("")
+    .trim();
+
+  if (!text) {
+    throw new Error("Gemini returned an empty text response");
+  }
+
+  return text;
 }
 
 // ─── Image Generation (Nano Banana / Nano Banana Pro) ───────────────────────
