@@ -1145,18 +1145,28 @@ export async function generateStoryboardPlan(
       enhanced.genre === "cooking" && !!enhanced.cooking_recipe;
     const scriptProvider = input.script_provider ?? provider;
 
+    // MODEL-level gate (not provider-level): with the split model panel the
+    // user can pick two different models of the SAME vendor (e.g. script =
+    // Gemini 3.1 Pro, storyboard = Gemini 3 Flash) — those must still run as
+    // two stages, otherwise the storyboard model silently writes the script
+    // and the chosen script model is never called. Only when the exact same
+    // model is picked for both roles do we merge into one pass (cheaper).
+    const scriptModelId = input.script_model ?? scriptProvider;
+    const storyboardModelId = input.storyboard_model ?? provider;
+
     let sourceScript: string | null = null;
-    // Which provider ACTUALLY wrote the script — surfaced to the user so a
+    // Which model ACTUALLY wrote the script — surfaced to the user so a
     // silent fallback (e.g. GPT failed → Claude wrote it → Claude got billed)
     // is always visible on the review screen.
     let actualScriptWriter: string | null = null;
-    if (!compiledCooking && scriptProvider !== provider) {
-      // Script fallback chain: if the chosen script model fails (Claude
-      // overloaded, GPT timeout…), try the next-best writer before giving up —
-      // a good script is worth one extra bounded attempt.
+    if (!compiledCooking && scriptModelId !== storyboardModelId) {
+      // Script fallback chain: if the chosen script model fails (overloaded,
+      // timeout…), try the next-best writer before giving up — a good script
+      // is worth one extra bounded attempt. Claude goes LAST: it's the most
+      // expensive vendor, so it must never be the silent default rescue.
       const scriptChain: AIProvider[] = [
         scriptProvider,
-        ...(["claude", "openai", "gemini"] as AIProvider[]).filter(
+        ...(["openai", "gemini", "claude"] as AIProvider[]).filter(
           (p) => p !== scriptProvider && p !== provider
         ),
       ];
@@ -1333,7 +1343,7 @@ export async function generateStoryboardPlan(
 
     // Transparency line: which models actually ran (and get billed) this pass.
     warnings.unshift(
-      `Model phiên này — kịch bản: ${actualScriptWriter ?? "(model storyboard tự viết)"} · storyboard: ${input.storyboard_model ?? provider}`
+      `Model phiên này — kịch bản: ${actualScriptWriter ?? `${storyboardModelId} (cùng model → viết kịch bản + storyboard chung 1 lượt)`} · storyboard: ${storyboardModelId}`
     );
 
     return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
