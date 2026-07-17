@@ -813,7 +813,9 @@ interface RefContext {
   faceImg?: string;
   productImg?: string;
   ingredientRefs: { img: string; name: string; desc?: string }[];
-  bgImg?: string;
+  /** Up to 2 LOCATION angles (same place, different viewpoints) so the image
+   * model can rebuild the real set faithfully instead of inventing one. */
+  bgImgs: string[];
   faceDesc?: string;
   productDesc?: string;
   bgDesc?: string;
@@ -846,7 +848,12 @@ function buildRefContext(
   const canChain = provider === "gemini";
   const faceImg = input.character_images?.[0]?.images?.[0];
   const productImg = input.product_images?.[0]?.images?.[0];
-  const bgImg = input.background_images?.[0]?.images?.[0];
+  // Take up to 2 location angles across ALL uploaded background groups (the
+  // old code used only background_images[0].images[0] — a single angle — so
+  // the model never saw the rest and reinvented the set in each panel).
+  const bgImgs = (input.background_images ?? [])
+    .flatMap((g) => g.images)
+    .slice(0, 2);
   const ingredientRefs = (input.ingredient_images ?? []).flatMap((group) =>
     group.images.slice(0, 2).map((img) => ({
       img,
@@ -951,7 +958,7 @@ function buildRefContext(
     faceImg,
     productImg,
     ingredientRefs,
-    bgImg,
+    bgImgs,
     faceDesc,
     productDesc,
     bgDesc,
@@ -1016,7 +1023,7 @@ function buildBoardRefs(
     // third named character from the storyboard reference library.
     const characterLimit = Math.max(
       1,
-      MAX_BOARD_REFS - Number(!!ctx.bgImg) - Number(reserveProduct)
+      MAX_BOARD_REFS - ctx.bgImgs.length - Number(reserveProduct)
     );
     const grouped = new Map<string, typeof pool>();
     for (const reference of pool) {
@@ -1052,12 +1059,24 @@ function buildBoardRefs(
     });
     descriptors.push({ role: "face", description: ctx.faceDesc ?? ctx.charDescForPoster });
   }
-  if (ctx.bgImg && images.length < MAX_BOARD_REFS) {
-    images.push({
-      base64: ctx.bgImg,
-      mimeType: "image/jpeg",
-      label: "HIGHEST-PRIORITY USER MENU REFERENCE — LOCATION OVERVIEW. Preserve this layout, furniture, colours and lighting.",
-    });
+  if (ctx.bgImgs.length > 0) {
+    // Feed EVERY uploaded location angle (up to 2). They are the SAME place
+    // from different viewpoints — together they let the model rebuild the real
+    // 3D set (walls, furniture positions, windows, light direction) instead of
+    // guessing from one flat photo. Only one text descriptor is added (the
+    // instruction is the same for both), but both images are attached.
+    const total = ctx.bgImgs.length;
+    for (const [i, bg] of ctx.bgImgs.entries()) {
+      if (images.length >= MAX_BOARD_REFS) break;
+      images.push({
+        base64: bg,
+        mimeType: "image/jpeg",
+        label:
+          total > 1
+            ? `HIGHEST-PRIORITY USER MENU REFERENCE — LOCATION, ANGLE ${i + 1} OF ${total} OF THE SAME PLACE. Combine all angles to reconstruct one consistent 3D set; preserve its exact layout, furniture positions, walls, windows, colours, materials and light direction in every panel. Do NOT invent a different room.`
+            : "HIGHEST-PRIORITY USER MENU REFERENCE — LOCATION OVERVIEW. Preserve this exact layout, furniture, colours and lighting in every panel; do NOT invent a different room.",
+      });
+    }
     descriptors.push({ role: "setting", description: ctx.bgDesc });
   }
   if (
@@ -1427,7 +1446,7 @@ function assemblePlanPrompts(
       speakerVoice: seg.speaker ? characterVoices[seg.speaker.trim()] : undefined,
       ambientAudio,
       environmentRef: seg.environment_ref,
-      hasLocationRef: !!ctx.bgImg,
+      hasLocationRef: ctx.bgImgs.length > 0,
     });
   }
   return buildVideoPromptText({

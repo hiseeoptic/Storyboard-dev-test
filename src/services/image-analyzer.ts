@@ -151,8 +151,8 @@ Write as a continuous paragraph, NOT bullet points. Use precise color names. Thi
         const desc = await analyzeWithVision({
           provider,
           images: allBgImages,
-          maxTokens: 200,
-          prompt: `Analyze these reference photos of locations/settings (${bgNames}). Provide a concise visual description (max 120 words) covering: environment type, architecture, colors, atmosphere, lighting conditions, notable details. This will be used as a setting reference for AI-generated storyboard scenes. Be specific about visual elements.`,
+          maxTokens: 320,
+          prompt: `These are reference photos of ONE location (${bgNames}) — if there are several, treat them as the SAME place seen from different angles, not different rooms. Reconstruct the space and describe it precisely (max 200 words) so an image model can rebuild it identically in every shot. Cover, in this order: (1) room/space type and overall geometry (shape, approximate size, ceiling); (2) FIXED layout — positions of major furniture and objects relative to each other and to the walls (e.g. "sofa against the back wall, low wooden table centred in front of it, floor lamp in the left corner"); (3) walls, floor and materials with precise colours; (4) windows/doors and what light comes through them, plus the direction and warmth of the lighting; (5) small persistent props that must reappear. State only what is visibly confirmed; if the angles conflict, note it rather than inventing. This description is the authoritative setting reference — be concrete about spatial relationships, not just mood.`,
         });
         if (desc) backgroundDescription = desc.trim();
       })());
