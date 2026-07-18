@@ -89,10 +89,19 @@ export async function geminiGenerateText(params: {
    * schema-driven JSON step "low" is plenty. Ignored on 2.5-era models (they
    * reject the field, so we only send it for gemini-3* ids). */
   thinkingLevel?: "minimal" | "low" | "medium" | "high";
+  /** Gemini-2.5-only thinking-token cap (thinkingBudget). 2.5-flash thinks
+   * dynamically by default; on a heavy schema task (storyboard + spatial
+   * topology) that thinking eats maxOutputTokens and truncates the JSON into a
+   * stub. Pass 0 to disable thinking so the whole budget goes to the JSON.
+   * Ignored on gemini-3* (they use thinkingLevel instead). */
+  thinkingBudget?: number;
 }): Promise<string> {
   const apiKey = getApiKey();
   const model = params.model || TEXT_MODEL;
-  const sendThinking = model.startsWith("gemini-3") && !!params.thinkingLevel;
+  const isGemini3 = model.startsWith("gemini-3");
+  const sendThinking = isGemini3 && !!params.thinkingLevel;
+  // 2.5-family thinkingBudget (integer token cap; 0 = thinking off).
+  const sendBudget = !isGemini3 && typeof params.thinkingBudget === "number";
 
   const parts: GeminiPart[] = [{ text: params.userPrompt }];
   if (params.images) {
@@ -129,8 +138,11 @@ export async function geminiGenerateText(params: {
         ...(withSchema && params.responseSchema
           ? { responseSchema: params.responseSchema }
           : {}),
-        ...(withThinking
+        ...(withThinking && sendThinking
           ? { thinkingConfig: { thinkingLevel: params.thinkingLevel } }
+          : {}),
+        ...(withThinking && sendBudget
+          ? { thinkingConfig: { thinkingBudget: params.thinkingBudget } }
           : {}),
       },
     };
@@ -148,7 +160,9 @@ export async function geminiGenerateText(params: {
       signal: AbortSignal.timeout(params.timeoutMs ?? 120_000),
     });
 
-  let sendThinkingNow = sendThinking;
+  // Combined gate so the "retry without thinking" safety net below covers both
+  // the gemini-3 thinkingLevel and the 2.5 thinkingBudget forms.
+  let sendThinkingNow = sendThinking || sendBudget;
   let res = await doFetch(true, sendThinkingNow);
   let json = (await res.json()) as GeminiResponse;
 

@@ -957,11 +957,12 @@ ${beatExample}
       "characters_in_scene": ["REQUIRED — array of EXACT character_locks names VISIBLE in this segment (e.g. [\\"Nam\\", \\"Mai\\"]). Only these people appear on screen; the speaker must be listed here; others in the list react silently."],
       "environment_ref": "string — the environment archetype id from the ENVIRONMENT ENGINE list that matches this segment's setting (e.g. 'misty_mountain_ridge_dawn'), or 'custom' if none fits. Consecutive segments in the same place reuse the same id.",
       "spatial_layout": {
-        "zone_order": "string — ordered connected zones; e.g. ONLY for a real balcony scene: interior room -> open doorway/threshold -> balcony floor -> outer-perimeter railing -> exterior beyond",
-        "fixed_architecture": "string — immutable wall/opening/threshold/stair/counter/boundary geometry; explicitly state what may NEVER cross or block a connector",
-        "character_placement": "string — every visible character: exact zone + named anchor + approximate distance + facing; nobody straddles solid architecture or stands beyond a safety boundary",
-        "walkable_path": "string — continuous load-bearing route; name the connector used for any zone change and keep this route unobstructed",
-        "camera_zone": "string — one real supported camera zone + height/side + direct line of sight; never inside a wall, solid prop, void or beyond a railing"
+        "_note": "Keep EACH field to ONE short clause (≤ 18 words) — this is a compact geometry map, not prose. OMIT the whole spatial_layout object for a simple single-zone scene with no doorway/threshold/stair/counter/railing/edge.",
+        "zone_order": "string — ordered connected zones; e.g. balcony scene: room -> doorway/threshold -> balcony floor -> outer railing -> exterior",
+        "fixed_architecture": "string — immutable walls/openings/threshold/boundary; what may NEVER cross or block a connector",
+        "character_placement": "string — each character: zone + anchor + approx distance + facing; nobody straddles architecture or stands beyond a boundary",
+        "walkable_path": "string — continuous route; name the connector for any zone change; keep unobstructed",
+        "camera_zone": "string — one real camera zone + side/height + line of sight; never inside a wall or beyond a railing"
       },
       "wardrobe_state": [
         { "character": "exact character_locks name", "outfit": "FULL current outfit description (garments + colours), as detailed as the base lock — e.g. 'clean dark grey cotton t-shirt, black soft home shorts'", "outfit_materials": "real fabric materials of the new outfit", "hair": "current hair state, e.g. 'damp black hair, freshly towelled'" }

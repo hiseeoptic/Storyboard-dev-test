@@ -729,16 +729,21 @@ export async function generateStoryboardBreakdown(
           // started truncating tails into stub scenes for EVERY genre. Budget
           // ~3200/segment with a 16k floor; Gemini 2.5 Flash handles it fine.
           maxOutputTokens: Math.min(
-            30720,
-            Math.max(16384, (input.segment_count ?? input.scene_count ?? 5) * 3200)
+            40960,
+            Math.max(20480, (input.segment_count ?? input.scene_count ?? 5) * 4000)
           ),
-          // Storyboard writing upgraded 2.5 Flash → Gemini 3 Flash for better
-          // structured JSON. thinkingLevel "low" keeps Gemini 3's default
-          // dynamic-HIGH thinking from eating the token budget (→ stub scenes)
-          // and blowing the request budget.
+          // Storyboard model (gemini-2.5-flash by default; Gemini 3 via env).
           model: STORYBOARD_TEXT_MODEL,
+          // CRITICAL for avoiding stub scenes: keep the model's THINKING from
+          // eating the output-token budget. The added spatial-topology +
+          // creative-route requirements make 2.5-flash think a lot by default;
+          // that thinking was consuming maxOutputTokens and truncating the JSON
+          // tail into 1-scene stubs. thinkingBudget 0 (2.5) / thinkingLevel low
+          // (Gemini 3) hands the whole budget to the JSON — the schema already
+          // guides the structure, so deep thinking isn't needed here.
+          thinkingBudget: 0,
           thinkingLevel: "low",
-          timeoutMs: boundedTimeoutMs(timing, 75_000, "Gemini storyboard generation"),
+          timeoutMs: boundedTimeoutMs(timing, 90_000, "Gemini storyboard generation"),
         });
       } else {
         const openai = getOpenAIClient();
@@ -1043,10 +1048,11 @@ export async function rewriteStoryboardSegment(params: {
           jsonMode: true,
           responseSchema: SEGMENT_ITEM_SCHEMA,
           temperature: 0.35,
-          maxOutputTokens: 4096,
-          // Same upgrade as the full breakdown: re-choreographing one scene is
-          // part of the storyboard step, so keep it on Gemini 3 Flash.
+          maxOutputTokens: 8192,
+          // Same as the full breakdown: keep thinking from eating the output
+          // budget (one rich segment with spatial_layout can truncate at 4k).
           model: STORYBOARD_TEXT_MODEL,
+          thinkingBudget: 0,
           thinkingLevel: "low",
         });
       } else {
