@@ -686,6 +686,7 @@ STAGING & BLOCKING (a real director's coverage — this is what separates a watc
 
 MATERIAL & SKIN REALISM (this is what kills the "AI/CGI/plastic" look — treat every clip as REAL filmed footage, never a 3D render):
 - SKIN: describe real skin — visible pores, fine vellus/facial hair, natural subsurface scattering, subtle moisture/oil sheen, real catchlights and small natural imperfections. NEVER airbrushed, waxy, plastic or beauty-smoothed. Fill each character_lock's "skin_texture" and "eye_details" with these forensic details (this is the #1 fix for fake-looking faces).
+- HAIR (equally important — long dark hair is what most often renders as a plastic wig): describe REAL hair — thousands of individual strands, a soft natural part, fine flyaways and baby hairs at the hairline, natural volume that follows the scalp, and a MATTE-to-soft natural sheen (never a mirror-like glossy shell). Fill each character_lock's "hair" with this real texture. NEVER a smooth helmet of hair, a solid painted-on cap, a shiny plastic wig or doll/toy hair with no visible strands.
 - MATERIALS: every object/prop/garment must read true-to-life with its real surface physics. Leather = grain, creases, worn scuffs, real stitching; denim = woven twill weave; metal = brushed/worn with real specular reflections; wood = visible grain; fabric = real thread and drape. Put these into each character_lock's "wardrobe_materials" and describe hero props with the same material honesty — no plastic, toy-like or CGI surfaces.
 - LIGHT: physically-based, tied to time-of-day/weather, with soft imperfect shadow edges. Give scene_bible.lighting BOTH Kelvin temperature AND approximate Lux (e.g. "soft overcast dawn key 5200K, ~800 lux"), and set scene_bible.film_grain to a fine organic grain / clean-acquisition token so the filmic texture stays constant across clips.
 
@@ -1958,7 +1959,7 @@ Compatible with: Google Veo 3.1, Seedance 2.0, Kling, Runway, Pika`;
 
 /** The one comprehensive negative list, reused at project + clip level. */
 export const VEO_NEGATIVE_LIST =
-  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, railing wall counter furniture or prop crossing a doorway threshold stair entry or walking route, perimeter barrier in the middle of a floor, blocked opening, contradictory zone order, character or camera beyond a railing inside a wall or over a void, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, both characters talking at once, overlapping or simultaneous voices, doubled voice, chorus, echo, a spoken line repeated or duplicated, listener lip movement, lip movement during voiceover, narrator voice coming from a visible character's mouth, wrong speaker lip sync, swapped voices, ad-lib speech, speech bubble, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, floating character name tag, a character's name or age rendered as a label, character info card overlaid on the footage, colour-temperature or Kelvin label, exposure/Kelvin/lux/timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo, plastic or CGI skin";
+  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, railing wall counter furniture or prop crossing a doorway threshold stair entry or walking route, perimeter barrier in the middle of a floor, blocked opening, contradictory zone order, character or camera beyond a railing inside a wall or over a void, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, both characters talking at once, overlapping or simultaneous voices, doubled voice, chorus, echo, a spoken line repeated or duplicated, listener lip movement, lip movement during voiceover, narrator voice coming from a visible character's mouth, wrong speaker lip sync, swapped voices, ad-lib speech, speech bubble, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, floating character name tag, a character's name or age rendered as a label, character info card overlaid on the footage, colour-temperature or Kelvin label, exposure/Kelvin/lux/timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo, plastic or CGI skin, plastic wig hair, glossy doll or toy hair, smooth painted-on helmet of hair, hair with no visible individual strands, waxy airbrushed beauty-smoothed face, different trousers or pants colour than the locked outfit, wardrobe or outfit changing between clips, an extra or duplicated straw, a straw appearing or vanishing without being placed";
 
 interface VeoJsonOptions {
   aspectRatio: string;
@@ -2040,6 +2041,17 @@ export function buildVeoJson(
   // numbers + digit ages all become words so Veo has no label-shaped tokens to
   // print on the frame ("MINH ~34 - 4000K" badges).
   const scrub = (s?: string | null) => agesToWords(stripBurnableTech(noHex(s)));
+  // Guarantee the anti-"plastic look" clauses are always present on the two
+  // fields Veo most often fakes, appended only when the model didn't already
+  // supply the realism cue (so we don't duplicate it).
+  const HAIR_REALISM =
+    "real individual hair strands with fine flyaways and baby hairs, natural volume, matte-to-soft natural sheen — NOT a glossy plastic wig, doll/toy hair or a smooth painted-on helmet";
+  const SKIN_REALISM =
+    "real skin with visible pores, fine peach-fuzz, natural subsurface scattering and small imperfections — never airbrushed, waxy or beauty-smoothed";
+  const appendHairRealism = (s: string) =>
+    /strand|flyaway|wig|matte|plastic/i.test(s) ? s : [s, HAIR_REALISM].filter(Boolean).join("; ");
+  const appendSkinRealism = (s: string) =>
+    /pore|subsurface|smoothing|peach|waxy/i.test(s) ? s : [s, SKIN_REALISM].filter(Boolean).join("; ");
   const lang = opts.dialogueLanguage ?? "Vietnamese";
   const locks = breakdown.character_locks ?? [];
   const sb = breakdown.scene_bible;
@@ -2159,10 +2171,14 @@ export function buildVeoJson(
             voice_personality: oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child),
             body_build: noHex(lock.build),
             face_shape: "Match the attached reference; preserve locked facial geometry",
-            hair: noHex(lock.hair),
+            // Always append the real-hair clause so hair never renders as a
+            // plastic wig / glossy doll cap (the #1 fake-hair failure, worst on
+            // long dark hair), even for breakdowns written before the hair-
+            // realism rule existed.
+            hair: appendHairRealism(noHex(lock.hair)),
             eyes: noHex(lock.eye_details || lock.eyes),
             skin_or_fur_color: noHex(lock.skin_tone),
-            skin_texture: noHex(lock.skin_texture),
+            skin_texture: appendSkinRealism(noHex(lock.skin_texture)),
             signature_feature: scrub(lock.signature_features),
             outfit_top: outfit.top,
             outfit_bottom: outfit.bottom,
