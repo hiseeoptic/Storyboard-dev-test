@@ -1733,7 +1733,6 @@ export async function generateBoardImage(params: {
     ? "gemini"
     : params.provider ?? "gemini";
   const ctx = buildRefContext(input, breakdown, analysis, provider);
-  const creativeRoute = resolveCreativeRoute(input);
   const creativeDirective = renderCreativeVisualDirective(input);
 
   try {
@@ -1841,22 +1840,15 @@ export async function generateBoardImage(params: {
         references: ctx.canChain && thumbRefs.descriptors.length > 0 ? thumbRefs.descriptors : undefined,
         provider,
         quality: ctx.quality,
-        creativeDirective,
-        coverTreatment:
-          ["natural_history", "poetic_nature"].includes(creativeRoute.directing_profile) ||
-          creativeRoute.effective_character_representation === "none"
-            ? "nature"
-            : creativeRoute.directing_profile === "anthropomorphic_fable" ||
-                ["stick_figure", "illustrated_2d", "stylized_3d", "anthropomorphic_animal", "anthropomorphic_object"].includes(
-                  creativeRoute.effective_character_representation
-                )
-              ? "fable"
-              : creativeRoute.directing_profile === "premium_commercial"
-                ? "commercial"
-                : creativeRoute.directing_profile === "creator_ugc" ||
-                    ["attention", "retention"].includes(creativeRoute.audience_goal)
-                  ? "viral"
-                  : "editorial",
+        // THUMBNAIL RESTORED TO THE ORIGINAL VIRAL STYLE (user request): the
+        // creative-route cover routing was pushing live-action drama/psychology
+        // content to an "editorial" treatment and prefixing the creative
+        // directive, which changed the look. Force the classic bold viral cover
+        // and drop the directive so the thumbnail renders exactly as before.
+        // (The nature/fable/commercial branches in buildThumbnailPrompt stay
+        // available for a future opt-in, just not auto-selected here.)
+        creativeDirective: undefined,
+        coverTreatment: "viral",
       });
       return { success: true, data: { url: r.url } };
     }
