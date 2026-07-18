@@ -1946,7 +1946,7 @@ export function buildVeoJson(
     return { framing, angle, movement };
   };
 
-  const clips = breakdown.segments.map((seg) => {
+  const clips = breakdown.segments.map((seg, segIndex) => {
     const beats = Array.isArray(seg.beats) ? seg.beats : [];
     const clipSeconds = Math.max(1, seg.duration_seconds || 10);
     const speaker = oneLine(seg.speaker);
@@ -1984,6 +1984,17 @@ export function buildVeoJson(
     const exitState = scrub(seg.scene_intent?.entry_exit?.exit_state) || scrub(seg.continuity_note);
     const mainAction =
       scrub(seg.motion_prompt) || scrub(seg.scene_intent?.performance?.physical_behavior);
+    // CROSS-CLIP CONTINUITY: what the PREVIOUS clip actually ended on — this is
+    // what this clip must open from. The old code mislabelled this as the
+    // current clip's own continuity_note, so a clip could open in a state that
+    // contradicted the previous clip's ending (e.g. one character already
+    // seated / standing before the beat that moves them). Falls back to this
+    // clip's own note for the very first clip (no predecessor).
+    const prevSeg = segIndex > 0 ? breakdown.segments[segIndex - 1] : null;
+    const prevExitState = prevSeg
+      ? scrub(prevSeg.scene_intent?.entry_exit?.exit_state) || scrub(prevSeg.continuity_note)
+      : "";
+    const continuityFromPrev = prevExitState || scrub(seg.continuity_note);
     const characterLock = Object.fromEntries(
       visibleLocks.map((lock) => {
         const id = charIds.get(lock.name.trim().toLowerCase()) || "CHAR_1";
@@ -2090,7 +2101,17 @@ export function buildVeoJson(
         start_state: entryState,
         motion: mainAction,
         end_state: exitState,
-        continuity_from_previous: scrub(seg.continuity_note),
+        continuity_from_previous: continuityFromPrev,
+        // Behaviour-timing lock: forbids a character from pre-empting or lagging
+        // an action relative to the timed motion (the "Lan is already sitting
+        // before Minh pulls her chair" desync). The opening frame is anchored
+        // to the previous clip's real end; each character only changes state at
+        // the exact second their beat says so.
+        continuity_lock:
+          (segIndex > 0
+            ? "OPENING FRAME = continuity_from_previous, reproduced EXACTLY (same people, same poses, same positions, same props, same seated/standing state). If start_state conflicts with continuity_from_previous, continuity_from_previous WINS. "
+            : "OPENING FRAME = start_state, reproduced exactly. ") +
+          "STATE-CHANGE TIMING: every character holds their opening pose/position until the exact second in scene_action.motion that moves them. A character must NOT pre-empt a later beat and must NOT lag it — e.g. a character stays STANDING and does not sit until the motion explicitly shows them being seated, and stays SEATED until the motion explicitly shows them standing. Only the characters and props named in scene_action.motion move; everyone else is held frozen in their current state. CLOSING FRAME = end_state, reproduced exactly, so the next clip can open from it seamlessly. No off-plan people appear at the characters' own table.",
         staging: "Conversation partners face EACH OTHER per the positions in background_lock.setting — a speaker never turns their back to the person addressed, and the two are never staged side-by-side facing the same direction like presenters, unless the motion explicitly stages it.",
       },
       foley_and_ambience: {
@@ -2139,7 +2160,16 @@ export function buildVeoJson(
         audio: "Dialogue and voiceover are spoken audio only. Exactly ONE voice at a time following the dialogue start_sec/end_sec windows; silent gaps between lines are mandatory; no simultaneous voices, chorus, echo, duplicated or repeated line, and no extra ad-lib speech.",
         reference_priority: "uploaded character and location menu references are authoritative; never merge, omit or swap identities",
       },
-      negative_prompt: VEO_NEGATIVE_LIST,
+      negative_prompt: [
+        VEO_NEGATIVE_LIST,
+        // Continuity-specific negatives (appended, not replacing the base list):
+        "a character in a pose that contradicts the timed motion (e.g. already seated before the beat that seats them, or standing before the beat that stands them)",
+        "phantom / extra background diners, hands, legs or people at the main characters' own table",
+        "a character teleporting between seated and standing without the on-screen movement",
+        "the opening frame not matching continuity_from_previous",
+      ]
+        .filter(Boolean)
+        .join(", "),
     };
   });
 
