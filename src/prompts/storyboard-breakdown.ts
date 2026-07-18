@@ -5,6 +5,7 @@ import type {
   SceneBible,
   AspectRatio,
   SpatialLayout,
+  CharacterRepresentation,
 } from "@/types";
 import {
   resolveEnvironment,
@@ -37,6 +38,7 @@ import {
   renderSpatialTopologyLock,
   SPATIAL_TOPOLOGY_INVARIANTS,
 } from "@/lib/spatial-topology";
+import { renderCreativeRouteDirective } from "@/lib/creative-routing";
 
 // Forbidden in every generated image/clip (the brief's negative list).
 // Phrased as plain descriptors (no instructive "no/don't") — Veo/Kling read the
@@ -68,15 +70,25 @@ const PHOTOREAL_REALISM =
 // manifest (src/lib/laws) — single source of truth, per the 9-layer canon.
 function veoConciseTail(
   hasProduct: boolean,
-  realityProfile?: RealityProfile | null
+  realityProfile?: RealityProfile | null,
+  renderMedium?: CharacterRepresentation,
 ): string {
   const productNeg = hasProduct
     ? "warped or altered label/logo text, brand-colour change, extra or duplicated products, "
     : "";
-  const realWorld = realityUsesRealWorldPhysics(realityProfile);
-  const realityDirective = realityProfile
-    ? buildRealityDirective(realityProfile)
-    : PHOTOREAL_REALISM;
+  const stylizedMedium = [
+    "stick_figure",
+    "illustrated_2d",
+    "stylized_3d",
+    "anthropomorphic_animal",
+    "anthropomorphic_object",
+  ].includes(renderMedium ?? "");
+  const realWorld = !stylizedMedium && realityUsesRealWorldPhysics(realityProfile);
+  const realityDirective = stylizedMedium
+    ? `STYLIZED RENDER LOCK: remain ${renderMedium} in every frame with one stable shape/line/material language; never drift into live action or a different animation medium.`
+    : realityProfile
+      ? buildRealityDirective(realityProfile)
+      : PHOTOREAL_REALISM;
   const motionLaw = !realityProfile
     ? clipMotionLawLine()
     : realWorld
@@ -508,6 +520,8 @@ export function genreAmbientAudio(genre?: string, _goal?: string): string | unde
     return "real cooking ASMR, close-mic and clear — knife slicing through the ingredient and knocking on the wooden board, chopping, grating, drizzling, sizzling/xèo xèo, bubbling, oil crackle — plus the location's natural ambience (gentle kitchen room tone indoors; wind, birds, stream and fire crackle when cooking outdoors); no music, appetising and true";
   if (isFitness)
     return "gym/workout ambience — controlled breathing, feet and light weights on the floor, subtle upbeat energy, motivating and clean";
+  if (genre === "nature")
+    return "location-authentic natural soundscape only — layered wind, leaves, water, insects, birds or distant weather according to the declared habitat, season, time and camera distance; no generic stock jungle bed, no music";
   return undefined;
 }
 
@@ -561,6 +575,7 @@ No camera directions, no image prompts, no JSON — only the creative script abo
 }
 
 export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): string {
+  const creativeRouteDirective = renderCreativeRouteDirective(input);
   const segmentCount = input.segment_count ?? 5;
   const goal = input.video_goal ?? "marketing_general";
   const lang = input.dialogue_language ?? "Vietnamese";
@@ -595,6 +610,8 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   const briefBlock = brief.length ? `\nBrief:\n${brief.join("\n")}` : "";
 
   return `Write a ${segmentCount}-segment short-video script.
+
+${creativeRouteDirective}
 
 Idea / Topic: ${input.story_idea}
 Genre: ${input.genre} · Goal: ${goal} — ${GOAL_GUIDANCE[goal]}
@@ -713,6 +730,7 @@ Output MUST be valid JSON only — no markdown, no code fences, no text outside 
 export function buildStoryboardUserPrompt(
   input: StoryboardGenerationInput
 ): string {
+  const creativeRouteDirective = renderCreativeRouteDirective(input);
   const characterBlock =
     input.character_descriptions && input.character_descriptions.length > 0
       ? `\n\nCharacters (create ONE character_lock per person below, keep names EXACT):\n${input.character_descriptions.map((c) => `- ${c.name}${c.is_child ? " [CHILD — trẻ em, khoá đúng độ tuổi trẻ con]" : ""}: ${c.appearance}. Personality: ${c.personality}. Role: ${c.role}`).join("\n")}`
@@ -834,6 +852,8 @@ ${JSON.stringify(input.resolved_context, null, 2)}
   })}`;
 
   return `Create a chained-segment storyboard for this short video.
+
+${creativeRouteDirective}
 
 Story / Product Idea: ${input.story_idea}
 Video Goal: ${goal} — ${goalGuidance}
@@ -1209,6 +1229,8 @@ export function buildSegmentFirstFramePrompt(params: {
   references?: RefDescriptor[];
   /** Expression heads to add to the ref strip on top of the 3 angles (0-3). */
   referenceExpressions?: number;
+  /** Compiled topic/character/directing lock from the ordered creative route. */
+  creativeDirective?: string;
 }): string {
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
   const refBlock = buildReferenceInstructions(params.references ?? []);
@@ -1255,7 +1277,7 @@ export function buildSegmentFirstFramePrompt(params: {
         .join(", ")} — and NOBODY else; no extra people, no duplicates of a character in the same panel; every action caption names WHO does the action; relative heights stay true (a child is clearly smaller than the adults).`
     : "";
 
-  return `${refBlock}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for HUMAN REVIEW and planning of ONE ~10 second video clip, presented as ONE single horizontal image. This document shows who the character${isMultiCast ? "s are" : " is"}, what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions across the clip. It must NEVER be used as an image-to-video start frame; use the separate clean keyframe for that. ${params.style} style.
+  return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for HUMAN REVIEW and planning of ONE ~10 second video clip, presented as ONE single horizontal image. This document shows who the character${isMultiCast ? "s are" : " is"}, what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions across the clip. It must NEVER be used as an image-to-video start frame; use the separate clean keyframe for that. ${params.style} style.
 
 THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 
@@ -1304,6 +1326,8 @@ export function buildKeyframePrompt(params: {
   /** CAST-SYNC: everyone visible in this clip (name + locked look). Only these
    * people may appear in the keyframe. */
   presentCharacters?: { name: string; description: string; isChild?: boolean }[];
+  /** Compiled topic/character/directing lock from the ordered creative route. */
+  creativeDirective?: string;
 }): string {
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
   const refBlock = buildReferenceInstructions(params.references ?? []);
@@ -1330,6 +1354,9 @@ export function buildKeyframePrompt(params: {
   const grade = isPhotoStyle(params.style)
     ? "Premium cinematic colour grade, soft directional key light, natural skin texture and pores, filmic editorial polish — never flat, never cartoon, never plastic/CGI/wax skin."
     : `Premium, polished, richly detailed ${params.style} rendering with cinematic lighting and depth.`;
+  const frameMedium = isPhotoStyle(params.style)
+    ? "photographic"
+    : `${params.style} rendered`;
   // This clip has spoken audio in Veo, so the start frame should be lip-sync
   // friendly: face toward camera, mouth visible. (The words go in the Veo
   // prompt, never as text in this image.)
@@ -1339,7 +1366,7 @@ export function buildKeyframePrompt(params: {
     params.hasDialogue && !isWide
       ? ` LIP-SYNC FRAMING — ${who} faces the camera with the head up and the mouth clearly visible (relaxed, about to speak), so the video model can animate natural talking and lip-sync; do not hide the mouth or turn the face away.${speaker ? " Any other characters present are turned slightly toward the speaker, mouths closed (listening)." : ""}`
       : "";
-  return `${refBlock}SINGLE STATIC KEYFRAME for shot ${params.segmentNumber} — ONE clean photographic first-frame image used as the STARTING frame for an image-to-video model (Veo). This is NOT a storyboard board: render ONE single cohesive scene only, no panels, no reference strip.
+  return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}SINGLE STATIC KEYFRAME for shot ${params.segmentNumber} — ONE clean ${frameMedium} first-frame image used as the STARTING frame for an image-to-video model (Veo). This is NOT a storyboard board: render ONE single cohesive scene only, no panels, no reference strip.
 
 COMPOSITION (${params.shot || "[EYE]"}): ${params.sceneDescription}
 ${castBlock}SUBJECT — keep this exact forensic identity: ${params.characterDescription}
@@ -1377,6 +1404,8 @@ export function buildMasterBoardPrompt(params: {
   /** Real reference photo governs the face — hard photoreal + identity lock. */
   preserveRealFace?: boolean;
   references?: RefDescriptor[];
+  /** Compiled topic/character/directing lock from the ordered creative route. */
+  creativeDirective?: string;
 }): string {
   const maxPanels = Math.min(params.segments.length, 12);
   const panels = params.segments.slice(0, maxPanels);
@@ -1433,7 +1462,7 @@ export function buildMasterBoardPrompt(params: {
           .join("\n")
       : `- "${(params.characterName ?? "MAIN CHARACTER").toUpperCase()}": exactly ONE HEAD-AND-SHOULDERS FRONT / chính diện identity portrait. No side profile, no 3/4, no full body, no back view.`;
 
-  return `${refBlock}Professional production STORYBOARD DOCUMENT, ONE single horizontal image, clean white/light background, agency-quality layout with two zones. PURPOSE: this sheet is for HUMAN REVIEW, shot planning and continuity checking only. It must NEVER be used as an image-to-video start frame. Every menu-uploaded character must be represented in the reference library, every face must stay readable, and every panel number must be instantly readable at a glance.
+  return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}Professional production STORYBOARD DOCUMENT, ONE single horizontal image, clean white/light background, agency-quality layout with two zones. PURPOSE: this sheet is for HUMAN REVIEW, shot planning and continuity checking only. It must NEVER be used as an image-to-video start frame. Every menu-uploaded character must be represented in the reference library, every face must stay readable, and every panel number must be instantly readable at a glance.
 
 ◀ LEFT REFERENCE LIBRARY (about 40% width) — "CHARACTER + ENVIRONMENT REFERENCES" (fixed grid; uploaded menu refs have HIGHEST PRIORITY):
 - Header text "CHARACTER + ENVIRONMENT REFERENCES".
@@ -1489,6 +1518,10 @@ export function buildThumbnailPrompt(params: {
   style: string;
   preserveRealFace?: boolean;
   references?: RefDescriptor[];
+  /** Compiled topic/character/directing lock from the ordered creative route. */
+  creativeDirective?: string;
+  /** Objective-aware cover grammar; legacy viral treatment remains available. */
+  coverTreatment?: "viral" | "editorial" | "nature" | "fable" | "commercial";
 }): string {
   const refBlock = buildReferenceInstructions(params.references ?? []);
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
@@ -1499,6 +1532,52 @@ export function buildThumbnailPrompt(params: {
     ? cast.map((c) => `${c.name}${c.isChild ? " (child — true child size)" : ""}: ${c.description}`).join(" | ")
     : params.characterDescription;
   const gag = params.gagHint || params.hook || params.title;
+  const coverTreatment = params.coverTreatment ?? "viral";
+
+  if (coverTreatment === "nature") {
+    return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}NATURAL-HISTORY VIDEO COVER — ONE clean vertical 9:16 camera frame, not a collage and not social clickbait.
+
+SUBJECT / PROCESS: ${gag}
+HABITAT: ${params.settingHint || "the habitat established by the storyboard"}
+${castDesc ? `ON-CAMERA SUBJECT POLICY: ${castDesc}. Show this subject only when the creative route calls for one; otherwise the habitat/process remains the sole subject.\n` : ""}COMPOSITION: a physically reachable camera position; one clear ecological subject or natural process; readable foreground, habitat context and atmospheric depth. Preserve actual species morphology, plant irregularity, substrate, moisture, weather, season, light direction and mass-appropriate motion. Colour comes from the organism/material under real light and camera white balance—never generic neon green or fantasy saturation.
+${tokens ? `${tokens}\n` : ""}${directive}
+
+RENDER RULES: authentic photographed nature, one coherent place and time; never invent a person or mascot when the route specifies no character; no sticker outline, no emoji, no headline, no text, no logo, no watermark, no incompatible species/season/habitat, no impossible camera position. ${SHARED_NEGATIVE}`;
+  }
+
+  if (coverTreatment === "fable") {
+    return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}PARABLE / ILLUSTRATED VIDEO COVER — ONE clean vertical 9:16 key-art frame in the project's locked graphic language.
+
+CENTRAL CHOICE OR CONSEQUENCE: ${gag}
+WORLD / SETTING: ${params.settingHint || "the coherent fable world established by the storyboard"}
+CHARACTER MEDIUM: ${castDesc}. Preserve one stable line/shape/material language, character proportions, species/object identity, palette and world scale. Stage the single choice or consequence that makes the lesson curious without spelling out the moral.
+${tokens ? `${tokens}\n` : ""}${directive}
+
+RENDER RULES: one illustrated scene, strong silhouette and visual hierarchy, no collage, no photoreal human drift, no unrelated symbols, no sticker outline, no emoji, no headline, no captions, no text, no logo, no watermark. ${SHARED_NEGATIVE}`;
+  }
+
+  if (coverTreatment === "editorial") {
+    return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}THOUGHTFUL EDITORIAL VIDEO COVER — ONE restrained vertical 9:16 frame that invites recognition and reflection, not shock-clickbait.
+
+CORE HUMAN MOMENT / METAPHOR: ${gag}
+WORLD / SETTING: ${params.settingHint || "the real location or coherent metaphor established by the storyboard"}
+SUBJECT: ${castDesc}. Show one observable human moment or one central metaphor with emotional specificity, quiet negative space and a clear focal relationship. Acting is natural and internally felt; camera and light belong to the declared directing profile.
+${params.productDna ? `RELEVANT OBJECT: ${params.productDna}\n` : ""}${tokens ? `${tokens}\n` : ""}${directive}
+
+RENDER RULES: one coherent frame, no exaggerated shock face, no sticker outline, no neon rim, no emoji, no headline, no text, no logo, no watermark, no pile of unrelated symbols. ${SHARED_NEGATIVE}`;
+  }
+
+  if (coverTreatment === "commercial") {
+    return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}PREMIUM COMMERCIAL VIDEO COVER — ONE polished vertical 9:16 hero frame, product-led and materially exact.
+
+PROMISE / PROOF: ${gag}
+SETTING: ${params.settingHint || "the brand world established by the storyboard"}
+${params.productDna ? `HERO PRODUCT: ${params.productDna}\n` : ""}SUBJECT / USER: ${castDesc}. Compose one clear product–benefit relationship. Control geometry, scale, surface roughness, reflections, contact, liquid/material physics and light motivation. Premium means precise and restrained, not floating objects or decorative effects.
+${tokens ? `${tokens}\n` : ""}${directive}
+
+RENDER RULES: one clean commercial frame, no collage, no exaggerated meme face, no sticker outline, no emoji, no headline, no captions, no watermark; branding geometry and material remain consistent with references. ${SHARED_NEGATIVE}`;
+  }
+
   // With a headline, SHARED_NEGATIVE's blanket text bans ("title cards, text
   // overlays") would fight the requested title — swap in a text-aware negative
   // that bans only WRONG text, keeping all the identity/physics negatives.
@@ -1506,7 +1585,7 @@ export function buildThumbnailPrompt(params: {
     ? "NEGATIVE (avoid — plain descriptors): resembling a real or famous person, celebrity likeness, misspelled or garbled headline letters, wrong or missing Vietnamese diacritics, duplicated or extra words beyond the specified headline, any second block of text, subtitles, captions, hashtags on the image, watermark, logo, morphing, warping, extra or fused fingers, malformed hands, extra or missing limbs, the face changing, identity drift, changed hair/wardrobe, extra people, duplicated subject, plastic/CGI/wax/airbrushed skin, toy-like or 3D-render materials."
     : SHARED_NEGATIVE;
 
-  return `${refBlock}VIRAL VIDEO COVER / THUMBNAIL — ONE single VERTICAL 9:16 image used as the cover of a short video. It must STOP THE SCROLL on a phone feed: bold, funny, instantly readable at thumbnail size.
+  return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}VIRAL VIDEO COVER / THUMBNAIL — ONE single VERTICAL 9:16 image used as the cover of a short video. It must STOP THE SCROLL on a phone feed: bold, funny, instantly readable at thumbnail size.
 
 THE MOMENT TO SELL (the video's hook — stage THIS as one exaggerated comedic beat): ${gag}
 ${params.settingHint ? `WORLD OF THE VIDEO (the cover must clearly belong to this same world/location): ${params.settingHint}\n` : ""}
@@ -1577,6 +1656,9 @@ export function buildSegmentVeoPrompt(params: {
   /** TRUE when the user uploaded a real LOCATION photo — the set must be
    * rebuilt from that photo, not invented from text alone. */
   hasLocationRef?: boolean;
+  /** Compiled topic/character/directing lock from the ordered creative route. */
+  creativeDirective?: string;
+  renderMedium?: CharacterRepresentation;
 }): string {
   const lang = params.dialogueLanguage ?? "Vietnamese";
   const clean = (s?: string) =>
@@ -1590,8 +1672,18 @@ export function buildSegmentVeoPrompt(params: {
   const settingSource = params.hasLocationRef
     ? "An attached LOCATION photo shows the REAL set — rebuild THIS exact place as the scene (same layout, furniture, colours, materials and light); only the CHARACTER portrait's own background is ignored."
     : "build the described setting, do NOT copy the character photo's own background.";
+  const stylizedMedium = [
+    "stick_figure",
+    "illustrated_2d",
+    "stylized_3d",
+    "anthropomorphic_animal",
+    "anthropomorphic_object",
+  ].includes(params.renderMedium ?? "");
+  const outputMedium = stylizedMedium
+    ? `a ${params.renderMedium} animated shot in the one locked graphic medium`
+    : "a live-action shot";
   const lead =
-    `OUTPUT CONTRACT — CLEAN FULL-SCREEN VIDEO ONLY: create ONE continuous 10-second live-action shot filling the entire frame. ZERO visible text or graphics anywhere: no letters, words, names, ages, numbers, labels, logos, captions, subtitles, badges, cards, HUD or technical overlays. NEVER film, animate or reproduce a storyboard sheet, reference sheet, collage, grid, panel border, thumbnail strip or document page. Keep every referenced subject visually consistent across the project — original characters/entities, not a public-figure imitation; ${settingSource} Every name and technical value in this prompt is INTERNAL production data only and must never be drawn.`;
+    `OUTPUT CONTRACT — CLEAN FULL-SCREEN VIDEO ONLY: create ONE continuous 10-second ${outputMedium} filling the entire frame. ZERO visible text or graphics anywhere: no letters, words, names, ages, numbers, labels, logos, captions, subtitles, badges, cards, HUD or technical overlays. NEVER film, animate or reproduce a storyboard sheet, reference sheet, collage, grid, panel border, thumbnail strip or document page. Keep every referenced subject visually consistent across the project — original characters/entities, not a public-figure imitation; ${settingSource} Every name and technical value in this prompt is INTERNAL production data only and must never be drawn.`;
   const character = ` Primary subject/cast: ${clean(params.characterDescription)}.`;
   // TẦNG 0 — the locked world every entity in this clip must belong to.
   const contextLock = worldContextLockBlock(
@@ -1599,6 +1691,9 @@ export function buildSegmentVeoPrompt(params: {
       ? { ...params.worldContext, allowed_language_text: "none — zero readable text anywhere" }
       : params.worldContext
   );
+  const creativeRouteLock = params.creativeDirective
+    ? ` ${clean(params.creativeDirective)}`
+    : "";
   // The scene doubles as the clip's START STATE: planting props here is what
   // stops objects materialising mid-clip (the jacket-teleport bug).
   const setting = params.setting
@@ -1718,7 +1813,7 @@ export function buildSegmentVeoPrompt(params: {
     }
   }
   const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
-  const assembled = `${lead}${character}${castLine}${contextLock}${setting}${spatialLock}${envBlock}${product}${ing}${tokens}${palette}${intentBlock} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription, params.realityProfile)}`;
+  const assembled = `${lead}${creativeRouteLock}${character}${castLine}${contextLock}${setting}${spatialLock}${envBlock}${product}${ing}${tokens}${palette}${intentBlock} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription, params.realityProfile, params.renderMedium)}`;
   // DEFINITIVE hex-code scrub: Veo cannot read hex and burns any "#A9C7E8"
   // next to a name onto the frame as a name tag. Hex serves the boards, never
   // the video prompt — remove EVERY hex token from the final Veo text here so
@@ -1749,6 +1844,9 @@ export function buildVideoPromptText(params: {
   characterVoices?: Record<string, string>;
   /** Genre-appropriate ambient sound, appended to every clip's Veo prompt. */
   ambientAudio?: string;
+  /** Compiled topic/character/directing lock from the ordered creative route. */
+  creativeDirective?: string;
+  renderMedium?: CharacterRepresentation;
   marketing: { hook: string; problem: string; solution: string; cta: string };
   segments: {
     segment_number: number;
@@ -1807,6 +1905,8 @@ export function buildVideoPromptText(params: {
         charactersInScene: s.characters_in_scene,
         speakerVoice: s.speaker ? params.characterVoices?.[s.speaker.trim()] : undefined,
         ambientAudio: params.ambientAudio,
+        creativeDirective: params.creativeDirective,
+        renderMedium: params.renderMedium,
         environmentRef: s.environment_ref,
       });
       return `SEGMENT ${s.segment_number} — "${s.title}" [${s.role.toUpperCase()}] (${s.duration_seconds}s)

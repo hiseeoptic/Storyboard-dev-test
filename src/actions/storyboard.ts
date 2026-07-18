@@ -21,6 +21,10 @@ import {
   renderSpatialTopologyLock,
 } from "@/lib/spatial-topology";
 import {
+  renderCreativeVisualDirective,
+  resolveCreativeRoute,
+} from "@/lib/creative-routing";
+import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
   genreAmbientAudio,
@@ -910,9 +914,26 @@ function buildRefContext(
   //    drift into cartoon/illustration.
   //  - "auto" (default): previous behaviour.
   const renderMode = input.character_render ?? "auto";
-  const preserveRealFace = canChain && !!faceImg && renderMode !== "stylized";
-  const boardStyle =
-    renderMode === "photo" && !isPhotoStyle(input.style) ? "cinematic" : input.style;
+  const creativeRoute = resolveCreativeRoute(input);
+  const representation = creativeRoute.effective_character_representation;
+  const preserveRealFace =
+    canChain && !!faceImg && representation === "uploaded_photoreal";
+  const boardStyle = (() => {
+    if (["uploaded_photoreal", "generated_human"].includes(representation)) {
+      return isPhotoStyle(input.style) ? input.style : "cinematic";
+    }
+    if (representation === "stick_figure" || representation === "illustrated_2d") {
+      return isPhotoStyle(input.style) ? "comic" : input.style;
+    }
+    if (
+      representation === "stylized_3d" ||
+      representation === "anthropomorphic_animal" ||
+      representation === "anthropomorphic_object"
+    ) {
+      return isPhotoStyle(input.style) ? "3d_render" : input.style;
+    }
+    return renderMode === "photo" && !isPhotoStyle(input.style) ? "cinematic" : input.style;
+  })();
 
   const charDescForPosterRaw = (breakdown.character_locks ?? [])
     .map(
@@ -946,9 +967,23 @@ function buildRefContext(
   // the AI-invented forensic DNA text entirely — it only ever contradicts the
   // photo (the root of the gender-flip and stray-glasses bugs). Use the text
   // DNA only when there is NO reference photo to lock to.
+  const representationSubject: Partial<Record<typeof representation, string>> = {
+    stick_figure:
+      "a locked minimal stick-figure character with consistent stroke weight, head/body ratio, joint grammar, face marks and palette",
+    illustrated_2d:
+      "the script-defined character rendered in one locked 2D illustration language with stable line, proportions, palette and shading",
+    stylized_3d:
+      "the script-defined character rendered as one stable stylized 3D model with fixed proportions, mesh and material shader",
+    anthropomorphic_animal:
+      "the script-defined anthropomorphic animal with stable species anatomy, markings, scale, wardrobe and locomotion",
+    anthropomorphic_object:
+      "the script-defined anthropomorphic object with stable construction, material, scale and functional identity",
+    none:
+      "no character, no face and no mascot; the environment, material or natural process is the only subject",
+  };
   const charDescDna = preserveRealFace
     ? charDescForShots
-    : [charDescForShots, mainDnaRaw].filter(Boolean).join(". ");
+    : representationSubject[representation] ?? [charDescForShots, mainDnaRaw].filter(Boolean).join(". ");
   // Veo/Flow rejects prompts that read like real-person replication ("the exact
   // man in the photo, keep their real face, same identity"). For the text prompt
   // pasted into Veo, describe the character by NEUTRAL ATTRIBUTES instead — the
@@ -1417,6 +1452,9 @@ function assemblePlanPrompts(
   provider: AIProvider
 ): string {
   const ctx = buildRefContext(input, breakdown, analysis, provider);
+  const creativeRoute = resolveCreativeRoute(input);
+  const creativeDirective = renderCreativeVisualDirective(input);
+  const veoCreativeDirective = makeVeoSafe(creativeDirective);
   const palette = breakdown.style_guide?.color_palette ?? [];
   // Genre-appropriate ambient sound (kitchen sizzle for cooking, gym energy for
   // fitness, …) added to every clip's Veo prompt automatically.
@@ -1495,6 +1533,8 @@ function assemblePlanPrompts(
       ambientAudio,
       environmentRef: seg.environment_ref,
       hasLocationRef: ctx.bgRefs.length > 0,
+      creativeDirective: veoCreativeDirective,
+      renderMedium: creativeRoute.effective_character_representation,
     });
   }
   return buildVideoPromptText({
@@ -1512,6 +1552,8 @@ function assemblePlanPrompts(
     characterNames: ctx.characterNames,
     characterVoices,
     ambientAudio,
+    creativeDirective: veoCreativeDirective,
+    renderMedium: creativeRoute.effective_character_representation,
     marketing: breakdown.marketing_structure,
     segments: breakdown.segments.map((s, segmentIndex) => {
       const isFinalClip = segmentIndex === breakdown.segments.length - 1;
@@ -1691,6 +1733,8 @@ export async function generateBoardImage(params: {
     ? "gemini"
     : params.provider ?? "gemini";
   const ctx = buildRefContext(input, breakdown, analysis, provider);
+  const creativeRoute = resolveCreativeRoute(input);
+  const creativeDirective = renderCreativeVisualDirective(input);
 
   try {
     if (params.kind === "master") {
@@ -1753,6 +1797,7 @@ export async function generateBoardImage(params: {
         provider,
         aspectRatio: ctx.boardAspect,
         quality: ctx.quality,
+        creativeDirective,
         referenceImages:
           ctx.canChain && masterImages.length > 0 ? masterImages : undefined,
         references:
@@ -1796,6 +1841,22 @@ export async function generateBoardImage(params: {
         references: ctx.canChain && thumbRefs.descriptors.length > 0 ? thumbRefs.descriptors : undefined,
         provider,
         quality: ctx.quality,
+        creativeDirective,
+        coverTreatment:
+          ["natural_history", "poetic_nature"].includes(creativeRoute.directing_profile) ||
+          creativeRoute.effective_character_representation === "none"
+            ? "nature"
+            : creativeRoute.directing_profile === "anthropomorphic_fable" ||
+                ["stick_figure", "illustrated_2d", "stylized_3d", "anthropomorphic_animal", "anthropomorphic_object"].includes(
+                  creativeRoute.effective_character_representation
+                )
+              ? "fable"
+              : creativeRoute.directing_profile === "premium_commercial"
+                ? "commercial"
+                : creativeRoute.directing_profile === "creator_ugc" ||
+                    ["attention", "retention"].includes(creativeRoute.audience_goal)
+                  ? "viral"
+                  : "editorial",
       });
       return { success: true, data: { url: r.url } };
     }
@@ -1862,6 +1923,7 @@ export async function generateBoardImage(params: {
         provider,
         aspectRatio: ctx.aspectRatio,
         quality: ctx.quality,
+        creativeDirective,
       });
       return { success: true, data: { url: r.url } };
     }
@@ -1913,6 +1975,7 @@ export async function generateBoardImage(params: {
       provider,
       aspectRatio: ctx.boardAspect,
       quality: ctx.quality,
+      creativeDirective,
     });
     return { success: true, data: { url: r.url } };
   } catch (err) {

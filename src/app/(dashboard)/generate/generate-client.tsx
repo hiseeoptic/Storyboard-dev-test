@@ -56,12 +56,45 @@ import type {
   ImageQuality,
   AspectRatio,
   VideoGoal,
+  AudienceGoal,
+  StoryFormat,
+  VisualInterpretation,
+  CharacterRepresentation,
+  DirectingProfileId,
 } from "@/types";
 import type { CookingRecipeIR, CookingStyle } from "@/lib/cooking";
+import {
+  AUDIENCE_GOAL_OPTIONS as CREATIVE_GOAL_OPTIONS,
+  STORY_FORMAT_OPTIONS as CREATIVE_FORMAT_OPTIONS,
+  VISUAL_INTERPRETATION_OPTIONS as CREATIVE_INTERPRETATION_OPTIONS,
+  CHARACTER_REPRESENTATION_OPTIONS as CREATIVE_CHARACTER_OPTIONS,
+  DIRECTING_PROFILE_OPTIONS as CREATIVE_DIRECTING_OPTIONS,
+  type CreativeOption,
+} from "@/lib/creative-routing";
 
 // ─── Bilingual Labels ──────────────────────────────────────────────────────
 
 type Lang = "vi" | "en";
+
+function localizedCreativeOptions<T extends string>(
+  options: CreativeOption<T>[],
+  lang: Lang,
+): { value: T; label: string }[] {
+  return options.map((option) => ({
+    value: option.value,
+    label: lang === "vi" ? option.label_vi : option.label_en,
+  }));
+}
+
+function creativeOptionDescription<T extends string>(
+  options: CreativeOption<T>[],
+  value: T,
+  lang: Lang,
+): string {
+  const option = options.find((item) => item.value === value);
+  if (!option) return "";
+  return lang === "vi" ? option.description_vi : option.description_en;
+}
 
 const t = {
   // Page
@@ -375,6 +408,7 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "numerology", label: "📚 Thần số học" },
     { value: "health", label: "📚 Sức khoẻ" },
     { value: "psychology", label: "📚 Tâm lý" },
+    { value: "life_wisdom", label: "📚 Đạo lý / Ngụ ngôn / Đạo làm người" },
     { value: "education", label: "📚 Giáo dục" },
     { value: "finance", label: "📚 Tài chính" },
     { value: "tech", label: "📚 Công nghệ" },
@@ -383,6 +417,7 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "fitness", label: "🍳 Thể hình / Tập luyện" },
     { value: "lifestyle", label: "🍳 Lifestyle / Đời sống" },
     { value: "travel", label: "🍳 Du lịch" },
+    { value: "nature", label: "🌿 Thiên nhiên / Natural History" },
     { value: "sports", label: "🍳 Thể thao" },
   ],
   en: [
@@ -411,6 +446,7 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "numerology", label: "📚 Numerology" },
     { value: "health", label: "📚 Health" },
     { value: "psychology", label: "📚 Psychology" },
+    { value: "life_wisdom", label: "📚 Life wisdom / Parable" },
     { value: "education", label: "📚 Education" },
     { value: "finance", label: "📚 Finance" },
     { value: "tech", label: "📚 Technology" },
@@ -418,6 +454,7 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "fitness", label: "🍳 Fitness / Workout" },
     { value: "lifestyle", label: "🍳 Lifestyle" },
     { value: "travel", label: "🍳 Travel" },
+    { value: "nature", label: "🌿 Nature / Natural History" },
     { value: "sports", label: "🍳 Sports" },
   ],
 };
@@ -433,7 +470,7 @@ const AD_GENRES = new Set([
 
 // Topic-library genres (numerology / health) → drive the 5-beat framework and
 // hide the product/story brief (their content comes from the topic library).
-const TOPIC_GENRES = new Set(["numerology", "health"]);
+const TOPIC_GENRES = new Set(["numerology", "health", "psychology", "life_wisdom"]);
 
 // Demonstration genres (cooking / fitness) → drive their own framework from the
 // idea box (dish name / workout goal); no product or story brief needed.
@@ -1141,12 +1178,26 @@ export function GenerateClient() {
   const [beatsPerSegment, setBeatsPerSegment] = useState(3);
   const [forceVietnameseDialogue, setForceVietnameseDialogue] = useState(true);
   const [videoGoal, setVideoGoal] = useState<VideoGoal>("product_ad");
+  // Ordered creative route. Legacy videoGoal/style remain for compatibility,
+  // but these independent axes stop topic, objective and rendering from leaking
+  // into one another.
+  const [audienceGoal, setAudienceGoal] = useState<AudienceGoal>("action");
+  const [storyFormat, setStoryFormat] = useState<StoryFormat>("auto");
+  const [visualInterpretation, setVisualInterpretation] = useState<VisualInterpretation>("auto");
+  const [characterRepresentation, setCharacterRepresentation] = useState<CharacterRepresentation>("auto");
+  const [directingProfile, setDirectingProfile] = useState<DirectingProfileId>("auto");
   const [imageQuality, setImageQuality] = useState<ImageQuality>("standard");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   // Expression heads in each board's character-reference strip (0 = let Veo act
   // the emotion from the prompt; 2-3 = include a small fixed set).
   const [copiedSeg, setCopiedSeg] = useState<number | null>(null);
   const [zipping, setZipping] = useState(false);
+
+  const hasCharacterUploads =
+    charImages.length > 0 || characters.some((character) => character.images.length > 0);
+  const effectiveCharacterRepresentation: CharacterRepresentation = hasCharacterUploads
+    ? "uploaded_photoreal"
+    : characterRepresentation;
 
   // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -1455,6 +1506,12 @@ export function GenerateClient() {
       segment_count: segmentCount,
       beats_per_segment: beatsPerSegment,
       video_goal: genre === "cooking" ? "cooking" : videoGoal,
+      audience_goal: audienceGoal,
+      story_format: storyFormat,
+      visual_interpretation: visualInterpretation,
+      character_representation:
+        cappedCharacterImages.length > 0 ? "uploaded_photoreal" : characterRepresentation,
+      directing_profile: directingProfile,
       script_provider: scriptProvider,
       numerology_style: numerologyStyle,
       numerology_hook_mode: numerologyHookMode,
@@ -1505,7 +1562,12 @@ export function GenerateClient() {
       image_quality: imageQuality,
       aspect_ratio: aspectRatio,
       reference_expressions: 0,
-      character_render: characterRender,
+      character_render:
+        cappedCharacterImages.length > 0 || characterRepresentation === "generated_human"
+          ? "photo"
+          : characterRepresentation !== "auto" && characterRepresentation !== "none"
+            ? "stylized"
+            : characterRender,
     };
 
     setProgressPercent(6);
@@ -3077,20 +3139,61 @@ export function GenerateClient() {
                   <label className="text-sm font-medium">{L("genre")}</label>
                   <Select value={genre} onChange={(e) => {
                     const g = e.target.value;
+                    if (genre === "nature" && g !== "nature" && characterRepresentation === "none") {
+                      setCharacterRepresentation("auto");
+                    }
                     setGenre(g);
+                    // Reset only the new route axes to AUTO so the selected
+                    // topic can compile its own structure without stale DNA.
+                    setStoryFormat("auto");
+                    setVisualInterpretation("auto");
+                    setDirectingProfile("auto");
                     // Genre is the hard router. Reset stale specialist goals so
                     // Cooking can never leak into numerology/film/etc.
-                    if (g === "numerology") setVideoGoal("numerology");
-                    else if (g === "health") setVideoGoal("health");
+                    if (g === "numerology") {
+                      setVideoGoal("numerology");
+                      setAudienceGoal("reflection");
+                    }
+                    else if (g === "health") {
+                      setVideoGoal("health");
+                      setAudienceGoal("explain");
+                    }
+                    else if (g === "psychology") {
+                      setVideoGoal("psychology");
+                      setAudienceGoal("reflection");
+                    }
+                    else if (g === "life_wisdom") {
+                      setVideoGoal("storytelling");
+                      setAudienceGoal("reflection");
+                    }
                     else if (g === "cooking") {
                       setVideoGoal("cooking");
+                      setAudienceGoal("retention");
                       setSegmentCount(6);
                       setForceVietnameseDialogue(false);
                       setAspectRatio("9:16");
                     }
-                    else if (g === "fitness") setVideoGoal("fitness");
-                    else if (AD_GENRES.has(g)) setVideoGoal("product_ad");
-                    else setVideoGoal("storytelling");
+                    else if (g === "fitness") {
+                      setVideoGoal("fitness");
+                      setAudienceGoal("explain");
+                    }
+                    else if (g === "nature") {
+                      setVideoGoal("documentary_story");
+                      setAudienceGoal("retention");
+                      setCharacterRepresentation("none");
+                    }
+                    else if (["education", "finance", "tech"].includes(g)) {
+                      setVideoGoal("educational");
+                      setAudienceGoal("explain");
+                    }
+                    else if (AD_GENRES.has(g)) {
+                      setVideoGoal("product_ad");
+                      setAudienceGoal("action");
+                    }
+                    else {
+                      setVideoGoal("storytelling");
+                      setAudienceGoal(["comedy", "action", "horror", "thriller"].includes(g) ? "retention" : "empathy");
+                    }
                   }} options={GENRE_OPTIONS[lang]} />
                 </div>
                 <div className="space-y-2">
@@ -3126,18 +3229,32 @@ export function GenerateClient() {
                     <BookOpen className="h-4 w-4" />
                     {genre === "numerology"
                       ? (lang === "vi" ? "Nội dung Thần số học" : "Numerology content")
-                      : (lang === "vi" ? "Nội dung Sức khoẻ" : "Health content")}
+                      : genre === "health"
+                        ? (lang === "vi" ? "Nội dung Sức khoẻ" : "Health content")
+                        : genre === "psychology"
+                          ? (lang === "vi" ? "Nội dung Tâm lý" : "Psychology content")
+                          : (lang === "vi" ? "Đạo lý / Ngụ ngôn / Đạo làm người" : "Life wisdom / Parable")}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {lang === "vi"
-                      ? 'Loại này lấy nội dung từ "Kho chủ đề" ở Bước 1 (chọn chủ đề → nội dung đổ vào ô ý tưởng). AI sẽ viết theo khung 5 nhịp Hook → Giải mã → CTA.'
-                      : 'This type pulls content from the Topic Library in Step 1. The AI writes it in the 5-beat Hook → Insight → CTA framework.'}
+                    {genre === "life_wisdom"
+                      ? lang === "vi"
+                        ? "Dán một câu ngụ ngôn, câu dạy đạo lý hoặc ý nghĩa muốn truyền tải. Hệ thống giữ nguyên tinh thần câu gốc và dựng theo: tình huống → lựa chọn → hệ quả → nhận ra → nguyên tắc → câu hỏi suy ngẫm."
+                        : "Paste a proverb, parable or lesson. The system preserves its meaning and builds: situation → choice → consequence → realisation → principle → reflective question."
+                      : genre === "psychology"
+                        ? lang === "vi"
+                          ? "Nhập một hành vi, cảm xúc hoặc tình huống tâm lý cụ thể. Hệ thống mô tả trải nghiệm quan sát được, giải thích dễ hiểu, không tự chẩn đoán hay gắn nhãn con người."
+                          : "Enter a concrete behaviour, feeling or psychological situation. The system uses observable experience and plain explanation without diagnosing or labelling a person."
+                        : lang === "vi"
+                          ? 'Có thể chọn nội dung từ "Kho chủ đề" hoặc nhập trực tiếp vào ô ý tưởng. Mỗi thể loại chỉ kích hoạt đúng bộ luật chuyên ngành của nó.'
+                          : "Choose from the Topic Library or type directly. Each topic activates only its own specialist rules."}
                   </p>
-                  <p className="rounded-md bg-primary/5 p-2 text-xs text-muted-foreground">
-                    {lang === "vi"
-                      ? '💡 Chỉ cần gõ ngắn gọn, ghép 2-3 chỉ số tuỳ ý: "Hành trình của cô gái có Số Chủ Đạo 1, Sứ Mệnh 5" / "chàng trai Nội Tâm 7, Sứ Mệnh 9" / "Nội Tâm 2, Chủ Đạo 8, Sứ Mệnh 3"… (hỗ trợ Chủ Đạo, Sứ Mệnh, Nội Tâm, Linh Hồn, Nhân Cách, Thái Độ, Trưởng Thành, Ngày Sinh, Đam Mê). App tự nhận diện và tự dựng bối cảnh, môi trường, đạo cụ, hành động, lời thoại theo hồ sơ năng lượng từng số + quan hệ ngũ hành giữa chúng. Không cần mô tả gì thêm.'
-                      : '💡 Just type a short line combining any 2-3 indices: "Journey of a girl with Life Path 1, Mission 5" / "a guy with Soul Urge 7, Mission 9"… The app detects the numbers and auto-builds setting, environment, props, actions and dialogue from each number\'s stored energy profile (including element relationships). No extra description needed.'}
-                  </p>
+                  {genre === "numerology" && (
+                    <p className="rounded-md bg-primary/5 p-2 text-xs text-muted-foreground">
+                      {lang === "vi"
+                        ? '💡 Chỉ cần gõ ngắn gọn, ghép 2-3 chỉ số tuỳ ý: "Hành trình của cô gái có Số Chủ Đạo 1, Sứ Mệnh 5" / "chàng trai Nội Tâm 7, Sứ Mệnh 9"… App tự nhận diện hồ sơ năng lượng từng số. Không cần mô tả thêm.'
+                        : '💡 Type a short line combining any 2-3 indices: "Journey of a girl with Life Path 1, Mission 5" / "a guy with Soul Urge 7, Mission 9"… The app detects the number profiles automatically.'}
+                    </p>
+                  )}
                   {genre === "numerology" && (
                     <div className="space-y-2 pt-1">
                       <label className="text-xs font-medium">
@@ -3958,8 +4075,96 @@ export function GenerateClient() {
           {/* ── Step 5: Style & Generate ─────────────────────────── */}
           {step === 4 && (
             <>
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-1">
+                <p className="text-sm font-semibold">
+                  {lang === "vi" ? "Cấu trúc sáng tạo theo thứ tự" : "Ordered creative structure"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Chủ đề → mục tiêu người xem → cấu trúc kể → cách thể hiện → kiểu nhân vật → cách đạo diễn. Chỉ bộ luật đúng chủ đề mới được kích hoạt."
+                    : "Topic → audience outcome → story structure → interpretation → character medium → directing. Only the matching topic laws are activated."}
+                </p>
+              </div>
+
               <div className="space-y-2">
-                <label className="text-sm font-medium">{L("videoGoalLabel")}</label>
+                <label className="text-sm font-medium">
+                  {lang === "vi" ? "1. Video muốn tạo thay đổi gì ở người xem?" : "1. Intended audience outcome"}
+                </label>
+                <Select
+                  value={audienceGoal}
+                  onChange={(e) => setAudienceGoal(e.target.value as AudienceGoal)}
+                  options={localizedCreativeOptions(CREATIVE_GOAL_OPTIONS, lang)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {creativeOptionDescription(CREATIVE_GOAL_OPTIONS, audienceGoal, lang)}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  {lang === "vi" ? "2. Cấu trúc kể chuyện" : "2. Story format"}
+                </label>
+                <Select
+                  value={storyFormat}
+                  onChange={(e) => setStoryFormat(e.target.value as StoryFormat)}
+                  options={localizedCreativeOptions(CREATIVE_FORMAT_OPTIONS, lang)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {creativeOptionDescription(CREATIVE_FORMAT_OPTIONS, storyFormat, lang)}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  {lang === "vi" ? "3. Cách chuyển ý tưởng thành hình ảnh" : "3. Visual interpretation"}
+                </label>
+                <Select
+                  value={visualInterpretation}
+                  onChange={(e) => setVisualInterpretation(e.target.value as VisualInterpretation)}
+                  options={localizedCreativeOptions(CREATIVE_INTERPRETATION_OPTIONS, lang)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {creativeOptionDescription(CREATIVE_INTERPRETATION_OPTIONS, visualInterpretation, lang)}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  {lang === "vi" ? "4. Hình thức nhân vật" : "4. Character medium"}
+                </label>
+                <Select
+                  value={effectiveCharacterRepresentation}
+                  onChange={(e) => setCharacterRepresentation(e.target.value as CharacterRepresentation)}
+                  options={localizedCreativeOptions(CREATIVE_CHARACTER_OPTIONS, lang)}
+                  disabled={hasCharacterUploads}
+                />
+                <p className={`text-xs ${hasCharacterUploads ? "font-medium text-emerald-600" : "text-muted-foreground"}`}>
+                  {hasCharacterUploads
+                    ? lang === "vi"
+                      ? "Đã phát hiện ảnh nhân vật: tự khóa Người thật từ ảnh tải lên, giữ mặt và danh tính 100%. Muốn dùng người que/nhân hoá, hãy gỡ ảnh nhân vật."
+                      : "Character photos detected: strict uploaded-person identity lock is automatic. Remove those photos to use stick figures or personification."
+                    : creativeOptionDescription(CREATIVE_CHARACTER_OPTIONS, effectiveCharacterRepresentation, lang)}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  {lang === "vi" ? "5. Ngôn ngữ đạo diễn / cách quay" : "5. Directing profile / camera grammar"}
+                </label>
+                <Select
+                  value={directingProfile}
+                  onChange={(e) => setDirectingProfile(e.target.value as DirectingProfileId)}
+                  options={localizedCreativeOptions(CREATIVE_DIRECTING_OPTIONS, lang)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {creativeOptionDescription(CREATIVE_DIRECTING_OPTIONS, directingProfile, lang)}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  {lang === "vi" ? "Cấu trúc mục tiêu cũ (giữ tương thích)" : "Legacy goal template (compatibility)"}
+                </label>
                 <Select
                   value={genre === "cooking" ? "cooking" : videoGoal}
                   onChange={(e) => setVideoGoal(e.target.value as VideoGoal)}
@@ -3975,15 +4180,22 @@ export function GenerateClient() {
                 )}
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">{L("visualStyle")}</label>
+                <label className="text-sm font-medium">
+                  {lang === "vi" ? "Chất liệu hình ảnh / render" : "Visual treatment / render"}
+                </label>
                 <Select value={style} onChange={(e) => setStyle(e.target.value as StoryboardStyle)} options={STYLE_OPTIONS[lang]} />
+                <p className="text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Chất liệu này không tự thay đổi chủ đề, cấu trúc kể hoặc bộ luật đạo diễn ở trên."
+                    : "This treatment cannot change the topic, story structure or directing laws above."}
+                </p>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">
-                  {lang === "vi" ? "Kiểu nhân vật trên ảnh" : "Character render mode"}
+                  {lang === "vi" ? "Chế độ render nhân vật cũ (giữ tương thích)" : "Legacy character render mode (compatibility)"}
                 </label>
                 <Select
-                  value={characterRender}
+                  value={hasCharacterUploads ? "photo" : characterRender}
                   onChange={(e) => setCharacterRender(e.target.value as "auto" | "photo" | "stylized")}
                   options={[
                     {
@@ -3999,11 +4211,12 @@ export function GenerateClient() {
                       label: lang === "vi" ? "🎨 Hoạt hình / cách điệu — không giữ mặt thật" : "🎨 Cartoon / stylized — real-face lock off",
                     },
                   ]}
+                  disabled={hasCharacterUploads}
                 />
                 <p className="text-xs text-muted-foreground">
                   {lang === "vi"
-                    ? "Đã tải ảnh nhân vật thật thì chọn 📷 Ảnh thật — mọi board sẽ bị khoá cứng photoreal, không bao giờ bị vẽ thành hoạt hình hay đổi mặt."
-                    : "If you uploaded a real person's photo, pick 📷 Photoreal — every board is hard-locked to photography, never redrawn as a cartoon or a different face."}
+                    ? "Trường cũ vẫn được giữ để các dữ liệu trước đây hoạt động. Khi có ảnh nhân vật, hệ thống tự khóa Ảnh thật."
+                    : "This legacy field remains for older data. Character uploads automatically force Photoreal."}
                 </p>
               </div>
               <div className="space-y-2">

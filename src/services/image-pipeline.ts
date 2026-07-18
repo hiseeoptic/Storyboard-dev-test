@@ -158,6 +158,7 @@ export async function generateSegmentFrame(params: {
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
+  creativeDirective?: string;
 }): Promise<{ url: string }> {
   const prompt = buildSegmentFirstFramePrompt({
     segmentNumber: params.segmentNumber,
@@ -174,6 +175,7 @@ export async function generateSegmentFrame(params: {
     preserveRealFace: params.preserveRealFace,
     references: params.references,
     referenceExpressions: params.referenceExpressions,
+    creativeDirective: params.creativeDirective,
   });
 
   const url = await generateImage(prompt, {
@@ -210,6 +212,7 @@ export async function generateKeyframe(params: {
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
+  creativeDirective?: string;
 }): Promise<{ url: string }> {
   const prompt = buildKeyframePrompt({
     segmentNumber: params.segmentNumber,
@@ -227,6 +230,7 @@ export async function generateKeyframe(params: {
     environmentRef: params.environmentRef,
     presentCharacters: params.presentCharacters,
     references: params.references,
+    creativeDirective: params.creativeDirective,
   });
 
   const url = await generateImage(prompt, {
@@ -258,6 +262,8 @@ export async function generateThumbnail(params: {
   references?: RefDescriptor[];
   provider?: AIProvider;
   quality?: ImageQuality;
+  creativeDirective?: string;
+  coverTreatment?: "viral" | "editorial" | "nature" | "fable" | "commercial";
 }): Promise<{ url: string }> {
   const prompt = buildThumbnailPrompt(params);
   const url = await generateImage(prompt, {
@@ -299,6 +305,7 @@ export async function generateMasterBoard(params: {
   provider?: AIProvider;
   aspectRatio?: AspectRatio;
   quality?: ImageQuality;
+  creativeDirective?: string;
 }): Promise<{ url: string }> {
   const hasRefs = (params.referenceImages?.length ?? 0) > 0;
 

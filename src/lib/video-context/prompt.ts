@@ -1,4 +1,5 @@
 import type { StoryboardGenerationInput } from "@/types";
+import { resolveCreativeRoute } from "@/lib/creative-routing";
 
 /**
  * Compact framework digest for downstream planners. The expensive reasoning is
@@ -19,6 +20,9 @@ This stage does NOT write a storyboard, shot prompt, image prompt, or Veo prompt
 
 CORE RULES:
 - Evidence first. Resolve values from the brief, script, dialogue, reference descriptions, genre and requested output.
+- Apply the supplied creative_route in order: topic → audience outcome → story format → visual interpretation → character medium → directing profile. Topic decides which specialist DNA may exist. Never import an inactive topic/profile.
+- The creative route is a production instruction, not permission to invent content. The approved script and explicit references remain factual evidence.
+- Uploaded character references force strict photographic identity. Uploaded environment/product references force their respective geometry, material and layout facts regardless of a conflicting legacy style label.
 - Never choose a kitchen, living room, mountain, country, culture, era, social class, visual style or marketing formula just because a preset/library contains it.
 - If evidence is absent, write "unspecified" and record an assumption instead of silently defaulting.
 - Environment location ids are PROJECT-LOCAL semantic ids such as "location_01". Never output an environment library/archetype id.
@@ -31,11 +35,13 @@ CORE RULES:
 }
 
 export function buildContextAnalysisUserPrompt(input: StoryboardGenerationInput): string {
+  const creativeRoute = resolveCreativeRoute(input);
   const evidence = {
     story_idea: input.story_idea,
     approved_script: input.source_script ?? null,
     genre: input.genre,
     video_goal: input.video_goal ?? null,
+    creative_route: creativeRoute,
     visual_style_request: input.style,
     setting_request: input.setting ?? null,
     tone: input.tone ?? null,

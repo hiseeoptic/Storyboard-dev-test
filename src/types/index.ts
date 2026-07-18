@@ -98,6 +98,7 @@ export type Genre =
   | "numerology"
   | "health"
   | "psychology" // tâm lý
+  | "life_wisdom" // ngụ ngôn / đạo lý / đạo làm người
   | "education" // giáo dục
   | "finance"
   | "tech"
@@ -106,6 +107,7 @@ export type Genre =
   | "fitness"
   | "lifestyle"
   | "travel"
+  | "nature" // thiên nhiên / natural history
   | "sports"
   | "other";
 
@@ -119,6 +121,62 @@ export type Genre =
  *   guides the look only, the real-face lock is off. */
 export type CharacterRenderMode = "auto" | "photo" | "stylized";
 
+/** The audience outcome is independent from the topic and visual treatment. */
+export type AudienceGoal =
+  | "attention"
+  | "retention"
+  | "empathy"
+  | "explain"
+  | "reflection"
+  | "trust"
+  | "engagement"
+  | "action";
+
+/** Narrative container. This never decides the subject matter by itself. */
+export type StoryFormat =
+  | "auto"
+  | "short_insight"
+  | "micro_story"
+  | "explainer"
+  | "parable"
+  | "observational"
+  | "visual_poem"
+  | "episodic";
+
+/** How an idea is translated into visible events. */
+export type VisualInterpretation =
+  | "auto"
+  | "literal"
+  | "symbolic_metaphor"
+  | "nature_analogy"
+  | "parable_fable";
+
+/** Character medium, kept separate from camera/style and the content topic. */
+export type CharacterRepresentation =
+  | "auto"
+  | "uploaded_photoreal"
+  | "generated_human"
+  | "stick_figure"
+  | "illustrated_2d"
+  | "stylized_3d"
+  | "anthropomorphic_animal"
+  | "anthropomorphic_object"
+  | "none";
+
+/** Directing grammar. It describes how the camera observes the world. */
+export type DirectingProfileId =
+  | "auto"
+  | "everyday_naturalism"
+  | "observational_documentary"
+  | "natural_history"
+  | "poetic_nature"
+  | "psychological_metaphor"
+  | "anthropomorphic_fable"
+  | "creator_ugc"
+  | "cinematic_drama"
+  | "premium_commercial"
+  | "explainer_clarity";
+
 export interface StoryboardGenerationInput {
   story_idea: string;
   genre: Genre;
@@ -130,6 +188,12 @@ export interface StoryboardGenerationInput {
   beats_per_segment?: number;
   /** Marketing goal/template for the script structure. */
   video_goal?: VideoGoal;
+  /** Ordered creative-routing axes. Optional so every legacy payload remains valid. */
+  audience_goal?: AudienceGoal;
+  story_format?: StoryFormat;
+  visual_interpretation?: VisualInterpretation;
+  character_representation?: CharacterRepresentation;
+  directing_profile?: DirectingProfileId;
   /** Which model writes the SCRIPT (text). Images always stay on Gemini.
    * Defaults to the main provider. Switchable from the hidden admin panel. */
   script_provider?: AIProvider;
