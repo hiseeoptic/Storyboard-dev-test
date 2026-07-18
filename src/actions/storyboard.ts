@@ -16,6 +16,11 @@ import { analyzeReferenceImages } from "@/services/image-analyzer";
 import { generateCompactCookingScenePlan } from "@/services/cooking-planner";
 import { compileCookingStoryboard } from "@/lib/cooking";
 import {
+  resolveSpatialLayout,
+  renderSpatialTopologyBoardHint,
+  renderSpatialTopologyLock,
+} from "@/lib/spatial-topology";
+import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
   genreAmbientAudio,
@@ -248,6 +253,24 @@ function sanitizeContinuityNotes(breakdown: StoryboardGenerationOutput): void {
       seg.continuity_note =
         "Carry this segment's final physical state — positions, held props, poses and emotional register — unchanged into the next segment.";
     }
+  }
+}
+
+/**
+ * Persist the authoritative map into the storyboard JSON itself. New model
+ * responses normally provide it; this deterministic pass repairs omissions
+ * from older projects and replaces unsafe doorway/edge topology before any
+ * board or video prompt is assembled.
+ */
+function enforceSpatialTopology(breakdown: StoryboardGenerationOutput): void {
+  for (const seg of breakdown.segments) {
+    const resolved = resolveSpatialLayout({
+      layout: seg.spatial_layout,
+      setting: seg.first_frame_prompt,
+      motion: seg.motion_prompt,
+      characterNames: seg.characters_in_scene,
+    });
+    if (resolved) seg.spatial_layout = resolved;
   }
 }
 
@@ -1297,6 +1320,7 @@ export async function generateStoryboardPlan(
     normalizeDialogue(breakdown);
     sanitizeContinuityNotes(breakdown);
     enforceCookingContract(input, breakdown);
+    enforceSpatialTopology(breakdown);
 
     for (const lock of breakdown.character_locks) {
       const analyzed = analysis.characterDescriptions[lock.name];
@@ -1452,6 +1476,7 @@ function assemblePlanPrompts(
       sceneIntent: seg.scene_intent,
       worldContext: breakdown.world_context,
       setting: makeVeoSafe(seg.first_frame_prompt ?? ""),
+      spatialLayout: seg.spatial_layout,
       productDescription:
         !ctx.isCooking || showFinishedDish ? productDesc : undefined,
       ingredients:
@@ -1503,6 +1528,7 @@ function assemblePlanPrompts(
       speaker: s.speaker,
       dialogue_lines: s.dialogue_lines,
       setting: makeVeoSafe(s.first_frame_prompt ?? ""),
+      spatial_layout: s.spatial_layout,
       environment_ref: s.environment_ref,
       characters_in_scene: s.characters_in_scene,
       continuity_note: s.continuity_note,
@@ -1533,6 +1559,7 @@ export async function finalizeScript(params: {
     // stale generated dialogue can never outrank what the user currently sees.
     normalizeDialogue(params.breakdown);
     sanitizeContinuityNotes(params.breakdown);
+    enforceSpatialTopology(params.breakdown);
     const videoPrompt = assemblePlanPrompts(params.input, params.breakdown, params.analysis, provider);
     return { success: true, data: { breakdown: params.breakdown, videoPrompt } };
   } catch (err) {
@@ -1595,6 +1622,9 @@ export async function rewriteSegment(params: {
     if (!segment.wardrobe_state?.length && original.wardrobe_state?.length) {
       segment.wardrobe_state = original.wardrobe_state;
     }
+    if (!segment.spatial_layout && original.spatial_layout) {
+      segment.spatial_layout = original.spatial_layout;
+    }
 
     // Same post-processing pipeline as a fresh breakdown, scoped to this segment.
     if (segment.motion_prompt) segment.motion_prompt = makeVeoSafe(segment.motion_prompt);
@@ -1612,6 +1642,7 @@ export async function rewriteSegment(params: {
     // syncs characters_in_scene with the speakers, mirrors the single form).
     normalizeDialogue({ ...params.breakdown, segments: [segment] });
     sanitizeContinuityNotes({ ...params.breakdown, segments: [segment] });
+    enforceSpatialTopology({ ...params.breakdown, segments: [segment] });
 
     const violations = findLawViolations(
       `${segment.motion_prompt ?? ""} ${segment.first_frame_prompt ?? ""}`
@@ -1685,7 +1716,14 @@ export async function generateBoardImage(params: {
         totalDuration: breakdown.total_duration_seconds,
         segmentCount: breakdown.segments.length,
         moodTags: breakdown.mood_tags,
-        segments: breakdown.segments.map((s) => ({
+        segments: breakdown.segments.map((s) => {
+          const spatial = resolveSpatialLayout({
+            layout: s.spatial_layout,
+            setting: s.first_frame_prompt,
+            motion: s.motion_prompt,
+            characterNames: s.characters_in_scene,
+          });
+          return {
           segment_number: s.segment_number,
           title: s.title,
           // Panel = its clip's REAL location + action (a panel drawn in the
@@ -1694,11 +1732,13 @@ export async function generateBoardImage(params: {
           action: [
             s.beats?.[0]?.beat || s.title,
             (s.first_frame_prompt ?? "").replace(/\s+/g, " ").trim().slice(0, 90),
+            renderSpatialTopologyBoardHint(spatial),
           ]
             .filter(Boolean)
             .join(" — SETTING: "),
           dialogue: s.dialogue,
-        })),
+          };
+        }),
         characterDescription: ctx.charDescDna,
         characterName: breakdown.character_locks?.[0]?.name,
         presentCharacters: (breakdown.character_locks ?? []).map((l) => ({
@@ -1779,6 +1819,16 @@ export async function generateBoardImage(params: {
       !ctx.isCooking || showFinishedDish ? ctx.productDnaText : undefined;
     const segmentIngredients =
       !ctx.isCooking || showIngredientRefs ? ctx.ingredientsText : undefined;
+    const spatialLayout = resolveSpatialLayout({
+      layout: seg.spatial_layout,
+      setting: seg.first_frame_prompt,
+      motion: seg.motion_prompt,
+      characterNames: seg.characters_in_scene,
+    });
+    const spatialLock = renderSpatialTopologyLock(spatialLayout);
+    const spatiallyLockedFirstFrame = [seg.first_frame_prompt || seg.title, spatialLock]
+      .filter(Boolean)
+      .join(". ");
 
     if (params.kind === "keyframe") {
       // Clean single first-frame (veoflow format) at the user's real aspect.
@@ -1786,7 +1836,7 @@ export async function generateBoardImage(params: {
       const kfRefs = buildBoardRefs(ctx, seg.characters_in_scene, cookingRefOptions);
       const r = await generateKeyframe({
         segmentNumber: seg.segment_number,
-        sceneDescription: seg.first_frame_prompt || seg.title,
+        sceneDescription: spatiallyLockedFirstFrame,
         shot: seg.beats?.[0]?.camera || "[EYE]",
         // Multi-character scene → describe ALL named characters; single → the
         // identity-locked main description. Cooking: an explicitly empty cast
@@ -1842,7 +1892,7 @@ export async function generateBoardImage(params: {
 
     const r = await generateSegmentFrame({
       segmentNumber: seg.segment_number,
-      firstFramePrompt: seg.first_frame_prompt,
+      firstFramePrompt: spatiallyLockedFirstFrame,
       beats: seg.beats,
       beatsPerSegment: ctx.beatsPerSegment,
       characterDescription: ctx.isCooking

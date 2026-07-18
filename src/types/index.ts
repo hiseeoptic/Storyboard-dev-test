@@ -368,6 +368,24 @@ export interface DialogueTurn {
 }
 
 /**
+ * Compact physical map for a clip. It separates static scene geometry from
+ * action so doors, thresholds, railings, paths, people, and the camera cannot
+ * be placed in mutually impossible positions.
+ */
+export interface SpatialLayout {
+  /** Ordered connected zones, from one side of the scene to the other. */
+  zone_order: string;
+  /** Walls/openings/perimeter barriers and the locations they may not leave. */
+  fixed_architecture: string;
+  /** Exact zone + anchor distance + facing for every visible character. */
+  character_placement: string;
+  /** The connected floor route that must remain physically unobstructed. */
+  walkable_path: string;
+  /** A real supported camera position and valid line of sight. */
+  camera_zone: string;
+}
+
+/**
  * One ~10s segment = exactly one Omni Flash / Veo image-to-video generation.
  * Segments are chained: the start frame of N+1 continues from N's end.
  */
@@ -399,6 +417,10 @@ export interface VideoSegment {
    * this segment's world to a physically-grounded spec (materials, Kelvin+Lux
    * light, atmosphere) so the setting renders real, not CGI. */
   environment_ref?: string | null;
+  /** Spatial topology contract. Required by the prompt for multi-zone,
+   * doorway, balcony, stair, edge, barrier, or counter-divider scenes; older
+   * projects are repaired deterministically by the prompt compiler. */
+  spatial_layout?: SpatialLayout;
   /** EXACT character_locks names of everyone VISIBLE in this segment. Drives
    * which reference photos are attached and who may appear on screen — the
    * cast-sync mechanism for multi-character scenes. */

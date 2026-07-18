@@ -108,6 +108,28 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
     // CAST-SYNC + ENVIRONMENT ENGINE per-segment locks.
     characters_in_scene: STRING_ARRAY_SCHEMA,
     environment_ref: STRING_SCHEMA,
+    // PHYSICAL TOPOLOGY: compact and separate from prose so scene geometry,
+    // blocking, motion and camera all consume one authoritative map. Optional
+    // in the transport schema for backward compatibility; the system prompt
+    // requires it for multi-zone / doorway / boundary scenes and the compiler
+    // deterministically repairs older segments that omit it.
+    spatial_layout: {
+      type: "OBJECT",
+      properties: {
+        zone_order: STRING_SCHEMA,
+        fixed_architecture: STRING_SCHEMA,
+        character_placement: STRING_SCHEMA,
+        walkable_path: STRING_SCHEMA,
+        camera_zone: STRING_SCHEMA,
+      },
+      required: [
+        "zone_order",
+        "fixed_architecture",
+        "character_placement",
+        "walkable_path",
+        "camera_zone",
+      ],
+    },
     continuity_note: STRING_SCHEMA,
     // MOTIVATED WARDROBE CHANGE: when the story physically changes a
     // character's look (shower → home clothes, getting dressed, rain), the

@@ -298,7 +298,7 @@ export const environmentArchetypes: Record<string, EnvironmentArchetype> = {
     environment_class: "exterior_urban",
     element: "Mộc",
     keywords: ["balcony", "ban công", "lô gia", "loggia", "hiên căn hộ", "balcony garden", "potted plants balcony"],
-    scale: "one fixed apartment balcony ~3×1.5m with railing, camera works within a 2.5m arc, soft-focus city beyond",
+    scale: "one fixed apartment balcony ~3×1.5m: apartment facade and open balcony doorway at the inner edge -> unobstructed tiled balcony floor -> railing only along the exposed outer perimeter -> soft-focus city beyond; the railing never crosses, faces across, or blocks the doorway/threshold; camera works on the safe walkable side within a 2.5m arc",
     materials: [
       { surface: "floor", material: "outdoor ceramic tiles", physics: "matte weathered glaze, darker grout lines, a few sun-faded patches" },
       { surface: "railing", material: "painted metal railing with concrete parapet", physics: "paint micro-chipped at the handrail, warm to the touch in sun, real specular on edges" },
