@@ -2,6 +2,10 @@
 
 import { geminiGenerateImage } from "@/lib/gemini/client";
 import type { AspectRatio, ImageQuality } from "@/types";
+import {
+  HUMAN_FACE_REALISM_LOCK,
+  HUMAN_FACE_REALISM_NEGATIVE,
+} from "@/lib/character-realism";
 
 export interface KeyframeResult {
   success: boolean;
@@ -47,15 +51,15 @@ export async function generateSceneKeyframe(input: {
       // the product, and place them in the analyzed scene — instead of
       // generating a brand-new generic person from the text.
       finalPrompt =
-        `EDIT THIS PHOTO. The FIRST attached image is a real photograph of a specific person — the subject. ` +
-        `Keep this person's FACE, facial features, face shape, skin tone, hairstyle and identity EXACTLY as in that photo. ` +
-        `Do NOT beautify, slim, age, stylise or replace the face — it must clearly be the SAME real person, face fully visible ` +
-        `and recognizable (do NOT add sunglasses, masks or anything covering the face). ` +
-        `Re-dress this same person in the product shown in the product reference image(s)` +
+        `EDIT THIS PHOTO. The FIRST attached image is the authoritative appearance reference for the subject. ` +
+        `Keep the character visually consistent with its whole-face topology and natural asymmetry, age evidence, skin tone and microtexture, eyes/eyelids, individual eyebrows and upper/lower eyelashes, nose, lips, hairline, density and strand texture. ` +
+        `Do NOT beautify, slim, de-age, stylise, fill brows, lengthen lashes, thicken hair or replace visible anatomy; keep the face fully visible ` +
+        `and optically sharp (do not add sunglasses, masks or anything covering the face). ${HUMAN_FACE_REALISM_LOCK} ` +
+        `Re-dress this character in the product shown in the product reference image(s)` +
         (input.productName?.trim() ? ` ("${input.productName.trim()}")` : "") +
         `, keeping the product accurate. Then place this person into the following scene/action: ${input.prompt}${productLine} ` +
-        `IMPORTANT: the subject is ALWAYS the person from the first photo — ignore any other or generic person described in the scene text. ` +
-        `Preserve their real identity above everything else.`;
+        `IMPORTANT: the subject appearance is ALWAYS governed by the first photo — ignore any other or generic appearance described in the scene text. ` +
+        `Avoid: ${HUMAN_FACE_REALISM_NEGATIVE}.`;
     } else {
       finalPrompt = input.prompt + productLine;
     }

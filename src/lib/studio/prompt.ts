@@ -3,6 +3,10 @@
 // photoreal generation prompt with face-identity locking and enhancements.
 
 import type { PhotoConfig } from "./types";
+import {
+  HUMAN_FACE_REALISM_LOCK,
+  HUMAN_FACE_REALISM_NEGATIVE,
+} from "@/lib/character-realism";
 
 export interface PromptBuildContext {
   hasFaces: boolean;
@@ -46,19 +50,26 @@ export function buildPrompt(
   const hasLockFace = config.faceEnhancements?.includes("lock_face");
   const faceId = ctx.hasFaces
     ? hasLockFace
-      ? "FACE REFERENCE: render the character to closely match the attached reference photo — keep the same face shape, bone structure, skin tone, eye shape, nose and lips so the character stays visually consistent with the reference. Sharp, in-focus face."
-      : "FACE REFERENCE: render the character to match the attached reference photo — keep the same facial features, skin tone and overall look so the character stays visually consistent. Sharp, in-focus face."
+      ? "FACE REFERENCE: render the character to closely match the attached reference photo — keep the same whole-face topology and natural asymmetry, skin tone and age evidence, eye/eyelid shape, individual eyebrow and eyelash pattern, nose, lips, hairline, density and strand texture so the character stays visually consistent. Sharp, optically focused face; do not beautify or replace visible anatomy."
+      : "FACE REFERENCE: render the character to match the attached reference photo — keep the same facial structure, natural asymmetry, skin microtexture, eyebrow/eyelash pattern, hairline and overall look so the character stays visually consistent. Sharp, optically focused face."
     : "";
 
   const enhMap: Record<string, string> = {
     lock_face: "Keep the character's face consistent with the attached reference photo, sharp and in focus.",
-    smooth_skin: "flawlessly smooth natural skin texture, professional beauty retouching",
-    bright_skin: "naturally brightened luminous skin, healthy inner glow",
-    younger: "naturally de-aged 5-10 years younger, realistic and convincing",
-    remove_wrinkles: "wrinkles and fine lines subtly smoothed, fresh youthful skin",
-    makeup: "light natural makeup, soft definition",
-    bright_eyes: "bright sparkling eyes, expressive and clear gaze",
-    sharp_features: "sharper defined facial features, refined jawline and cheekbones",
+    smooth_skin:
+      "gently even temporary redness only; preserve zone-varying pores, vellus hair, follicles, fine lines, under-eye texture, permanent marks and natural tone variation",
+    bright_skin:
+      "slightly brighter exposure and healthy colour balance only; preserve the original skin tone, undertone, pores and highlight roll-off without whitening",
+    younger:
+      "subtle rested appearance through lighting only; preserve the person's real age bracket, facial topology, pores and age-appropriate lines",
+    remove_wrinkles:
+      "soften only harsh lighting contrast on fine lines; retain age-appropriate wrinkle geometry and real skin microtexture",
+    makeup:
+      "light natural makeup visibly sitting on real textured skin; individual brow hairs and eyelashes remain anatomical, never painted or replaced",
+    bright_eyes:
+      "clear moist corneal catchlights, detailed iris fibres, off-white sclera, tear line and anatomical eyelid folds; no glowing-white or glass eyes",
+    sharp_features:
+      "optical focus and directional-light definition only; preserve the original jaw, cheekbones, nose, lips and facial asymmetry without reshaping",
   };
 
   const enhancementsToShow = (config.faceEnhancements || []).filter((id) => id !== "lock_face");
@@ -77,6 +88,8 @@ export function buildPrompt(
       cameraLine ? `${cameraLine}.` : "",
       faceId,
       enhLine,
+      config.subjectType !== "PRODUCT" ? HUMAN_FACE_REALISM_LOCK : "",
+      config.subjectType !== "PRODUCT" ? `Avoid: ${HUMAN_FACE_REALISM_NEGATIVE}.` : "",
       config.quality,
       ctx.hasProducts
         ? "PRODUCT INSTRUCTION: The uploaded product image shows the exact product that must appear in this photo. Show the product clearly, recognizably, and prominently. Faithfully reproduce the product's design and label."
@@ -114,6 +127,10 @@ export function buildPrompt(
   if (cameraLine) parts.push(`${cameraLine}.`);
   if (faceId) parts.push(faceId);
   if (enhLine) parts.push(enhLine);
+  if (config.subjectType !== "PRODUCT") {
+    parts.push(HUMAN_FACE_REALISM_LOCK);
+    parts.push(`Avoid: ${HUMAN_FACE_REALISM_NEGATIVE}.`);
+  }
   if (config.additionalPrompt) parts.push(`Additional details: ${config.additionalPrompt}.`);
   parts.push(
     "The final result must look like a real professional photograph — not digital art, not illustration, not CGI. Pure photographic realism."

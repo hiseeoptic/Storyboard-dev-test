@@ -347,11 +347,21 @@ export interface CharacterLock {
   gender_age: string;
   build: string;
   skin_tone: string;
+  /** Stable facial topology: forehead/temples/cheekbones/jaw/chin + asymmetry. */
+  face_structure?: string;
   /** Forensic skin realism (pores, subsurface, no plastic/CGI) — anti-fake-face. */
   skin_texture?: string;
   /** Exact eye shape + iris colour + real catchlights. */
   eye_details?: string;
+  /** Individual brow hairs, growth direction, density gradient and asymmetry. */
+  eyebrow_details?: string;
+  /** Individual upper/lower lashes, spacing, curvature and natural clumping. */
+  eyelash_details?: string;
+  /** Nose/cartilage/nostrils plus lip texture, hydration and visible teeth. */
+  nose_lips_details?: string;
   hair: string;
+  /** Hairline, parting, roots, density, strand texture, baby hairs/flyaways. */
+  hair_details?: string;
   eyes: string;
   costume: string;
   /** Real materials of the outfit/props (leather grain, denim weave, worn metal). */
@@ -362,8 +372,10 @@ export interface CharacterLock {
   /** One verbatim forensic-DNA line (with RGB hex) repeated in every keyframe. */
   dna?: string;
   /** TẦNG 9 (audio law): FULL locked voice profile, identical in every clip —
-   * timbre + pitch Hz + rate wpm + accent + emotion band, e.g. "warm low male
-   * timbre, 95-135 Hz, Northern Vietnamese, ~110 wpm, calm-grounded". */
+   * defaults to native Standard Northern Vietnamese (Hanoi), then locks timbre,
+   * natural F0 range, rate, prosody and emotion, e.g. "native Standard Northern
+   * Vietnamese (Hanoi), warm grounded male timbre, natural F0 95-130 Hz with
+   * small human variation, ~110 wpm, calm-sincere". */
   voice?: string;
 }
 

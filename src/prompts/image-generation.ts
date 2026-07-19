@@ -1,4 +1,8 @@
 import type { StoryboardStyle, CameraAngle, ShotType } from "@/types";
+import {
+  HUMAN_FACE_REALISM_LOCK,
+  HUMAN_FACE_REALISM_NEGATIVE,
+} from "@/lib/character-realism";
 
 const STYLE_MODIFIERS: Record<StoryboardStyle, string> = {
   realistic:
@@ -73,6 +77,20 @@ export function buildImagePrompt(params: {
     params.style === "custom" && params.custom_style_prompt
       ? params.custom_style_prompt
       : STYLE_MODIFIERS[params.style];
+  const usesPhotographicHumans =
+    [
+      "realistic",
+      "cinematic",
+      "noir",
+      "commercial",
+      "ugc",
+      "product_showcase",
+      "corporate_clean",
+    ].includes(params.style) ||
+    (params.style === "custom" &&
+      /photo|photoreal|live[ -]?action|camera|cinematic|documentary|ugc|film/i.test(
+        params.custom_style_prompt ?? ""
+      ));
 
   const segments = [
     "Professional storyboard frame",
@@ -82,6 +100,8 @@ export function buildImagePrompt(params: {
     SHOT_MODIFIERS[params.shot_type],
     params.mood ? `Mood: ${params.mood}` : null,
     params.lighting ? `Lighting: ${params.lighting}` : null,
+    usesPhotographicHumans ? HUMAN_FACE_REALISM_LOCK : null,
+    usesPhotographicHumans ? `Avoid: ${HUMAN_FACE_REALISM_NEGATIVE}` : null,
     "No text, no watermarks, no UI elements, single frame composition",
   ].filter(Boolean);
 

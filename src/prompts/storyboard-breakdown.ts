@@ -39,6 +39,10 @@ import {
   SPATIAL_TOPOLOGY_INVARIANTS,
 } from "@/lib/spatial-topology";
 import { renderCreativeRouteDirective } from "@/lib/creative-routing";
+import {
+  HUMAN_FACE_REALISM_LOCK,
+  HUMAN_FACE_REALISM_NEGATIVE,
+} from "@/lib/character-realism";
 
 // Forbidden in every generated image/clip (the brief's negative list).
 // Phrased as plain descriptors (no instructive "no/don't") — Veo/Kling read the
@@ -62,7 +66,10 @@ const SHARED_NEGATIVE =
 // boots, denim, metal, wood, fabric, skin) renders true-to-life, not CGI/plastic.
 // One constant, reused in the motion tail, the keyframe and the Veo JSON.
 const PHOTOREAL_REALISM =
-  "PHOTOREAL REALISM (this is REAL filmed footage, physically-based rendering — NOT CGI, NOT 3D render, NOT illustration): human skin keeps real texture — visible pores, fine vellus/facial hair, natural subsurface scattering, subtle moisture/oil sheen, real catchlights and micro-imperfections; NEVER airbrushed, waxy, plastic or beauty-smoothed. Every object and material reads true-to-life: leather shows grain, creases, worn scuffs and real stitching; denim a woven twill weave; metal brushed or worn with real specular reflections; wood visible grain; fabric real thread and drape — no plastic, toy-like or CGI surfaces. Physically accurate light with soft imperfect shadow edges, natural depth of field and a fine organic film grain.";
+  `PHOTOREAL REALISM (this is REAL filmed footage — NOT CGI, NOT 3D render, NOT illustration): ${HUMAN_FACE_REALISM_LOCK} Every object and material reads true-to-life: leather shows grain, creases, worn scuffs and real stitching; denim a woven twill weave; metal brushed or worn with real specular reflections; wood visible grain; fabric real thread and drape — no plastic, toy-like or CGI surfaces. Physically accurate light with soft imperfect shadow edges, natural depth of field and a fine organic film grain.`;
+
+const PHOTOREAL_MATERIAL_REALISM =
+  "REAL MATERIALS: leather shows grain, creases, worn scuffs and stitching; denim shows twill weave; metal has physically plausible reflections and wear; wood has varied grain; fabric has real thread, nap, folds and weight. Physically accurate light, soft imperfect shadow edges, natural optical depth of field and fine organic sensor/film texture — no plastic, toy-like or CGI surfaces.";
 
 // Concise anti-artifact tail. Product-related negatives are included ONLY when
 // the clip actually has a product, so a person-only clip never mentions products.
@@ -98,10 +105,10 @@ function veoConciseTail(
     ? "CAMERA LAW: follow the locked visual-language grammar and scene proof requirements; the viewpoint must make required evidence observable without adding unrelated moves, cuts or impossible camera positions."
     : clipCameraLawLine();
   const audioLaw = realityProfile
-    ? "AUDIO LAW: follow the locked audio world; voices, ambience and foley have causal sources, correct timing and perspective, while silence remains available when required by scene intent."
+    ? `${clipAudioLawLine()} AUDIO-WORLD CONTEXT: voices, ambience and foley keep causal sources, correct timing and perspective, while silence remains available when required by scene intent.`
     : clipAudioLawLine();
   const renderNeg = realWorld
-    ? "plastic/CGI/wax/airbrushed skin, toy-like or 3D-render materials"
+    ? `${HUMAN_FACE_REALISM_NEGATIVE}, toy-like or 3D-render materials`
     : "unmotivated photoreal/stylized switching, accidental world-physics drift";
   const textLaw = "ZERO VISIBLE TEXT OR GRAPHICS: every frame is clean live footage with no readable letters, words, names, numbers, logos, labels or typography anywhere, including real-world signs and product printing. No subtitles, captions, dialogue transcription, title cards, name tags, floating boxes, badges, watermarks, HUD, camera data or technical overlays. All names, dialogue, brands, ages, temperatures, lens values and timing values in this prompt are INTERNAL instructions only. Spoken words are AUDIO ONLY.";
   return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${textLaw} Avoid: ${productNeg}storyboard sheets, grids, panel borders, reference thumbnails, character name tags or labels on screen, a character's name or age rendered as a floating label or info card, colour-code or hex-code text overlays, burned-in subtitles or captions, spoken words rendered as on-screen text, morphing, warping, teleporting, floating or duplicated objects, extra or fused fingers, malformed hands, a third hand, an extra pair of hands, a disembodied hand entering the frame, the face changing, deformed food or liquid, ${renderNeg}.`;
@@ -648,7 +655,7 @@ UPLOADED REFERENCE PRIORITY (absolute hierarchy — PHOTOS beat text, text beats
 
 FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's video must not "look AI"):
 - Every object is locked to a "DNA" that NEVER drifts and is repeated VERBATIM in every board/keyframe and every motion prompt.
-- Build a detailed "character_lock" per character with an EXPLICIT "gender" field (male/female — if a reference photo was provided it MUST match that real person's gender), plus age, build, skin tone, hair, eyes, exact costume, signature features, default expression, PLUS a single-line "dna" string capturing the forensic identity WITH RGB HEX CODES for skin/hair/eyes/wardrobe/brand colours (e.g. "navy polo #1F2A44, light-blue tee #A9C7E8, matte steel watch #8A8D91, warm tan skin #C8956A").
+- Build a detailed "character_lock" per character with an EXPLICIT "gender" field (male/female — if a reference photo was provided it MUST match that real person's gender), plus age, build, skin tone, facial structure, skin microtexture, eyes/eyelids, eyebrows, eyelashes, nose/lips, hair overview, hair microdetail, exact costume, signature features and default expression. Also provide one "dna" line with RGB HEX CODES for identity colours (skin/hair/eyes/wardrobe/brand). Never infer invisible microdetails from a weak reference; state a conservative natural value instead of inventing glamour features.
 - CHARACTERS ARE ORIGINAL AND FICTIONAL. Use ordinary, common given names (e.g. Mai, Minh, Lan, Nam) and describe a made-up everyday person — NEVER the name, likeness, or description of any real, famous or recognisable public figure/celebrity/influencer. Do not write "looks like [celebrity]" or reference any real person. Describe appearance by generic attributes only, so the render never resembles a specific real individual (this is what makes Veo/Flow reject the clip as a public-figure likeness).
 
 MULTI-CHARACTER CASTING & DIALOGUE ASSIGNMENT (mandatory whenever the story/script has 2+ people — this is what keeps a family/dialogue video coherent):
@@ -685,8 +692,8 @@ STAGING & BLOCKING (a real director's coverage — this is what separates a watc
 - ⚡ ENERGY-AWARE PERFORMANCE (Director's Engine): infer each clip's energy (low / medium / high) from its emotion, and write the acting to match — low: minimal movement, internalized emotion; medium: natural gestures, conversational pacing; high: focused intensity, never flailing. Adjacent clips never jump low→high (motion shows energy BUILDING gradually — restrained first, opening up) and never crash high→low (motion shows tension RELEASING slowly — controlled breathing, shoulders dropping). Chained clips also keep CAMERA temperament continuity: never cut from a locked-off static clip straight into a handheld-feeling energetic move — step through a controlled push-in first.
 
 MATERIAL & SKIN REALISM (this is what kills the "AI/CGI/plastic" look — treat every clip as REAL filmed footage, never a 3D render):
-- SKIN: describe real skin — visible pores, fine vellus/facial hair, natural subsurface scattering, subtle moisture/oil sheen, real catchlights and small natural imperfections. NEVER airbrushed, waxy, plastic or beauty-smoothed. Fill each character_lock's "skin_texture" and "eye_details" with these forensic details (this is the #1 fix for fake-looking faces).
-- HAIR (equally important — long dark hair is what most often renders as a plastic wig): describe REAL hair — thousands of individual strands, a soft natural part, fine flyaways and baby hairs at the hairline, natural volume that follows the scalp, and a MATTE-to-soft natural sheen (never a mirror-like glossy shell). Fill each character_lock's "hair" with this real texture. NEVER a smooth helmet of hair, a solid painted-on cap, a shiny plastic wig or doll/toy hair with no visible strands.
+- HUMAN FACE REALISM: fill every character_lock field independently and concretely: "face_structure" (forehead/temples/cheekbones/jaw/chin/ears + natural asymmetry); "skin_texture" (zone-varying pores, vellus hair, follicles, faint capillaries, freckles/blemishes/marks, under-eye texture, age-appropriate fine lines, restrained T-zone sheen); "eye_details" (iris fibres, pupils, off-white sclera, moist catchlight/tear line, eyelid folds); "eyebrow_details" (individual rooted hairs, direction, density gradient, gaps, taper and asymmetry); "eyelash_details" (individual upper/lower lashes with varied length, spacing, direction, curve and subtle clumping); "nose_lips_details" (nose cartilage/nostrils, philtrum, lip lines/edge softness/hydration and natural visible teeth); and "hair_details" (hairline/temples/parting/roots/density/scalp visibility/strand texture/baby hairs/flyaways). Preserve real age and natural asymmetry. NEVER invent poreless porcelain skin, painted brows, uniform doll lashes, perfect denture teeth, helmet hair, wig edges or beauty-filter smoothing.
+- HAIR FALLBACK (including older character locks with no hair_details): describe real hair as individual strands with a soft natural part, fine flyaways and baby hairs at the hairline, volume following the scalp and matte-to-soft natural sheen. NEVER a smooth helmet, solid painted cap, shiny plastic wig or strandless doll hair.
 - MATERIALS: every object/prop/garment must read true-to-life with its real surface physics. Leather = grain, creases, worn scuffs, real stitching; denim = woven twill weave; metal = brushed/worn with real specular reflections; wood = visible grain; fabric = real thread and drape. Put these into each character_lock's "wardrobe_materials" and describe hero props with the same material honesty — no plastic, toy-like or CGI surfaces.
 - LIGHT: physically-based, tied to time-of-day/weather, with soft imperfect shadow edges. Give scene_bible.lighting BOTH Kelvin temperature AND approximate Lux (e.g. "soft overcast dawn key 5200K, ~800 lux"), and set scene_bible.film_grain to a fine organic grain / clean-acquisition token so the filmic texture stays constant across clips.
 
@@ -699,7 +706,7 @@ ENVIRONMENT ENGINE (locked world archetypes — pick one per segment):
 ${environmentCatalogForPrompt()}
 - Rules: pick an id only when it is semantically compatible with the resolved context and approved script. If NO archetype fits, set "environment_ref": "custom" and write the required physical materials + Kelvin/Lux + imperfections inside "first_frame_prompt". Never infer a kitchen, gym, living room or outdoor location from a library default; cooking/fitness routing and any special location profile arrive explicitly in the USER prompt. Two consecutive segments in the same location SHOULD reuse the same compatible environment_ref.
 
-NEGATIVE (forbidden in every image/clip — plain descriptors): warped/changed label or logo text, brand-colour change, extra products or extra people, changed hair/wardrobe/accessories, human hands when the script does not call for them, on-screen text overlays, object/container morphing, teleporting, floating or levitating objects, objects passing through surfaces, deformed liquid, melted food, extra or fused fingers, malformed hands, face morphing, identity drift, plastic/CGI skin.
+NEGATIVE (forbidden in every image/clip — plain descriptors): warped/changed label or logo text, brand-colour change, extra products or extra people, changed hair/wardrobe/accessories, human hands when the script does not call for them, on-screen text overlays, object/container morphing, teleporting, floating or levitating objects, objects passing through surfaces, deformed liquid, melted food, extra or fused fingers, malformed hands, face morphing, identity drift, plastic/wax/porcelain/poreless skin, generic beautified face, painted or stamped eyebrows, solid-strip or uniform doll eyelashes, glass eyes, perfect denture teeth, helmet/plastic/wig-like hair.
 
 DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlapping):
 - Veo 3 generates real spoken audio. Write dialogue in the language requested. Keep each spoken line SHORT and natural.
@@ -918,9 +925,14 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
       "gender_age": "string — e.g. 'male, ~35 years old' or 'male child, ~6 years old'",
       "build": "string",
       "skin_tone": "string",
-      "skin_texture": "string — FORENSIC skin realism (anti-CGI): real texture with visible pores, fine vellus/facial hair, subsurface scattering, subtle sheen and small natural imperfections; NEVER plastic/waxy/airbrushed. e.g. 'warm tan skin, visible pores, faint stubble, natural under-eye texture, no beauty smoothing'",
-      "eye_details": "string — exact eye shape + iris colour + real catchlights, e.g. 'dark brown almond eyes, double eyelid, natural moist catchlight'",
-      "hair": "string",
+      "face_structure": "string — stable whole-face topology: face/skull shape, forehead, temples, cheekbones, cheeks, jaw, chin, ears and visible natural left-right asymmetry; never generic beautification",
+      "skin_texture": "string — living age-appropriate skin: pore size/density by facial zone, fine vellus/facial hair and follicles, subtle uneven tone, faint capillaries, freckles/blemishes/healed marks, under-eye texture, fine lines, matte cheeks versus restrained T-zone sheen; never plastic/waxy/porcelain/poreless/airbrushed",
+      "eye_details": "string — exact eye/eyelid anatomy: iris colour and radial fibres, pupil, off-white sclera with extremely subtle vessels, moist corneal catchlight and tear line, upper/lower lid folds and under-eye contour",
+      "eyebrow_details": "string — exact brow colour, thickness, start/arch/tail plus individual rooted hair direction, density gradient, tapered ends, small gaps, grooming and natural asymmetry; never painted/stamped blocks",
+      "eyelash_details": "string — individual upper AND lower lashes: colour, varied length/spacing/curvature/direction, subtle clumping and tiny shadows; never a solid strip, uniform doll fan or duplicate rows unless explicit false lashes are character-accurate",
+      "nose_lips_details": "string — stable nose bridge/tip/nostril cartilage, philtrum, lip shape/colour/fine lines/edge softness/hydration, plus naturally off-white and slightly varied teeth only when visible",
+      "hair": "string — exact colour, length, cut, curl/wave pattern and hairstyle",
+      "hair_details": "string — exact hairline and temple shape, parting, roots, density, limited scalp visibility, strand thickness/texture, baby hairs, sparse flyaways and natural sheen; never helmet/plastic/wig-like hair",
       "eyes": "string",
       "costume": "string",
       "wardrobe_materials": "string — the REAL materials of the outfit/props so they don't render fake, e.g. 'olive cotton-canvas jacket with visible weave, charcoal cotton tee, indigo denim twill, worn brown full-grain leather boots with grain, creases and stitching, brushed-steel pen'",
@@ -928,7 +940,7 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
       "default_expression": "string",
       "render_style": "${input.style}",
       "dna": "string — ONE verbatim forensic-DNA line with RGB HEX codes for skin/hair/eyes/wardrobe/brand colours, e.g. 'navy polo #1F2A44, light-blue tee #A9C7E8, matte steel watch #8A8D91, short black side-part hair #14110F, warm tan skin #C8956A, rectangular tortoise glasses'",
-      "voice": "string — TẦNG 9 audio law: the character's FULL locked voice profile, identical in every clip: timbre + pitch range Hz + rate wpm + accent + emotion band. Male ≈ 85-140 Hz, female ≈ 180-260 Hz, child ≈ 250-400 Hz. e.g. 'warm low male timbre, 95-135 Hz, Northern Vietnamese, ~110 wpm, calm-grounded'"
+      "voice": "string — TẦNG 9 audio law: the character's FULL locked voice profile, identical in every clip: native Standard Northern Vietnamese (Hanoi) by default + timbre + natural F0 range Hz + rate wpm + emotion band + restrained conversational prosody. Male ≈ 85-140 Hz, female ≈ 180-260 Hz, child ≈ 250-400 Hz; use small human pitch variation, never monotone/Auto-Tuned. Do not choose Southern, Central, overseas-Vietnamese or foreign-accent speech unless the user explicitly requests it. e.g. 'native Standard Northern Vietnamese (Hanoi), warm grounded male timbre, natural F0 95-130 Hz with small human variation, ~110 wpm, calm-sincere, restrained conversational prosody'"
     }
   ],
   "scene_bible": {
@@ -949,7 +961,7 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
 ${beatExample}
       ],
       "first_frame_prompt": "string — the segment's START STATE: describe the SHARED scene/setting (location, lighting, EXACT character appearance from character_locks, product if any) AND every prop the motion_prompt will use, already present — held in a named hand, worn, or placed in the scene (e.g. 'his dark grey jacket draped over his right forearm'). It is used as the scene-overview context for the shot board, so describe the environment and the character clearly; an object the motion touches but the start state omits is a bug. WARDROBE RULE: whenever you mention a character's clothing, state the COMPLETE locked outfit — BOTH the top AND the bottom (and shoes if relevant) exactly as in character_locks — or mention no clothing at all. NEVER mention only the shirt/blouse and leave out the trousers/skirt: a partial outfit makes the model invent the missing half and the trousers change colour every clip. For a multi-zone/doorway/boundary scene, restate the SAME zone order, fixed architecture and character placements from spatial_layout — never invent a conflicting railing, wall, threshold or camera side.",
-      "motion_prompt": "string — a focused 70-110 word image-to-video ACTION prompt for Omni Flash / Veo describing ONE continuous take. IMPORTANT: the system automatically wraps this text with the full character + product description, the style tokens (lens/light/backdrop/grade), a physics directive and a negative list — so DO NOT repeat identity attributes, style tokens, a physics clause or a negative list here; describe only what HAPPENS. Order: (1) a SHORT anchor that it is the same man and same product from the attached references, rendered as a slightly younger, more attractive version (one phrase — do NOT re-list every attribute); (2) ONE single continuous primary action across the 10s with rough timing ('0-3s ...; 3-6s ...; 6-10s ...') using slow, deliberate, specific motion verbs (body part + verb + manner) — no hard cuts, no second simultaneous action; every object interaction written as the FULL causal chain (hand reaches → fingers grip a named part → carried along one path → released), and every effect (something falls/tips/spills) PRECEDED by its visible physical cause making contact — an object never appears in a hand and nothing ever moves by itself; the whole clip stays in ONE location and obeys spatial_layout: every zone change names the real connector and follows walkable_path; (3) camera (shot size + SMOOTH minimal movement from camera_zone); (4) a brief mood/light accent only if it changes; (5) note WHEN the character speaks with natural lip movement, but DO NOT quote the spoken words (the dialogue line is appended automatically exactly once); (6) finish with the exact final state so it leads into the next segment.",
+      "motion_prompt": "string — a focused 70-110 word image-to-video ACTION prompt for Omni Flash / Veo describing ONE continuous take. IMPORTANT: the system automatically wraps this text with the full character + product description, the style tokens (lens/light/backdrop/grade), a physics directive and a negative list — so DO NOT repeat identity attributes, style tokens, a physics clause or a negative list here; describe only what HAPPENS. Order: (1) a SHORT anchor that the same character and product from the attached references continue with unchanged natural age, facial anatomy, skin, brows, lashes and hair (one phrase — do NOT re-list every attribute and do NOT beautify); (2) ONE single continuous primary action across the 10s with rough timing ('0-3s ...; 3-6s ...; 6-10s ...') using slow, deliberate, specific motion verbs (body part + verb + manner) — no hard cuts, no second simultaneous action; every object interaction written as the FULL causal chain (hand reaches → fingers grip a named part → carried along one path → released), and every effect (something falls/tips/spills) PRECEDED by its visible physical cause making contact — an object never appears in a hand and nothing ever moves by itself; the whole clip stays in ONE location and obeys spatial_layout: every zone change names the real connector and follows walkable_path; (3) camera (shot size + SMOOTH minimal movement from camera_zone); (4) a brief mood/light accent only if it changes; (5) note WHEN the character speaks with natural lip movement, but DO NOT quote the spoken words (the dialogue line is appended automatically exactly once); (6) finish with the exact final state so it leads into the next segment.",
       "dialogue": "string — the FIRST turn's spoken line in ${dialogueLanguage} (short, natural). Mirror of dialogue_lines[0].text.",
       "speaker": "string — the EXACT character_locks name of the FIRST turn's speaker (mirror of dialogue_lines[0].speaker). Empty string \\"\\" if voiceover.",
       "dialogue_lines": [
@@ -1086,13 +1098,15 @@ export function isPhotoStyle(style: string): boolean {
   return PHOTO_STYLES.has(style);
 }
 
-// Light, natural "glow-up": keep identity, render a younger/attractive take.
+// Identity-faithful editorial cleanup: exposure/colour may improve, anatomy and
+// age evidence may not. The old "younger/more handsome" wording caused generic
+// beauty faces, erased pores and silently changed brows/lashes/hair density.
 const BEAUTIFY_DIRECTIVE =
-  "Derive EVERY view from the attached reference photo(s) — same exact person, same face geometry, bone structure, eye shape and colour, same hairline. Render in sharp, high-resolution photoreal portrait quality with natural skin texture and pores. Apply only a tasteful editorial retouch — even healthy skin tone, clear complexion, softened under-eye shadows and blemishes, a subtle cheekbone highlight, bright eyes, neat well-groomed hair, a fresh fit look — so he reads a few years younger, more handsome and camera-ready, like a flattering professional headshot of the SAME man. Shot on an 85mm portrait lens, soft natural light. Do NOT over-smooth into a plastic/CGI/wax/airbrushed look, do NOT beautify into a different face, do NOT change his identity, ethnicity or age bracket drastically.";
+  "Derive EVERY view from the attached reference photo(s): preserve the same facial topology, natural asymmetry, age evidence, skin tone and microtexture, eyelids, eyebrows, eyelashes, nose, lips, teeth where visible, hairline, density and strand pattern. Editorial cleanup may correct only exposure, white balance and temporary sensor noise; it must not de-age, reshape, slim, fill brows, lengthen lashes, whiten teeth, thicken hair, remove permanent marks or erase pores/fine lines. Shot with soft honest light and sharp optical focus, without beauty-filter blur.";
 
 function renderDirective(style: string, preserveRealFace: boolean): string {
   if (isPhotoStyle(style)) {
-    return `RENDER AS REAL PHOTOGRAPHY: photorealistic, lifelike, real human beings photographed with a real camera, cinematic photography quality. ABSOLUTELY FORBIDDEN: cartoon, anime, comic, manga, illustration, drawing, sketch, painting, 2D/3D animation, Pixar/Disney look, CGI render, vector art, flat shading — every panel and every person must look like a frame from real filmed footage.${
+    return `RENDER AS REAL PHOTOGRAPHY: photorealistic, lifelike, real human beings photographed with a real camera, cinematic photography quality. ${HUMAN_FACE_REALISM_LOCK} ABSOLUTELY FORBIDDEN: cartoon, anime, comic, manga, illustration, drawing, sketch, painting, 2D/3D animation, Pixar/Disney look, CGI render, vector art, flat shading, ${HUMAN_FACE_REALISM_NEGATIVE} — every panel and every person must look like a frame from real filmed footage.${
       preserveRealFace
         ? ` CRITICAL: preserve the EXACT face, skin tone, hairstyle and likeness from the attached reference photo — the same character with the same face in every panel; never redraw the face, never swap it for a different person, never stylize it into a cartoon. ${BEAUTIFY_DIRECTIVE}`
         : ""
@@ -1100,7 +1114,7 @@ function renderDirective(style: string, preserveRealFace: boolean): string {
   }
   return `${style} art style.${
     preserveRealFace
-      ? ` Keep the person's real facial structure and likeness recognizable from the reference photo, rendered in this art style, as a slightly younger and more attractive version of himself.`
+      ? ` Keep the person's facial structure, natural asymmetry, age evidence, skin-tone pattern, eyebrow/eyelash pattern and hairline recognizable from the reference photo in this art style; do not de-age or beautify into a different face.`
       : ""
   }`;
 }
@@ -1133,9 +1147,9 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
       case "character_sheet":
         return `• THE CHARACTER — the attached reference sheet (turnaround + expressions)${d} defines an ORIGINAL FICTIONAL character's look — face, hair, body and costume. Keep this SAME made-up character consistent in every shot — same look, same wardrobe, same proportions, tastefully polished. This is an ordinary invented person, NOT a real, famous or recognisable public figure; do NOT drift to a different look.`;
       case "face":
-        return `• THE CHARACTER — use the attached portrait ONLY as an appearance reference for an ORIGINAL FICTIONAL character (an ordinary invented person, NOT a real, famous or recognisable individual). Keep a natural, consistent face, hairstyle and skin tone across every shot (light natural retouch). Match eyewear to the photo — if there are no glasses in the photo, do NOT add glasses; if there are, keep them — consistent across shots. This is the main character.`;
+        return `• THE CHARACTER — use the attached portrait ONLY as an appearance reference for an ORIGINAL FICTIONAL character (an ordinary invented person, NOT a real, famous or recognisable individual). Keep the whole facial topology and natural asymmetry, living skin texture and age evidence, eye/eyelid anatomy, individual brow/lash pattern, nose/lips, hairline, density and strand texture consistent across every shot. No beauty smoothing, brow filling, lash lengthening or hair thickening. Match eyewear to the photo — if there are no glasses in the photo, do NOT add glasses; if there are, keep them — consistent across shots. This is the main character.`;
       case "character":
-        return `• CHARACTER "${r.name ?? "person"}" — attached ${r.view === "profile" ? "PROFILE / THREE-QUARTER" : "FRONT"} portrait from the USER'S CHARACTER MENU${d}. This uploaded portrait is authoritative: bind its face, hair, skin tone and visible wardrobe to ${r.name ?? "this character"} ONLY. Do NOT omit, replace, merge, blend or swap this person with another character.`;
+        return `• CHARACTER "${r.name ?? "person"}" — attached ${r.view === "profile" ? "PROFILE / THREE-QUARTER" : "FRONT"} portrait from the USER'S CHARACTER MENU${d}. This uploaded portrait is authoritative: bind its facial topology, natural asymmetry, skin microtexture, eye/eyelid anatomy, individual eyebrows/eyelashes, nose/lips, hairline/strand texture and visible wardrobe to ${r.name ?? "this character"} ONLY. Do NOT beautify, smooth, omit, replace, merge, blend or swap this person with another character.`;
       case "product":
         return `• THE PRODUCT — feature the EXACT product shown in the attached product photo${d}. Keep its EXACT shape, silhouette, colour, material, proportions, handle/parts and branding identical in every single shot. Do NOT redesign, recolour, distort, resize, age, damage or swap it for a different object.`;
       case "dish":
@@ -1163,7 +1177,14 @@ export function buildCharacterRefSheetPrompt(params: {
     gender_age: string;
     build: string;
     skin_tone: string;
+    face_structure?: string;
+    skin_texture?: string;
+    eye_details?: string;
+    eyebrow_details?: string;
+    eyelash_details?: string;
+    nose_lips_details?: string;
     hair: string;
+    hair_details?: string;
     eyes: string;
     costume: string;
     signature_features: string;
@@ -1183,6 +1204,17 @@ export function buildCharacterRefSheetPrompt(params: {
   const directive = renderDirective(style, params.preserveRealFace ?? false);
   const refBlock = buildReferenceInstructions(params.references ?? []);
   const tokens = sceneBibleTokens(params.sceneBible);
+  const facialDetailLine = [
+    c.face_structure,
+    c.skin_texture,
+    c.eye_details,
+    c.eyebrow_details,
+    c.eyelash_details,
+    c.nose_lips_details,
+    c.hair_details,
+  ]
+    .filter(Boolean)
+    .join(". ");
 
   const colorSwatches =
     params.colorPalette && params.colorPalette.length > 0
@@ -1193,7 +1225,7 @@ export function buildCharacterRefSheetPrompt(params: {
 
   return `${refBlock}Professional compact CHARACTER REFERENCE SHEET, single horizontal image, clean light studio background.
 
-CHARACTER — ${c.name}: ${c.gender_age}, ${c.build} build, ${c.skin_tone} skin, ${c.hair} hair, ${c.eyes} eyes. Wearing ${c.costume}. ${c.signature_features}.
+CHARACTER — ${c.name}: ${c.gender_age}, ${c.build} build, ${c.skin_tone} skin, ${c.hair} hair, ${c.eyes} eyes.${facialDetailLine ? ` ${facialDetailLine}.` : ""} Wearing ${c.costume}. ${c.signature_features}.
 ${c.dna ? `FORENSIC DNA (exact colours, keep identical everywhere): ${c.dna}.\n` : ""}${tokens ? tokens + "\n" : ""}
 EXACT LAYOUT (all in one image):
 ■ "FRONT / CHÍNH DIỆN": one large HEAD-AND-SHOULDERS portrait, ${c.default_expression} expression, face tack-sharp.
@@ -1375,7 +1407,7 @@ ${castBlock}SUBJECT — keep this exact forensic identity: ${params.characterDes
 ${prominence}${lipSync}
 ${envBlock}${params.productDna ? `HERO PRODUCT / DISH (exact where present): ${params.productDna}\n` : ""}${params.ingredients ? `${hasFoodIngredients ? "RELEVANT FOOD INGREDIENTS" : "RELEVANT AUXILIARY OBJECTS / COMPONENTS"} (render physically; no written labels): ${params.ingredients}\n` : ""}${tokens ? tokens + "\n" : ""}${directive}
 
-RENDER RULES: a SINGLE static frame; the subject is sharp and frozen in the STARTING posture for the upcoming action (no motion blur, no camera-movement effect); ${ratioWord} aspect ratio, 1080p quality. Do NOT include timeline markers, multiple panels, split-screens, reference thumbnails, captions, subtitles, on-screen text or speech bubbles. ${grade}${isPhotoStyle(params.style) ? ` ${PHOTOREAL_REALISM}` : ""} ${SHARED_NEGATIVE}`;
+RENDER RULES: a SINGLE static frame; the subject is sharp and frozen in the STARTING posture for the upcoming action (no motion blur, no camera-movement effect); ${ratioWord} aspect ratio, 1080p quality. Do NOT include timeline markers, multiple panels, split-screens, reference thumbnails, captions, subtitles, on-screen text or speech bubbles. ${grade}${isPhotoStyle(params.style) ? ` ${PHOTOREAL_MATERIAL_REALISM}` : ""} ${SHARED_NEGATIVE}`;
 }
 
 // ─── Step 4: Master Board (Character Sheet + captioned storyboard grid) ─────
@@ -1584,7 +1616,7 @@ RENDER RULES: one clean commercial frame, no collage, no exaggerated meme face, 
   // overlays") would fight the requested title — swap in a text-aware negative
   // that bans only WRONG text, keeping all the identity/physics negatives.
   const negative = params.titleText
-    ? "NEGATIVE (avoid — plain descriptors): resembling a real or famous person, celebrity likeness, misspelled or garbled headline letters, wrong or missing Vietnamese diacritics, duplicated or extra words beyond the specified headline, any second block of text, subtitles, captions, hashtags on the image, watermark, logo, morphing, warping, extra or fused fingers, malformed hands, extra or missing limbs, the face changing, identity drift, changed hair/wardrobe, extra people, duplicated subject, plastic/CGI/wax/airbrushed skin, toy-like or 3D-render materials."
+    ? `NEGATIVE (avoid — plain descriptors): resembling a real or famous person, celebrity likeness, misspelled or garbled headline letters, wrong or missing Vietnamese diacritics, duplicated or extra words beyond the specified headline, any second block of text, subtitles, captions, hashtags on the image, watermark, logo, morphing, warping, extra or fused fingers, malformed hands, extra or missing limbs, the face changing, identity drift, changed hair/wardrobe, extra people, duplicated subject, ${HUMAN_FACE_REALISM_NEGATIVE}, toy-like or 3D-render materials.`
     : SHARED_NEGATIVE;
 
   return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}VIRAL VIDEO COVER / THUMBNAIL — ONE single VERTICAL 9:16 image used as the cover of a short video. It must STOP THE SCROLL on a phone feed: bold, funny, instantly readable at thumbnail size.
@@ -1958,8 +1990,10 @@ Compatible with: Google Veo 3.1, Seedance 2.0, Kling, Runway, Pika`;
 // self-contained flat `prompt` is ALSO kept per clip for text-mode users.
 
 /** The one comprehensive negative list, reused at project + clip level. */
-export const VEO_NEGATIVE_LIST =
-  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, railing wall counter furniture or prop crossing a doorway threshold stair entry or walking route, perimeter barrier in the middle of a floor, blocked opening, contradictory zone order, character or camera beyond a railing inside a wall or over a void, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, both characters talking at once, overlapping or simultaneous voices, doubled voice, chorus, echo, a spoken line repeated or duplicated, listener lip movement, lip movement during voiceover, narrator voice coming from a visible character's mouth, wrong speaker lip sync, swapped voices, ad-lib speech, speech bubble, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, floating character name tag, a character's name or age rendered as a label, character info card overlaid on the footage, colour-temperature or Kelvin label, exposure/Kelvin/lux/timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo, plastic or CGI skin, plastic wig hair, glossy doll or toy hair, smooth painted-on helmet of hair, hair with no visible individual strands, waxy airbrushed beauty-smoothed face, different trousers or pants colour than the locked outfit, wardrobe or outfit changing between clips, an extra or duplicated straw, a straw appearing or vanishing without being placed";
+export const VEO_NEGATIVE_LIST = [
+  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, railing wall counter furniture or prop crossing a doorway threshold stair entry or walking route, perimeter barrier in the middle of a floor, blocked opening, contradictory zone order, character or camera beyond a railing inside a wall or over a void, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, both characters talking at once, overlapping or simultaneous voices, doubled voice, chorus, echo, a spoken line repeated or duplicated, listener lip movement, lip movement during voiceover, narrator voice coming from a visible character's mouth, wrong speaker lip sync, swapped voices, ad-lib speech, speech bubble, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, floating character name tag, a character's name or age rendered as a label, character info card overlaid on the footage, colour-temperature or Kelvin label, exposure/Kelvin/lux/timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo, plastic or CGI skin, plastic wig hair, glossy doll or toy hair, smooth painted-on helmet of hair, hair with no visible individual strands, waxy airbrushed beauty-smoothed face, different trousers or pants colour than the locked outfit, wardrobe or outfit changing between clips, an extra or duplicated straw, a straw appearing or vanishing without being placed",
+  HUMAN_FACE_REALISM_NEGATIVE,
+].join(", ");
 
 interface VeoJsonOptions {
   aspectRatio: string;
@@ -2170,13 +2204,17 @@ export function buildVeoJson(
             age: scrub(lock.gender_age),
             voice_personality: oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child),
             body_build: noHex(lock.build),
-            face_shape: "Match the attached reference; preserve locked facial geometry",
-            // Always append the real-hair clause so hair never renders as a
-            // plastic wig / glossy doll cap (the #1 fake-hair failure, worst on
-            // long dark hair), even for breakdowns written before the hair-
-            // realism rule existed.
+            face_shape:
+              noHex(lock.face_structure) ||
+              "Match the attached reference; preserve locked facial geometry and natural asymmetry",
+            // Always append the real-hair clause so older breakdowns without
+            // hair_details still cannot render a plastic wig / doll cap.
             hair: appendHairRealism(noHex(lock.hair)),
+            hair_microdetail: noHex(lock.hair_details),
             eyes: noHex(lock.eye_details || lock.eyes),
+            eyebrows: noHex(lock.eyebrow_details),
+            eyelashes: noHex(lock.eyelash_details),
+            nose_lips_teeth: noHex(lock.nose_lips_details),
             skin_or_fur_color: noHex(lock.skin_tone),
             skin_texture: appendSkinRealism(noHex(lock.skin_texture)),
             signature_feature: scrub(lock.signature_features),
@@ -2297,6 +2335,7 @@ export function buildVeoJson(
         .join("; "),
       scene_role: seg.marketing_role,
       character_lock: characterLock,
+      human_face_render_lock: HUMAN_FACE_REALISM_LOCK,
       background_lock: {
         id: seg.environment_ref || `BACKGROUND_${seg.segment_number}`,
         name: env?.display_name || seg.title,
@@ -2365,6 +2404,7 @@ export function buildVeoJson(
             : "None unless explicitly required by the scene",
       },
       dialogue,
+      voice_render_lock: clipAudioLawLine(),
       lip_sync_director_note: (() => {
         if (dialogue.length === 0)
           return "No spoken dialogue; all visible mouths remain naturally closed.";
@@ -2399,7 +2439,7 @@ export function buildVeoJson(
       output_rules: {
         frame: "one clean full-screen continuous shot; never render a storyboard sheet, grid, panel, reference strip or document",
         on_screen_text: "ZERO — no letters, words, names, ages, numbers, labels, logos, captions, subtitles, badges, cards, HUD or technical overlays",
-        audio: "Dialogue and voiceover are spoken audio only. Exactly ONE voice at a time following the dialogue start_sec/end_sec windows; silent gaps between lines are mandatory; no simultaneous voices, chorus, echo, duplicated or repeated line, and no extra ad-lib speech.",
+        audio: "Dialogue and voiceover are spoken audio only. Exactly ONE voice at a time following the dialogue start_sec/end_sec windows; silent gaps between lines are mandatory; no simultaneous voices, chorus, echo, duplicated or repeated line, and no extra ad-lib speech. Apply voice_render_lock exactly: native Standard Northern Vietnamese (Hanoi) is the default and highest-priority Vietnamese accent unless the user explicitly requests another region; keep speaker identity, natural F0 range, timbre, prosody and clean wide-band fidelity stable across clips.",
         reference_priority: "uploaded character and location menu references are authoritative; never merge, omit or swap identities",
       },
       negative_prompt: [

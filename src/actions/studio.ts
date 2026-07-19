@@ -15,7 +15,7 @@ import type { ActionResult, AspectRatio } from "@/types";
 // already carries the likeness; we just ask the model to stay consistent with
 // it. (Same rationale as makeVeoSafe() in the storyboard path.)
 const ROLE_LABELS = {
-  face: "FACE REFERENCE IMAGE — Use this attached photo as the appearance reference for the main character. Render the character to look consistent with it: same face shape, features, hair and skin tone:",
+  face: "FACE REFERENCE IMAGE — Use this attached photo as the appearance reference for the main character. Keep the same whole-face topology and natural asymmetry, age evidence, living skin microtexture, eye/eyelid anatomy, individual eyebrow and upper/lower eyelash pattern, nose, lips, hairline, density and strand texture. Do not beautify, smooth, fill brows, lengthen lashes or thicken hair beyond the visible evidence:",
   product:
     "PRODUCT REFERENCE IMAGE — This is the exact product that must be included in the generated photo. The person should be holding, showcasing, or interacting with this specific product. Make the product clearly visible and recognizable:",
   logo: "LOGO REFERENCE IMAGE — Integrate this logo tastefully and visibly in the generated image:",

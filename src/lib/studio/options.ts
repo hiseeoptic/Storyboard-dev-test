@@ -12,7 +12,7 @@ export const SPECIAL_STYLES: OptionItem[] = [
   { id: 'film_candid_35mm', label: '📷 Film 35mm Candid', value: 'Authentic 35mm analog film photography, candid street or lifestyle moment, beautiful grain and light leaks, natural unposed genuine expression' },
   { id: 'y2k_fashion', label: '🌀 Y2K Aesthetic (2000s)', value: 'Y2K fashion aesthetic, year 2000s style, glossy metallic textures, bold colors, nostalgic early internet pop culture vibes' },
   { id: 'vogue_editorial', label: '📰 Vogue Editorial (Cover)', value: 'Vogue magazine editorial cover shoot, high fashion studio lighting, powerful commanding pose, aspirational luxury fashion photography' },
-  { id: 'korean_beauty', label: '🌸 Korean Beauty (K-beauty)', value: 'Korean beauty aesthetic, glass skin effect, soft natural lighting, minimal fresh makeup, elegant and youthful Korean photography style' },
+  { id: 'korean_beauty', label: '🌸 Korean Beauty (K-beauty)', value: 'Korean beauty editorial aesthetic, softly dewy living skin with pores and vellus hair still visible, minimal fresh makeup sitting on real texture, soft natural lighting and elegant contemporary photography' },
   { id: 'moody_editorial', label: '🌑 Moody Editorial Fashion', value: 'Dark moody editorial fashion photography, dramatic shadows, rich jewel tone colors, intense emotional atmosphere, high-concept fashion storytelling' },
   { id: 'cinematic_still', label: '🎬 Cinematic Still (Movie Frame)', value: 'Cinematic movie still frame, narrative atmosphere, professional color grade, feels like a scene from an acclaimed film, widescreen composition' },
   { id: 'harajuku_tokyo', label: '🗼 Harajuku Tokyo Street', value: 'Harajuku Tokyo street fashion photography, vibrant and eclectic style, busy Japanese street background, colorful and energetic urban youth culture' },
@@ -38,7 +38,7 @@ export const SPECIAL_STYLES: OptionItem[] = [
 
 // 2. STANDARD PHOTOGRAPHY STYLES
 export const STANDARD_STYLES: OptionItem[] = [
-  { id: 'front_face_clean', label: 'Chính diện rõ mặt', value: 'Front-facing studio portrait, symmetrical face, clean neutral background' },
+  { id: 'front_face_clean', label: 'Chính diện rõ mặt', value: 'Centered front-facing studio portrait, preserve natural left-right facial asymmetry, clean neutral background' },
   { id: 'half_face_portrait', label: 'Chân dung nửa mặt', value: 'Half-face studio portrait, one side of face in light, the other in soft shadow, clean background' },
   { id: 'three_quarter_face', label: 'Góc 3/4 khuôn mặt', value: 'Three-quarter face portrait, slight head turn, natural facial depth, studio lighting' },
   { id: 'profile_side_view', label: 'Nghiêng mặt (Profile)', value: 'Side profile studio portrait, clean outline, minimal background, elegant composition' },
@@ -133,14 +133,14 @@ export const POSE_CATEGORIES: CategoryItem[] = [
 ];
 
 export const FACE_ENHANCEMENT_OPTIONS: OptionItem[] = [
-  { id: 'lock_face', label: '🔒 Khoá khuôn mặt', value: 'Preserve and exactly match ALL facial features from the reference photo — same face shape, bone structure, skin tone, and complete identity. Do not alter face.' },
-  { id: 'smooth_skin', label: '✨ Làm mịn da', value: 'Smooth natural skin texture, even skin tone, professional beauty retouching without plastic look' },
-  { id: 'bright_skin', label: '☀️ Da sáng tự nhiên', value: 'Naturally brightened and luminous skin tone, healthy inner glow, radiant complexion' },
-  { id: 'younger', label: '⏪ Trẻ hóa (5-10 tuổi)', value: 'Subtle natural de-aging effect, 5-10 years younger appearance, realistic and convincing result' },
-  { id: 'remove_wrinkles', label: '🌸 Xóa nếp nhăn', value: 'Light wrinkle and fine line smoothing, youthful and fresh skin while maintaining natural texture' },
-  { id: 'makeup', label: '💄 Trang điểm nhẹ', value: 'Light natural makeup, clean complexion, soft definition and highlights, everyday professional beauty' },
-  { id: 'bright_eyes', label: '👁 Mắt sáng nổi bật', value: 'Bright clear eyes, natural sparkle, healthy and expressive gaze, enhanced eye definition' },
-  { id: 'sharp_features', label: '💎 Nét mặt sắc sảo', value: 'Sharper and more defined facial features, refined jawline and cheekbones, polished and elegant appearance' },
+  { id: 'lock_face', label: '🔒 Khoá khuôn mặt', value: 'Preserve the complete facial topology and natural asymmetry from the reference: forehead, temples, cheekbones, jaw, chin, ears, eyes/eyelids, individual eyebrows and eyelashes, nose, lips, skin tone/microtexture, hairline and hair density. Do not beautify or alter anatomy.' },
+  { id: 'smooth_skin', label: '✨ Làm mịn da', value: 'Gently even temporary redness while retaining zone-varying pores, vellus hair, follicles, under-eye texture, age-appropriate lines and permanent marks; never poreless or plastic.' },
+  { id: 'bright_skin', label: '☀️ Da sáng tự nhiên', value: 'Slightly brighter honest exposure and healthy colour balance without whitening or changing undertone; preserve pores and natural highlight roll-off.' },
+  { id: 'younger', label: '⏪ Trẻ hóa (5-10 tuổi)', value: 'Create a subtly rested impression through flattering light only; preserve the real age bracket, facial topology, skin microtexture and age-appropriate lines.' },
+  { id: 'remove_wrinkles', label: '🌸 Xóa nếp nhăn', value: 'Soften harsh shadow contrast on fine lines while retaining age-appropriate wrinkle geometry, pores and real skin texture.' },
+  { id: 'makeup', label: '💄 Trang điểm nhẹ', value: 'Light natural makeup sitting visibly on real textured skin; keep individual brow hairs, eyelashes, lip lines and natural facial anatomy.' },
+  { id: 'bright_eyes', label: '👁 Mắt sáng nổi bật', value: 'Clear moist catchlights, detailed iris fibres, off-white sclera, tear line and anatomical eyelid folds; never glassy or glowing-white eyes.' },
+  { id: 'sharp_features', label: '💎 Nét mặt sắc sảo', value: 'Improve optical focus and directional-light definition only; preserve the original jaw, cheekbones, nose, lips and natural asymmetry without reshaping.' },
 ];
 
 export const RATIO_OPTIONS = [
@@ -540,13 +540,13 @@ export const OUTFIT_DATABASE: Record<string, CategoryItem[]> = {
 };
 
 export const QUALITY_OPTIONS: OptionItem[] = [
-  { id: 'hyperreal_8k', label: 'Siêu thực 8K (Photorealistic)', value: 'Hyper-realistic photography, 8K ultra-high resolution, raw unprocessed photo quality, extreme skin and fabric detail' },
+  { id: 'hyperreal_8k', label: 'Siêu thực 8K (Photorealistic)', value: 'Hyper-realistic camera photography, high optical resolution, honest unprocessed tonal response, physically plausible skin/hair/fabric microdetail without synthetic pore noise or crunchy oversharpening' },
   { id: 'cinematic', label: 'Điện ảnh (Cinematic)', value: 'Cinematic movie quality, professional DCI color grading, film-like atmosphere, teal and orange tone palette' },
   { id: 'high_fashion', label: 'Thời trang cao cấp (Editorial)', value: "High-fashion editorial photography, Vogue and Harper's Bazaar magazine quality, luxury aesthetic, impeccable styling" },
   { id: 'luxury_commercial', label: 'Quảng cáo thương mại (Luxury)', value: 'Luxury commercial advertising photography, premium brand campaign quality, aspirational and flawless presentation' },
   { id: '4k_studio', label: '4K Studio Professional', value: '4K professional studio photography, extreme sharpness, precise lighting control, commercial portfolio quality' },
   { id: 'vintage_film', label: 'Film Analog 35mm (Cổ điển)', value: 'Authentic 35mm analog film photography, organic grain, Kodak Portra 400 color science, timeless nostalgic quality' },
-  { id: 'natural_realistic', label: 'Đời thường tự nhiên', value: 'Natural realistic photography, unretouched authentic look, real skin texture, candid natural lighting' },
+  { id: 'natural_realistic', label: 'Đời thường tự nhiên', value: 'Natural camera photography, unretouched authentic look, zone-varying pores, vellus hair, real brows/lashes/hairline, age-appropriate texture and candid natural lighting' },
   { id: 'smartphone_candid', label: 'Điện thoại (Candid đời thật)', value: 'Smartphone photography aesthetic, candid feel, natural exposure, slight handheld realism, social media authentic style' },
 ];
 

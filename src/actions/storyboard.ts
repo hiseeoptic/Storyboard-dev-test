@@ -180,7 +180,16 @@ function buildCleanCharLine(lock?: CharacterLock): string {
   // Forensic realism locks (ported from veoflow-web): fold real skin texture,
   // eye detail and true wardrobe materials into the description so faces read
   // human (not CGI) and objects (leather, denim, metal) read real in every clip.
-  const realism = [lock.skin_texture, lock.eye_details, lock.wardrobe_materials]
+  const realism = [
+    lock.face_structure,
+    lock.skin_texture,
+    lock.eye_details,
+    lock.eyebrow_details,
+    lock.eyelash_details,
+    lock.nose_lips_details,
+    lock.hair_details,
+    lock.wardrobe_materials,
+  ]
     .map((s) => (s ?? "").trim())
     .filter(Boolean)
     .join(". ");
@@ -517,7 +526,7 @@ function enhanceInput(
       .map((n) => `"${n}": ${analysis.characterDescriptions[n]}`)
       .join(" | ");
     extra.unshift(
-      `USER MENU CAST CONTRACT — HIGHEST PRIORITY: the user defined ${charNames.length} separate named character group(s), in this exact order: ${charNames.join(", ")}. Create one character_lock per group and preserve every name-to-photo binding one-to-one. Never collapse the cast to only the first character, never merge or swap two people, and never replace an uploaded person with an invented look. Base each character_lock on the corresponding uploaded reference description: keep the same gender, age range, skin tone, hair and build. When writing motion_prompt and first_frame_prompt, use the named cast required by the scene and these visual attributes. DO NOT write deepfake-trigger phrases such as "the same real person", "keep their real face", "same identity/face", "do not change the face", or "strictly follow the reference images". Reference appearance: ${charLines}`
+      `USER MENU CAST CONTRACT — HIGHEST PRIORITY: the user defined ${charNames.length} separate named character group(s), in this exact order: ${charNames.join(", ")}. Create one character_lock per group and preserve every name-to-photo binding one-to-one. Never collapse the cast to only the first character, never merge or swap two people, and never replace an uploaded person with an invented look. Base each character_lock on the corresponding uploaded reference description: keep the same gender, age range, build, whole-face structure and natural asymmetry, skin tone and microtexture, eye/eyelid anatomy, individual eyebrow hairs, individual upper/lower eyelashes, nose/lips, hairline, density and strand texture. Do not beautify, smooth, fill brows, lengthen lashes or thicken hair beyond visible evidence. When writing motion_prompt and first_frame_prompt, use the named cast required by the scene and these visual attributes. DO NOT write deepfake-trigger phrases such as "the same real person", "keep their real face", "same identity/face", "do not change the face", or "strictly follow the reference images". Reference appearance: ${charLines}`
     );
   }
 
@@ -673,7 +682,20 @@ function enforceMenuCharacterContract(
         : "adult matching the uploaded menu reference",
       build: physicalBuild || "match the uploaded menu reference",
       skin_tone: "match the uploaded menu reference",
+      face_structure: "match the uploaded menu reference, preserving natural facial asymmetry",
+      skin_texture:
+        "living age-appropriate skin with zone-varying pores, fine vellus hair, follicles, subtle uneven tone and small natural imperfections; no beauty smoothing",
+      eye_details:
+        "match the uploaded reference: anatomical eyelids, iris fibres, moist catchlights, off-white sclera and real tear line",
+      eyebrow_details:
+        "match the uploaded reference: individual rooted brow hairs, natural growth direction, density gradient, small gaps and mild asymmetry",
+      eyelash_details:
+        "match the uploaded reference: individual upper and lower lashes with varied spacing, length, curvature and direction",
+      nose_lips_details:
+        "match the uploaded reference: stable nose/cartilage geometry, natural lip lines, edge softness and realistic hydration",
       hair: "match the uploaded menu reference",
+      hair_details:
+        "match the uploaded reference hairline, temples, parting, roots, density and strand texture, including natural baby hairs and sparse flyaways",
       eyes: "match the uploaded menu reference",
       costume: "match the visible wardrobe in the uploaded menu reference",
       signature_features:
@@ -940,16 +962,8 @@ function buildRefContext(
   })();
 
   const charDescForPosterRaw = (breakdown.character_locks ?? [])
-    .map(
-      (c) =>
-        // NOTE: skin_tone/hair/eyes values already include the noun (e.g. "warm
-        // tan skin", "dark brown eyes"), so we do NOT prefix "skin/hair/eyes"
-        // again — that produced "skin warm tan skin", "eyes dark brown eyes".
-        `${c.name}: ${[c.gender_age, c.build, c.skin_tone, c.hair, c.eyes]
-          .map((s) => (s ?? "").trim())
-          .filter(Boolean)
-          .join(", ")}, wearing ${c.costume}. ${c.signature_features}`
-    )
+    .map((c) => buildCleanCharLine(c))
+    .filter(Boolean)
     .join(". ");
   // When a real face photo governs identity, strip any LLM-invented eyewear
   // from the text so it can't contradict the photo (the model kept adding

@@ -54,7 +54,7 @@ export const DEFAULT_CONFIG: PhotoConfig = {
 
   pose: "Standing naturally, confident posture",
   photographyStyle:
-    "Front-facing studio portrait, symmetrical face, clean neutral background",
+    "Centered front-facing studio portrait, preserve natural left-right facial asymmetry, clean neutral background",
   photographyStyleCategory: "standard",
 
   lighting:
@@ -64,7 +64,7 @@ export const DEFAULT_CONFIG: PhotoConfig = {
   camera: "Shot on 85mm f/1.4 portrait lens, beautiful background blur, sharp subject",
 
   quality:
-    "Hyper-realistic photography, 8K ultra-high resolution, raw unprocessed photo quality, extreme skin and fabric detail",
+    "Hyper-realistic camera photography, high optical resolution, honest unprocessed tonal response, physically plausible skin, brow, eyelash, hair and fabric microdetail without synthetic pore noise or crunchy oversharpening",
   expression: "Friendly, slight smile, approachable, warm eyes",
   faceEnhancements: ["lock_face"],
 
