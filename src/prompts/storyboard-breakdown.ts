@@ -948,7 +948,7 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
       "beats": [
 ${beatExample}
       ],
-      "first_frame_prompt": "string — the segment's START STATE: describe the SHARED scene/setting (location, lighting, EXACT character appearance from character_locks, product if any) AND every prop the motion_prompt will use, already present — held in a named hand, worn, or placed in the scene (e.g. 'his dark grey jacket draped over his right forearm'). It is used as the scene-overview context for the shot board, so describe the environment and the character clearly; an object the motion touches but the start state omits is a bug. For a multi-zone/doorway/boundary scene, restate the SAME zone order, fixed architecture and character placements from spatial_layout — never invent a conflicting railing, wall, threshold or camera side.",
+      "first_frame_prompt": "string — the segment's START STATE: describe the SHARED scene/setting (location, lighting, EXACT character appearance from character_locks, product if any) AND every prop the motion_prompt will use, already present — held in a named hand, worn, or placed in the scene (e.g. 'his dark grey jacket draped over his right forearm'). It is used as the scene-overview context for the shot board, so describe the environment and the character clearly; an object the motion touches but the start state omits is a bug. WARDROBE RULE: whenever you mention a character's clothing, state the COMPLETE locked outfit — BOTH the top AND the bottom (and shoes if relevant) exactly as in character_locks — or mention no clothing at all. NEVER mention only the shirt/blouse and leave out the trousers/skirt: a partial outfit makes the model invent the missing half and the trousers change colour every clip. For a multi-zone/doorway/boundary scene, restate the SAME zone order, fixed architecture and character placements from spatial_layout — never invent a conflicting railing, wall, threshold or camera side.",
       "motion_prompt": "string — a focused 70-110 word image-to-video ACTION prompt for Omni Flash / Veo describing ONE continuous take. IMPORTANT: the system automatically wraps this text with the full character + product description, the style tokens (lens/light/backdrop/grade), a physics directive and a negative list — so DO NOT repeat identity attributes, style tokens, a physics clause or a negative list here; describe only what HAPPENS. Order: (1) a SHORT anchor that it is the same man and same product from the attached references, rendered as a slightly younger, more attractive version (one phrase — do NOT re-list every attribute); (2) ONE single continuous primary action across the 10s with rough timing ('0-3s ...; 3-6s ...; 6-10s ...') using slow, deliberate, specific motion verbs (body part + verb + manner) — no hard cuts, no second simultaneous action; every object interaction written as the FULL causal chain (hand reaches → fingers grip a named part → carried along one path → released), and every effect (something falls/tips/spills) PRECEDED by its visible physical cause making contact — an object never appears in a hand and nothing ever moves by itself; the whole clip stays in ONE location and obeys spatial_layout: every zone change names the real connector and follows walkable_path; (3) camera (shot size + SMOOTH minimal movement from camera_zone); (4) a brief mood/light accent only if it changes; (5) note WHEN the character speaks with natural lip movement, but DO NOT quote the spoken words (the dialogue line is appended automatically exactly once); (6) finish with the exact final state so it leads into the next segment.",
       "dialogue": "string — the FIRST turn's spoken line in ${dialogueLanguage} (short, natural). Mirror of dialogue_lines[0].text.",
       "speaker": "string — the EXACT character_locks name of the FIRST turn's speaker (mirror of dialogue_lines[0].speaker). Empty string \\"\\" if voiceover.",
@@ -2282,6 +2282,26 @@ export function buildVeoJson(
             ? "OPENING FRAME = continuity_from_previous, reproduced EXACTLY (same people, same poses, same positions, same props, same seated/standing state). If start_state conflicts with continuity_from_previous, continuity_from_previous WINS. "
             : "OPENING FRAME = start_state, reproduced exactly. ") +
           "STATE-CHANGE TIMING: every character holds their opening pose/position until the exact second in scene_action.motion that moves them. A character must NOT pre-empt a later beat and must NOT lag it — e.g. a character stays STANDING and does not sit until the motion explicitly shows them being seated, and stays SEATED until the motion explicitly shows them standing. Only the characters and props named in scene_action.motion move; everyone else is held frozen in their current state. CLOSING FRAME = end_state, reproduced exactly, so the next clip can open from it seamlessly. No off-plan people appear at the characters' own table.",
+        // DETERMINISTIC FULL-OUTFIT LOCK — the #1 wardrobe-drift fix. The
+        // start_state/motion prose often re-states only the TOP ("wearing a
+        // white blouse"), so Veo invents the bottom and the trousers change
+        // colour every clip. Restate the COMPLETE locked outfit (top AND
+        // bottom) for every visible character so Veo never has to guess the
+        // unmentioned half.
+        ...(visibleLocks.length > 0
+          ? {
+              wardrobe_lock:
+                "EXACT full outfit for the whole clip and IDENTICAL in every other clip — never change a colour or garment, never invent trousers/skirt/top not listed: " +
+                visibleLocks
+                  .map((l) => {
+                    const o = splitOutfit(l.costume);
+                    const full = [o.top, o.bottom].map((s) => scrub(s)).filter(Boolean).join(" + ");
+                    return full ? `${l.name}: ${full}` : "";
+                  })
+                  .filter(Boolean)
+                  .join("; "),
+            }
+          : {}),
         staging: spatialTopology
           ? "All blocking obeys spatial_topology exactly. Conversation partners occupy their declared zones and face each other along a physically possible eye-line. Fixed architecture never moves; openings remain unobstructed; perimeter barriers stay on the true exposed edge; any zone change visibly follows walkable_path through the declared connector. A speaker never turns their back to the person addressed unless the motion explicitly requires it."
           : "Conversation partners face EACH OTHER per the positions in background_lock.setting — a speaker never turns their back to the person addressed, and the two are never staged side-by-side facing the same direction like presenters, unless the motion explicitly stages it.",
