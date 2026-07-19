@@ -2231,6 +2231,61 @@ export function buildVeoJson(
       });
     const cameraText = beats.map((beat) => oneLine(beat.camera)).filter(Boolean).join(" -> ");
     const camera = cameraParts(cameraText);
+    // ─── PRECISE SINGLE-SHOT CAMERA for multi-speaker dialogue ──────────────
+    // The arrow-joined beat cameras ("[MEDIUM] A -> [CLOSE] B") read as CUTS,
+    // which Veo renders as morphing/teleporting, and the old focus note even
+    // let the LISTENER be the sharp subject (breaking lip-sync). When a clip
+    // has 2+ on-screen speakers with real timing, replace the camera with ONE
+    // continuous, per-second locked two-shot that keeps every face + mouth
+    // readable — the Codex-style plan that renders cleanly.
+    const fmtT = (n: number) => (Math.round(n * 10) / 10).toString();
+    const spokenWindows = dialogue
+      .filter(
+        (d) =>
+          d.speaker_id !== "VOICEOVER" &&
+          typeof d.start_sec === "number" &&
+          typeof d.end_sec === "number"
+      )
+      .slice()
+      .sort((a, b) => (a.start_sec as number) - (b.start_sec as number));
+    const onScreenSpeakerNames = Array.from(
+      new Set(spokenWindows.map((d) => d.speaker_name))
+    );
+    const pronounFor = (name: string) => {
+      const lk = locks.find((l) => l.name.trim().toLowerCase() === name.toLowerCase());
+      return lk?.gender === "male" ? "his" : lk?.gender === "female" ? "her" : "their";
+    };
+    let cameraFraming = camera.framing;
+    let cameraMovement = camera.movement;
+    let cameraFocus =
+      "cinematic natural depth of field; focus follows the explicitly assigned camera subject in the movement plan, NOT the active speaker — a speaker may be off-camera or softly out of focus while the listener's reaction is the sharp focal subject; interacted props stay readable";
+    if (onScreenSpeakerNames.length >= 2 && spokenWindows.length >= 2) {
+      const steps: string[] = [];
+      let cursor = 0;
+      for (const w of spokenWindows) {
+        const s = w.start_sec as number;
+        const e = w.end_sec as number;
+        if (s - cursor > 0.15) {
+          steps.push(`${fmtT(cursor)}-${fmtT(s)}s hold steady, both mouths closed`);
+        }
+        steps.push(
+          `${fmtT(s)}-${fmtT(e)}s very slow continuous push-in, keep ${w.speaker_name}'s face and mouth clearly readable while ${pronounFor(w.speaker_name)} line is spoken; the other person stays visible and silent with lips closed`
+        );
+        cursor = Math.max(cursor, e);
+      }
+      if (clipSeconds - cursor > 0.15) {
+        steps.push(`${fmtT(cursor)}-${fmtT(clipSeconds)}s hold on both reactions, both mouths closed`);
+      }
+      cameraFraming = "stable medium two-shot";
+      cameraMovement =
+        `ONE CONTINUOUS SHOT, NO CUTS. Lock the camera at eye level in a medium two-shot from a slight three-quarter angle so ${onScreenSpeakerNames.join(
+          " and "
+        )}'s faces and mouths stay visible at the same time for the whole clip. ` +
+        steps.join(". ") +
+        ". Never pan away, orbit, cut, use OTS or a reverse angle, cross the 180-degree axis, rack focus to the listener, or place either speaker off-screen.";
+      cameraFocus =
+        "moderately deep cinematic focus keeps both faces and both mouths readable throughout; during each line give ONLY the active speaker a slight focus priority without blurring the listener; focus must never imply that the listener is speaking; keep any paper surface unreadable and any phone screen dark.";
+    }
     const ambience = [env?.sound_bed, opts.ambientAudio].filter(
       (value): value is string => !!value
     );
@@ -2262,10 +2317,10 @@ export function buildVeoJson(
       },
       ...(spatialTopology ? { spatial_topology: spatialTopology } : {}),
       camera: {
-        framing: camera.framing,
+        framing: cameraFraming,
         angle: camera.angle,
-        movement: scrub(camera.movement),
-        focus: "cinematic natural depth of field; focus follows the explicitly assigned camera subject in the movement plan, NOT the active speaker — a speaker may be off-camera or softly out of focus while the listener's reaction is the sharp focal subject; interacted props stay readable",
+        movement: scrub(cameraMovement),
+        focus: cameraFocus,
       },
       scene_action: {
         start_state: entryState,
