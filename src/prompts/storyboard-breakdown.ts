@@ -2231,13 +2231,14 @@ export function buildVeoJson(
       });
     const cameraText = beats.map((beat) => oneLine(beat.camera)).filter(Boolean).join(" -> ");
     const camera = cameraParts(cameraText);
-    // ─── PRECISE SINGLE-SHOT CAMERA for multi-speaker dialogue ──────────────
-    // The arrow-joined beat cameras ("[MEDIUM] A -> [CLOSE] B") read as CUTS,
-    // which Veo renders as morphing/teleporting, and the old focus note even
-    // let the LISTENER be the sharp subject (breaking lip-sync). When a clip
-    // has 2+ on-screen speakers with real timing, replace the camera with ONE
-    // continuous, per-second locked two-shot that keeps every face + mouth
-    // readable — the Codex-style plan that renders cleanly.
+    // ─── NATURALLY-PACED, PER-SECOND CAMERA for dialogue clips ──────────────
+    // The arrow-joined beat cameras ("[MEDIUM] A -> [CLOSE] B") read as hard
+    // CUTS (Veo morphs/teleports) and can be rushed. This does NOT force a
+    // fixed framing — coverage stays flexible (one continuous take may hold OR
+    // smoothly reframe). It only guarantees: no hard cuts, the move is TIMED to
+    // the real dialogue windows, and it is paced calmly across the whole clip
+    // so it never rushes/whips to "burn" mis-allocated time. The model's own
+    // intended coverage is kept as a hint.
     const fmtT = (n: number) => (Math.round(n * 10) / 10).toString();
     const spokenWindows = dialogue
       .filter(
@@ -2248,43 +2249,37 @@ export function buildVeoJson(
       )
       .slice()
       .sort((a, b) => (a.start_sec as number) - (b.start_sec as number));
-    const onScreenSpeakerNames = Array.from(
-      new Set(spokenWindows.map((d) => d.speaker_name))
-    );
-    const pronounFor = (name: string) => {
-      const lk = locks.find((l) => l.name.trim().toLowerCase() === name.toLowerCase());
-      return lk?.gender === "male" ? "his" : lk?.gender === "female" ? "her" : "their";
-    };
     let cameraFraming = camera.framing;
     let cameraMovement = camera.movement;
     let cameraFocus =
       "cinematic natural depth of field; focus follows the explicitly assigned camera subject in the movement plan, NOT the active speaker — a speaker may be off-camera or softly out of focus while the listener's reaction is the sharp focal subject; interacted props stay readable";
-    if (onScreenSpeakerNames.length >= 2 && spokenWindows.length >= 2) {
+    if (spokenWindows.length >= 1) {
       const steps: string[] = [];
       let cursor = 0;
       for (const w of spokenWindows) {
         const s = w.start_sec as number;
         const e = w.end_sec as number;
-        if (s - cursor > 0.15) {
-          steps.push(`${fmtT(cursor)}-${fmtT(s)}s hold steady, both mouths closed`);
+        if (s - cursor > 0.2) {
+          steps.push(
+            `${fmtT(cursor)}-${fmtT(s)}s: gently ease any reframe and settle — no line yet, mouths closed`
+          );
         }
         steps.push(
-          `${fmtT(s)}-${fmtT(e)}s very slow continuous push-in, keep ${w.speaker_name}'s face and mouth clearly readable while ${pronounFor(w.speaker_name)} line is spoken; the other person stays visible and silent with lips closed`
+          `${fmtT(s)}-${fmtT(e)}s: hold the framing settled so ${w.speaker_name}'s face and mouth read clearly while their line is spoken; the other person stays visible and silent`
         );
         cursor = Math.max(cursor, e);
       }
-      if (clipSeconds - cursor > 0.15) {
-        steps.push(`${fmtT(cursor)}-${fmtT(clipSeconds)}s hold on both reactions, both mouths closed`);
+      if (clipSeconds - cursor > 0.2) {
+        steps.push(`${fmtT(cursor)}-${fmtT(clipSeconds)}s: hold calmly on the reaction, mouths closed`);
       }
-      cameraFraming = "stable medium two-shot";
+      const coverageHint = cameraText
+        ? ` Intended coverage (treat every "->" as a SMOOTH continuous reframe of the SAME take, never a cut): ${cameraText}.`
+        : "";
       cameraMovement =
-        `ONE CONTINUOUS SHOT, NO CUTS. Lock the camera at eye level in a medium two-shot from a slight three-quarter angle so ${onScreenSpeakerNames.join(
-          " and "
-        )}'s faces and mouths stay visible at the same time for the whole clip. ` +
-        steps.join(". ") +
-        ". Never pan away, orbit, cut, use OTS or a reverse angle, cross the 180-degree axis, rack focus to the listener, or place either speaker off-screen.";
+        `ONE CONTINUOUS TAKE, NO HARD CUTS — any framing change is a smooth reframing of one shot.${coverageHint} ` +
+        `Pace the move calmly across the FULL ${clipSeconds}s at real human-operator speed: the camera SETTLES and holds on whoever is speaking, and only drifts or reframes during the silent gaps BETWEEN lines. Ease in, ease out; start settled and end settled so it chains into the next clip. NEVER rush, whip, jerk or speed up to catch up — if a move cannot happen calmly within its window, make it smaller or simply hold (a still, well-composed frame beats a hurried one). Timed plan: ${steps.join("; ")}.` ;
       cameraFocus =
-        "moderately deep cinematic focus keeps both faces and both mouths readable throughout; during each line give ONLY the active speaker a slight focus priority without blurring the listener; focus must never imply that the listener is speaking; keep any paper surface unreadable and any phone screen dark.";
+        "keep whoever is speaking in clear focus with their face and mouth readable; the listener stays visible and never becomes the sharp subject or appears to speak; interacted props stay readable; no rack-focus onto the listener during a line.";
     }
     const ambience = [env?.sound_bed, opts.ambientAudio].filter(
       (value): value is string => !!value
