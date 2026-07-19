@@ -71,7 +71,11 @@ export interface StoryboardPlan {
 
 // Vercel stops this Server Action at 300s. Keep a safety margin for local JSON
 // validation, prompt assembly and returning the result to the browser.
-const PLAN_GENERATION_BUDGET_MS = 230_000;
+// Vercel hard-stops the Server Action at 300s (maxDuration). Keep ~30s margin
+// for local JSON validation, prompt assembly and returning the result. Raised
+// from 230s so richer storyboards (3-5 characters → much larger character_locks
+// + spatial_layout) have room to finish before the safety cut-off.
+const PLAN_GENERATION_BUDGET_MS = 270_000;
 const MIN_PROVIDER_FALLBACK_BUDGET_MS = 20_000;
 
 /** Remove eyewear mentions from a description (used when a real face photo

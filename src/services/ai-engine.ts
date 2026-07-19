@@ -728,9 +728,23 @@ export async function generateStoryboardBreakdown(
           // wardrobe_state, four-element dialogue timing) — the old 12k floor
           // started truncating tails into stub scenes for EVERY genre. Budget
           // ~3200/segment with a 16k floor; Gemini 2.5 Flash handles it fine.
+          // Scale the output budget by BOTH segment count AND character count:
+          // every extra character adds a full character_locks entry (~15 fields)
+          // + bigger spatial_layout.character_placement, so 3-5 characters is
+          // what pushes the JSON tail past the old cap into a 1-scene stub.
+          // Cap 49152 stays under gemini-2.5-flash's 65536 output ceiling while
+          // leaving headroom before the generation time gets too long.
           maxOutputTokens: Math.min(
-            40960,
-            Math.max(20480, (input.segment_count ?? input.scene_count ?? 5) * 4000)
+            49152,
+            Math.max(
+              28672,
+              (input.segment_count ?? input.scene_count ?? 5) * 4200 +
+                Math.max(
+                  input.character_descriptions?.length ?? 0,
+                  input.character_images?.length ?? 0,
+                  1
+                ) * 2500
+            )
           ),
           // Storyboard model (gemini-2.5-flash by default; Gemini 3 via env).
           model: STORYBOARD_TEXT_MODEL,
@@ -743,7 +757,10 @@ export async function generateStoryboardBreakdown(
           // guides the structure, so deep thinking isn't needed here.
           thinkingBudget: 0,
           thinkingLevel: "low",
-          timeoutMs: boundedTimeoutMs(timing, 90_000, "Gemini storyboard generation"),
+          // A larger JSON (more characters/segments) takes longer to stream;
+          // give it more wall-clock, clamped to whatever the shared deadline
+          // leaves so it still stops safely before Vercel's 300s cut-off.
+          timeoutMs: boundedTimeoutMs(timing, 150_000, "Gemini storyboard generation"),
         });
       } else {
         const openai = getOpenAIClient();
