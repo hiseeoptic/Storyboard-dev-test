@@ -3,8 +3,8 @@
 import { geminiGenerateImage } from "@/lib/gemini/client";
 import type { AspectRatio, ImageQuality } from "@/types";
 import {
-  HUMAN_FACE_REALISM_LOCK,
-  HUMAN_FACE_REALISM_NEGATIVE,
+  REFERENCE_CHARACTER_ANTI_PLASTIC,
+  REFERENCE_CHARACTER_APPEARANCE_LOCK,
 } from "@/lib/character-realism";
 
 export interface KeyframeResult {
@@ -51,15 +51,14 @@ export async function generateSceneKeyframe(input: {
       // the product, and place them in the analyzed scene — instead of
       // generating a brand-new generic person from the text.
       finalPrompt =
-        `EDIT THIS PHOTO. The FIRST attached image is the authoritative appearance reference for the subject. ` +
-        `Keep the character visually consistent with its whole-face topology and natural asymmetry, age evidence, skin tone and microtexture, eyes/eyelids, individual eyebrows and upper/lower eyelashes, nose, lips, hairline, density and strand texture. ` +
-        `Do NOT beautify, slim, de-age, stylise, fill brows, lengthen lashes, thicken hair or replace visible anatomy; keep the face fully visible ` +
-        `and optically sharp (do not add sunglasses, masks or anything covering the face). ${HUMAN_FACE_REALISM_LOCK} ` +
+        `EDIT THIS PHOTO. ${REFERENCE_CHARACTER_APPEARANCE_LOCK} ` +
+        `Keep the attached appearance unchanged; do not add, infer or restate facial, skin, hair, eyebrow, eyelash, body, age or wardrobe details from the scene text. ` +
+        `Keep the face visible and optically sharp (do not add sunglasses, masks or anything covering the face). ` +
         `Re-dress this character in the product shown in the product reference image(s)` +
         (input.productName?.trim() ? ` ("${input.productName.trim()}")` : "") +
         `, keeping the product accurate. Then place this person into the following scene/action: ${input.prompt}${productLine} ` +
-        `IMPORTANT: the subject appearance is ALWAYS governed by the first photo — ignore any other or generic appearance described in the scene text. ` +
-        `Avoid: ${HUMAN_FACE_REALISM_NEGATIVE}.`;
+        `IMPORTANT: the first attached image governs the subject appearance; ignore any generic appearance text in the scene. ` +
+        `Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
     } else {
       finalPrompt = input.prompt + productLine;
     }

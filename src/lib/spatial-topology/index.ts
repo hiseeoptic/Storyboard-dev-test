@@ -135,9 +135,15 @@ export function resolveSpatialLayout(params: {
   return {
     zone_order: fallback.zone_order,
     fixed_architecture: fallback.fixed_architecture,
-    character_placement: supplied.character_placement
-      ? `${supplied.character_placement} ${fallback.character_placement}`
-      : fallback.character_placement,
+    // Never concatenate model prose with the generic fallback. That produced
+    // duplicated/stale names from an older cast, which makes Veo invent extra
+    // people or place them in both zones.
+    // For an explicit cast, bind only the current names and let the segment's
+    // start_state carry the detailed position/facing prose.
+    character_placement:
+      params.characterNames && params.characterNames.length > 0
+        ? namesLine(params.characterNames)
+        : supplied.character_placement || fallback.character_placement,
     walkable_path: fallback.walkable_path,
     camera_zone: supplied.camera_zone
       ? `${supplied.camera_zone} This position is valid only on a real supported walkable surface, on the safe side of every boundary, with no solid architecture blocking the sightline.`

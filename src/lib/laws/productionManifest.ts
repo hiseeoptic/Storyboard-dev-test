@@ -64,13 +64,25 @@ export const PRODUCTION_LAWS = compileProductionManifest();
 
 /** Compact digest injected into the storyboard SYSTEM prompt — the 9-layer
  * constitution the script/storyboard model must obey when writing every field. */
-export function lawsSystemDigest(): string {
+export function lawsSystemDigest(options?: { uploadedCharacterReferences?: boolean }): string {
   const block = (title: string, b: LawBlock) =>
     `▸ ${title} [${b.id}]:\n${b.laws.map((l) => `  · ${l}`).join("\n")}`;
+  const entity = options?.uploadedCharacterReferences
+    ? {
+        ...PRODUCTION_LAWS.entity_laws,
+        id: "entity_dna_uploaded_reference_lock",
+        laws: [
+          ...PRODUCTION_LAWS.entity_laws.laws.slice(0, 3),
+          "Uploaded character reference pixels govern face, skin, hair, eyebrows, eyelashes, body and wardrobe; do not serialize or paraphrase those appearance attributes.",
+          PRODUCTION_LAWS.entity_laws.laws[10]!,
+          PRODUCTION_LAWS.entity_laws.laws[11]!,
+        ],
+      }
+    : PRODUCTION_LAWS.entity_laws;
   return `PRODUCTION LAWS (9-layer constitution v${PRODUCTION_LAWS.manifest_meta.version} — IMMUTABLE. Every segment, beat, first_frame_prompt, motion_prompt, dialogue and camera note MUST obey ALL of these; they outrank style preferences):
 ${block("TẦNG 1 · WORLD", PRODUCTION_LAWS.world_laws)}
 ▸ TẦNG 2 · ENVIRONMENT: governed by the ENVIRONMENT ENGINE archetypes (materials with real physics, Kelvin+Lux light, locked geometry — see that section).
-${block("TẦNG 3 · ENTITY", PRODUCTION_LAWS.entity_laws)}
+${block("TẦNG 3 · ENTITY", entity)}
 ${block("TẦNG 4 · OBJECT", PRODUCTION_LAWS.object_laws)}
 ${block("TẦNG 5 · ACTION CONTINUITY", PRODUCTION_LAWS.action_continuity_laws)}
 ${block("TẦNG 6 · SCENE INTENT", PRODUCTION_LAWS.scene_intent_laws)}

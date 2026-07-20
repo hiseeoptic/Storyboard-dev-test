@@ -650,11 +650,10 @@ const VIDEO_GOAL_OPTIONS: Record<Lang, { value: VideoGoal; label: string }[]> = 
 // inventing from text.
 const FORCE_REF = "__force_ref__";
 
-// English instruction injected when FORCE_REF is chosen (it flows into the
-// image prompt as the subject's description).
+// Character references stay image-only. The uploaded pixels already define
+// the person, so FORCE_REF must not inject a second prose description.
 const FORCE_TEXT = {
-  character:
-    "Use the uploaded reference photo as the ABSOLUTE source of truth — reproduce this exact same person identically in every shot (same face, hairstyle, build); do not restyle or invent a different look.",
+  character: "",
   product:
     "Use the uploaded product photo as the ABSOLUTE source of truth — reproduce the exact same product identically (same shape, colour, material, branding); do not redesign or swap it.",
   background:
@@ -1529,6 +1528,7 @@ export function GenerateClient() {
       cooking_style: genre === "cooking" ? cookingStyle : undefined,
       character_descriptions: effectiveCharacters.length > 0
         ? effectiveCharacters.map((c) => {
+            const hasCharacterReference = (c.images?.length ?? 0) > 0;
             const parsedHeight = Number.parseInt(c.heightCm ?? "", 10);
             const physicalLock = [
               Number.isFinite(parsedHeight) ? `height approximately ${parsedHeight} cm` : "",
@@ -1536,12 +1536,19 @@ export function GenerateClient() {
             ].filter(Boolean).join(", ");
             return {
               name: c.name,
-              appearance: [c.appearance, physicalLock].filter(Boolean).join(". "),
+              // A reference photo is the entire appearance contract. Do not
+              // pass appearance/height/body prose that can fight the pixels.
+              appearance: hasCharacterReference
+                ? ""
+                : [c.appearance, physicalLock].filter(Boolean).join(". "),
               personality: "",
               role: c.role,
               is_child: c.isChild,
-              height_cm: Number.isFinite(parsedHeight) ? parsedHeight : undefined,
-              body_type: c.bodyType,
+              height_cm:
+                !hasCharacterReference && Number.isFinite(parsedHeight)
+                  ? parsedHeight
+                  : undefined,
+              body_type: hasCharacterReference ? undefined : c.bodyType,
             };
           })
         : undefined,
@@ -1987,6 +1994,9 @@ export function GenerateClient() {
         dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
         ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
         hasLocationRef: (genInput?.background_images?.length ?? 0) > 0,
+        characterReferenceNames: (genInput?.character_images ?? [])
+          .filter((c) => (c.images?.length ?? 0) > 0)
+          .map((c) => c.name),
       });
       zip.file(`veo_prompts.json`, JSON.stringify(veoJson, null, 2));
       const clipArr = Array.isArray((veoJson as { clips?: unknown[] }).clips)
@@ -2292,8 +2302,28 @@ export function GenerateClient() {
                   // Multi-character → TURN-TAKING editor (up to 3 lines in one 10s clip).
                   (() => {
                     const turns = segTurns(s);
+                    const configuredNames = new Set(
+                      draft.character_locks.map((character) => character.name.trim()).filter(Boolean)
+                    );
+                    const sceneSpeakerNames = (s.characters_in_scene ?? []).filter((name) =>
+                      configuredNames.has(name)
+                    );
+                    const invalidSpeakerNames = [
+                      ...new Set(
+                        turns
+                          .map((turn) => turn.speaker.trim())
+                          .filter((name) => name && !configuredNames.has(name))
+                      ),
+                    ];
                     const speakerOpts = [
                       { value: "", label: lang === "vi" ? "— Lồng tiếng —" : "— Voiceover —" },
+                      ...invalidSpeakerNames.map((name) => ({
+                        value: name,
+                        label:
+                          lang === "vi"
+                            ? `⚠ ${name} — không có trong cài đặt`
+                            : `⚠ ${name} — not in settings`,
+                      })),
                       ...draft.character_locks.filter((c) => c.name).map((c) => ({ value: c.name, label: c.name })),
                     ];
                     return (
@@ -2309,7 +2339,13 @@ export function GenerateClient() {
                               onClick={() =>
                                 setSegTurns(i, [
                                   ...turns,
-                                  { speaker: draft.character_locks[turns.length % draft.character_locks.length]?.name ?? "", text: "" },
+                                  {
+                                    speaker:
+                                      sceneSpeakerNames[
+                                        turns.length % Math.max(sceneSpeakerNames.length, 1)
+                                      ] ?? "",
+                                    text: "",
+                                  },
                                 ])
                               }
                             >
@@ -2321,7 +2357,9 @@ export function GenerateClient() {
                           <button
                             type="button"
                             className="w-full rounded border border-dashed border-input py-1.5 text-[11px] text-muted-foreground hover:border-primary/50"
-                            onClick={() => setSegTurns(i, [{ speaker: draft.character_locks[0]?.name ?? "", text: "" }])}
+                            onClick={() =>
+                              setSegTurns(i, [{ speaker: sceneSpeakerNames[0] ?? "", text: "" }])
+                            }
                           >
                             {lang === "vi" ? "➕ Thêm lời thoại cho cảnh này" : "➕ Add dialogue to this scene"}
                           </button>
@@ -2391,6 +2429,9 @@ export function GenerateClient() {
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
       ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
       hasLocationRef: (genInput?.background_images?.length ?? 0) > 0,
+      characterReferenceNames: (genInput?.character_images ?? [])
+        .filter((c) => (c.images?.length ?? 0) > 0)
+        .map((c) => c.name),
     });
     const resultJsonClips = Array.isArray((resultVeoJson as { clips?: unknown[] }).clips)
       ? ((resultVeoJson as { clips: unknown[] }).clips as unknown[])

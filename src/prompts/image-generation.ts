@@ -2,6 +2,8 @@ import type { StoryboardStyle, CameraAngle, ShotType } from "@/types";
 import {
   HUMAN_FACE_REALISM_LOCK,
   HUMAN_FACE_REALISM_NEGATIVE,
+  REFERENCE_CHARACTER_ANTI_PLASTIC,
+  REFERENCE_CHARACTER_APPEARANCE_LOCK,
 } from "@/lib/character-realism";
 
 const STYLE_MODIFIERS: Record<StoryboardStyle, string> = {
@@ -72,6 +74,8 @@ export function buildImagePrompt(params: {
   mood?: string | null;
   lighting?: string | null;
   custom_style_prompt?: string;
+  /** When true, attached character pixels are the only appearance source. */
+  hasCharacterReference?: boolean;
 }): string {
   const style =
     params.style === "custom" && params.custom_style_prompt
@@ -100,8 +104,16 @@ export function buildImagePrompt(params: {
     SHOT_MODIFIERS[params.shot_type],
     params.mood ? `Mood: ${params.mood}` : null,
     params.lighting ? `Lighting: ${params.lighting}` : null,
-    usesPhotographicHumans ? HUMAN_FACE_REALISM_LOCK : null,
-    usesPhotographicHumans ? `Avoid: ${HUMAN_FACE_REALISM_NEGATIVE}` : null,
+    usesPhotographicHumans && params.hasCharacterReference
+      ? REFERENCE_CHARACTER_APPEARANCE_LOCK
+      : usesPhotographicHumans
+        ? HUMAN_FACE_REALISM_LOCK
+        : null,
+    usesPhotographicHumans && params.hasCharacterReference
+      ? `Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}`
+      : usesPhotographicHumans
+        ? `Avoid: ${HUMAN_FACE_REALISM_NEGATIVE}`
+        : null,
     "No text, no watermarks, no UI elements, single frame composition",
   ].filter(Boolean);
 

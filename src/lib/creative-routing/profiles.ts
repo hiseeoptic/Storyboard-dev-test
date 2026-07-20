@@ -5,6 +5,10 @@ import type {
   StoryFormat,
   VisualInterpretation,
 } from "@/types";
+import {
+  REFERENCE_CHARACTER_ANTI_PLASTIC,
+  REFERENCE_CHARACTER_APPEARANCE_LOCK,
+} from "@/lib/character-realism";
 
 export interface CreativeOption<T extends string> {
   value: T;
@@ -102,7 +106,10 @@ export const INTERPRETATION_LAWS: Record<VisualInterpretation, string[]> = {
 
 export const CHARACTER_LAWS: Record<CharacterRepresentation, string[]> = {
   auto: ["Choose one character medium from the script and keep it stable; do not add a presenter or mascot without narrative need."],
-  uploaded_photoreal: ["UPLOADED CHARACTER REFERENCES ARE ABSOLUTE: preserve facial topology and natural asymmetry, age evidence, zone-varying skin microtexture, eye/eyelid anatomy, individual brow/lash pattern, nose/lips, hairline/density/strand texture and body proportions in every frame.", "Photographic live action only; never cartoonise, beauty-smooth, fill brows, lengthen lashes, thicken hair, reshape into a different face or substitute another person."],
+  uploaded_photoreal: [
+    `UPLOADED CHARACTER REFERENCE: ${REFERENCE_CHARACTER_APPEARANCE_LOCK}`,
+    `Photographic live action; the only character-surface exclusions are: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`,
+  ],
   generated_human: ["Create one stable photoreal Character DNA covering facial topology/asymmetry, age, build, living skin microtexture, eyes/eyelids, individual eyebrows and upper/lower eyelashes, nose/lips, hairline/density/strand texture, wardrobe materials and scale; reuse it exactly."],
   stick_figure: ["Use a locked minimal graphic DNA: stroke weight, head/body ratio, joint grammar, face marks, palette and background style.", "Express acting through pose, spacing and a small stable symbol vocabulary; do not drift into detailed anatomy or live action."],
   illustrated_2d: ["Lock line quality, proportions, palette, shading method and texture across every frame; no style drift between panels."],

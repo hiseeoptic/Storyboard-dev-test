@@ -2,10 +2,9 @@ import { getOpenAIClient } from "@/lib/openai/client";
 import { geminiGenerateText } from "@/lib/gemini/client";
 import type { AIProvider, ImageReference } from "@/types";
 
-/**
- * Analyzes uploaded reference images via vision model (OpenAI GPT-4o
- * or Gemini) and produces detailed text descriptions for image prompts.
- */
+/** Analyzes non-character visual references into prompt text. Character photos
+ * remain image-only authorities and are deliberately never translated back
+ * into prose. */
 async function analyzeWithVision(params: {
   provider: AIProvider;
   prompt: string;
@@ -76,41 +75,10 @@ export async function analyzeReferenceImages(params: {
   let backgroundDescription = "";
   const tasks: Promise<void>[] = [];
 
-  // Independent semantic roles run concurrently. This removes the previous
-  // Character → Product → Ingredient → Background waterfall from the critical
-  // path while preserving separate prompts and name bindings.
-  for (const character of params.characters ?? []) {
-    if (character.images.length === 0) continue;
-    tasks.push((async () => {
-      const desc = await analyzeWithVision({
-          provider,
-          images: character.images,
-          maxTokens: 750,
-          prompt: `You are a character design specialist. Analyze these reference photos of "${character.name}" and provide a DETAILED visual description for AI image generation consistency.
-
-Describe in this exact order (be extremely specific about visible colours, shapes, proportions and micro-texture; never invent a detail that the image resolution does not reveal — say "not clearly visible" instead):
-1. GENDER & AGE: exact gender and estimated age range
-2. BUILD: body type (slim/medium/athletic/stocky/heavyset), estimated height
-3. FACIAL STRUCTURE: face/skull shape, forehead, temples, cheekbones, cheeks, jaw, chin, ears and visible natural left-right asymmetry
-4. SKIN TONE: exact undertone and zone variation; do not use "porcelain" as a texture claim
-5. SKIN MICROTEXTURE: visible pore distribution, fine vellus/facial hair, follicles/stubble, freckles, capillaries, blemishes, healed marks, under-eye texture, age-appropriate fine lines, T-zone sheen versus matte zones
-6. HAIR OVERVIEW: exact colour, length, cut, curl/wave pattern and style
-7. HAIR MICRODETAIL: exact hairline and temple shape, parting, root colour, density, scalp visibility, strand thickness, baby hairs, flyaways and sheen
-8. EYES & EYELIDS: iris colour/pattern, shape, size, pupil, sclera tone, catchlights, tear line, upper/lower lid folds and under-eye contour
-9. EYEBROWS: colour, thickness, shape, start/arch/tail, individual hair direction, density gradient, gaps, grooming and asymmetry
-10. EYELASHES: upper and lower lash visibility, colour, length, spacing, curvature, direction, natural clumping or explicit mascara/false-lash treatment
-11. NOSE, LIPS & TEETH: bridge/tip/nostril geometry, philtrum, lip shape/colour/lines/hydration, and only if visible the natural shade/alignment of teeth
-12. FACIAL HAIR: clean-shaven or exact beard/moustache/stubble density, edges and growth direction
-13. COSTUME/CLOTHING: complete outfit description with colours, materials and patterns
-14. ACCESSORIES & SIGNATURE FEATURES: glasses, jewellery, hat, watch, scars, dimples, tattoos and other distinctive marks
-
-Write as a continuous paragraph, NOT bullet points. Use precise colour names. Preserve natural age and asymmetry; never beautify, smooth skin, fill brows, lengthen lashes or thicken hair beyond visible evidence. This description will be restated word-for-word in every image generation prompt to keep the face, skin, brows, lashes and hair identical across all scenes.`,
-        });
-      if (desc) {
-        characterDescriptions[character.name] = desc.trim();
-      }
-    })());
-  }
+  // CHARACTER REFERENCES: do not run vision-to-text analysis. The uploaded
+  // pixels and their menu name binding are the complete appearance contract.
+  // Turning the photo into prose caused face-shape, skin, brow, lash and hair
+  // descriptions to be repeated and sometimes to contradict the actual photo.
 
   for (const product of params.products ?? []) {
     if (product.images.length === 0) continue;

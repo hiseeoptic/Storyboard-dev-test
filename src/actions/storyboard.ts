@@ -25,6 +25,11 @@ import {
   resolveCreativeRoute,
 } from "@/lib/creative-routing";
 import {
+  REFERENCE_CHARACTER_ANTI_PLASTIC,
+  REFERENCE_CHARACTER_APPEARANCE_LOCK,
+  stripUploadedCharacterAppearance,
+} from "@/lib/character-realism";
+import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
   genreAmbientAudio,
@@ -197,6 +202,98 @@ function buildCleanCharLine(lock?: CharacterLock): string {
   return realism ? `${base}. ${realism}` : base;
 }
 
+function uploadedCharacterNameSet(input: StoryboardGenerationInput): Set<string> {
+  return new Set(
+    (input.character_images ?? [])
+      .filter((entry) => (entry.images?.length ?? 0) > 0)
+      .map((entry) => entry.name.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+/**
+ * Enforce the image-only contract after every model/editor boundary. Prompt
+ * instructions reduce drift, but old JSON and rewrite responses can still put
+ * face/skin/hair/wardrobe prose into scene fields. Those fields are consumed
+ * directly by Veo, so sanitize them before any prompt or JSON export is built.
+ */
+function sanitizeUploadedCharacterSceneText(
+  input: StoryboardGenerationInput,
+  breakdown: StoryboardGenerationOutput
+): void {
+  const referenceNames = [...uploadedCharacterNameSet(input)];
+  if (referenceNames.length === 0) return;
+
+  const clean = (value?: string | null): string | undefined =>
+    value == null ? value ?? undefined : stripUploadedCharacterAppearance(value, referenceNames);
+  const cleanContinuousTake = (value?: string | null): string | undefined => {
+    if (value == null) return value ?? undefined;
+    return stripUploadedCharacterAppearance(value, referenceNames)
+      .replace(/\b(?:then\s+)?hard\s+cuts?\s+to\b/gi, "then smoothly reframes to")
+      .replace(/\b(?:then\s+)?cuts?\s+to\b/gi, "then smoothly reframes to")
+      .replace(/\bjump\s+cuts?\b/gi, "smooth continuous reframe");
+  };
+  const cleanUnknown = (value: unknown): unknown => {
+    if (typeof value === "string") return stripUploadedCharacterAppearance(value, referenceNames);
+    if (Array.isArray(value)) return value.map(cleanUnknown);
+    if (value && typeof value === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [key, item] of Object.entries(value)) out[key] = cleanUnknown(item);
+      return out;
+    }
+    return value;
+  };
+
+  for (const segment of breakdown.segments) {
+    segment.title = clean(segment.title) ?? segment.title;
+    segment.first_frame_prompt = clean(segment.first_frame_prompt) ?? segment.first_frame_prompt;
+    segment.motion_prompt = cleanContinuousTake(segment.motion_prompt) ?? segment.motion_prompt;
+    segment.continuity_note = clean(segment.continuity_note) ?? segment.continuity_note;
+    segment.beats = (segment.beats ?? []).map((beat) => ({
+      ...beat,
+      beat: clean(beat.beat) ?? beat.beat,
+      camera: cleanContinuousTake(beat.camera) ?? beat.camera,
+    }));
+    // An uploaded reference owns wardrobe/hair. A model-generated
+    // wardrobe_state entry for that person is therefore discarded entirely.
+    segment.wardrobe_state = segment.wardrobe_state?.filter(
+      (state) => !referenceNames.some((name) => name.toLowerCase() === state.character.trim().toLowerCase())
+    );
+    if (segment.scene_intent) {
+      segment.scene_intent = cleanUnknown(segment.scene_intent) as typeof segment.scene_intent;
+    }
+  }
+}
+
+function sanitizeUploadedCharacterContext(
+  input: StoryboardGenerationInput,
+  context: NonNullable<StoryboardGenerationInput["resolved_context"]>
+): NonNullable<StoryboardGenerationInput["resolved_context"]> {
+  if (uploadedCharacterNameSet(input).size === 0) return context;
+  return {
+    ...context,
+    layers: {
+      ...context.layers,
+      character: {
+        ...context.layers.character,
+        identity_rules: [
+          "Uploaded named character images are the only appearance source; do not serialize or paraphrase face, skin, hair, eyebrows, eyelashes, body, age or wardrobe.",
+        ],
+      },
+    },
+  };
+}
+
+function characterLineForPrompt(
+  lock: CharacterLock,
+  referenceNames: Set<string>
+): string {
+  if (!referenceNames.has(lock.name.trim().toLowerCase())) {
+    return buildCleanCharLine(lock);
+  }
+  return `${lock.name}. ${REFERENCE_CHARACTER_APPEARANCE_LOCK} Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
+}
+
 import { defaultVoiceFor, findLawViolations } from "@/lib/laws";
 
 /** Subject line for cooking clips whose cast is explicitly empty (hands-only):
@@ -206,8 +303,8 @@ const COOKING_HANDS_ONLY_SUBJECT =
   "the food is the hero; show only the cook's physically necessary working hands when the recipe action requires contact, with no face or invented presenter";
 
 // CAST-SYNC: resolve a segment's characters_in_scene to their locks (in the
-// listed order). Empty/missing list or unmatched names → empty array, and the
-// callers fall back to the legacy single-main-character behaviour.
+// listed order). Empty/missing list or unmatched names always stays empty;
+// callers must never invent a main character from the project lock list.
 // MOTIVATED WARDROBE CHANGE: when the segment declares a wardrobe_state for a
 // character (shower → home clothes, etc.), return a CLONE of the lock with the
 // current outfit/hair — so every prompt, keyframe and board built for this
@@ -270,6 +367,65 @@ function sanitizeContinuityNotes(breakdown: StoryboardGenerationOutput): void {
       seg.continuity_note =
         "Carry this segment's final physical state — positions, held props, poses and emotional register — unchanged into the next segment.";
     }
+  }
+}
+
+function exactCharacterMention(text: string, name: string): boolean {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  try {
+    return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, "iu").test(text);
+  } catch {
+    return text.toLocaleLowerCase().includes(name.toLocaleLowerCase());
+  }
+}
+
+/**
+ * A missing characters_in_scene field is unsafe: downstream reference
+ * importers cannot know which uploaded portraits belong to the clip and will
+ * attach every character. Repair legacy/model output to the smallest cast
+ * explicitly named by this segment, always adding dialogue speakers.
+ */
+function enforceSceneCastContract(breakdown: StoryboardGenerationOutput): void {
+  const locks = breakdown.character_locks ?? [];
+  if (locks.length === 0) return;
+  const byLower = new Map(locks.map((lock) => [lock.name.trim().toLowerCase(), lock.name.trim()]));
+  for (const seg of breakdown.segments) {
+    // Preserve an intentional [] hands-only cast. Only repair a missing field.
+    if (Array.isArray(seg.characters_in_scene)) {
+      seg.characters_in_scene = [
+        ...new Set(
+          seg.characters_in_scene
+            .map((name) => byLower.get((name ?? "").trim().toLowerCase()))
+            .filter((name): name is string => !!name)
+        ),
+      ];
+      continue;
+    }
+
+    const corpus = [
+      seg.title,
+      seg.first_frame_prompt,
+      seg.motion_prompt,
+      seg.continuity_note,
+      seg.dialogue,
+      seg.speaker,
+      ...(seg.dialogue_lines ?? []).flatMap((turn) => [turn.speaker, turn.text]),
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const inferred = locks
+      .filter((lock) => exactCharacterMention(corpus, lock.name.trim()))
+      .map((lock) => lock.name.trim());
+    const speakerNames = [
+      seg.speaker,
+      ...(seg.dialogue_lines ?? []).map((turn) => turn.speaker),
+    ]
+      .map((name) => byLower.get((name ?? "").trim().toLowerCase()))
+      .filter((name): name is string => !!name);
+    const cast = [...new Set([...inferred, ...speakerNames])];
+    // Never invent a visible character when the segment does not name one.
+    // An empty cast is safer than silently assigning the first project lock.
+    seg.characters_in_scene = cast;
   }
 }
 
@@ -494,11 +650,12 @@ function enforceCookingContract(
 /** Cast list for the board/keyframe builders (name + locked look + child flag). */
 function presentCastFor(
   seg: { characters_in_scene?: string[] },
-  breakdown: StoryboardGenerationOutput
+  breakdown: StoryboardGenerationOutput,
+  referenceNames: Set<string> = new Set()
 ): { name: string; description: string; isChild?: boolean }[] {
   return presentLocksFor(seg, breakdown).map((l) => ({
     name: l.name,
-    description: buildCleanCharLine(l),
+    description: characterLineForPrompt(l, referenceNames),
     isChild: !!l.is_child,
   }));
 }
@@ -509,6 +666,7 @@ async function runAnalysis(
   provider: AIProvider,
   warnings: string[]
 ): Promise<StoryboardAnalysis> {
+  const referencedCharacterNames = uploadedCharacterNameSet(input);
   const analysis: StoryboardAnalysis = {
     characterDescriptions: {},
     productDescriptions: {},
@@ -545,6 +703,9 @@ async function runAnalysis(
 
   if (input.character_descriptions) {
     for (const char of input.character_descriptions) {
+      // Uploaded character photos stay image-only. Never let the menu's
+      // FORCE_REF text, height or body preset become a competing description.
+      if (referencedCharacterNames.has(char.name.trim().toLowerCase())) continue;
       const existing = analysis.characterDescriptions[char.name];
       if (existing) {
         analysis.characterDescriptions[char.name] = `${existing}. Additional: ${char.appearance}`;
@@ -577,6 +738,20 @@ function enhanceInput(
   analysis: StoryboardAnalysis
 ): StoryboardGenerationInput {
   const enhanced = { ...input };
+  const referencedCharacterNames = uploadedCharacterNameSet(input);
+
+  if (enhanced.character_descriptions) {
+    enhanced.character_descriptions = enhanced.character_descriptions.map((character) =>
+      referencedCharacterNames.has(character.name.trim().toLowerCase())
+        ? {
+            ...character,
+            appearance: "",
+            height_cm: undefined,
+            body_type: undefined,
+          }
+        : character
+    );
+  }
 
   if (analysis.backgroundDescription) {
     enhanced.setting = enhanced.setting
@@ -594,17 +769,28 @@ function enhanceInput(
     );
   }
 
-  // CRITICAL: feed the uploaded character's REAL identity into script
-  // generation so the character_lock matches the photo. Without this the LLM
-  // invents a character from the story idea and can pick the WRONG GENDER
-  // (e.g. a man's photo → a "Young Woman" character_lock).
-  const charNames = Object.keys(analysis.characterDescriptions);
+  // Keep the menu name-to-photo binding, but never convert the uploaded pixels
+  // into a prose identity. Referenced characters get name/role/action only;
+  // all appearance fields defer to the attached image.
+  const refNames = (input.character_images ?? [])
+    .filter((entry) => (entry.images?.length ?? 0) > 0)
+    .map((entry) => entry.name.trim())
+    .filter(Boolean);
+  if (refNames.length > 0 && enhanced.main_character) {
+    // Keep the story role/name, but remove a free-text appearance brief that
+    // would otherwise compete with the attached pixels in the writer stage.
+    enhanced.main_character = refNames.join(", ");
+  }
+  const textOnlyNames = Object.keys(analysis.characterDescriptions).filter(
+    (name) => !referencedCharacterNames.has(name.trim().toLowerCase())
+  );
+  const charNames = [...new Set([...refNames, ...textOnlyNames])];
   if (charNames.length > 0) {
-    const charLines = charNames
-      .map((n) => `"${n}": ${analysis.characterDescriptions[n]}`)
+    const textOnlyLines = textOnlyNames
+      .map((name) => `"${name}": ${analysis.characterDescriptions[name]}`)
       .join(" | ");
     extra.unshift(
-      `USER MENU CAST CONTRACT — HIGHEST PRIORITY: the user defined ${charNames.length} separate named character group(s), in this exact order: ${charNames.join(", ")}. Create one character_lock per group and preserve every name-to-photo binding one-to-one. Never collapse the cast to only the first character, never merge or swap two people, and never replace an uploaded person with an invented look. Base each character_lock on the corresponding uploaded reference description: keep the same gender, age range, build, whole-face structure and natural asymmetry, skin tone and microtexture, eye/eyelid anatomy, individual eyebrow hairs, individual upper/lower eyelashes, nose/lips, hairline, density and strand texture. Do not beautify, smooth, fill brows, lengthen lashes or thicken hair beyond visible evidence. When writing motion_prompt and first_frame_prompt, use the named cast required by the scene and these visual attributes. DO NOT write deepfake-trigger phrases such as "the same real person", "keep their real face", "same identity/face", "do not change the face", or "strictly follow the reference images". Reference appearance: ${charLines}`
+      `USER MENU CAST CONTRACT — HIGHEST PRIORITY: the user defined ${charNames.length} separate named character group(s), in this exact order: ${charNames.join(", ")}. Create one character_lock per group and preserve every name-to-photo binding one-to-one. Never collapse, merge, swap, omit or rename these people. For these uploaded-reference characters (${refNames.join(", ") || "none"}), the attached named image is the ONLY appearance authority: do not analyze, infer, list or restate face, face shape, skin, hair, eyebrows, eyelashes, eyes, body, age, height or wardrobe in character_lock, first_frame_prompt, motion_prompt, beats or camera text. Mention only the exact character name, role, position, action, expression and dialogue. Use a neutral reference sentinel in required appearance fields instead of a description. The only rendering exclusions allowed for a referenced character are: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.${textOnlyLines ? ` Text-only character descriptions: ${textOnlyLines}` : ""}`
     );
   }
 
@@ -647,6 +833,7 @@ function enforceMenuCharacterContract(
   breakdown: StoryboardGenerationOutput,
   analysis: StoryboardAnalysis
 ): void {
+  const referencedCharacterNames = uploadedCharacterNameSet(input);
   // The user's menu is the single source of truth for character names: use
   // each name VERBATIM as typed (never "correct", re-case or normalise it).
   // Consistency is enforced the other way around — all generated text is
@@ -655,17 +842,23 @@ function enforceMenuCharacterContract(
     input.character_descriptions && input.character_descriptions.length > 0
       ? input.character_descriptions.map((c) => ({
           name: c.name.trim(),
-          appearance: c.appearance,
+          role: c.role.trim(),
+          appearance: referencedCharacterNames.has(c.name.trim().toLowerCase())
+            ? ""
+            : c.appearance,
           isChild: !!c.is_child,
           heightCm: c.height_cm,
           bodyType: c.body_type,
+          hasReference: referencedCharacterNames.has(c.name.trim().toLowerCase()),
         }))
       : (input.character_images ?? []).map((c) => ({
           name: c.name.trim(),
-          appearance: analysis.characterDescriptions[c.name] ?? "",
+          role: "",
+          appearance: "",
           isChild: false,
           heightCm: undefined,
           bodyType: undefined,
+          hasReference: (c.images?.length ?? 0) > 0,
         }));
   const menu = menuCharacters.filter((c) => c.name);
   if (menu.length === 0) return;
@@ -676,12 +869,10 @@ function enforceMenuCharacterContract(
   const used = new Set<CharacterLock>();
   const renamed = new Map<string, string>();
 
-  // GENDER-AWARE PAIRING (the "Minh became female" catastrophe): when the
-  // model invents its own cast names ("Linh", "Nam"), blind POSITIONAL
-  // matching can staple the menu's male name onto the model's female body and
-  // vice versa — crossed voices, crossed wardrobe, chaos. Infer each side's
-  // gender (vision analysis text is authoritative for menu entries) and NEVER
-  // merge a menu entry with a model lock of the opposite gender.
+  // GENDER-AWARE PAIRING: reserve every exact menu-name match BEFORE pairing
+  // any invented model locks. Without that reservation, an earlier menu entry
+  // can steal a later entry's exact lock by position, reversing identities,
+  // voices and wardrobe.
   const genderFromText = (t?: string | null): "male" | "female" | undefined =>
     /\bfemale\b|phụ nữ|cô gái|\bnữ\b|\bwoman\b|\bshe\b|\bher\b/i.test(t ?? "")
       ? "female"
@@ -691,9 +882,14 @@ function enforceMenuCharacterContract(
   const modelLockGender = (l: CharacterLock): "male" | "female" | undefined =>
     l.gender ?? genderFromText(`${l.gender_age ?? ""} ${l.signature_features ?? ""}`);
 
-  const menuLocks = menu.map((entry, index): CharacterLock => {
+  const menuNameSet = new Set(menu.map((entry) => entry.name.toLowerCase()));
+  const reservedExactLocks = new Set(
+    modelLocks.filter((lock) => menuNameSet.has(lock.name.trim().toLowerCase()))
+  );
+
+  const menuLocks = menu.map((entry): CharacterLock => {
     const entryGender = genderFromText(
-      analysis.characterDescriptions[entry.name] || entry.appearance
+      `${entry.role} ${entry.hasReference ? "" : analysis.characterDescriptions[entry.name] || entry.appearance}`
     );
     const exact = modelLocks.find(
       (l) =>
@@ -704,17 +900,18 @@ function enforceMenuCharacterContract(
     // positional lock only when genders don't conflict. A conflicting
     // positional lock is skipped entirely (fresh menu lock is safer than a
     // cross-gender merge).
+    const availableInventedLocks = modelLocks.filter(
+      (lock) => !used.has(lock) && !reservedExactLocks.has(lock)
+    );
     const sameGender = entryGender
-      ? modelLocks.find((l) => !used.has(l) && modelLockGender(l) === entryGender)
+      ? availableInventedLocks.find((l) => modelLockGender(l) === entryGender)
       : undefined;
-    const positionalCandidate = modelLocks.find((l, i) => i === index && !used.has(l));
-    const positional =
-      positionalCandidate &&
-      (!entryGender ||
-        !modelLockGender(positionalCandidate) ||
-        modelLockGender(positionalCandidate) === entryGender)
-        ? positionalCandidate
-        : undefined;
+    const positional = availableInventedLocks.find(
+      (candidate) =>
+        !entryGender ||
+        !modelLockGender(candidate) ||
+        modelLockGender(candidate) === entryGender
+    );
     const existing = exact ?? sameGender ?? positional;
     const visualDescription =
       analysis.characterDescriptions[entry.name] || entry.appearance || "";
@@ -737,10 +934,9 @@ function enforceMenuCharacterContract(
       if (oldName && oldName.toLowerCase() !== entry.name.toLowerCase()) {
         renamed.set(oldName.toLowerCase(), entry.name);
       }
-      return {
+      const reconciled: CharacterLock = {
         ...existing,
         name: entry.name,
-        // The uploaded photo's analysed gender always wins over the model's.
         gender: entryGender ?? existing.gender,
         is_child: entry.isChild || existing.is_child,
         build: physicalBuild || existing.build,
@@ -748,6 +944,48 @@ function enforceMenuCharacterContract(
           existing.signature_features ||
           visualDescription ||
           "match the uploaded character menu reference",
+      };
+      if (!entry.hasReference) return reconciled;
+
+      // Reference-only character lock: retain story/audio state but erase all
+      // model/vision-authored appearance prose. The attached named pixels win.
+      return {
+        ...reconciled,
+        gender_age: "",
+        gender: undefined,
+        is_child: entry.isChild ? true : undefined,
+        build: "",
+        skin_tone: "",
+        face_structure: undefined,
+        skin_texture: undefined,
+        eye_details: undefined,
+        eyebrow_details: undefined,
+        eyelash_details: undefined,
+        nose_lips_details: undefined,
+        hair: "",
+        hair_details: undefined,
+        eyes: "",
+        costume: "",
+        wardrobe_materials: undefined,
+        signature_features: "",
+        dna: undefined,
+      };
+    }
+
+    if (entry.hasReference) {
+      return {
+        name: entry.name,
+        gender: entryGender,
+        is_child: entry.isChild,
+        gender_age: "",
+        build: "",
+        skin_tone: "",
+        hair: "",
+        eyes: "",
+        costume: "",
+        signature_features: "",
+        default_expression: "neutral natural expression",
+        render_style: input.style,
       };
     }
 
@@ -783,22 +1021,46 @@ function enforceMenuCharacterContract(
     };
   });
 
-  // A partial menu is common: the user may upload a real portrait for Nam but
-  // let the script define Linh. The old reconciliation replaced the entire
-  // model cast with menu entries, so Linh still appeared in panels but had no
-  // identity pair in the storyboard library. Preserve every remaining named
-  // model lock as a separate generated character after menu identities.
-  const menuNames = new Set(menuLocks.map((lock) => lock.name.toLowerCase()));
-  const remainingModelLocks = modelLocks.filter(
-    (lock) =>
-      !used.has(lock) &&
-      !!lock.name.trim() &&
-      !menuNames.has(lock.name.trim().toLowerCase())
-  );
-  const locks = [...menuLocks, ...remainingModelLocks];
+  // A populated setup menu is a CLOSED cast. Model-created locks that are not
+  // paired to a menu entry are discarded; keeping them is precisely how an
+  // invented third person leaks into scene text and speaker ownership.
+  const locks = menuLocks;
 
   breakdown.character_locks = locks;
   const canonicalByLower = new Map(locks.map((l) => [l.name.toLowerCase(), l.name]));
+
+  // A segment often gives enough information to resolve a stray alias without
+  // guessing: if all but one configured character are already named in that
+  // scene, the one unknown structured name must map to the one missing menu
+  // character. This repairs both characters_in_scene and speaker ownership.
+  for (const seg of breakdown.segments) {
+    const structuredNames = [
+      ...(seg.characters_in_scene ?? []),
+      seg.speaker ?? "",
+      ...(seg.dialogue_lines ?? []).map((turn) => turn.speaker),
+    ]
+      .map((name) => name.trim())
+      .filter(Boolean);
+    const resolvedInScene = new Set(
+      structuredNames
+        .map((name) => canonicalByLower.get(name.toLowerCase()) ?? renamed.get(name.toLowerCase()))
+        .filter((name): name is string => !!name)
+    );
+    const unknownInScene = [
+      ...new Set(
+        structuredNames.filter(
+          (name) =>
+            !canonicalByLower.has(name.toLowerCase()) && !renamed.has(name.toLowerCase())
+        )
+      ),
+    ];
+    const missingInScene = locks
+      .map((lock) => lock.name)
+      .filter((name) => !resolvedInScene.has(name));
+    if (unknownInScene.length === 1 && missingInScene.length === 1) {
+      renamed.set(unknownInScene[0]!.toLowerCase(), missingInScene[0]!);
+    }
+  }
 
   // STRAY-NAME REPAIR (MENU-DRIVEN — names themselves carry NO meaning): the
   // model sometimes uses an invented name for dialogue speakers/prose. The
@@ -808,9 +1070,9 @@ function enforceMenuCharacterContract(
   //      the stray must be that person;
   //   2. the gender the MODEL ITSELF gave the stray in its own prose
   //      ("Linh, a female ~30...") matched against each unclaimed lock's
-  //      photo-analysed gender;
+  //      user role / text-lock gender;
   //   3. order of first appearance across the remaining unclaimed locks.
-  // A name is NEVER interpreted by itself (a "Minh" can be any gender).
+  // The literal spelling of a personal name is never used to infer gender.
   const lockGender = (lock: CharacterLock): "male" | "female" | undefined =>
     lock.gender ?? genderFromText(`${lock.gender_age ?? ""} ${lock.signature_features ?? ""}`);
   const strayFirstSeen: string[] = [];
@@ -834,8 +1096,8 @@ function enforceMenuCharacterContract(
     const allProse = breakdown.segments
       .map((s) => `${s.title ?? ""}. ${s.first_frame_prompt ?? ""} ${s.motion_prompt ?? ""}`)
       .join(" ");
-    // The model's own description of its invented character ("Linh, a female
-    // ~30 with...") — read gender from the 70 chars after each occurrence.
+    // Read an explicit gender token from the nearby model prose only; never
+    // infer gender from the spelling of the name itself.
     const strayProseGender = (stray: string): "male" | "female" | undefined => {
       const re = new RegExp(
         `\\b${stray.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b([^.]{0,70})`,
@@ -871,30 +1133,73 @@ function enforceMenuCharacterContract(
   const remapName = (name?: string | null): string => {
     const raw = (name ?? "").trim();
     if (!raw) return raw;
-    return canonicalByLower.get(raw.toLowerCase()) ?? renamed.get(raw.toLowerCase()) ?? raw;
+    const resolved = canonicalByLower.get(raw.toLowerCase()) ?? renamed.get(raw.toLowerCase());
+    if (resolved) return resolved;
+    throw new Error(
+      `Tên nhân vật "${raw}" không có trong phần cài đặt. Danh sách hợp lệ: ${menu
+        .map((entry) => entry.name)
+        .join(", ")}. Kịch bản đã bị chặn để không gán nhầm thành lồng tiếng.`
+    );
   };
 
   // NAME-TOKEN NORMALISATION: the model keeps producing case/spelling variants
-  // of a locked name inside free text ("MInh" for Minh) — Veo then renders a
+  // of a locked name inside free text — Veo then renders a
   // THIRD person and mis-maps the speaker. Rewrite every case-insensitive
   // exact occurrence of each lock name back to its canonical spelling across
-  // all prose fields, AND rewrite every renamed stray/model name ("Nam" →
-  // "Minh") the same way so prose and speaker fields stay consistent.
+  // all prose fields, AND rewrite every paired stray/model name the same way
+  // so prose and speaker fields stay consistent.
   const fixNameSpelling = (text?: string | null): string | undefined => {
     if (!text) return text ?? undefined;
     let out = text;
     const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const replaceExact = (source: string, oldName: string, canonical: string): string => {
+      const pattern = new RegExp(
+        `(^|[^\\p{L}\\p{N}])(${escapeRe(oldName)})(?=$|[^\\p{L}\\p{N}])`,
+        "giu"
+      );
+      return source.replace(pattern, (whole, prefix: string, matched: string, offset: number) => {
+        const before = source.slice(0, offset + prefix.length);
+        // "Nam" can also be the country token in "Việt Nam". Never rewrite
+        // that geographical phrase while repairing a character alias.
+        if (matched.toLowerCase() === "nam" && /việt\s*$/iu.test(before)) return whole;
+        return `${prefix}${canonical}`;
+      });
+    };
     for (const [oldLower, canonical] of renamed) {
       if (oldLower === canonical.toLowerCase()) continue;
-      out = out.replace(new RegExp(`\\b${escapeRe(oldLower)}\\b`, "gi"), canonical);
+      out = replaceExact(out, oldLower, canonical);
     }
     for (const lock of locks) {
       const name = lock.name.trim();
       if (!name) continue;
-      out = out.replace(new RegExp(`\\b${escapeRe(name)}\\b`, "gi"), name);
+      out = replaceExact(out, name, name);
     }
     return out;
   };
+  const fixNestedText = (value: unknown): unknown => {
+    if (typeof value === "string") return fixNameSpelling(value) ?? value;
+    if (Array.isArray(value)) return value.map(fixNestedText);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [key, fixNestedText(item)])
+      );
+    }
+    return value;
+  };
+
+  breakdown.title = fixNameSpelling(breakdown.title) ?? breakdown.title;
+  breakdown.synopsis = fixNameSpelling(breakdown.synopsis) ?? breakdown.synopsis;
+  breakdown.thumbnail_title = fixNameSpelling(breakdown.thumbnail_title) ?? breakdown.thumbnail_title;
+  breakdown.marketing_structure = fixNestedText(
+    breakdown.marketing_structure
+  ) as typeof breakdown.marketing_structure;
+  if (breakdown.social_posts) {
+    breakdown.social_posts = fixNestedText(breakdown.social_posts) as typeof breakdown.social_posts;
+  }
+  breakdown.character_locks = breakdown.character_locks.map((lock) => ({
+    ...(fixNestedText(lock) as CharacterLock),
+    name: canonicalByLower.get(lock.name.toLowerCase()) ?? lock.name,
+  }));
   for (const seg of breakdown.segments) {
     if (Array.isArray(seg.characters_in_scene)) {
       seg.characters_in_scene = Array.from(
@@ -904,26 +1209,55 @@ function enforceMenuCharacterContract(
             .filter((name) => canonicalByLower.has(name.toLowerCase()))
         )
       );
-    } else if (locks.length === 1) {
-      seg.characters_in_scene = [locks[0]!.name];
     }
     if (seg.speaker) seg.speaker = remapName(seg.speaker);
     if (Array.isArray(seg.dialogue_lines)) {
       seg.dialogue_lines = seg.dialogue_lines.map((line) => ({
         ...line,
         speaker: remapName(line.speaker),
+        text: fixNameSpelling(line.text) ?? line.text,
       }));
     }
     seg.title = fixNameSpelling(seg.title) ?? seg.title;
     seg.first_frame_prompt = fixNameSpelling(seg.first_frame_prompt) ?? seg.first_frame_prompt;
     seg.motion_prompt = fixNameSpelling(seg.motion_prompt) ?? seg.motion_prompt;
+    if (seg.dialogue) seg.dialogue = fixNameSpelling(seg.dialogue) ?? seg.dialogue;
     seg.continuity_note = fixNameSpelling(seg.continuity_note) ?? seg.continuity_note;
+    if (seg.spatial_layout) {
+      seg.spatial_layout = fixNestedText(seg.spatial_layout) as typeof seg.spatial_layout;
+    }
+    if (seg.scene_intent) {
+      seg.scene_intent = fixNestedText(seg.scene_intent) as typeof seg.scene_intent;
+    }
+    if (Array.isArray(seg.wardrobe_state)) {
+      seg.wardrobe_state = seg.wardrobe_state
+        .map((state) => ({
+          ...state,
+          character: remapName(state.character),
+        }))
+        .filter((state) => canonicalByLower.has(state.character.toLowerCase()));
+    }
     if (Array.isArray(seg.beats)) {
       seg.beats = seg.beats.map((b) => ({
         ...b,
         beat: fixNameSpelling(b.beat) ?? b.beat,
         camera: fixNameSpelling(b.camera) ?? b.camera,
       }));
+    }
+  }
+
+  const allowedNames = new Set(menu.map((entry) => entry.name.toLowerCase()));
+  for (const seg of breakdown.segments) {
+    for (const name of seg.characters_in_scene ?? []) {
+      if (!allowedNames.has(name.toLowerCase())) {
+        throw new Error(`Cảnh ${seg.segment_number} còn chứa nhân vật ngoài phần cài đặt: ${name}.`);
+      }
+    }
+    for (const speaker of [seg.speaker, ...(seg.dialogue_lines ?? []).map((line) => line.speaker)]) {
+      const name = (speaker ?? "").trim();
+      if (name && !allowedNames.has(name.toLowerCase())) {
+        throw new Error(`Cảnh ${seg.segment_number} còn gán thoại cho nhân vật ngoài phần cài đặt: ${name}.`);
+      }
     }
   }
 }
@@ -949,7 +1283,6 @@ interface RefContext {
    * group are angles of one place, images from DIFFERENT groups are distinct
    * scenes (e.g. "Phòng khách" + "Phòng bếp"). */
   bgRefs: { img: string; name: string; angle: number; angleTotal: number }[];
-  faceDesc?: string;
   productDesc?: string;
   bgDesc?: string;
   preserveRealFace: boolean;
@@ -979,7 +1312,14 @@ function buildRefContext(
   provider: AIProvider
 ): RefContext {
   const canChain = provider === "gemini";
-  const faceImg = input.character_images?.[0]?.images?.[0];
+  const referencedCharacterNames = uploadedCharacterNameSet(input);
+  // Do not assume the first menu row is the one with a usable image. A user
+  // may leave one character row empty while attaching a reference to another;
+  // any real character image still switches the whole image-generation path
+  // to the uploaded-reference contract.
+  const faceImg = input.character_images
+    ?.find((group) => (group.images?.length ?? 0) > 0)
+    ?.images?.[0];
   const productImg = input.product_images?.[0]?.images?.[0];
   // Take up to 2 location references across ALL uploaded background groups,
   // tagged with the location name + angle index (the old code used only
@@ -1005,9 +1345,7 @@ function buildRefContext(
     }))
   );
 
-  const faceName = input.character_images?.[0]?.name;
   const productName = input.product_images?.[0]?.name;
-  const faceDesc = faceName ? analysis.characterDescriptions[faceName] : undefined;
   const productDesc = productName ? analysis.productDescriptions[productName] : undefined;
   const bgDesc = analysis.backgroundDescription || undefined;
 
@@ -1021,7 +1359,7 @@ function buildRefContext(
   const creativeRoute = resolveCreativeRoute(input);
   const representation = creativeRoute.effective_character_representation;
   const preserveRealFace =
-    canChain && !!faceImg && representation === "uploaded_photoreal";
+    !!faceImg && representation === "uploaded_photoreal";
   const boardStyle = (() => {
     if (["uploaded_photoreal", "generated_human"].includes(representation)) {
       return isPhotoStyle(input.style) ? input.style : "cinematic";
@@ -1040,7 +1378,7 @@ function buildRefContext(
   })();
 
   const charDescForPosterRaw = (breakdown.character_locks ?? [])
-    .map((c) => buildCleanCharLine(c))
+    .map((c) => characterLineForPrompt(c, referencedCharacterNames))
     .filter(Boolean)
     .join(". ");
   // When a real face photo governs identity, strip any LLM-invented eyewear
@@ -1049,14 +1387,7 @@ function buildRefContext(
   const charDescForPoster = preserveRealFace ? stripEyewear(charDescForPosterRaw) : charDescForPosterRaw;
   const fallbackSubject =
     input.genre === "cooking" ? COOKING_HANDS_ONLY_SUBJECT : "the main character";
-  const mainCostume = breakdown.character_locks[0]?.costume ?? "casual clothes";
-  // Hard gender word (veoflow-aligned) prepended so the image model never
-  // flips the subject's gender.
-  const mainGender = breakdown.character_locks[0]?.gender;
-  const genderWord = mainGender === "male" ? "man" : mainGender === "female" ? "woman" : "person";
-  const charDesc = preserveRealFace
-    ? `the exact ${genderWord} shown in the attached portrait photo (keep their real face, hair and look), wearing ${mainCostume}`
-    : charDescForPoster || fallbackSubject;
+  const charDesc = charDescForPoster || fallbackSubject;
   const mainDnaRaw = breakdown.character_locks[0]?.dna;
   const charDescForShots = preserveRealFace ? charDesc : charDescForPoster || fallbackSubject;
   // IMAGE-FIRST: when a real photo locks the face, RELY ON THE PHOTO and drop
@@ -1085,7 +1416,7 @@ function buildRefContext(
   // pasted into Veo, describe the character by NEUTRAL ATTRIBUTES instead — the
   // attached reference image still carries the likeness.
   const charDescVeo = preserveRealFace
-    ? stripHexCodes(stripEyewear(buildCleanCharLine(breakdown.character_locks[0])) || `a ${genderWord} wearing ${mainCostume}`)
+    ? charDesc
     : charDescDna;
 
   // Menu references are the source of truth. Keep the first TWO uploads for
@@ -1098,13 +1429,11 @@ function buildRefContext(
         breakdown.character_locks?.find(
           (l) => l.name.trim().toLowerCase() === grp.name.trim().toLowerCase()
         ) ?? breakdown.character_locks?.[groupIndex];
-      const desc =
-        analysis.characterDescriptions[grp.name] ??
-        (lock ? buildCleanCharLine(lock) : undefined);
       return (grp.images ?? []).slice(0, 2).map((img, imageIndex) => ({
         img,
         name: lock?.name ?? grp.name,
-        desc,
+        // Never turn an uploaded person back into a competing text identity.
+        desc: undefined,
         view: imageIndex === 0 ? "front" as const : "profile" as const,
       }));
     });
@@ -1125,7 +1454,6 @@ function buildRefContext(
     productImg,
     ingredientRefs,
     bgRefs,
-    faceDesc,
     productDesc,
     bgDesc,
     preserveRealFace,
@@ -1172,8 +1500,8 @@ function buildBoardRefs(
     Array.isArray(presentNames) &&
     presentNames.filter((n) => (n ?? "").trim()).length === 0;
   if (ctx.characterRefs.length > 0 && !castIsExplicitlyEmpty) {
-    // Bind each uploaded photo to the exact named person. When a segment has an
-    // explicit cast, attach two angles for PRESENT characters only.
+    // Bind every supplied photo to the exact named person. When a segment has
+    // an explicit cast, attach only the present characters' uploaded views.
     const wanted = (presentNames ?? [])
       .map((n) => (n ?? "").trim().toLowerCase())
       .filter(Boolean);
@@ -1181,40 +1509,50 @@ function buildBoardRefs(
       wanted.length > 0
         ? ctx.characterRefs.filter((c) => wanted.includes(c.name.trim().toLowerCase()))
         : ctx.characterRefs;
-    const pool = filtered.length > 0 ? filtered : ctx.characterRefs;
+    // An explicit scene cast is authoritative. If a name does not match, attach
+    // no character photo rather than leaking every uploaded person into Veo.
+    const pool = wanted.length > 0 ? filtered : ctx.characterRefs;
     const reserveProduct =
       !!ctx.productImg && (!ctx.isCooking || options?.includeFinishedDish !== false);
-    // ONE frontal portrait per named character (was front + profile). The user
-    // chose to drop the profile angle so the freed reference slots go to the
-    // LOCATION sheets — location consistency matters more here than a second
-    // face angle. Reserve slots for the background refs + the product.
-    const characterLimit = Math.max(
+    // Reserve the remaining slots for the location/product references, then
+    // keep both uploaded angles when the user supplied them. Never synthesize
+    // a missing profile or let a generated anchor replace a supplied photo.
+    const characterSlotLimit = Math.max(
       1,
       MAX_BOARD_REFS - ctx.bgRefs.length - Number(reserveProduct)
     );
-    // Keep the single best front-facing photo per character (fall back to
-    // whatever angle exists if no explicit front was uploaded).
-    const chosen = new Map<string, (typeof pool)[number]>();
+    const grouped = new Map<string, (typeof pool)[number][]>();
     for (const reference of pool) {
       const key = reference.name.trim().toLowerCase();
-      const current = chosen.get(key);
-      if (!current || (reference.view === "front" && current.view !== "front")) {
-        chosen.set(key, reference);
-      }
+      const group = grouped.get(key) ?? [];
+      group.push(reference);
+      grouped.set(key, group);
     }
+    const groupedRefs = [...grouped.values()];
+    // Round-robin the first/front view so every visible named character gets
+    // one identity binding before any secondary angle consumes the remaining
+    // board slots. This prevents a location/product reference from crowding
+    // the third character out of a multi-cast shot.
+    const fronts = groupedRefs
+      .map((group) => group.find((reference) => reference.view === "front"))
+      .filter((reference): reference is (typeof pool)[number] => !!reference);
+    const secondary = groupedRefs.flatMap((group) =>
+      group.filter((reference) => reference.view !== "front")
+    );
+    const orderedPool = [...fronts, ...secondary];
     let characterSlotsUsed = 0;
-    for (const c of chosen.values()) {
-      if (characterSlotsUsed + 1 > characterLimit) break;
+    for (const c of orderedPool) {
+      if (characterSlotsUsed + 1 > characterSlotLimit) break;
       images.push({
         base64: c.img,
         mimeType: "image/jpeg",
-        label: `HIGHEST-PRIORITY USER MENU REFERENCE — CHARACTER "${c.name}" — FRONT PORTRAIT. Bind this face only to ${c.name}.`,
+        label: `HIGHEST-PRIORITY USER MENU REFERENCE — CHARACTER "${c.name}". This named image is the sole appearance authority for ${c.name}.`,
       });
       descriptors.push({
         role: "character",
         name: c.name,
         description: c.desc,
-        view: "front",
+        view: c.view,
       });
       characterSlotsUsed += 1;
     }
@@ -1224,7 +1562,7 @@ function buildBoardRefs(
       mimeType: "image/jpeg",
       label: "HIGHEST-PRIORITY USER MENU REFERENCE — MAIN CHARACTER FRONT PORTRAIT.",
     });
-    descriptors.push({ role: "face", description: ctx.faceDesc ?? ctx.charDescForPoster });
+    descriptors.push({ role: "face" });
   }
   if (ctx.bgRefs.length > 0) {
     // Feed every uploaded LOCATION reference (up to 2). Two images can be two
@@ -1384,7 +1722,10 @@ export async function generateStoryboardPlan(
         deadlineMs: generationDeadlineMs,
         maxAttempts: 2,
       });
-      contextBoundInput = { ...stage2Input, resolved_context: resolvedContext };
+      contextBoundInput = {
+        ...stage2Input,
+        resolved_context: sanitizeUploadedCharacterContext(input, resolvedContext),
+      };
     } catch (e) {
       warnings.push(
         `Không khóa được Context IR 10 tầng — tạm dùng luồng cũ. (${e instanceof Error ? e.message : String(e)})`
@@ -1444,6 +1785,7 @@ export async function generateStoryboardPlan(
     // Deterministic post-model guard: menu names/photo groups win over any
     // invented, omitted or renamed cast returned by the storyboard model.
     enforceMenuCharacterContract(input, breakdown, analysis);
+    sanitizeUploadedCharacterSceneText(input, breakdown);
 
     // TẦNG 9 turn-taking normalisation + safety clamp. Reconcile the two dialogue
     // forms so downstream code (and the editor) is always consistent, and hard-
@@ -1451,11 +1793,14 @@ export async function generateStoryboardPlan(
     // Pass the approved script so every line is credited to the speaker the
     // script itself labelled, instead of whoever the model guessed.
     normalizeDialogue(breakdown, sourceScript);
+    enforceSceneCastContract(breakdown);
     sanitizeContinuityNotes(breakdown);
     enforceCookingContract(input, breakdown);
     enforceSpatialTopology(breakdown);
 
+    const referencedCharacterNames = uploadedCharacterNameSet(input);
     for (const lock of breakdown.character_locks) {
+      if (referencedCharacterNames.has(lock.name.trim().toLowerCase())) continue;
       const analyzed = analysis.characterDescriptions[lock.name];
       if (analyzed) {
         lock.signature_features = lock.signature_features
@@ -1550,6 +1895,7 @@ function assemblePlanPrompts(
   provider: AIProvider
 ): string {
   const ctx = buildRefContext(input, breakdown, analysis, provider);
+  const referencedCharacterNames = uploadedCharacterNameSet(input);
   const creativeRoute = resolveCreativeRoute(input);
   const creativeDirective = renderCreativeVisualDirective(input);
   const veoCreativeDirective = makeVeoSafe(creativeDirective);
@@ -1587,16 +1933,20 @@ function assemblePlanPrompts(
         ? presentLocks
             .map((l) =>
               makeVeoSafe(
-                `${buildCleanCharLine(l)}${l.is_child ? " — a CHILD with true child age, size and proportions" : ""}`
+                `${characterLineForPrompt(l, referencedCharacterNames)}${
+                  !referencedCharacterNames.has(l.name.trim().toLowerCase()) && l.is_child
+                    ? " — a CHILD with true child age, size and proportions"
+                    : ""
+                }`
               )
             )
             .join(" | ")
-        : ctx.isCooking
+          : ctx.isCooking
           ? presentLocks.length === 1
-            ? makeVeoSafe(buildCleanCharLine(presentLocks[0]))
+            ? makeVeoSafe(characterLineForPrompt(presentLocks[0]!, referencedCharacterNames))
             : COOKING_HANDS_ONLY_SUBJECT
-          : presentLocks.length === 1 && (seg.wardrobe_state?.length ?? 0) > 0
-            ? makeVeoSafe(buildCleanCharLine(presentLocks[0]))
+          : presentLocks.length === 1
+            ? makeVeoSafe(characterLineForPrompt(presentLocks[0]!, referencedCharacterNames))
             : charDesc;
     // buildSegmentVeoPrompt now strips ALL hex from its own output (Veo burns
     // "#A9C7E8" onto the frame as a name tag), so no wrap needed here.
@@ -1633,6 +1983,9 @@ function assemblePlanPrompts(
       hasLocationRef: ctx.bgRefs.length > 0,
       creativeDirective: veoCreativeDirective,
       renderMedium: creativeRoute.effective_character_representation,
+      hasCharacterReference: presentLocks.some((lock) =>
+        referencedCharacterNames.has(lock.name.trim().toLowerCase())
+      ),
     });
   }
   return buildVideoPromptText({
@@ -1657,6 +2010,12 @@ function assemblePlanPrompts(
       const isFinalClip = segmentIndex === breakdown.segments.length - 1;
       const showFinishedDish = ctx.isCooking && (segmentIndex === 0 || isFinalClip);
       const showIngredientRefs = ctx.isCooking && segmentIndex > 0 && !isFinalClip;
+      const segmentLocks = presentLocksFor(s, breakdown);
+      const segmentCharacterDescription = segmentLocks.length > 0
+        ? segmentLocks
+            .map((lock) => characterLineForPrompt(lock, referencedCharacterNames))
+            .join(" | ")
+        : charDesc;
       return {
       segment_number: s.segment_number,
       title: s.title,
@@ -1677,6 +2036,10 @@ function assemblePlanPrompts(
         ctx.isCooking ? (showFinishedDish ? productDesc ?? null : null) : undefined,
       ingredients:
         ctx.isCooking ? (showIngredientRefs ? ctx.ingredientsText ?? null : null) : undefined,
+      characterDescription: segmentCharacterDescription,
+      hasCharacterReference: segmentLocks.some((lock) =>
+        referencedCharacterNames.has(lock.name.trim().toLowerCase())
+      ),
     };
     }),
   });
@@ -1699,8 +2062,11 @@ export async function finalizeScript(params: {
     // stale generated dialogue can never outrank what the user currently sees.
     // No script index here on purpose: at the approval boundary the user's own
     // speaker edits in the preview are authoritative and must not be rewritten.
+    enforceMenuCharacterContract(params.input, params.breakdown, params.analysis);
     normalizeDialogue(params.breakdown);
+    enforceSceneCastContract(params.breakdown);
     sanitizeContinuityNotes(params.breakdown);
+    sanitizeUploadedCharacterSceneText(params.input, params.breakdown);
     enforceSpatialTopology(params.breakdown);
     const videoPrompt = assemblePlanPrompts(params.input, params.breakdown, params.analysis, provider);
     return { success: true, data: { breakdown: params.breakdown, videoPrompt } };
@@ -1772,6 +2138,10 @@ export async function rewriteSegment(params: {
     if (segment.motion_prompt) segment.motion_prompt = makeVeoSafe(segment.motion_prompt);
     if (segment.first_frame_prompt)
       segment.first_frame_prompt = makeVeoSafe(segment.first_frame_prompt);
+    sanitizeUploadedCharacterSceneText(params.input, {
+      ...params.breakdown,
+      segments: [segment],
+    });
     const hasRefImages =
       (params.input.character_images?.length ?? 0) > 0 ||
       (params.input.product_images?.length ?? 0) > 0;
@@ -1782,9 +2152,17 @@ export async function rewriteSegment(params: {
     }
     // TẦNG 9 turn-taking clamp on the single rewritten segment (retimes turns,
     // syncs characters_in_scene with the speakers, mirrors the single form).
-    normalizeDialogue({ ...params.breakdown, segments: [segment] });
-    sanitizeContinuityNotes({ ...params.breakdown, segments: [segment] });
-    enforceSpatialTopology({ ...params.breakdown, segments: [segment] });
+    const scopedBreakdown = { ...params.breakdown, segments: [segment] };
+    enforceMenuCharacterContract(params.input, scopedBreakdown, {
+      characterDescriptions: {},
+      productDescriptions: {},
+      ingredientDescriptions: {},
+      backgroundDescription: "",
+    });
+    normalizeDialogue(scopedBreakdown);
+    enforceSceneCastContract(scopedBreakdown);
+    sanitizeContinuityNotes(scopedBreakdown);
+    enforceSpatialTopology(scopedBreakdown);
 
     const violations = findLawViolations(
       `${segment.motion_prompt ?? ""} ${segment.first_frame_prompt ?? ""}`
@@ -1833,6 +2211,7 @@ export async function generateBoardImage(params: {
     ? "gemini"
     : params.provider ?? "gemini";
   const ctx = buildRefContext(input, breakdown, analysis, provider);
+  const referencedCharacterNames = uploadedCharacterNameSet(input);
   const creativeDirective = renderCreativeVisualDirective(input);
 
   try {
@@ -1845,6 +2224,7 @@ export async function generateBoardImage(params: {
       if (
         params.anchorImage &&
         ctx.canChain &&
+        ctx.characterRefs.length === 0 &&
         masterImages.length < MAX_BOARD_REFS
       ) {
         masterImages.push({
@@ -1886,7 +2266,7 @@ export async function generateBoardImage(params: {
         characterName: breakdown.character_locks?.[0]?.name,
         presentCharacters: (breakdown.character_locks ?? []).map((l) => ({
           name: l.name,
-          description: buildCleanCharLine(l),
+          description: characterLineForPrompt(l, referencedCharacterNames),
           isChild: !!l.is_child,
         })),
         style: ctx.boardStyle,
@@ -1916,7 +2296,7 @@ export async function generateBoardImage(params: {
         (s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
       const cast = (breakdown.character_locks ?? []).slice(0, 3).map((l) => ({
         name: l.name,
-        description: buildCleanCharLine(l),
+        description: characterLineForPrompt(l, referencedCharacterNames),
         isChild: !!l.is_child,
       }));
       const thumbRefs = buildBoardRefs(ctx, hookSeg?.characters_in_scene);
@@ -2001,7 +2381,7 @@ export async function generateBoardImage(params: {
           : ctx.characterNames.length > 1
             ? ctx.charDescForPoster
             : ctx.charDescDna,
-        presentCharacters: presentCastFor(seg, breakdown),
+        presentCharacters: presentCastFor(seg, breakdown, referencedCharacterNames),
         productDna: segmentProductDna,
         ingredients: segmentIngredients,
         sceneBible: ctx.sceneBible,
@@ -2031,6 +2411,7 @@ export async function generateBoardImage(params: {
     if (
       params.anchorImage &&
       ctx.canChain &&
+      ctx.characterRefs.length === 0 &&
       segImages.length < MAX_BOARD_REFS
     ) {
       segImages = [
@@ -2054,7 +2435,7 @@ export async function generateBoardImage(params: {
           ? ctx.charDescDna
           : COOKING_HANDS_ONLY_SUBJECT
         : ctx.charDescDna,
-      presentCharacters: presentCastFor(seg, breakdown),
+      presentCharacters: presentCastFor(seg, breakdown, referencedCharacterNames),
       productDna: segmentProductDna,
       ingredients: segmentIngredients,
       sceneBible: ctx.sceneBible,

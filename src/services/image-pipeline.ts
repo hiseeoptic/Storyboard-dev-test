@@ -312,7 +312,7 @@ export async function generateMasterBoard(params: {
   let prompt = buildMasterBoardPrompt(params);
 
   if (hasRefs) {
-    prompt = `REFERENCE PRIORITY CONTRACT: attached USER MENU character and location references are authoritative and appear first. Preserve every named person's face/hair and the uploaded environment layout; a later generated board anchor is secondary and may only reinforce wardrobe continuity. Never replace, omit, merge or swap uploaded characters.\n\n${prompt}`;
+    prompt = `REFERENCE PRIORITY CONTRACT: attached USER MENU character and location references are authoritative and appear first. Use each named character image as the only appearance source; do not add appearance prose or synthesize alternate faces. Preserve the uploaded environment layout. Never replace, omit, merge or swap uploaded characters.\n\n${prompt}`;
   }
 
   const url = await generateImage(prompt, {
