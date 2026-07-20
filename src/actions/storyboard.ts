@@ -291,8 +291,73 @@ function enforceSpatialTopology(breakdown: StoryboardGenerationOutput): void {
   }
 }
 
+/**
+ * SPEAKER REPAIR — the model sometimes leaves a turn's speaker blank or writes
+ * a name that doesn't match any character_lock. Both the preview <select> and
+ * the Veo export then silently fall back to the FIRST character, so the wife's
+ * lines showed up as the husband's. Repair deterministically:
+ *   1) exact (case-insensitive) match against the cast wins;
+ *   2) Vietnamese pronoun cues decide who is speaking vs being addressed
+ *      ("Anh uống nước đi" = addressing the man → the woman speaks;
+ *       "Anh xin lỗi"      = "anh" as subject   → the man speaks);
+ *   3) otherwise alternate away from the previous line's speaker.
+ */
+function repairTurnSpeakers(
+  turns: { speaker: string; text: string; start_s?: number; end_s?: number }[],
+  cast: { name: string; gender?: string }[],
+  previousSpeaker: string
+): void {
+  if (cast.length === 0) return;
+  const byLower = new Map(cast.map((c) => [c.name.trim().toLowerCase(), c.name]));
+  const male = cast.find((c) => c.gender === "male")?.name;
+  const female = cast.find((c) => c.gender === "female")?.name;
+
+  const inferFromVietnamese = (text: string): string => {
+    if (!male || !female) return "";
+    const t = text.toLowerCase();
+    // Pronoun followed by an imperative/question particle = ADDRESSING that
+    // person, so the OTHER one is speaking.
+    const addressesMale = /(^|[\s,])anh\s+[^,.!?]*\s(đi|nhé|nha|à|ạ)\b/.test(t);
+    const addressesFemale = /(^|[\s,])em\s+[^,.!?]*\s(đi|nhé|nha|à|ạ)\b/.test(t);
+    if (addressesMale && !addressesFemale) return female;
+    if (addressesFemale && !addressesMale) return male;
+    // Leading pronoun as the SUBJECT = that person is speaking.
+    if (/^anh\s+(xin lỗi|nghĩ|biết|hiểu|thấy|sẽ|đã|cũng|không|muốn|chỉ)/.test(t)) return male;
+    if (/^em\s+(xin lỗi|nghĩ|biết|hiểu|thấy|sẽ|đã|cũng|không|muốn|chỉ)/.test(t)) return female;
+    return "";
+  };
+
+  let prev = previousSpeaker;
+  for (const turn of turns) {
+    // Pronoun evidence FIRST: it is objective and outranks the model, which
+    // frequently attributes a valid-but-wrong cast name (the wife's line
+    // "Anh uống nước đi, em pha ấm rồi" was being credited to the husband).
+    const inferred = inferFromVietnamese(turn.text);
+    if (inferred) {
+      turn.speaker = inferred;
+      prev = inferred;
+      continue;
+    }
+    const exact = byLower.get((turn.speaker ?? "").trim().toLowerCase());
+    if (exact) {
+      turn.speaker = exact;
+      prev = exact;
+      continue;
+    }
+    // Alternate away from whoever spoke last so a two-hander keeps trading
+    // lines instead of collapsing onto the first character.
+    const other = cast.find((c) => c.name.toLowerCase() !== (prev ?? "").toLowerCase());
+    turn.speaker = other?.name ?? cast[0]!.name;
+    prev = turn.speaker;
+  }
+}
+
 function normalizeDialogue(breakdown: StoryboardGenerationOutput): void {
   const MAX_TURNS = 3;
+  const cast = (breakdown.character_locks ?? [])
+    .filter((c) => (c?.name ?? "").trim())
+    .map((c) => ({ name: c.name.trim(), gender: c.gender }));
+  let lastSpeaker = "";
   for (const seg of breakdown.segments) {
     let turns = Array.isArray(seg.dialogue_lines) ? seg.dialogue_lines : [];
     // Seed from the single-line form when the model only filled that.
@@ -309,6 +374,10 @@ function normalizeDialogue(breakdown: StoryboardGenerationOutput): void {
         start_s: typeof t.start_s === "number" ? t.start_s : undefined,
         end_s: typeof t.end_s === "number" ? t.end_s : undefined,
       }));
+
+    // Fix blank / unmatched speakers BEFORE merging (merge compares speakers).
+    repairTurnSpeakers(turns, cast, lastSpeaker);
+    if (turns.length > 0) lastSpeaker = turns[turns.length - 1]!.speaker;
 
     // MERGE CONSECUTIVE SAME-SPEAKER TURNS: two back-to-back turns by the same
     // person read to Veo as "say it twice" and clutter the audio map — join
