@@ -291,73 +291,82 @@ function enforceSpatialTopology(breakdown: StoryboardGenerationOutput): void {
   }
 }
 
+/** Normalize a spoken line so the same sentence matches across the approved
+ * script and the generated JSON (quotes, spacing and case differ). */
+function lineKey(text: string): string {
+  return (text ?? "")
+    .toLowerCase()
+    .replace(/[“”"«»‘’']/g, "")
+    .replace(/[.,!?;:…]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
- * SPEAKER REPAIR — the model sometimes leaves a turn's speaker blank or writes
- * a name that doesn't match any character_lock. Both the preview <select> and
- * the Veo export then silently fall back to the FIRST character, so the wife's
- * lines showed up as the husband's. Repair deterministically:
- *   1) exact (case-insensitive) match against the cast wins;
- *   2) Vietnamese pronoun cues decide who is speaking vs being addressed
- *      ("Anh uống nước đi" = addressing the man → the woman speaks;
- *       "Anh xin lỗi"      = "anh" as subject   → the man speaks);
- *   3) otherwise alternate away from the previous line's speaker.
+ * Build "spoken line → speaker label" from the approved Stage-1 script, which
+ * is emitted as `<SpeakerName>: "the line"`. This is language- and cast-
+ * agnostic: it reads whatever labels the script actually used, so it works for
+ * any story (two people, a family, colleagues, a narrator…) without assuming
+ * any particular relationship or pronoun system.
+ */
+function scriptSpeakerIndex(sourceScript?: string | null): Map<string, string> {
+  const index = new Map<string, string>();
+  if (!sourceScript) return index;
+  for (const raw of sourceScript.split(/\r?\n/)) {
+    // "Name: "line"" — the label is short, the line is what follows the colon.
+    const m = raw.match(/^\s*([^:]{1,40}?)\s*:\s*(.+?)\s*$/);
+    if (!m) continue;
+    const label = (m[1] ?? "").trim();
+    const text = (m[2] ?? "").trim();
+    // Skip the script's structural keys (TITLE:, ACTION:, IN SCENE:, …).
+    if (!label || !text) continue;
+    if (/^(title|core message|characters|segment\s*\d*|in scene|action|dialogue|vo)$/i.test(label)) {
+      continue;
+    }
+    const key = lineKey(text);
+    if (key && !index.has(key)) index.set(key, label);
+  }
+  return index;
+}
+
+/**
+ * SPEAKER ATTRIBUTION — the storyboard model sometimes credits a line to the
+ * wrong cast member (every line collapsing onto the first character). Fix it
+ * from evidence, never from guesswork:
+ *   1) the approved script's own speaker label for that exact line wins;
+ *   2) otherwise keep the model's value when it matches a real cast name;
+ *   3) otherwise leave it EMPTY so the preview shows it as unassigned instead
+ *      of silently pinning it on the first character.
+ * No language-, gender- or relationship-specific rules are baked in.
  */
 function repairTurnSpeakers(
   turns: { speaker: string; text: string; start_s?: number; end_s?: number }[],
-  cast: { name: string; gender?: string }[],
-  previousSpeaker: string
+  cast: { name: string }[],
+  scriptIndex: Map<string, string>
 ): void {
   if (cast.length === 0) return;
   const byLower = new Map(cast.map((c) => [c.name.trim().toLowerCase(), c.name]));
-  const male = cast.find((c) => c.gender === "male")?.name;
-  const female = cast.find((c) => c.gender === "female")?.name;
-
-  const inferFromVietnamese = (text: string): string => {
-    if (!male || !female) return "";
-    const t = text.toLowerCase();
-    // Pronoun followed by an imperative/question particle = ADDRESSING that
-    // person, so the OTHER one is speaking.
-    const addressesMale = /(^|[\s,])anh\s+[^,.!?]*\s(đi|nhé|nha|à|ạ)\b/.test(t);
-    const addressesFemale = /(^|[\s,])em\s+[^,.!?]*\s(đi|nhé|nha|à|ạ)\b/.test(t);
-    if (addressesMale && !addressesFemale) return female;
-    if (addressesFemale && !addressesMale) return male;
-    // Leading pronoun as the SUBJECT = that person is speaking.
-    if (/^anh\s+(xin lỗi|nghĩ|biết|hiểu|thấy|sẽ|đã|cũng|không|muốn|chỉ)/.test(t)) return male;
-    if (/^em\s+(xin lỗi|nghĩ|biết|hiểu|thấy|sẽ|đã|cũng|không|muốn|chỉ)/.test(t)) return female;
-    return "";
-  };
-
-  let prev = previousSpeaker;
   for (const turn of turns) {
-    // Pronoun evidence FIRST: it is objective and outranks the model, which
-    // frequently attributes a valid-but-wrong cast name (the wife's line
-    // "Anh uống nước đi, em pha ấm rồi" was being credited to the husband).
-    const inferred = inferFromVietnamese(turn.text);
-    if (inferred) {
-      turn.speaker = inferred;
-      prev = inferred;
+    const fromScript = scriptIndex.get(lineKey(turn.text));
+    const scriptMatch = fromScript ? byLower.get(fromScript.toLowerCase()) : undefined;
+    if (scriptMatch) {
+      turn.speaker = scriptMatch;
       continue;
     }
-    const exact = byLower.get((turn.speaker ?? "").trim().toLowerCase());
-    if (exact) {
-      turn.speaker = exact;
-      prev = exact;
-      continue;
-    }
-    // Alternate away from whoever spoke last so a two-hander keeps trading
-    // lines instead of collapsing onto the first character.
-    const other = cast.find((c) => c.name.toLowerCase() !== (prev ?? "").toLowerCase());
-    turn.speaker = other?.name ?? cast[0]!.name;
-    prev = turn.speaker;
+    const modelMatch = byLower.get((turn.speaker ?? "").trim().toLowerCase());
+    turn.speaker = modelMatch ?? "";
   }
 }
 
-function normalizeDialogue(breakdown: StoryboardGenerationOutput): void {
+function normalizeDialogue(
+  breakdown: StoryboardGenerationOutput,
+  sourceScript?: string | null
+): void {
   const MAX_TURNS = 3;
   const cast = (breakdown.character_locks ?? [])
     .filter((c) => (c?.name ?? "").trim())
-    .map((c) => ({ name: c.name.trim(), gender: c.gender }));
-  let lastSpeaker = "";
+    .map((c) => ({ name: c.name.trim() }));
+  const scriptIndex = scriptSpeakerIndex(sourceScript);
   for (const seg of breakdown.segments) {
     let turns = Array.isArray(seg.dialogue_lines) ? seg.dialogue_lines : [];
     // Seed from the single-line form when the model only filled that.
@@ -375,9 +384,9 @@ function normalizeDialogue(breakdown: StoryboardGenerationOutput): void {
         end_s: typeof t.end_s === "number" ? t.end_s : undefined,
       }));
 
-    // Fix blank / unmatched speakers BEFORE merging (merge compares speakers).
-    repairTurnSpeakers(turns, cast, lastSpeaker);
-    if (turns.length > 0) lastSpeaker = turns[turns.length - 1]!.speaker;
+    // Re-attribute from the approved script BEFORE merging (merge compares
+    // speakers, so a wrong label would merge two different people's lines).
+    repairTurnSpeakers(turns, cast, scriptIndex);
 
     // MERGE CONSECUTIVE SAME-SPEAKER TURNS: two back-to-back turns by the same
     // person read to Veo as "say it twice" and clutter the audio map — join
@@ -1439,7 +1448,9 @@ export async function generateStoryboardPlan(
     // TẦNG 9 turn-taking normalisation + safety clamp. Reconcile the two dialogue
     // forms so downstream code (and the editor) is always consistent, and hard-
     // cap the multi-speaker feature so it can never over-constrain a Veo clip.
-    normalizeDialogue(breakdown);
+    // Pass the approved script so every line is credited to the speaker the
+    // script itself labelled, instead of whoever the model guessed.
+    normalizeDialogue(breakdown, sourceScript);
     sanitizeContinuityNotes(breakdown);
     enforceCookingContract(input, breakdown);
     enforceSpatialTopology(breakdown);
@@ -1686,6 +1697,8 @@ export async function finalizeScript(params: {
     // The review editor can update either the legacy single-line field or the
     // turn-taking array. Reconcile them once more at the approval boundary so
     // stale generated dialogue can never outrank what the user currently sees.
+    // No script index here on purpose: at the approval boundary the user's own
+    // speaker edits in the preview are authoritative and must not be rewritten.
     normalizeDialogue(params.breakdown);
     sanitizeContinuityNotes(params.breakdown);
     enforceSpatialTopology(params.breakdown);
