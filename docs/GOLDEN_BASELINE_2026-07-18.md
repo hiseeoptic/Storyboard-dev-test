@@ -16,11 +16,17 @@ Tag khôi phục: `golden-2026-07-18-quality-v1`
    trình tự, không có giây hay lịch độc lập.
 5. Máy quay không quyết định người nói. Máy quay có thể giữ người nói, người nghe hoặc cả
    hai; chỉ chủ nhân được ghi trong dòng thoại mới phát giọng và chuyển động môi.
-6. Mỗi clip là một cú máy liên tục, một hành động chính, không hard cut, dịch chuyển tức thời
+6. Nhân vật có thể nói khi đang đi, ngồi xuống, đứng dậy hoặc quay người nếu kịch bản/bối
+   cảnh tự nhiên; không cấm tuyệt đối. Câu nói phải ngắn, đúng nhịp thở, rõ chủ nhân thoại;
+   các câu nặng cảm xúc hoặc nhiều chữ nên ưu tiên tư thế ổn định để tránh sai lip-sync.
+7. Chuyển động đời thường phải có vi-cơ học thật: đi tới ghế, xoay hông, hạ trọng tâm,
+   gập gối/hông, chạm ghế, ngồi ổn định; đứng dậy thì trồng chân, nghiêng người, chuyển
+   trọng lượng, duỗi gối/hông rồi cân bằng lại.
+8. Mỗi clip là một cú máy liên tục, một hành động chính, không hard cut, dịch chuyển tức thời
    hay vật/cửa tự thay đổi trạng thái.
-7. Giọng của từng nhân vật lấy từ `voice_personality`, mặc định ưu tiên tiếng Việt miền Bắc
+9. Giọng của từng nhân vật lấy từ `voice_personality`, mặc định ưu tiên tiếng Việt miền Bắc
    chuẩn khi người dùng không chọn vùng khác; một giọng tại một thời điểm.
-8. Prompt Veo giữ ngắn gọn: không lặp prompt bằng nhiều alias, không có các khối khóa mặt
+10. Prompt Veo giữ ngắn gọn: không lặp prompt bằng nhiều alias, không có các khối khóa mặt
    và giọng toàn cục trùng với dữ liệu nhân vật/dòng thoại.
 
 ## Kiểm tra trước khi phát hành
