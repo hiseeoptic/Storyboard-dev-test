@@ -18,6 +18,7 @@ import {
   worldContextLockBlock,
 } from "@/lib/laws";
 import { ensureDialogueClock, stripProductionTimecodes } from "@/lib/timeline-contract";
+import { wardrobeStateThrough } from "@/lib/wardrobe-continuity";
 import { contextFrameworkSystemDigest } from "@/lib/video-context";
 import {
   renderSceneIntentDirective,
@@ -49,7 +50,7 @@ import {
 // Phrased as plain descriptors (no instructive "no/don't") — Veo/Kling read the
 // negative list as nouns/adjectives to avoid, and "no X" phrasing can backfire.
 const SHARED_NEGATIVE =
-  "NEGATIVE (avoid — plain descriptors): resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, warped or altered label/logo text, logo change, brand-colour change, extra products, duplicated or doubled objects (e.g. two pans / two of the same item), floating or levitating objects, objects passing through solid surfaces, physically impossible actions (e.g. lifting/holding a pan with a spatula), sudden appearing or disappearing objects, teleporting, morphing, warping, melting, distorting, deforming, object/container morphing, inconsistent physics, railing or wall crossing a doorway or walking route, perimeter barrier in the middle of a floor, blocked threshold, person or camera beyond a railing or inside a wall, contradictory zone order, unnatural motion, jittery or stuttering movement, frame skipping, mid-clip jump cuts, extra people, changed hair/wardrobe/accessories, identity drift, face morphing, changing facial features, age shifting, extra or missing limbs, extra or fused fingers, mutated or malformed hands, human hands when the action does not require them, limbs bending or passing through objects, deformed liquid, floating ingredients, melted food, warping plate, liquid flowing upward, on-screen text overlays, captions, subtitles, burned-in dialogue text, title cards, karaoke/lyric text, camera or lens spec overlay (e.g. '50mm', 'f/2.8', '4300K', 'lux'), technical readout, HUD, info card pinned in a corner, timecode or timestamp text, watermark, duplicate subject, plastic/CGI skin.";
+  "NEGATIVE (avoid — plain descriptors): resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, warped or altered label/logo text, logo change, brand-colour change, extra products, duplicated or doubled objects (e.g. two pans / two of the same item), floating or levitating objects, objects passing through solid surfaces, physically impossible actions (e.g. lifting/holding a pan with a spatula), sudden appearing or disappearing objects, teleporting, morphing, warping, melting, distorting, deforming, object/container morphing, inconsistent physics, railing or wall crossing a doorway or walking route, perimeter barrier in the middle of a floor, blocked threshold, person or camera beyond a railing or inside a wall, contradictory zone order, unnatural motion, jittery or stuttering movement, frame skipping, mid-clip jump cuts, extra people, unmotivated hair/wardrobe/accessory changes, identity drift, face morphing, changing facial features, age shifting, extra or missing limbs, extra or fused fingers, mutated or malformed hands, human hands when the action does not require them, limbs bending or passing through objects, deformed liquid, floating ingredients, melted food, warping plate, liquid flowing upward, on-screen text overlays, captions, subtitles, burned-in dialogue text, title cards, karaoke/lyric text, camera or lens spec overlay (e.g. '50mm', 'f/2.8', '4300K', 'lux'), technical readout, HUD, info card pinned in a corner, timecode or timestamp text, watermark, duplicate subject, plastic/CGI skin.";
 
 const REFERENCE_CHARACTER_SCENE_NEGATIVE =
   `NEGATIVE (avoid): duplicated or extra people, duplicated objects, floating objects, objects passing through solid surfaces, impossible physics, teleporting, morphing, warping, jitter, frame skipping, mid-clip jump cuts, on-screen text, captions, subtitles, title cards, HUD, technical readout, watermark, ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
@@ -77,6 +78,9 @@ const PHOTOREAL_MATERIAL_REALISM =
 
 const SEAT_RELATIVE_PLACEMENT_LOCK =
   "SEAT/RELATIVE PLACEMENT LOCK: preserve each character's exact chair or standing mark, seated/standing/kneeling posture, facing direction and left-right/front-back relationship to the other characters from start_state through end_state and into the next strict-continuity clip. A character may change seat, side or posture only through a scripted visible action in the motion; camera reframes stay on the established 180-degree axis so screen direction never implies a seat swap.";
+
+const WARDROBE_CONTINUITY_RULE =
+  "WARDROBE CONTINUITY: establish the initial outfit once in character_lock (or only through the uploaded reference) and do not restate the full outfit elsewhere. Keep that established wardrobe unchanged unless the approved story visibly performs or explicitly declares bathing/showering, rain or water changing its condition, getting dressed/undressed, or another necessary clothing change. Declare the new state once in wardrobe_state at the transition; it persists until another motivated change.";
 
 // Concise anti-artifact tail. Product-related negatives are included ONLY when
 // the clip actually has a product, so a person-only clip never mentions products.
@@ -650,7 +654,7 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
         .join("\n")}\nThese are the ONLY character names permitted anywhere in CHARACTERS, IN SCENE, ACTION, DIALOGUE speaker labels and CAPTION. Preserve spelling exactly. Resolve every role, pronoun or alias in the idea/brief to one of these names. Never invent, rename, substitute or append another person. If a role is not represented in this closed cast, adapt the action without adding that person.`
     : "";
   const uploadedRule = uploadedNames.length
-    ? `\nREFERENCE-ONLY CHARACTERS (${uploadedNames.join(", ")}): use only each exact name, role, position, action, expression and dialogue. Do not write age, gender, body, face, skin, hair, eyebrows, eyelashes, wardrobe or other appearance prose; the attached image supplies it. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
+    ? `\nREFERENCE-ONLY CHARACTERS (${uploadedNames.join(", ")}): use only each exact name, role, position, action, expression and dialogue. Do not write age, gender, body, face, skin, hair, eyebrows, eyelashes, initial wardrobe or other appearance prose; the attached image supplies it. The sole wardrobe exception is one minimal wardrobe_state at an approved visible or explicitly declared bathing, rain/water or clothing-change transition; never restate the reference outfit. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
     : "";
   const briefBlock = brief.length
     ? `\nBrief:\n${brief.join("\n")}${closedCastRule}${uploadedRule}`
@@ -689,13 +693,13 @@ PROJECT-LED STORY STRUCTURE (never force one template onto every video):
 - "marketing_role" remains a legacy compatibility label; "scene_intent" is the canonical per-clip creative contract.
 
 UPLOADED REFERENCE PRIORITY (absolute hierarchy — PHOTOS beat text, text beats invention):
-- USER SETUP MENU CONTRACT (NON-NEGOTIABLE): every entered character name/role and every image group belongs together one-to-one, in menu order. Preserve ALL named characters as separate identities; never use only the first upload, never merge two people, never swap their faces, never omit a referenced character when the approved script places them in the scene, and never let generated defaults/anchors override menu uploads. Character menu photos, product photos and background/location photos are the SUPREME source of truth. FOR ANY CHARACTER WITH AN UPLOADED IMAGE, THE IMAGE IS THE ONLY APPEARANCE AUTHORITY: do not analyze, infer, list, translate or restate face, face shape, skin, hair, eyebrows, eyelashes, eyes, body, age, height or wardrobe anywhere in the JSON or prompts. In required appearance fields use an empty string or the literal sentinel "REFERENCE_IMAGE"; elsewhere mention only the character's exact name, role, position, action, expression and dialogue. The only permitted appearance-related negative guard for that character is: ${REFERENCE_CHARACTER_ANTI_PLASTIC}. A product keeps its exact shape, colours and branding; when a LOCATION photo exists (indoor room or outdoor scene), stage every relevant segment inside that uploaded place and reuse its real layout, landmarks (furniture indoors; buildings, trees, terrain, water outdoors), colours, materials and light in every first_frame_prompt. Do NOT relocate scenes, "improve" the set, or invent a contradictory place.
+- USER SETUP MENU CONTRACT (NON-NEGOTIABLE): every entered character name/role and every image group belongs together one-to-one, in menu order. Preserve ALL named characters as separate identities; never use only the first upload, never merge two people, never swap their faces, never omit a referenced character when the approved script places them in the scene, and never let generated defaults/anchors override menu uploads. Character menu photos, product photos and background/location photos are the SUPREME source of truth. FOR ANY CHARACTER WITH AN UPLOADED IMAGE, THE IMAGE IS THE ONLY INITIAL APPEARANCE AND WARDROBE AUTHORITY: do not analyze, infer, list, translate or restate face, face shape, skin, hair, eyebrows, eyelashes, eyes, body, age, height or the reference outfit anywhere in the JSON or prompts. In required appearance fields use an empty string or the literal sentinel "REFERENCE_IMAGE"; elsewhere mention only the character's exact name, role, position, action, expression and dialogue. The sole wardrobe exception is one minimal wardrobe_state when the approved story visibly performs or explicitly declares bathing/showering, rain/water changing the clothing condition, getting dressed/undressed or another necessary clothing change; never redescribe the original reference outfit. The only permitted appearance-related negative guard for that character is: ${REFERENCE_CHARACTER_ANTI_PLASTIC}. A product keeps its exact shape, colours and branding; when a LOCATION photo exists (indoor room or outdoor scene), stage every relevant segment inside that uploaded place and reuse its real layout, landmarks (furniture indoors; buildings, trees, terrain, water outdoors), colours, materials and light in every first_frame_prompt. Do NOT relocate scenes, "improve" the set, or invent a contradictory place.
 - If the story idea and an uploaded photo conflict (e.g. the idea says villa but the photo shows a small apartment), THE PHOTO WINS — adapt the story to the real place/person/product.
 - VIDEO OUTPUT TEXT CONTRACT (NON-NEGOTIABLE): every generated VIDEO frame contains ZERO readable text or graphics. Set world_context.allowed_language_text to "none — zero readable text anywhere". Names, ages, dialogue, brands, captions, lens values, Kelvin/lux and timecodes are internal production data only; never request subtitles, captions, name tags, product lettering, logos, badges, title cards, HUD or overlays. Dialogue is AUDIO ONLY. Storyboard documents may contain planning labels, but they are NEVER video start frames.
 
 FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's video must not "look AI"):
 - Every object is locked to a "DNA" that NEVER drifts and is repeated VERBATIM in every board/keyframe and every motion prompt.
-- For a TEXT-ONLY character with no uploaded image, build a detailed "character_lock" with gender, age, build, skin tone, facial structure, skin texture, eyes, brows, lashes, nose/lips, hair, costume, signature features, expression and DNA. For a character WITH an uploaded image, do the opposite: keep only name/role/audio/story state and use "REFERENCE_IMAGE" or blank appearance fields; never convert the pixels into prose and never add DNA, gender, age, body, face, skin, hair or wardrobe descriptions.
+- For a TEXT-ONLY character with no uploaded image, build a detailed "character_lock" with gender, age, build, skin tone, facial structure, skin texture, eyes, brows, lashes, nose/lips, hair, ONE initial costume description, signature features, expression and DNA. Never copy that full costume into scene text. For a character WITH an uploaded image, do the opposite: keep only name/role/audio/story state and use "REFERENCE_IMAGE" or blank appearance fields; never convert the pixels into prose and never add DNA, gender, age, body, face, skin, hair or initial wardrobe descriptions. Only a motivated wardrobe_state transition may state a new condition/look minimally.
 - CHARACTERS ARE ORIGINAL AND FICTIONAL. For TEXT-ONLY characters, use only the exact names supplied by the approved script/menu. If a role has no name, assign one ordinary given name once and keep it consistent; never copy names from rule examples or use a fixed default. NEVER use the name, likeness or description of any real, famous or recognisable public figure/celebrity/influencer. Do not write "looks like [celebrity]" or reference any real person. For UPLOADED-REFERENCE characters, do not describe appearance at all: bind the supplied pixels only to their exact menu name and keep the reference-image contract above.
 
 MULTI-CHARACTER CASTING & DIALOGUE ASSIGNMENT (mandatory whenever the story/script has 2+ people — this is what keeps a family/dialogue video coherent):
@@ -738,7 +742,7 @@ STAGING & BLOCKING (a real director's coverage — this is what separates a watc
 MATERIAL & SKIN REALISM (this is what kills the "AI/CGI/plastic" look — treat every clip as REAL filmed footage, never a 3D render):
 - HUMAN FACE REALISM applies ONLY to text-only generated humans with no uploaded character image. Never apply or serialize this forensic face prose for an uploaded-reference character. For an uploaded-reference character, rely on the image alone and add only this short exclusion: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.
 - TEXT-ONLY HAIR FALLBACK: only for generated characters without an uploaded image, describe natural strand behaviour instead of helmet/plastic hair. Never add this prose to an uploaded-reference character.
-- MATERIALS: every environment object and prop must read true-to-life. Describe garment materials only for text-only generated characters. For uploaded-reference characters, wardrobe remains image-only and must never be described in text.
+- MATERIALS: every environment object and prop must read true-to-life. Describe initial garment materials once in character_lock for text-only generated characters. For uploaded-reference characters, initial wardrobe remains image-only; only a story-required replacement garment may be described minimally in wardrobe_state.
 - LIGHT: physically-based, tied to time-of-day/weather, with soft imperfect shadow edges. Give scene_bible.lighting BOTH Kelvin temperature AND approximate Lux (e.g. "soft overcast dawn key 5200K, ~800 lux"), and set scene_bible.film_grain to a fine organic grain / clean-acquisition token so the filmic texture stays constant across clips.
 
 ${contextFrameworkSystemDigest()}
@@ -769,7 +773,8 @@ DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlap
 - SINGLE-LINE CLIPS: if a beat is just one line, you may use "dialogue_lines" with one entry OR the plain "dialogue"+"speaker" fields — both work. For a longer monologue that fills the clip, one speaker is correct.
 - Mirror the FIRST turn into the top-level "dialogue" (its text) and "speaker" (its name) for compatibility.
 - NAME TOKENS ARE LOCKED: every character name is a fixed token spelled EXACTLY as in character_locks, identical in every field (title, first_frame_prompt, motion_prompt, beats, camera notes, dialogue speaker, continuity_note). NEVER invent a spelling variant, nickname or near-miss — a near-miss name creates a THIRD person and breaks speaker mapping. Any name appearing inside a RULE EXAMPLE is a placeholder — NEVER copy an example name into your output; use ONLY the names defined in character_locks for THIS video.
-- WARDROBE & HAIR: for TEXT-ONLY characters, keep the locked wardrobe/hair or one motivated change through wardrobe_state. For UPLOADED-REFERENCE characters, never describe wardrobe or hair and omit their wardrobe_state entirely; the attached named image remains the only authority.
+- ${WARDROBE_CONTINUITY_RULE}
+- For an UPLOADED-REFERENCE character, never describe the initial wardrobe or hair. A wardrobe_state is allowed only for the same motivated exception above and must contain no face/body identity prose.
 - ONE LOCATION, IDENTICAL IN EVERY SEGMENT: unless the script explicitly moves to a new declared location, every first_frame_prompt restates the SAME place — indoor room OR outdoor scene — with the SAME geometry, the SAME landmark positions (furniture/fixtures indoors; buildings, trees, paths, terrain, water outdoors), materials, colour palette and light sources — copy the location description consistently and change ONLY the characters' positions, poses and explicitly named props. The set must read as the same physical place in every clip; when the user uploaded a LOCATION photo, that photo's place is the only set.
 - TWO-PERSON BLOCKING (conversation geometry): when two characters share a dialogue scene, their bodies and gazes are oriented TOWARD EACH OTHER per the scene geometry — never both facing the same direction or both facing the camera in parallel like news anchors, unless the script explicitly stages it (e.g. one turns away in refusal, both watching something). State each character's facing direction in the first_frame_prompt ("[A] faces [B] across the table; [B] stands half-turned toward [A]").
 - CONTINUITY FREEZE-FRAME (what makes clip N cut smoothly into clip N+1): "continuity_note" = the physical freeze-frame at second 10 in ONE compact sentence (≤ 35 words) — who is where, facing which way, pose/expression, held props, light. The NEXT segment's first_frame_prompt must open from EXACTLY that freeze-frame (same positions, poses, wardrobe state, light) unless the story declares a time/location jump — so the cut lands invisibly. Never write a vague emotional summary; record the observable physical state.
@@ -1030,7 +1035,7 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
       "beats": [
 ${beatExample}
       ],
-      "first_frame_prompt": "string — the segment's START STATE: describe the SHARED scene/setting, name each visible character, give exact chair/standing mark, seated/standing/kneeling posture, left-right/front-back relation, action/expression, and plant every prop the motion_prompt will use. For a TEXT-ONLY character, appearance may come from character_locks. For an UPLOADED-REFERENCE character, NEVER describe face, skin, hair, brows, lashes, body, age or wardrobe; the attached named image supplies all appearance. For a multi-zone/doorway/boundary scene, restate the SAME zone order, fixed architecture and character placements from spatial_layout.",
+      "first_frame_prompt": "string — the segment's START STATE: describe the SHARED scene/setting, name each visible character, give exact chair/standing mark, seated/standing/kneeling posture, left-right/front-back relation, action/expression, and plant every prop the motion_prompt will use. Never repeat a character's full outfit here; character_lock or the uploaded reference already establishes it. For an UPLOADED-REFERENCE character, NEVER describe face, skin, hair, brows, lashes, body, age or initial wardrobe. For a multi-zone/doorway/boundary scene, restate the SAME zone order, fixed architecture and character placements from spatial_layout.",
       "motion_prompt": "string — a focused 70-110 word image-to-video ACTION prompt describing ONE continuous take as an UNTIMED chronological sequence. Do not repeat identity attributes, style tokens, physics clauses, dialogue text or negatives. For an UPLOADED-REFERENCE character, write only the exact name plus position, action and expression — never appearance. Use full physical contact chains, one location, smooth minimal camera movement and an exact final state. NO seconds/time ranges here; dialogue_lines is the only clock.",
       "dialogue": "string — the FIRST turn's spoken line in ${dialogueLanguage} (short, natural). Mirror of dialogue_lines[0].text.",
       "speaker": "string — the EXACT character_locks name of the FIRST turn's speaker (mirror of dialogue_lines[0].speaker). Empty string \\"\\" if voiceover.",
@@ -1048,8 +1053,8 @@ ${beatExample}
         "camera_zone": "string — one real camera zone + side/height + line of sight; never inside a wall or beyond a railing"
       },
       "wardrobe_state": [
-        { "character": "TEXT-ONLY character name", "outfit": "FULL current outfit description", "outfit_materials": "real fabric materials", "hair": "current hair state" }
-      ] /* TEXT-ONLY characters only. OMIT entirely for every uploaded-reference character. Otherwise omit unless a motivated look change happened. */,
+        { "character": "exact character name", "outfit": "NEW current outfit, or REFERENCE_WARDROBE plus only its changed wet/damp condition", "outfit_materials": "only when a new garment needs real material", "hair": "only a story-caused wet/dry state" }
+      ] /* OMIT unless this is the first segment of an approved visible or explicitly declared bathing/rain/water/getting-dressed/necessary clothing transition. Declare once; later segments inherit it automatically. Never restate the original outfit. */,
       "continuity_note": "string — ONE compact sentence (≤ 35 words): physical freeze-frame at second 10 — who is on which chair/mark, left/right relation, seated/standing posture, facing, expression, held props, light (the next segment opens from exactly this frame)"
     }
   ],
@@ -1157,6 +1162,7 @@ REWRITE RULES:
 5. SPATIAL TOPOLOGY + SEAT LOCK: preserve the existing spatial_layout when it is physically valid; otherwise repair it without changing the intended location. For every multi-zone/doorway/boundary or seated conversation scene return all five fields: ordered connected zones; immutable architecture/openings/boundaries; exact character zone + chair/standing mark + seated/standing posture + left-right/front-back relation + facing; one unobstructed walkable route; one real supported camera zone. first_frame_prompt, beats and motion_prompt MUST all obey this same map. Doorways/thresholds remain unobstructed; railings/guards remain only on the true exposed edge; nobody or the camera stands beyond them; zone changes visibly cross the declared connector. Do not stand, sit, swap sides or change chairs unless the motion visibly performs it.
 6. HARD CONSTRAINTS: keep "segment_number" = ${seg.segment_number}, "duration_seconds" = ${seg.duration_seconds || 10}, "marketing_role" = "${seg.marketing_role}", "environment_ref" = "${seg.environment_ref ?? "custom"}". Locked continuity mode = "${continuityMode}". ${strictContinuity ? "Open from the previous segment's exact end state and close on the next segment's exact opening state." : "Preserve only the continuity anchors declared by scene_intent/context; location, time or pose may change when this continuity mode explicitly permits it."} Update continuity_note accordingly.
 7. continuity_note = PHYSICAL SCENE STATE ONLY (who is where, holding what, in which pose/emotion, carried into the next shot). STRICTLY FORBIDDEN inside continuity_note, first_frame_prompt, motion_prompt and beats: numeric timecodes, production/meta commentary, word counts, wpm math, "moved to segment N", duration notes, quoted dialogue or editor notes. Only dialogue_lines.start_s/end_s may contain seconds.
+8. WARDROBE: never repeat the full established outfit in first_frame_prompt, motion_prompt, beats or continuity_note. Preserve an existing wardrobe_state only when this is its actual bathing/rain/water/getting-dressed/necessary clothing transition; declare it once here, and omit it from unchanged later segments because the compiler carries it forward.
 
 Return ONLY the rewritten segment as ONE JSON object with the exact segment structure (segment_number, duration_seconds, title, marketing_role, beats[], first_frame_prompt, motion_prompt, dialogue, speaker, dialogue_lines[], characters_in_scene[], environment_ref, spatial_layout{}, wardrobe_state[] — copy the segment's existing wardrobe_state unchanged if it has one, continuity_note) — no wrapper, no markdown, no prose.`;
 }
@@ -1237,7 +1243,7 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
       case "anchor":
         return hasCharacterReference
           ? "• SECONDARY BOARD ANCHOR — composition/continuity aid only. It must never override a named uploaded character image or add appearance, hair, wardrobe or accessory text."
-          : `• WARDROBE & LOOK ANCHOR — the attached already-approved storyboard frame shows the character in the EXACT outfit, hairstyle and accessories to use. Copy the clothing (type, cut and colours) and every accessory (watch, glasses if any) EXACTLY in this board. Do NOT change the outfit — never switch to a suit, jacket, apron or a different shirt unless it appears in this anchor. It is the SAME character.`;
+          : `• WARDROBE & LOOK ANCHOR — the attached already-approved storyboard frame establishes the current outfit, hairstyle and accessories. Preserve them without redescribing them. The sole exception is a motivated wardrobe_state explicitly present in this segment's character description (bathing, rain/water or a necessary clothing change); then follow that new state while keeping the SAME identity.`;
       default:
         return `• Reference — keep it consistent.`;
     }
@@ -2065,7 +2071,7 @@ Compatible with: Google Veo 3.1, Seedance 2.0, Kling, Runway, Pika`;
 
 /** The one comprehensive negative list, reused at project + clip level. */
 export const VEO_NEGATIVE_LIST = [
-  "morphing, warping, teleporting, duplicated character or object, extra people, extra or fused fingers, malformed hands, missing limbs, identity or wardrobe drift, left-right seat swap, unexplained sitting/standing posture change, camera-axis flip, objects passing through solids, impossible physics, blocked doorway or walkable path, barrier in the wrong zone, camera or person beyond a railing or inside a wall, jitter, jump cut, overlapping or repeated voices, wrong-speaker lip sync, listener lip movement, lip movement during voiceover, on-screen text, captions, labels, HUD, watermark, plastic or CGI surfaces",
+  "morphing, warping, teleporting, duplicated character or object, extra people, extra or fused fingers, malformed hands, missing limbs, identity drift or unmotivated wardrobe drift, left-right seat swap, unexplained sitting/standing posture change, camera-axis flip, objects passing through solids, impossible physics, blocked doorway or walkable path, barrier in the wrong zone, camera or person beyond a railing or inside a wall, jitter, jump cut, overlapping or repeated voices, wrong-speaker lip sync, listener lip movement, lip movement during voiceover, on-screen text, captions, labels, HUD, watermark, plastic or CGI surfaces",
   HUMAN_FACE_REALISM_NEGATIVE,
 ].join(", ");
 
@@ -2266,14 +2272,10 @@ export function buildVeoJson(
     const baseVisibleLocks = locks.filter((lock) =>
       onScreen.some((name) => name.toLowerCase() === lock.name.trim().toLowerCase())
     );
-    // MOTIVATED WARDROBE CHANGE: a segment-level wardrobe_state (shower → home
-    // clothes, etc.) overrides the base lock's costume/hair so the JSON never
-    // contradicts the scene text ("office shirt" lock vs "dark t-shirt" scene).
-    const wardrobeByName = new Map(
-      (seg.wardrobe_state ?? [])
-        .filter((w) => w && (w.character ?? "").trim() && (w.outfit ?? "").trim())
-        .map((w) => [w.character.trim().toLowerCase(), w])
-    );
+    // A wardrobe transition is written once on the segment where it happens.
+    // Carry the latest state forward internally instead of forcing the model to
+    // repeat the full outfit in every later segment.
+    const wardrobeByName = wardrobeStateThrough(breakdown.segments, segIndex);
     const visibleLocks = baseVisibleLocks.map((lock) => {
       const wardrobe = wardrobeByName.get(lock.name.trim().toLowerCase());
       if (!wardrobe) return lock;
@@ -2320,12 +2322,16 @@ export function buildVeoJson(
       visibleLocks.map((lock) => {
         const id = charIds.get(lock.name.trim().toLowerCase()) || "CHAR_1";
         if (hasUploadedReference(lock.name)) {
+          const scriptedWardrobeState = lock.costume?.trim();
           return [
             id,
             {
               id,
               name: lock.name,
               reference_image_lock: REFERENCE_CHARACTER_APPEARANCE_LOCK,
+              ...(scriptedWardrobeState
+                ? { scripted_wardrobe_state: scrub(scriptedWardrobeState) }
+                : {}),
               avoid_character_surface_artifacts: REFERENCE_CHARACTER_ANTI_PLASTIC,
               voice_personality: oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child),
               props: "Only props explicitly planted in background_lock.setting and action_flow",
@@ -2398,7 +2404,6 @@ export function buildVeoJson(
     const hasReferencedVisibleCharacter = visibleLocks.some((lock) =>
       hasUploadedReference(lock.name)
     );
-    const textOnlyVisibleLocks = visibleLocks.filter((lock) => !hasUploadedReference(lock.name));
     const rawTurns =
       seg.dialogue_lines && seg.dialogue_lines.length > 0
         ? seg.dialogue_lines
@@ -2433,7 +2438,7 @@ export function buildVeoJson(
     const flatCharacterDescription = visibleLocks
       .map((lock) =>
         hasUploadedReference(lock.name)
-          ? `${lock.name}. ${REFERENCE_CHARACTER_APPEARANCE_LOCK} Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
+          ? `${lock.name}. ${REFERENCE_CHARACTER_APPEARANCE_LOCK}${lock.costume?.trim() ? ` Current scripted wardrobe state: ${noHex(lock.costume)}.` : ""} Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
           : `${lock.name}, ${noHex(lock.gender_age)}, ${noHex(lock.build)}, ${noHex(lock.hair)}, ${noHex(lock.costume)}`
       )
       .join(" | ");
@@ -2516,26 +2521,6 @@ export function buildVeoJson(
             ? "Open exactly from continuity_from_previous; it wins over a conflicting start_state. "
             : "Open exactly from start_state. ") +
           "Only visible ordered contact/action changes a person, prop, door or object; preserve seat/chair/standing mark, left-right/front-back relation, posture and every resulting state through end_state.",
-        // DETERMINISTIC FULL-OUTFIT LOCK — the #1 wardrobe-drift fix. The
-        // start_state/motion prose often re-states only the TOP ("wearing a
-        // white blouse"), so Veo invents the bottom and the trousers change
-        // colour every clip. Restate the COMPLETE locked outfit (top AND
-        // bottom) for every visible character so Veo never has to guess the
-        // unmentioned half.
-        ...(textOnlyVisibleLocks.length > 0
-          ? {
-              wardrobe_lock:
-                "Keep this complete outfit unchanged: " +
-                textOnlyVisibleLocks
-                  .map((l) => {
-                    const o = splitOutfit(l.costume);
-                    const full = [o.top, o.bottom].map((s) => scrub(s)).filter(Boolean).join(" + ");
-                    return full ? `${l.name}: ${full}` : "";
-                  })
-                  .filter(Boolean)
-                  .join("; "),
-            }
-          : {}),
         staging: spatialTopology
           ? "Obey spatial_topology exactly: fixed architecture stays fixed, openings and walkable_path stay clear, barriers stay on their declared perimeter, seat/standing marks and left-right relations stay locked, and every zone change follows the connector visibly."
           : "Use physically possible blocking and eye-lines from background_lock.setting; preserve each character's starting chair/standing mark and left-right relation unless the motion explicitly changes it.",
@@ -2557,6 +2542,8 @@ export function buildVeoJson(
         frame: "one clean full-screen continuous shot; never render a storyboard sheet, grid, panel, reference strip or document",
         on_screen_text: "ZERO — no letters, words, names, ages, numbers, labels, logos, captions, subtitles, badges, cards, HUD or technical overlays",
         audio: "Use each dialogue entry's voice_personality consistently; one clean native voice at a time, Standard Northern Vietnamese by default unless the user chose another accent; no overlap, repetition, echo or ad-lib.",
+        wardrobe_continuity:
+          "Use the wardrobe established once in character_lock or the uploaded reference. Never change it unless the approved story visibly performs or explicitly declares bathing, rain/water or another necessary clothing transition; a declared wardrobe_state then persists.",
         reference_priority: hasReferencedVisibleCharacter
           ? "Each attached named character image is the sole appearance authority for that exact character. Do not describe, infer, reinterpret, merge or swap appearance."
           : "uploaded character and location menu references are authoritative; never merge, omit or swap identities",

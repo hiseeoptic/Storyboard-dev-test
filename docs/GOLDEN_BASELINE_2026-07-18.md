@@ -1,6 +1,6 @@
 # Golden Baseline — chất lượng 18/07 + khóa an toàn hiện tại
 
-Tag khôi phục: `golden-2026-07-18-quality-v3`
+Tag khôi phục: `golden-2026-07-18-quality-v4`
 
 Đây là mốc ổn định lấy cấu trúc prompt gọn và tự nhiên của ngày 18/07 làm nền,
 đồng thời giữ các sửa lỗi bắt buộc đã xác nhận sau đó.
@@ -33,6 +33,10 @@ Tag khôi phục: `golden-2026-07-18-quality-v3`
    chuẩn khi người dùng không chọn vùng khác; một giọng tại một thời điểm.
 12. Prompt Veo giữ ngắn gọn: không lặp prompt bằng nhiều alias, không có các khối khóa mặt
    và giọng toàn cục trùng với dữ liệu nhân vật/dòng thoại.
+13. Trang phục ban đầu chỉ được mô tả một lần trong `character_lock`, hoặc lấy trực tiếp từ
+   ảnh reference. Không có `scene_action.wardrobe_lock` lặp lại toàn bộ áo/quần. Chỉ tạo
+   `wardrobe_state` một lần tại cảnh thật sự có tắm, mưa/nước làm đổi trạng thái trang phục,
+   mặc/cởi đồ hoặc tình huống kịch bản bắt buộc thay đồ; trạng thái mới tự kế thừa về sau.
 
 ## Kiểm tra trước khi phát hành
 
@@ -42,6 +46,7 @@ Tag khôi phục: `golden-2026-07-18-quality-v3`
 - Không còn bộ biên dịch camera theo từng giây hoặc luật buộc camera bám người nói.
 - JSON vẫn có `characters_in_scene`, `character_lock`, `spatial_topology`, `dialogue`,
   `lip_sync_director_note` và một trường `prompt` để extension sử dụng.
+- JSON không còn `scene_action.wardrobe_lock` và không lặp lại một `wardrobe_state` không đổi.
 
 Chạy kiểm tra hồi quy bằng `npm run test:timeline` và `npm run type-check`.
 
@@ -50,11 +55,11 @@ Chạy kiểm tra hồi quy bằng `npm run test:timeline` và `npm run type-che
 Xem đúng trạng thái mốc:
 
 ```bash
-git show golden-2026-07-18-quality-v1
+git show golden-2026-07-18-quality-v4
 ```
 
 Khi cần khôi phục, hãy tạo một nhánh an toàn từ tag này rồi kiểm tra trước khi đưa vào main:
 
 ```bash
-git switch -c restore/golden-2026-07-18-quality-v1 golden-2026-07-18-quality-v1
+git switch -c restore/golden-2026-07-18-quality-v4 golden-2026-07-18-quality-v4
 ```

@@ -110,7 +110,7 @@ export const CHARACTER_LAWS: Record<CharacterRepresentation, string[]> = {
     `UPLOADED CHARACTER REFERENCE: ${REFERENCE_CHARACTER_APPEARANCE_LOCK}`,
     `Photographic live action; the only character-surface exclusions are: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`,
   ],
-  generated_human: ["Create one stable photoreal Character DNA covering facial topology/asymmetry, age, build, living skin microtexture, eyes/eyelids, individual eyebrows and upper/lower eyelashes, nose/lips, hairline/density/strand texture, wardrobe materials and scale; reuse it exactly."],
+  generated_human: ["Create one stable photoreal Character DNA covering facial topology/asymmetry, age, build, living skin microtexture, eyes/eyelids, individual eyebrows and upper/lower eyelashes, nose/lips, hairline/density/strand texture, one initial wardrobe description and scale; reuse the identity exactly. Keep wardrobe unchanged unless an approved visible or explicitly declared bathing, rain/water or story-required clothing transition declares one new carried state."],
   stick_figure: ["Use a locked minimal graphic DNA: stroke weight, head/body ratio, joint grammar, face marks, palette and background style.", "Express acting through pose, spacing and a small stable symbol vocabulary; do not drift into detailed anatomy or live action."],
   illustrated_2d: ["Lock line quality, proportions, palette, shading method and texture across every frame; no style drift between panels."],
   stylized_3d: ["Lock mesh proportions, material shader, eye scale, surface roughness and render language; never morph toward photoreal humans."],

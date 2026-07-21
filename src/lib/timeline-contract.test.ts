@@ -5,6 +5,10 @@ import {
   ensureDialogueClock,
   normalizeUntimedContinuousAction,
 } from "./timeline-contract.ts";
+import {
+  dedupeRepeatedWardrobeStates,
+  wardrobeStateThrough,
+} from "./wardrobe-continuity.ts";
 
 test("motion keeps action order but loses timecodes and hard cuts", () => {
   const result = normalizeUntimedContinuousAction(
@@ -31,4 +35,22 @@ test("valid user dialogue windows are preserved exactly", () => {
     { speaker: "Character Two", text: "Câu thứ hai", start_s: 2.6, end_s: 4.2 },
   ];
   assert.deepEqual(ensureDialogueClock(turns), turns);
+});
+
+test("one wardrobe transition persists into later clips without repetition", () => {
+  const segments: {
+    wardrobe_state?: { character: string; outfit: string; outfit_materials?: string; hair?: string }[];
+  }[] = [
+    {},
+    { wardrobe_state: [{ character: "Character One", outfit: "rain-soaked established outfit" }] },
+    { wardrobe_state: [{ character: "Character One", outfit: "rain-soaked established outfit" }] },
+  ];
+
+  dedupeRepeatedWardrobeStates(segments);
+
+  assert.equal(segments[2]!.wardrobe_state, undefined);
+  assert.equal(
+    wardrobeStateThrough(segments, 2).get("character one")?.outfit,
+    "rain-soaked established outfit"
+  );
 });

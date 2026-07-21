@@ -3,7 +3,7 @@
 
 export const entityLaws = {
   __layer: "ENTITY_DNA",
-  id: "entity_dna_human_anatomy_v2_face_realism",
+  id: "entity_dna_human_anatomy_v3_motivated_wardrobe",
   laws: [
     "A human has EXACTLY one head, two arms, two legs and five fingers per hand — never more, never fewer, never fused, in every single frame",
     "Joints bend only in natural human directions and ranges (elbows, knees, wrists, neck) — no impossible twists",
@@ -14,7 +14,7 @@ export const entityLaws = {
     "EYEBROWS consist of individual rooted hairs with real growth direction, density gradient, tapered ends, small gaps and mild asymmetry — never painted blocks, stamped arches or identical mirrored brows",
     "EYELASHES grow individually from the upper/lower lid margins with varied length, spacing, curvature, direction, subtle clumping and tiny shadows — never solid strips, uniform doll fans, duplicated rows or missing lower lashes unless explicit cosmetics require otherwise",
     "HAIR preserves hairline, temple shape, parting, density, colour, curl pattern and cut, with individual strands, root variation, limited scalp visibility, baby hairs and a few flyaways — never helmet hair, plastic mass, wig edge or repeated clumps",
-    "Identity persistence is absolute: facial geometry, skin details, eyebrows, eyelashes, hair, skin tone, wardrobe and accessories are IMMUTABLE across every clip — no model-default faces, no drift, no re-dressing",
+    "Identity persistence is absolute: facial geometry, skin details, eyebrows, eyelashes, skin tone, hair identity (cut/colour) and body remain fixed — no model-default faces or identity drift. Initial wardrobe/accessories stay unchanged without being repeatedly redescribed. Clothing or temporary hair condition may change only through an approved visible or explicitly declared cause such as bathing/showering, rain/water, getting dressed/undressed or another story-required clothing transition; declare that new wardrobe_state once and preserve it until the next motivated change",
     "A child stays a child: locked age bracket, true child proportions, clearly smaller than the adults in every shot",
     "Every person on screen is declared by name — no extra people, no phantom background figures, no duplicated characters",
   ],

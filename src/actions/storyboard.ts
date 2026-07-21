@@ -34,6 +34,10 @@ import {
   enforceSingleDialogueClock,
 } from "@/lib/timeline-contract";
 import {
+  dedupeRepeatedWardrobeStates,
+  wardrobeStateThrough,
+} from "@/lib/wardrobe-continuity";
+import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
   genreAmbientAudio,
@@ -258,11 +262,10 @@ function sanitizeUploadedCharacterSceneText(
       beat: clean(beat.beat) ?? beat.beat,
       camera: cleanContinuousTake(beat.camera) ?? beat.camera,
     }));
-    // An uploaded reference owns wardrobe/hair. A model-generated
-    // wardrobe_state entry for that person is therefore discarded entirely.
-    segment.wardrobe_state = segment.wardrobe_state?.filter(
-      (state) => !referenceNames.some((name) => name.toLowerCase() === state.character.trim().toLowerCase())
-    );
+    // The image owns the INITIAL wardrobe. A minimal wardrobe_state remains
+    // valid only as the structured exception for a story-required shower,
+    // rain/water condition or visible clothing change; never copy that state
+    // back into ordinary scene prose.
     if (segment.scene_intent) {
       segment.scene_intent = cleanUnknown(segment.scene_intent) as typeof segment.scene_intent;
     }
@@ -295,7 +298,10 @@ function characterLineForPrompt(
   if (!referenceNames.has(lock.name.trim().toLowerCase())) {
     return buildCleanCharLine(lock);
   }
-  return `${lock.name}. ${REFERENCE_CHARACTER_APPEARANCE_LOCK} Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
+  const scriptedWardrobeState = lock.costume?.trim()
+    ? ` Current scripted wardrobe state: ${lock.costume.trim()}.`
+    : "";
+  return `${lock.name}. ${REFERENCE_CHARACTER_APPEARANCE_LOCK}${scriptedWardrobeState} Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
 }
 
 import { defaultVoiceFor, findLawViolations } from "@/lib/laws";
@@ -309,10 +315,10 @@ const COOKING_HANDS_ONLY_SUBJECT =
 // CAST-SYNC: resolve a segment's characters_in_scene to their locks (in the
 // listed order). Empty/missing list or unmatched names always stays empty;
 // callers must never invent a main character from the project lock list.
-// MOTIVATED WARDROBE CHANGE: when the segment declares a wardrobe_state for a
-// character (shower → home clothes, etc.), return a CLONE of the lock with the
-// current outfit/hair — so every prompt, keyframe and board built for this
-// segment describes the new look instead of contradicting the base lock.
+// MOTIVATED WARDROBE CHANGE: wardrobe_state is declared only on the transition
+// segment. Resolve the latest state from all preceding segments so later
+// prompts/keyframes inherit it without repeating that declaration in the
+// storyboard JSON.
 function presentLocksFor(
   seg: {
     characters_in_scene?: string[];
@@ -322,10 +328,14 @@ function presentLocksFor(
 ): CharacterLock[] {
   const locks = breakdown.character_locks ?? [];
   const byName = new Map(locks.map((l) => [l.name.trim().toLowerCase(), l]));
-  const wardrobeByName = new Map(
-    (seg.wardrobe_state ?? [])
-      .filter((w) => w && (w.character ?? "").trim() && (w.outfit ?? "").trim())
-      .map((w) => [w.character.trim().toLowerCase(), w])
+  const identityIndex = breakdown.segments.findIndex((item) => item === seg);
+  const numberIndex = breakdown.segments.findIndex(
+    (item) => item.segment_number === (seg as { segment_number?: number }).segment_number
+  );
+  const segmentIndex = identityIndex >= 0 ? identityIndex : numberIndex;
+  const wardrobeByName = wardrobeStateThrough(
+    breakdown.segments,
+    segmentIndex >= 0 ? segmentIndex : breakdown.segments.length - 1
   );
   return (seg.characters_in_scene ?? [])
     .map((n) => {
@@ -1798,6 +1808,7 @@ export async function generateStoryboardPlan(
     // Deterministic post-model guard: menu names/photo groups win over any
     // invented, omitted or renamed cast returned by the storyboard model.
     enforceMenuCharacterContract(input, breakdown, analysis);
+    dedupeRepeatedWardrobeStates(breakdown.segments);
     sanitizeUploadedCharacterSceneText(input, breakdown);
 
     // TẦNG 9 turn-taking normalisation + safety clamp. Reconcile the two dialogue
@@ -2077,6 +2088,7 @@ export async function finalizeScript(params: {
     // No script index here on purpose: at the approval boundary the user's own
     // speaker edits in the preview are authoritative and must not be rewritten.
     enforceMenuCharacterContract(params.input, params.breakdown, params.analysis);
+    dedupeRepeatedWardrobeStates(params.breakdown.segments);
     normalizeDialogue(params.breakdown);
     enforceSingleDialogueClock(params.breakdown);
     enforceSceneCastContract(params.breakdown);
@@ -2416,10 +2428,9 @@ export async function generateBoardImage(params: {
       return { success: true, data: { url: r.url } };
     }
 
-    // WARDROBE/LOOK PIN: feed the first approved board back in as an anchor so
-    // every later board copies the EXACT same outfit + accessories (stops the
-    // wardrobe drifting into a suit on one board, etc.). The anchor goes FIRST
-    // so it's the dominant reference.
+    // WARDROBE/LOOK PIN: feed the first approved board back in as a continuity
+    // anchor. It keeps the established outfit unless presentLocksFor carries a
+    // motivated wardrobe_state into this segment.
     // CAST-SYNC: attach only the PRESENT characters' reference photos.
     const boardRefs = buildBoardRefs(ctx, seg.characters_in_scene, cookingRefOptions);
     let segImages = ctx.canChain && boardRefs.images.length > 0 ? boardRefs.images : [];

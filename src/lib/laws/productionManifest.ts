@@ -43,7 +43,7 @@ function deepFreeze<T extends object>(obj: T): T {
 
 function compileProductionManifest() {
   return deepFreeze({
-    manifest_meta: { version: "1.0.0", immutable: true as const },
+    manifest_meta: { version: "1.1.0", immutable: true as const },
     world_laws: assertLayer(worldLaws, "WORLD_DNA"),
     // TẦNG 2 — Environment DNA: referenced by archetype id (src/lib/environment)
     environment_laws_ref: "src/lib/environment (archetype library, Kelvin+Lux, material physics, stability locks)",
@@ -73,7 +73,7 @@ export function lawsSystemDigest(options?: { uploadedCharacterReferences?: boole
         id: "entity_dna_uploaded_reference_lock",
         laws: [
           ...PRODUCTION_LAWS.entity_laws.laws.slice(0, 3),
-          "Uploaded character reference pixels govern face, skin, hair, eyebrows, eyelashes, body and wardrobe; do not serialize or paraphrase those appearance attributes.",
+          "Uploaded character reference pixels govern face, skin, hair, eyebrows, eyelashes, body and the initial wardrobe; do not serialize or paraphrase those attributes. The sole wardrobe exception is one minimal wardrobe_state caused by an approved visible or explicitly declared bathing, rain/water or necessary clothing-change event; preserve that state until another motivated change.",
           PRODUCTION_LAWS.entity_laws.laws[10]!,
           PRODUCTION_LAWS.entity_laws.laws[11]!,
         ],
@@ -122,13 +122,13 @@ export function lawsForVeoJson(): Record<string, unknown> {
 }
 
 // ─── Prompt validation (ported from GỐC promptValidator: lazy-shorthand ban) ─
-// The model may not "reference" prior clips instead of restating state — that
-// shorthand is exactly what makes Veo drift.
+// The model may not use vague prior-clip shorthand for scene/identity/camera
+// state. Wardrobe is intentionally absent here: its initial description lives
+// once in character_lock and motivated changes use the carried wardrobe_state.
 export const LAW_FORBIDDEN_SHORTHAND = [
   "same environment as",
   "same scene as",
   "same character as",
-  "same outfit as",
   "same camera as",
   "same lighting as",
   "same as before",
