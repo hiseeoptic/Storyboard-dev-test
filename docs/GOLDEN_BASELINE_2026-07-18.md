@@ -1,6 +1,6 @@
 # Golden Baseline — chất lượng 18/07 + khóa an toàn hiện tại
 
-Tag khôi phục: `golden-2026-07-18-quality-v1`
+Tag khôi phục: `golden-2026-07-18-quality-v2`
 
 Đây là mốc ổn định lấy cấu trúc prompt gọn và tự nhiên của ngày 18/07 làm nền,
 đồng thời giữ các sửa lỗi bắt buộc đã xác nhận sau đó.
