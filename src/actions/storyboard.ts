@@ -30,6 +30,10 @@ import {
   stripUploadedCharacterAppearance,
 } from "@/lib/character-realism";
 import {
+  dialogueClockErrors,
+  enforceSingleDialogueClock,
+} from "@/lib/timeline-contract";
+import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
   genreAmbientAudio,
@@ -570,13 +574,15 @@ function normalizeDialogue(
       return dur < natural * 0.7 || dur > natural * 2;
     };
     const needsRetime =
-      turns.length > 1 &&
+      turns.length > 0 &&
       turns.some((t, i) => {
         const prev = turns[i - 1];
         return (
           t.start_s == null ||
           t.end_s == null ||
+          t.start_s < 0 ||
           t.end_s <= t.start_s ||
+          t.end_s > 9.5 ||
           (prev && prev.end_s != null && t.start_s! < prev.end_s) ||
           paceMismatch(t)
         );
@@ -624,6 +630,13 @@ function normalizeDialogue(
       seg.speaker = only.speaker;
     } else {
       seg.dialogue_lines = undefined;
+    }
+
+    const clockErrors = dialogueClockErrors(seg.dialogue_lines, 10);
+    if (clockErrors.length > 0) {
+      throw new Error(
+        `Invalid dialogue clock in segment ${seg.segment_number}: ${clockErrors.join("; ")}`
+      );
     }
   }
 }
@@ -1793,6 +1806,7 @@ export async function generateStoryboardPlan(
     // Pass the approved script so every line is credited to the speaker the
     // script itself labelled, instead of whoever the model guessed.
     normalizeDialogue(breakdown, sourceScript);
+    enforceSingleDialogueClock(breakdown);
     enforceSceneCastContract(breakdown);
     sanitizeContinuityNotes(breakdown);
     enforceCookingContract(input, breakdown);
@@ -2064,6 +2078,7 @@ export async function finalizeScript(params: {
     // speaker edits in the preview are authoritative and must not be rewritten.
     enforceMenuCharacterContract(params.input, params.breakdown, params.analysis);
     normalizeDialogue(params.breakdown);
+    enforceSingleDialogueClock(params.breakdown);
     enforceSceneCastContract(params.breakdown);
     sanitizeContinuityNotes(params.breakdown);
     sanitizeUploadedCharacterSceneText(params.input, params.breakdown);
@@ -2160,6 +2175,7 @@ export async function rewriteSegment(params: {
       backgroundDescription: "",
     });
     normalizeDialogue(scopedBreakdown);
+    enforceSingleDialogueClock(scopedBreakdown);
     enforceSceneCastContract(scopedBreakdown);
     sanitizeContinuityNotes(scopedBreakdown);
     enforceSpatialTopology(scopedBreakdown);

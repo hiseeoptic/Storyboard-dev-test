@@ -16,7 +16,7 @@ export const audioLaws = {
   id: "audio_positional_v2_northern_voice",
   laws: [
     "Sound is POSITIONAL: the voice emanates from the speaker's mouth, with exact natural lip-sync; distance and space shape what we hear",
-    "TURN-TAKING, NEVER OVERLAP: a clip may hold up to 3 sequential spoken turns (a short exchange), but exactly ONE mouth moves at any instant — turns do not overlap, everyone not speaking has their mouth closed, and the camera is on the active speaker's face during their turn; a voice never jumps to the wrong face",
+    "TURN-TAKING, NEVER OVERLAP: a clip may hold up to 3 sequential spoken turns, but exactly ONE mouth moves at any instant — turns do not overlap, everyone not speaking has their mouth closed, and camera framing never assigns or changes the speaker; a voice never jumps to the wrong face",
     "VIETNAMESE ACCENT PRIORITY: use a native Standard Northern Vietnamese (Hanoi) accent by default; pronounce tones, initials and finals cleanly with native Hanoi prosody; never drift into Southern, Central, overseas-Vietnamese or foreign-accent speech unless the user explicitly requests that region",
     "Every speaker has a FULL locked voice profile (timbre, natural fundamental-frequency range in Hz, speech rate in wpm, accent, emotion band) — identical in every clip; male ≈ 85-140 Hz, female ≈ 180-260 Hz, child ≈ 250-400 Hz; allow small human pitch variation, never monotone, pitch-shifted or Auto-Tuned; cross-gender voice swap is a critical failure",
     "VOICE IDENTITY AND TIMBRE never drift: keep the same apparent age, gender, vocal weight and resonance; clear warm midrange with natural breath, never nasal, boomy, shrill, metallic, robotic or synthetic",
@@ -24,7 +24,7 @@ export const audioLaws = {
     "VOICE FIDELITY is clean wide-band speech equivalent to 48 kHz capture, stable around -16 LUFS and true peak at or below -1 dBTP; no clipping, crackle, distortion, pumping, phase smear, synthetic reverb, hard noise-gate cuts or aggressive denoising",
     "The ambient bed is CONSTANT per location (one declared soundscape at low level ≈ -40dB feel) so stitched clips share one seamless soundstage; diegetic SFX follow the visible actions",
     "Silence is data: leave natural breathing room before and after the spoken line — no wall-to-wall talking, no music bed drowning the voice",
-    "Dialogue fits the clip's seconds at a natural speaking rate; the words are AUDIO ONLY — absolutely no subtitles, captions, burned-in text or watermark",
+    "Dialogue start/end windows are the clip's ONLY numeric clock and fit at a natural rate; motion and camera remain untimed ordered descriptions; spoken words are AUDIO ONLY — no subtitles, captions, burned-in text or watermark",
   ],
 } as const;
 

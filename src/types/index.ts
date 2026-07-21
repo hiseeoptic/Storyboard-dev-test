@@ -475,7 +475,7 @@ export interface VideoSegment {
   beats: ShotBeat[]; // 3-5 beats within the 10s
   /** Prompt used to generate this segment's start (first) frame image. */
   first_frame_prompt: string;
-  /** Image-to-video motion prompt (30-80 words) for Veo/Seedance. */
+  /** Untimed ordered image-to-video action; dialogue_lines owns all timecodes. */
   motion_prompt: string;
   dialogue: string | null;
   /** Exact character_locks name of who speaks this segment's line (used for the

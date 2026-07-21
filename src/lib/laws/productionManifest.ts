@@ -98,7 +98,7 @@ export function clipMotionLawLine(): string {
 
 /** One-line camera law clause for per-clip prompts. */
 export function clipCameraLawLine(): string {
-  return "CAMERA LAW: one smooth motivated move only (slow push-in / gentle pan / slow orbit), continuous like a real operator — no teleports, no hard cuts; same lens as every other clip; horizon locked ±3°; the speaker's face in medium-close focus during the line.";
+  return "CAMERA LAW: one smooth motivated move only, continuous like a real operator — no teleports, hard cuts or timed camera schedule; same lens across clips; camera may observe speaker, listener or both and never assigns speech or lip-sync.";
 }
 
 /** One-line audio law clause for per-clip prompts. */

@@ -14,12 +14,10 @@ import {
 } from "@/lib/environment";
 import {
   lawsSystemDigest,
-  clipMotionLawLine,
-  clipCameraLawLine,
-  clipAudioLawLine,
   defaultVoiceFor,
   worldContextLockBlock,
 } from "@/lib/laws";
+import { ensureDialogueClock, stripProductionTimecodes } from "@/lib/timeline-contract";
 import { contextFrameworkSystemDigest } from "@/lib/video-context";
 import {
   renderSceneIntentDirective,
@@ -72,7 +70,7 @@ const REFERENCE_CHARACTER_SCENE_NEGATIVE =
 // boots, denim, metal, wood, fabric, skin) renders true-to-life, not CGI/plastic.
 // One constant, reused in the motion tail, the keyframe and the Veo JSON.
 const PHOTOREAL_REALISM =
-  `PHOTOREAL REALISM (this is REAL filmed footage — NOT CGI, NOT 3D render, NOT illustration): ${HUMAN_FACE_REALISM_LOCK} Every object and material reads true-to-life: leather shows grain, creases, worn scuffs and real stitching; denim a woven twill weave; metal brushed or worn with real specular reflections; wood visible grain; fabric real thread and drape — no plastic, toy-like or CGI surfaces. Physically accurate light with soft imperfect shadow edges, natural depth of field and a fine organic film grain.`;
+  "REAL FILMED FOOTAGE: natural skin texture, individual hair strands, true material grain and weight, physically plausible light and imperfect shadows, subtle optical depth of field and organic sensor texture — never CGI, waxy or toy-like.";
 
 const PHOTOREAL_MATERIAL_REALISM =
   "REAL MATERIALS: leather shows grain, creases, worn scuffs and stitching; denim shows twill weave; metal has physically plausible reflections and wear; wood has varied grain; fabric has real thread, nap, folds and weight. Physically accurate light, soft imperfect shadow edges, natural optical depth of field and fine organic sensor/film texture — no plastic, toy-like or CGI surfaces.";
@@ -105,28 +103,20 @@ function veoConciseTail(
     : realityProfile
       ? buildRealityDirective(realityProfile)
       : PHOTOREAL_REALISM;
-  const motionLaw = !realityProfile
-    ? clipMotionLawLine()
-    : realWorld
-      ? "ACTION LAW: intention or another declared trigger precedes deliberate change; contact precedes influence; force has a source/direction; materials react; secondary motion follows; result state and meaningful traces persist according to the locked continuity mode."
-      : "INTERNAL PHYSICS LAW: motion, anatomy, materials and causality obey the locked reality profile consistently; any impossible or stylized behaviour must be explicitly allowed by that world, never accidental drift.";
-  const cameraLaw = realityProfile
-    ? "CAMERA LAW: follow the locked visual-language grammar and scene proof requirements; the viewpoint must make required evidence observable without adding unrelated moves, cuts or impossible camera positions."
-    : clipCameraLawLine();
-  const audioLaw = realityProfile
-    ? `${clipAudioLawLine()} AUDIO-WORLD CONTEXT: voices, ambience and foley keep causal sources, correct timing and perspective, while silence remains available when required by scene intent.`
-    : clipAudioLawLine();
+  const motionLaw = realWorld
+    ? "REAL PHYSICS: contact and visible force precede every object change; weight, gravity, balance and result-state persistence remain natural."
+    : "Motion and causality stay consistent with the locked reality profile.";
   const renderNeg = hasCharacterReference
     ? REFERENCE_CHARACTER_ANTI_PLASTIC
     : realWorld
     ? `${HUMAN_FACE_REALISM_NEGATIVE}, toy-like or 3D-render materials`
     : "unmotivated photoreal/stylized switching, accidental world-physics drift";
-  const textLaw = "ZERO VISIBLE TEXT OR GRAPHICS: every frame is clean live footage with no readable letters, words, names, numbers, logos, labels or typography anywhere, including real-world signs and product printing. No subtitles, captions, dialogue transcription, title cards, name tags, floating boxes, badges, watermarks, HUD, camera data or technical overlays. All names, dialogue, brands, ages, temperatures, lens values and timing values in this prompt are INTERNAL instructions only. Spoken words are AUDIO ONLY.";
-  const propCausality = "PROP/DOOR CAUSALITY LOCK: every object used by the motion is already visible in the START STATE. A door, drawer, tap, lid or container never opens, closes, appears, vanishes or changes state by itself; show the named hand/body contact, applied force and continuous movement before the state change, then keep the result persistent.";
+  const textLaw = "ZERO VISIBLE TEXT/GRAPHICS; dialogue is audio only.";
+  const propCausality = "PROPS/DOORS: already present in the start state; visible contact and continuous movement cause every change; nothing opens, appears or moves by itself.";
   const characterArtifacts = hasCharacterReference
     ? renderNeg
     : `extra or fused fingers, malformed hands, a third hand, an extra pair of hands, a disembodied hand entering the frame, the face changing, ${renderNeg}`;
-  return `${realityDirective} ${motionLaw} ${cameraLaw} ${audioLaw} ${propCausality} ${textLaw} Avoid: ${productNeg}storyboard sheets, grids, panel borders, reference thumbnails, character name tags or labels on screen, a character's name or age rendered as a floating label or info card, colour-code or hex-code text overlays, burned-in subtitles or captions, spoken words rendered as on-screen text, morphing, warping, teleporting, floating or duplicated objects, deformed food or liquid, ${characterArtifacts}.`;
+  return `${realityDirective} ${motionLaw} ${propCausality} ${textLaw} Avoid: ${productNeg}storyboard layouts, morphing, teleporting, floating or duplicated objects, deformed food/liquid, ${characterArtifacts}.`;
 }
 
 /** One-line "Scene Bible" style tokens. Keeps lens/lighting/grade constant so
@@ -719,7 +709,7 @@ MULTI-CHARACTER CASTING & DIALOGUE ASSIGNMENT (mandatory whenever the story/scri
 PHYSICAL REALISM (every clip must look real, not "AI" — this is what eliminates the broken, impossible-motion look):
 - ONE primary physical action per 10s clip, performed SLOWLY and DELIBERATELY. Never stack multiple simultaneous or sequential actions into one clip — that is the #1 cause of morphing, teleporting, duplicated limbs and objects passing through each other.
 - Write SPECIFIC motion: name the body part + the verb + the manner (e.g. "her right hand slowly lifts the pan by its handle"), never vague verbs like "moving", "doing" or "interacting".
-- 🔗 OBJECT-INTERACTION CAUSAL CHAIN (mandatory — a vague description here is what makes objects teleport into hands): every time a character touches, picks up, hangs, places or moves ANY object, the motion_prompt must narrate the FULL visible chain with timing: (1) REACH — the named hand travels to the object ("2-3s: his right hand reaches toward the denim jacket on the chair back"); (2) CONTACT — fingers close around a named part ("grips the jacket's collar"); (3) TRANSFER — carried along one continuous path ("lifts it off the chair and carries it two steps to the coat rack"); (4) RELEASE — placed/hung and the hand withdraws ("loops it over the rack's second arm, lets go"). NEVER write "he holds the jacket" if the previous moment his hands were empty — the pick-up must be shown.
+- 🔗 OBJECT-INTERACTION CAUSAL CHAIN (mandatory — a vague description here is what makes objects teleport into hands): every time a character touches, picks up, hangs, places or moves ANY object, the motion_prompt must narrate the FULL visible ordered chain without numeric timecodes: (1) REACH — the named hand travels to the object; (2) CONTACT — fingers close around a named part; (3) TRANSFER — it moves along one continuous path; (4) RELEASE — it is placed and the hand withdraws. NEVER write "he holds the jacket" if the previous moment his hands were empty — the pick-up must be shown.
 - ⚡ CAUSE BEFORE EFFECT (nothing happens by itself): if the story needs something to fall, tip, spill, open or break, the motion_prompt must FIRST show the physical cause making contact, THEN the effect with real physics timing — e.g. "as he hangs the heavy jacket, its weight pulls the top-heavy rack sideways; the rack leans, then topples to the floor". FORBIDDEN: "the coat rack falls" with no cause, "the door opens" with nobody touching it, effects that precede their causes.
 - 🚪 ONE LOCATION PER CLIP: the whole 10s lives in ONE continuous space; the set/backdrop never changes mid-clip. If the character must be somewhere else, they WALK there on screen within the same space — or it becomes the NEXT segment.
 - 🎒 PROP EXISTENCE & WARDROBE TRUTH (an undeclared prop is what makes objects teleport into hands): every object the motion_prompt uses MUST be planted in that segment's first_frame_prompt start state — in the character's hand, worn on their body, or placed in the scene (e.g. if he hangs a jacket, the first_frame_prompt says the jacket is already draped over his forearm as he enters). NEVER write "takes off his jacket" unless the jacket is part of his locked costume or explicitly declared carried. Before returning, CHECK every motion_prompt against the character_locks costume and the first_frame_prompt: any object touched in the motion that is missing from the start state is a bug — add it to the first_frame_prompt.
@@ -759,17 +749,17 @@ NEGATIVE CONTRACT: scene-level exclusions may cover text overlays, impossible ph
 
 DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlapping):
 - Veo 3 generates real spoken audio. Write dialogue in the language requested. Keep each spoken line SHORT and natural.
-- Put spoken lines ONLY in the dialogue fields. Do NOT quote them inside "motion_prompt" (the system appends them once; repeating makes the character say it twice). In motion_prompt, describe each speaking moment as a PHYSICAL GESTURE bound to its owner — WHO speaks WHEN, aimed at WHOM, and where the camera is (which may be on the LISTENER): e.g. "0-4s: [A] turns his head toward [B] and speaks, his lips moving naturally; 4-7s: [B] answers while looking down at the cup, camera holding on [A]'s listening face, [A]'s mouth closed" (replace [A]/[B] with the EXACT character_locks names). NEVER write a bare "[A] speaks" with no gesture/direction, and never quote the words.
+- Put spoken lines ONLY in the dialogue fields. Do NOT quote them inside "motion_prompt" (the system appends them once; repeating makes the character say it twice). In motion_prompt, describe only the ordered physical gestures: who turns toward whom, who speaks, and how the listener reacts. Use NO seconds or time ranges in motion_prompt or camera notes; dialogue_lines owns all speech timing.
 - FIT A SHORT EXCHANGE INTO ONE CLIP (this is the key rule — do NOT waste a whole 10s clip on one 3-word line): use the "dialogue_lines" array to place 1-3 SEQUENTIAL turns inside the same 10s clip when they belong to the same beat of conversation. Each turn = { "speaker": exact character_locks name (or "" for voiceover), "text": the line, "start_s": when they start, "end_s": when they finish }.
 - HARD SAFETY RULES (a video model CANNOT lip-sync two mouths at once — breaking these causes garbled clips):
   1. TURN-TAKING ONLY, NEVER OVERLAP: turns are strictly sequential — turn N's end_s ≤ turn N+1's start_s. Exactly ONE person's mouth moves at any instant; everyone else has their mouth closed, listening.
   2. FIT THE SECONDS: the whole exchange must finish by ~9s (leave breathing room). Budget realistically at a natural pace — roughly 0.4s per word plus a ~0.5s beat between speakers. A short line like "Thế anh đã vo gạo chưa?" ≈ 2.5s. If the exchange does NOT fit, keep only the turns that fit and PUSH the rest into the NEXT segment — never cram or speed up speech.
   3. MAX 3 turns and MAX 2 distinct speakers per clip (a third speaker like a child interjecting is allowed only as the LAST short turn). More than that → split across segments.
-  4. FOUR INDEPENDENT ELEMENTS PER TURN (mandatory — camera and speaker are NEVER coupled by default): for EVERY dialogue turn, the motion_prompt must state, in the turn's exact time window, all four of: (a) WHO speaks and WHO they look at ("[A] looks at [B] and speaks" — replace [A]/[B] with EXACT character_locks names; the speaker faces their conversational partner per the scene geometry, NEVER automatically toward the camera and never with their back to the person addressed unless the script demands it); (b) what the LISTENER does — mouth fully closed, no speech-like jaw or lip movement, reacting only with eyes/brows/breathing/posture; (c) the CAMERA SUBJECT — chosen freely and explicitly: it may be the speaker, OR the listener's reaction, OR both in frame; when the camera holds the listener, write it out ("6.0-7.9s: [A] continues speaking off-screen while the camera holds on [B]'s silent reaction, mouth closed"); (d) the same clock as the dialogue window. It is FORBIDDEN to let the camera simply follow whoever is speaking turn after turn — in a clip with 2+ turns, at least ONE turn must hold the camera on the listener's reaction while the other continues speaking on- or off-screen. Reframes between turns are gentle pans, still ONE continuous take — no hard cut.
+  4. CAMERA DOES NOT ASSIGN SPEECH: camera and speaker are independent. Camera notes may hold the speaker, the listener's reaction, or both, but contain no dialogue timecodes and never force the framed person to speak. Only dialogue_lines.speaker owns the voice and lip movement; every other visible mouth stays closed.
   5. "characters_in_scene" must include every speaker; a voiceover speaker ("") is heard but not shown.
   6. SPEAK-WHILE-STILL (critical — the video model reassigns a line to whichever stable face is on camera if the named speaker is mid-action): a character NEVER delivers a line while performing a large body action (standing up, sitting down, walking, turning away, bending). Choreograph big movements into the GAPS between turns: move first THEN speak from a stable pose, or speak first THEN move. Small gestures while speaking are fine (a nod, lifting a spoon).
-  7. ONE SHARED CLOCK: the second-by-second timing in "motion_prompt" MUST use the exact same clock as the dialogue_lines start_s/end_s — the action described at second X must be what is physically happening while the line at second X plays. Never write a motion timeline that contradicts the dialogue windows.
-  8. QUIET WINDOW: never schedule a line during a loud or major physical event (a crash, a fall, an impact, something breaking) — even if the speaker themselves is standing still. A reaction line starts AFTER the event has fully finished (e.g. the rack topples 5-7s → the wry comment starts at ~7.5s), so the voice is never buried under the event and the camera can be on the speaker's face.
+  7. ONE CLOCK ONLY: dialogue_lines.start_s/end_s is the sole numeric clock in a clip. motion_prompt and camera notes describe ordered action/coverage with NO seconds and NO time ranges. Never create a second camera or action timeline.
+  8. QUIET WINDOW: never place a dialogue window over a loud or major physical event. Complete the crash/fall/impact first in the ordered action, then begin the reaction line; do not add event timecodes outside dialogue_lines.
   9. BALANCE THE LOAD ACROSS SEGMENTS (mandatory final audit — unbalanced clips are the #1 cause of dropped/garbled lines): before returning, COUNT the spoken words in every clip. Budget = ~0.4s/word + ~0.5s gap per speaker change + breathing room ⇒ a 10s clip carries 8-22 total spoken words. A clip OVER 22 words → move its last turn(s) into the next segment (and shift that segment's lighter lines down); a clip UNDER 8 words whose line belongs to the same conversation as an adjacent clip's line → merge them into one clip's dialogue_lines. A SINGLE turn longer than ~22 words must be that clip's ONLY line — never squeeze a 24-word line into a 4-second window and never pair it with another turn. The final distribution should feel even: no clip nearly silent while its neighbour is crammed.
 - SINGLE-LINE CLIPS: if a beat is just one line, you may use "dialogue_lines" with one entry OR the plain "dialogue"+"speaker" fields — both work. For a longer monologue that fills the clip, one speaker is correct.
 - Mirror the FIRST turn into the top-level "dialogue" (its text) and "speaker" (its name) for compatibility.
@@ -945,7 +935,7 @@ Visual Style: ${input.style}
 Number of 10-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 10} seconds)
 Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
 
-Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Each beat covers a distinct time-frame inside the unbroken 10 seconds while the subject, props and locked physics stay continuous. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" must describe that ONE continuous action across the 10s with rough timing (split 10s across the beats, e.g. "0-3s ...; 3-6s ...; 6-10s ..."), using deliberate, specific motion verbs (body part + verb + manner) plus an explicit final state/anchor. Keep ONE primary action per clip — never stack multiple simultaneous actions that exceed the target model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. ${firstFrameIdentityRule} Inside the motion_prompt use only the exact name plus position, action, expression and dialogue timing for an uploaded-reference character.
+Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Beats preserve a clear chronological order while the subject, props and locked physics stay continuous, but beats and camera notes contain NO numeric timecodes. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" describes that ONE continuous action as an untimed ordered physical sequence using deliberate, specific verbs (body part + verb + manner) plus an explicit final state/anchor. dialogue_lines.start_s/end_s is the clip's ONLY clock. Keep ONE primary action per clip — never stack multiple actions beyond the model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. ${firstFrameIdentityRule} Inside the motion_prompt use only the exact name plus position, action and expression for an uploaded-reference character.
 
 Return a JSON object with this EXACT structure (the "beats" array must contain EXACTLY ${beatsPerSegment} items):
 {
@@ -1036,7 +1026,7 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
 ${beatExample}
       ],
       "first_frame_prompt": "string — the segment's START STATE: describe the SHARED scene/setting, name each visible character, give position/action/expression, and plant every prop the motion_prompt will use. For a TEXT-ONLY character, appearance may come from character_locks. For an UPLOADED-REFERENCE character, NEVER describe face, skin, hair, brows, lashes, body, age or wardrobe; the attached named image supplies all appearance. For a multi-zone/doorway/boundary scene, restate the SAME zone order, fixed architecture and character placements from spatial_layout.",
-      "motion_prompt": "string — a focused 70-110 word image-to-video ACTION prompt for Omni Flash / Veo describing ONE continuous take. Do not repeat identity attributes, style tokens, a physics clause or a negative list here. For an UPLOADED-REFERENCE character, write only their exact name plus position, action, expression and dialogue timing — never describe or paraphrase appearance. Describe ONE continuous primary action with rough timing, full physical object-contact chains, one location, smooth minimal camera movement, speech timing without quoted dialogue, and the exact final state.",
+      "motion_prompt": "string — a focused 70-110 word image-to-video ACTION prompt describing ONE continuous take as an UNTIMED chronological sequence. Do not repeat identity attributes, style tokens, physics clauses, dialogue text or negatives. For an UPLOADED-REFERENCE character, write only the exact name plus position, action and expression — never appearance. Use full physical contact chains, one location, smooth minimal camera movement and an exact final state. NO seconds/time ranges here; dialogue_lines is the only clock.",
       "dialogue": "string — the FIRST turn's spoken line in ${dialogueLanguage} (short, natural). Mirror of dialogue_lines[0].text.",
       "speaker": "string — the EXACT character_locks name of the FIRST turn's speaker (mirror of dialogue_lines[0].speaker). Empty string \\"\\" if voiceover.",
       "dialogue_lines": [
@@ -1156,12 +1146,12 @@ ${turnsBlock}
 
 REWRITE RULES:
 1. Re-time the turns realistically (~0.4s per word + ~0.5s beat between speakers), strictly sequential and non-overlapping, finished by ~9s. Fill "dialogue_lines" with start_s/end_s for every turn; mirror turn 1 into "dialogue" and "speaker".
-2. Rewrite "motion_prompt" (70-110 words) as ONE continuous take whose physical action and camera are choreographed AROUND those timed turns. FOUR INDEPENDENT ELEMENTS PER TURN: for every turn state (a) WHO speaks and WHO they look at ("[A] looks at [B] and speaks" — replace [A]/[B] with EXACT character_locks names; the speaker faces their conversational partner, never automatically the camera, never back-turned to the person addressed) — never a bare "X speaks"; (b) the LISTENER's state — mouth fully closed, no speech-like jaw movement, reacting only with eyes/brows/posture; (c) the CAMERA SUBJECT, chosen explicitly and independently — the speaker OR the listener's reaction (when the listener, write it out: "camera stays on [B] as [A] speaks off-screen; [B]'s mouth stays closed"); with 2+ turns, at least one turn holds the camera on the listener — the camera must NOT simply follow whoever speaks; (d) the same clock as the turn windows (the action at second X is what happens while the line at second X plays). SPEAK-WHILE-STILL: a speaker NEVER performs a large body action (standing up, walking, turning away) during their own line — schedule big movements into the GAPS between turns, and while a line plays its speaker holds a stable speaking pose. Time left before/after/between the turns must be filled with meaningful physical action that advances the story — never dead air. CAUSAL CHAIN: write every object interaction as the full visible chain (hand reaches → fingers grip a named part → carried along one continuous path → released), never let an object appear in a hand; every effect (something falls/tips/spills) must be PRECEDED by its visible physical cause making contact; the whole clip stays in ONE location. PROP EXISTENCE: every object the motion uses must be planted in the first_frame_prompt start state (held, worn or placed) — update the first_frame_prompt if the new action needs a prop it doesn't mention. QUIET WINDOW: no line plays during a loud/major physical event — a reaction line starts only after the event has finished. LOAD BUDGET: a 10s clip carries 8-22 total spoken words (~0.4s/word + gaps). ALL locked turns STAY in THIS segment — you cannot move, drop or defer a line to another segment. If the turns exceed the budget, keep a natural speaking pace and let the last line end as late as 10s; NEVER squeeze speech to an unnatural rate and NEVER write commentary about it. STAGING: give every visible character one concrete physical business (a named hand action serving the story) and name exact micro-expressions (an eyebrow raise, a suppressed smile) — never write "reacts"; the camera move must differ from the neighbouring clips' moves and travel calmly across the whole 10s, easing in and out, never a rushed 1-second whip. Do NOT quote the spoken words inside motion_prompt.
-3. Rewrite the "beats" (EXACTLY ${beatsPerSegment} beats) as the progressive camera framings of that one continuous action, aligned with the turn windows.
+2. Rewrite "motion_prompt" (70-110 words) as ONE untimed chronological physical sequence. State who addresses whom and the listener's silent reaction, but put NO seconds/time ranges, quoted dialogue or camera schedule in motion_prompt. SPEAK-WHILE-STILL: large body movement occurs before/after speech; small natural gestures are allowed. CAUSAL CHAIN: every object interaction visibly follows reach → contact/grip → continuous transfer → release; every fall/open/spill has a visible cause first; all used props already exist in first_frame_prompt; the whole clip stays in ONE location. Keep the physical load light and meaningful, with exact micro-expressions rather than vague "reacts".
+3. Rewrite "beats" (EXACTLY ${beatsPerSegment} beats) as untimed progressive framings of the same continuous action. CAMERA DOES NOT ASSIGN SPEECH: it may hold the speaker, listener reaction or both; camera notes contain no dialogue timecodes, use one calm smooth move and never force the framed person to lip-sync.
 4. Update "first_frame_prompt" only as needed (same location/lighting; for an uploaded-reference character use only the exact name, position, action and expression — never restate appearance). Set "characters_in_scene" to the EXACT lock names visible — every speaker with a non-empty name must be included.
 5. SPATIAL TOPOLOGY: preserve the existing spatial_layout when it is physically valid; otherwise repair it without changing the intended location. For every multi-zone/doorway/boundary scene return all five fields: ordered connected zones; immutable architecture/openings/boundaries; exact character zone + anchor distance + facing; one unobstructed walkable route; one real supported camera zone. first_frame_prompt, beats and motion_prompt MUST all obey this same map. Doorways/thresholds remain unobstructed; railings/guards remain only on the true exposed edge; nobody or the camera stands beyond them; zone changes visibly cross the declared connector.
 6. HARD CONSTRAINTS: keep "segment_number" = ${seg.segment_number}, "duration_seconds" = ${seg.duration_seconds || 10}, "marketing_role" = "${seg.marketing_role}", "environment_ref" = "${seg.environment_ref ?? "custom"}". Locked continuity mode = "${continuityMode}". ${strictContinuity ? "Open from the previous segment's exact end state and close on the next segment's exact opening state." : "Preserve only the continuity anchors declared by scene_intent/context; location, time or pose may change when this continuity mode explicitly permits it."} Update continuity_note accordingly.
-7. continuity_note = PHYSICAL SCENE STATE ONLY (who is where, holding what, in which pose/emotion, carried into the next shot). STRICTLY FORBIDDEN inside continuity_note, first_frame_prompt and motion_prompt: production/meta commentary of any kind — word counts, wpm or seconds-per-word math, "moved to segment N", "due to duration constraints", quoted dialogue lines, or notes to the editor. This text is rendered by the video model verbatim; meta commentary corrupts the clip.
+7. continuity_note = PHYSICAL SCENE STATE ONLY (who is where, holding what, in which pose/emotion, carried into the next shot). STRICTLY FORBIDDEN inside continuity_note, first_frame_prompt, motion_prompt and beats: numeric timecodes, production/meta commentary, word counts, wpm math, "moved to segment N", duration notes, quoted dialogue or editor notes. Only dialogue_lines.start_s/end_s may contain seconds.
 
 Return ONLY the rewritten segment as ONE JSON object with the exact segment structure (segment_number, duration_seconds, title, marketing_role, beats[], first_frame_prompt, motion_prompt, dialogue, speaker, dialogue_lines[], characters_in_scene[], environment_ref, spatial_layout{}, wardrobe_state[] — copy the segment's existing wardrobe_state unchanged if it has one, continuity_note) — no wrapper, no markdown, no prose.`;
 }
@@ -1833,7 +1823,7 @@ export function buildSegmentVeoPrompt(params: {
     ? "Each attached named character image is the sole appearance authority for its exact name; do not describe or reinterpret appearance."
     : "Keep every referenced subject visually consistent across the project.";
   const lead =
-    `OUTPUT CONTRACT — CLEAN FULL-SCREEN VIDEO ONLY: create ONE continuous 10-second ${outputMedium} filling the entire frame. ZERO visible text or graphics anywhere: no letters, words, names, ages, numbers, labels, logos, captions, subtitles, badges, cards, HUD or technical overlays. NEVER film, animate or reproduce a storyboard sheet, reference sheet, collage, grid, panel border, thumbnail strip or document page. ${referenceLead} ${settingSource} Every name and technical value in this prompt is INTERNAL production data only and must never be drawn.`;
+    `Create ONE clean full-screen continuous ${outputMedium}; no cuts, panels, captions, labels, logos, HUD, watermark or other visible text/graphics. ${referenceLead} ${settingSource}`;
   const character = ` Primary subject/cast: ${clean(params.characterDescription)}.`;
   // TẦNG 0 — the locked world every entity in this clip must belong to.
   const contextLock = worldContextLockBlock(
@@ -1893,9 +1883,8 @@ export function buildSegmentVeoPrompt(params: {
   const absent = onScreen.length > 0 ? allNames.filter((n) => !onScreen.includes(n)) : [];
   const castLine =
     onScreen.length > 0
-      ? ` ON SCREEN: exactly ${onScreen.length} character${onScreen.length > 1 ? "s" : ""} — ${onScreen.join(", ")} — and NOBODY else; no extra people in frame or background, and each named character exists exactly ONCE — never duplicated, mirrored or repeated anywhere in the frame. NO HUMAN TELEPORT OR UNPLANNED ENTRANCE: everyone listed is ALREADY in place at second 0 exactly as the START STATE positions them and remains physically present for the whole clip; nobody may pop in, materialise, enter from outside the frame, disappear or reappear. A doorway may only be crossed when the start frame already shows the person at that doorway and the motion gives the complete visible walk path; otherwise keep every listed character in their declared zone.${absent.length > 0 ? ` ${absent.join(", ")} ${absent.length > 1 ? "are" : "is"} NOT in this scene and must not appear, not even in the background or as a reflection.` : ""}`
+      ? ` ON SCREEN: exactly ${onScreen.join(", ")}, each once; no extra people, duplicates, reflections, spontaneous entrances or disappearances.${absent.length > 0 ? ` ABSENT: ${absent.join(", ")}.` : ""}`
       : "";
-  const speakerLabel = speaker || "The character";
   const voices = params.characterVoices ?? {};
   const voiceOf = (name: string) => (name && voices[name.trim()] ? ` (voice: ${voices[name.trim()]})` : "");
 
@@ -1908,74 +1897,22 @@ export function buildSegmentVeoPrompt(params: {
         ? [{ speaker, text: params.dialogue, start_s: undefined, end_s: undefined }]
         : [];
   const turns = rawTurns.filter((t) => (t.text ?? "").trim());
-  const dialogueGazeLock = turns
-    .map((t) => {
-      const nm = (t.speaker ?? "").trim();
-      if (!nm) return "VOICEOVER turn: every visible character keeps their face and mouth still.";
-      const partner = onScreen.find((name) => name !== nm);
-      const window =
-        t.start_s != null && t.end_s != null ? `${t.start_s}-${t.end_s}s ` : "";
-      return partner
-        ? `${window}${nm} turns their head and upper body toward ${partner} before speaking; ${partner} remains visibly oriented toward ${nm}, listening with mouth fully closed and no speech-like jaw movement`
-        : `${window}${nm} stays in a stable speaking pose and faces the declared camera direction`;
-    })
-    .join("; ");
-
   let spoken = "";
-  if (turns.length > 1) {
-    // TURN-TAKING: sequential timed lines, ONE mouth at a time, camera on the
-    // active speaker. Everyone else keeps mouths closed.
-    const speakersInTurns = Array.from(new Set(turns.map((t) => (t.speaker ?? "").trim()).filter(Boolean)));
+  if (turns.length > 0) {
     const lines = turns
       .map((t) => {
         const nm = (t.speaker ?? "").trim();
-        // A nameless turn is OFF-SCREEN NARRATION — say so explicitly, or Veo
-        // lip-syncs it through whichever on-screen face the camera is holding
-        // (the wife "spoke" the narrator's line in production).
-        const who = nm || "VOICEOVER (off-screen narration — NOBODY on screen moves their mouth or lips during this narration; all on-screen characters keep mouths fully closed)";
-        const vt = nm
-          ? voiceOf(nm)
-          : params.speakerVoice
-            ? ` (narrator voice: ${params.speakerVoice} — heard from off-screen only, it does NOT belong to any character visible in frame)`
-            : "";
+        const who = nm || "VOICEOVER";
+        const vt = nm ? voiceOf(nm) : params.speakerVoice ? ` (voice: ${params.speakerVoice})` : "";
         const window =
           t.start_s != null && t.end_s != null ? `${t.start_s}-${t.end_s}s ` : "";
         return `${window}${who}${vt}: "${(t.text ?? "").trim()}"`;
       })
       .join("; ");
-    const listeners = onScreen.filter((n) => !speakersInTurns.includes(n));
-    const listenerNote =
-      listeners.length > 0
-        ? ` While each person speaks, ${listeners.join(", ")} stay silent with mouths closed.`
-        : "";
-    // LINE OWNERSHIP tied to the PERSON + GESTURE, not the framing. The old
-    // "camera is on the speaker" rule made Veo lip-sync whichever face was on
-    // screen and mis-assign lines; instead bind each line to its owner's
-    // identity and speaking action, and explicitly allow reaction shots where
-    // the speaker is heard off-screen while the camera holds on the listener.
-    const ownership = ` LINE OWNERSHIP (STRICT): every line above belongs ONLY to its named speaker — bind it to that person's identity and speaking gesture (the one who turns/looks and talks), NEVER let a different character say it, never move another character's mouth to it, and never swap voices between characters (${speakersInTurns.length > 1 ? `${speakersInTurns.join(" and ")} have different voices — each line uses its owner's voice` : "the line stays with its owner"}). The line is tied to the ACTION, not to the framing: a character may speak while the camera favours someone else's face. STILLNESS: whenever the speaker's face IS on camera during their line, keep their speaking pose stable for clean lip-sync; any large body action (standing up, sitting down, walking, turning away) happens in the GAPS between lines, never during a line. If the MOTION timing and these DIALOGUE windows disagree, the DIALOGUE windows win — shift the action beats to fit around them.`;
-    spoken = ` DIALOGUE (turn-taking, ONE voice at a time, never overlapping; each line is spoken in its OWNER's voice and belongs only to that named person): ${lines}. DETERMINISTIC GAZE/BLOCKING LOCK: ${dialogueGazeLock}. VOICE FOLLOWS THE PERSON, NOT THE CAMERA: when the speaker's face is in frame, only THAT person's lips move in exact lip-sync; the camera is free to hold on the LISTENER to catch their reaction, and while it does the line is heard as the speaker's off-screen / over-the-shoulder voice with NO on-screen character moving their lips to it. SPEAKER GAZE: each speaker faces and looks toward the person they are addressing per the scene geometry — never automatically toward the camera, and never with their back turned to the person addressed. Whoever is not speaking keeps their mouth fully closed with no speech-like jaw movement and never mouths the other person's line, their body and gaze naturally oriented toward the speaker — the two characters are never both facing the same direction side-by-side like presenters unless the script explicitly stages it. All lines in ${lang}, AUDIO ONLY — absolutely NO subtitles, captions or on-screen text. SAY IT ONCE: each line is spoken EXACTLY ONCE, straight through at a natural pace — never repeat, stutter, loop or echo any word or phrase of it (a word must never be said twice in a row); when the line ends, the voice stops cleanly and does not restart.${listenerNote}${ownership}`;
-  } else if (turns.length === 1) {
-    const t = turns[0]!;
-    const nm = (t.speaker ?? "").trim();
-    if (!nm && !speaker) {
-      // Genuine VOICEOVER clip: the line is off-screen narration — if we say
-      // "the character speaks", Veo lip-syncs it through an on-screen face.
-      const vt = params.speakerVoice ? ` (narrator voice: ${params.speakerVoice} — heard from off-screen only)` : "";
-      spoken = ` VOICEOVER${vt}, off-screen narration in ${lang}: "${(t.text ?? "").trim()}" — NOBODY on screen moves their mouth or lips during this narration; every visible character keeps the mouth fully closed. Spoken EXACTLY ONCE, straight through — never repeat, stutter or loop any word or phrase. AUDIO ONLY — absolutely NO subtitles, NO captions, NO burned-in text of these words on screen.`;
-    } else {
-    const label = nm || speakerLabel;
-    const vt = nm ? voiceOf(nm) || (params.speakerVoice ? ` (voice: ${params.speakerVoice})` : "") : params.speakerVoice ? ` (voice: ${params.speakerVoice})` : "";
-    const others = (onScreen.length > 0 ? onScreen : allNames).filter((n) => n !== nm);
-    const silence =
-      nm && others.length > 0
-        ? ` Only ${nm} speaks; the other character${others.length > 1 ? "s" : ""} (${others.join(", ")}) stay silent and listen with mouths closed.`
-        : "";
-    spoken = ` ${label}${vt} delivers this line in their OWN voice with accurate lip-sync — the voice belongs to and comes from ${nm ? `${nm}'s` : "the speaker's"} mouth — saying in ${lang}: "${(t.text ?? "").trim()}" — spoken EXACTLY ONCE, straight through at a natural pace (never repeat, stutter or loop any word or phrase; the voice stops cleanly when the line ends), delivered as AUDIO ONLY (voice + lip-sync); absolutely NO subtitles, NO captions, NO burned-in text of these words on screen. DETERMINISTIC GAZE/BLOCKING LOCK: ${dialogueGazeLock}.${silence} VOICE FOLLOWS THE PERSON, NOT THE CAMERA: when ${nm || "the speaker"}'s face is in frame their lips move with the line; the camera may instead hold on a listener's reaction, in which case the line is heard as ${nm || "the speaker"}'s off-screen / over-the-shoulder voice and NO on-screen character mouths it. Tie the line to ${nm || "the speaker"}'s speaking gesture (their look or turn toward the person addressed); any large body action (standing up, walking, turning away) happens before or after the line, never during it; the line is NEVER reassigned to another character.`;
-    }
+    spoken = ` DIALOGUE — THE ONLY TIMED CLOCK (${lang}, audio only): ${lines}. ${CAMERA_SPEECH_INDEPENDENCE_RULE} Lines are sequential, spoken once, never overlapped, repeated, echoed or reassigned.`;
   }
   const audio = params.ambientAudio ? ` AMBIENT SOUND: ${clean(params.ambientAudio)}.` : "";
-  const assembled = `${lead}${creativeRouteLock}${character}${castLine}${contextLock}${setting}${spatialLock}${envBlock}${product}${ing}${tokens}${palette}${intentBlock} MOTION: ${clean(params.motionPrompt)}${spoken}${audio} ${veoConciseTail(!!params.productDescription, params.realityProfile, params.renderMedium, params.hasCharacterReference)}`;
+  const assembled = `${lead}${creativeRouteLock}${character}${castLine}${contextLock}${setting}${spatialLock}${envBlock}${product}${ing}${tokens}${palette}${intentBlock} MOTION (ordered action, no timecodes): ${clean(stripProductionTimecodes(params.motionPrompt))}${spoken}${audio} ${veoConciseTail(!!params.productDescription, params.realityProfile, params.renderMedium, params.hasCharacterReference)}`;
   // DEFINITIVE hex-code scrub: Veo cannot read hex and burns any "#A9C7E8"
   // next to a name onto the frame as a name tag. Hex serves the boards, never
   // the video prompt — remove EVERY hex token from the final Veo text here so
@@ -2123,16 +2060,19 @@ Compatible with: Google Veo 3.1, Seedance 2.0, Kling, Runway, Pika`;
 
 /** The one comprehensive negative list, reused at project + clip level. */
 export const VEO_NEGATIVE_LIST = [
-  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair/wardrobe/accessories, warped or altered label/logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, railing wall counter furniture or prop crossing a doorway threshold stair entry or walking route, perimeter barrier in the middle of a floor, blocked opening, contradictory zone order, character or camera beyond a railing inside a wall or over a void, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, both characters talking at once, overlapping or simultaneous voices, doubled voice, chorus, echo, a spoken line repeated or duplicated, listener lip movement, lip movement during voiceover, narrator voice coming from a visible character's mouth, wrong speaker lip sync, swapped voices, ad-lib speech, speech bubble, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, floating character name tag, a character's name or age rendered as a label, character info card overlaid on the footage, colour-temperature or Kelvin label, exposure/Kelvin/lux/timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo, plastic or CGI skin, plastic wig hair, glossy doll or toy hair, smooth painted-on helmet of hair, hair with no visible individual strands, waxy airbrushed beauty-smoothed face, different trousers or pants colour than the locked outfit, wardrobe or outfit changing between clips, an extra or duplicated straw, a straw appearing or vanishing without being placed",
+  "morphing, warping, teleporting, duplicated character or object, extra people, extra or fused fingers, malformed hands, missing limbs, identity or wardrobe drift, objects passing through solids, impossible physics, blocked doorway or walkable path, barrier in the wrong zone, camera or person beyond a railing or inside a wall, jitter, jump cut, overlapping or repeated voices, wrong-speaker lip sync, listener lip movement, lip movement during voiceover, on-screen text, captions, labels, HUD, watermark, plastic or CGI surfaces",
   HUMAN_FACE_REALISM_NEGATIVE,
 ].join(", ");
 
 const VEO_REFERENCE_CHARACTER_NEGATIVE_LIST = [
-  "morphing, warping, teleporting, duplicated character, extra people, extra or missing limbs, malformed or fused fingers, objects passing through solid surfaces, impossible physics, jitter, stutter, mid-clip jump cuts",
-  "overlapping voices, duplicated dialogue, wrong-speaker lip sync, listener lip movement, lip movement during voiceover",
-  "on-screen text, captions, subtitles, labels, title cards, HUD, technical readout, watermark",
+  "morphing, teleporting, duplicated character, extra people, malformed hands, objects crossing solids, impossible physics, jitter, jump cuts",
+  "overlapping or repeated voices, wrong-speaker lip sync, listener lip movement, lip movement during voiceover",
+  "on-screen text, captions, labels, HUD, watermark",
   REFERENCE_CHARACTER_ANTI_PLASTIC,
 ].join(", ");
+
+export const CAMERA_SPEECH_INDEPENDENCE_RULE =
+  "Camera may frame the speaker, listener or both and never assigns speech; during each dialogue window only the named speaker's voice and lips move, every other visible mouth stays closed, and an off-screen speaker continues in their own voice with no visible mouth moving.";
 
 interface VeoJsonOptions {
   aspectRatio: string;
@@ -2239,7 +2179,7 @@ export function buildVeoJson(
   const cleanReferenceText = (s?: string | null) =>
     stripUploadedCharacterAppearance(s, referenceNameList);
   const cleanContinuousText = (s?: string | null) =>
-    cleanReferenceText(s)
+    stripProductionTimecodes(cleanReferenceText(s))
       .replace(/\b(?:then\s+)?hard\s+cuts?\s+to\b/gi, "then smoothly reframes to")
       .replace(/\b(?:then\s+)?cuts?\s+to\b/gi, "then smoothly reframes to")
       .replace(/\bjump\s+cuts?\b/gi, "smooth continuous reframe");
@@ -2459,8 +2399,11 @@ export function buildVeoJson(
         : seg.dialogue
           ? [{ speaker, text: seg.dialogue, start_s: undefined, end_s: undefined }]
           : [];
-    const dialogue = rawTurns
-      .filter((turn) => oneLine(turn.text))
+    const canonicalTurns = ensureDialogueClock(
+      rawTurns.filter((turn) => oneLine(turn.text)),
+      clipSeconds
+    );
+    const dialogue = canonicalTurns
       .map((turn) => {
         const name = oneLine(turn.speaker);
         const lock = locks.find((item) => item.name.trim().toLowerCase() === name.toLowerCase());
@@ -2476,58 +2419,8 @@ export function buildVeoJson(
             : "off-screen narrator",
         };
       });
-    const cameraText = beats.map((beat) => oneLine(cleanContinuousText(beat.camera))).filter(Boolean).join(" -> ");
+    const cameraText = beats.map((beat) => oneLine(cleanContinuousText(beat.camera))).filter(Boolean).join("; ");
     const camera = cameraParts(cameraText);
-    // ─── NATURALLY-PACED, PER-SECOND CAMERA for dialogue clips ──────────────
-    // The arrow-joined beat cameras ("[MEDIUM] A -> [CLOSE] B") read as hard
-    // CUTS (Veo morphs/teleports) and can be rushed. This does NOT force a
-    // fixed framing — coverage stays flexible (one continuous take may hold OR
-    // smoothly reframe). It only guarantees: no hard cuts, the move is TIMED to
-    // the real dialogue windows, and it is paced calmly across the whole clip
-    // so it never rushes/whips to "burn" mis-allocated time. The model's own
-    // intended coverage is kept as a hint.
-    const fmtT = (n: number) => (Math.round(n * 10) / 10).toString();
-    const spokenWindows = dialogue
-      .filter(
-        (d) =>
-          d.speaker_id !== "VOICEOVER" &&
-          typeof d.start_sec === "number" &&
-          typeof d.end_sec === "number"
-      )
-      .slice()
-      .sort((a, b) => (a.start_sec as number) - (b.start_sec as number));
-    let cameraFraming = camera.framing;
-    let cameraMovement = camera.movement;
-    let cameraFocus =
-      "cinematic natural depth of field; focus follows the explicitly assigned camera subject in the movement plan, NOT the active speaker — a speaker may be off-camera or softly out of focus while the listener's reaction is the sharp focal subject; interacted props stay readable";
-    if (spokenWindows.length >= 1) {
-      const steps: string[] = [];
-      let cursor = 0;
-      for (const w of spokenWindows) {
-        const s = w.start_sec as number;
-        const e = w.end_sec as number;
-        if (s - cursor > 0.2) {
-          steps.push(
-            `${fmtT(cursor)}-${fmtT(s)}s: gently ease any reframe and settle — no line yet, mouths closed`
-          );
-        }
-        steps.push(
-          `${fmtT(s)}-${fmtT(e)}s: hold the framing settled so ${w.speaker_name}'s face and mouth read clearly while their line is spoken; the other person stays visible and silent`
-        );
-        cursor = Math.max(cursor, e);
-      }
-      if (clipSeconds - cursor > 0.2) {
-        steps.push(`${fmtT(cursor)}-${fmtT(clipSeconds)}s: hold calmly on the reaction, mouths closed`);
-      }
-      const coverageHint = cameraText
-        ? ` Intended coverage (treat every "->" as a SMOOTH continuous reframe of the SAME take, never a cut): ${cameraText}.`
-        : "";
-      cameraMovement =
-        `ONE CONTINUOUS TAKE, NO HARD CUTS — any framing change is a smooth reframing of one shot.${coverageHint} ` +
-        `Pace the move calmly across the FULL ${clipSeconds}s at real human-operator speed: the camera SETTLES and holds on whoever is speaking, and only drifts or reframes during the silent gaps BETWEEN lines. Ease in, ease out; start settled and end settled so it chains into the next clip. NEVER rush, whip, jerk or speed up to catch up — if a move cannot happen calmly within its window, make it smaller or simply hold (a still, well-composed frame beats a hurried one). Timed plan: ${steps.join("; ")}.` ;
-      cameraFocus =
-        "keep whoever is speaking in clear focus with their face and mouth readable; the listener stays visible and never becomes the sharp subject or appears to speak; interacted props stay readable; no rack-focus onto the listener during a line.";
-    }
     const ambience = [env?.sound_bed, opts.ambientAudio].filter(
       (value): value is string => !!value
     );
@@ -2549,10 +2442,10 @@ export function buildVeoJson(
       sceneBible: sb,
       colorPalette: breakdown.style_guide?.color_palette ?? [],
       motionPrompt: cleanContinuousText(seg.motion_prompt),
-      dialogue: seg.dialogue,
+      dialogue: canonicalTurns[0]?.text ?? seg.dialogue,
       dialogueLanguage: lang,
-      speaker: seg.speaker,
-      dialogueTurns: seg.dialogue_lines,
+      speaker: canonicalTurns[0]?.speaker ?? seg.speaker,
+      dialogueTurns: canonicalTurns,
       characterVoices: Object.fromEntries(
         visibleLocks.map((lock) => [
           lock.name,
@@ -2568,10 +2461,10 @@ export function buildVeoJson(
       hasCharacterReference: hasReferencedVisibleCharacter,
     });
     return {
-      // Convenience aliases consumed by bulk extensions/importers. The
-      // structured fields below remain the canonical source of truth.
+      // Single convenience field for bulk extensions/importers. Do not emit a
+      // second duplicate alias: duplicated prompt prose was part of the 19/07
+      // bloat regression. Structured fields remain canonical.
       prompt: flatPrompt,
-      flattened_prompt: flatPrompt,
       scene_id: String(seg.segment_number),
       duration_sec: String(clipSeconds),
       visual_style: [
@@ -2587,7 +2480,6 @@ export function buildVeoJson(
       // images per clip. Never make them infer the cast from character_lock.
       characters_in_scene: onScreen,
       character_lock: characterLock,
-      ...(hasReferencedVisibleCharacter ? {} : { human_face_render_lock: HUMAN_FACE_REALISM_LOCK }),
       background_lock: {
         id: seg.environment_ref || `BACKGROUND_${seg.segment_number}`,
         name: env?.display_name || seg.title,
@@ -2598,31 +2490,26 @@ export function buildVeoJson(
           .filter(Boolean)
           .join("; "),
         persistence: opts.hasLocationRef
-          ? "An attached LOCATION photo shows the REAL set — rebuild THIS exact place (same layout, furniture, colours, materials and light) identically in EVERY clip of this project; only the characters, their poses and explicitly named props change between clips. spatial_topology is derived from that photo and cannot redesign it."
-          : "This exact location — same geometry, furniture positions, materials, colour palette and light sources — is IDENTICAL in every clip of this project; only the characters, their poses and explicitly named props change between clips. When spatial_topology is present, it is the authoritative geometry map.",
+          ? "Attached location image is the sole set authority; preserve its geometry, materials, furniture and light. spatial_topology cannot redesign it."
+          : "Preserve this location's geometry, fixed architecture, furniture and light; spatial_topology is authoritative.",
       },
       ...(spatialTopology ? { spatial_topology: spatialTopology } : {}),
       camera: {
-        framing: cameraFraming,
+        framing: camera.framing,
         angle: camera.angle,
-        movement: scrub(cameraMovement),
-        focus: cameraFocus,
+        movement: `ONE CONTINUOUS TAKE, no cuts or timed camera schedule. ${scrub(camera.movement)}. One calm motivated hold or smooth reframe; start and end settled.`,
+        focus: "Natural optical depth of field; freely observe speaker, listener reaction, both, or the interacted prop according to the scene intent.",
       },
       scene_action: {
         start_state: entryState,
         motion: mainAction,
         end_state: exitState,
         continuity_from_previous: continuityFromPrev,
-        // Behaviour-timing lock: forbids a character from pre-empting or lagging
-        // an action relative to the timed motion (for example, a listener
-        // already sitting before another person pulls the chair). The opening frame is anchored
-        // to the previous clip's real end; each character only changes state at
-        // the exact second their beat says so.
         continuity_lock:
           (segIndex > 0
-            ? "OPENING FRAME = continuity_from_previous, reproduced EXACTLY (same people, same poses, same positions, same props, same seated/standing state). If start_state conflicts with continuity_from_previous, continuity_from_previous WINS. "
-            : "OPENING FRAME = start_state, reproduced exactly. ") +
-          "STATE-CHANGE TIMING: every character holds their opening pose/position until the exact second in scene_action.motion that moves them. A character must NOT pre-empt a later beat and must NOT lag it — e.g. a character stays STANDING and does not sit until the motion explicitly shows them being seated, and stays SEATED until the motion explicitly shows them standing. Only the characters and props named in scene_action.motion move; everyone else is held frozen in their current state. CLOSING FRAME = end_state, reproduced exactly, so the next clip can open from it seamlessly. No off-plan people appear at the characters' own table.",
+            ? "Open exactly from continuity_from_previous; it wins over a conflicting start_state. "
+            : "Open exactly from start_state. ") +
+          "Only visible ordered contact/action changes a person, prop, door or object; preserve every resulting state through end_state.",
         // DETERMINISTIC FULL-OUTFIT LOCK — the #1 wardrobe-drift fix. The
         // start_state/motion prose often re-states only the TOP ("wearing a
         // white blouse"), so Veo invents the bottom and the trousers change
@@ -2632,7 +2519,7 @@ export function buildVeoJson(
         ...(textOnlyVisibleLocks.length > 0
           ? {
               wardrobe_lock:
-                "EXACT full outfit for the whole clip and IDENTICAL in every other clip — never change a colour or garment, never invent trousers/skirt/top not listed: " +
+                "Keep this complete outfit unchanged: " +
                 textOnlyVisibleLocks
                   .map((l) => {
                     const o = splitOutfit(l.costume);
@@ -2644,8 +2531,8 @@ export function buildVeoJson(
             }
           : {}),
         staging: spatialTopology
-          ? "All blocking obeys spatial_topology exactly. Conversation partners occupy their declared zones and face each other along a physically possible eye-line. Fixed architecture never moves; openings remain unobstructed; perimeter barriers stay on the true exposed edge; any zone change visibly follows walkable_path through the declared connector. A speaker never turns their back to the person addressed unless the motion explicitly requires it."
-          : "Conversation partners face EACH OTHER per the positions in background_lock.setting — a speaker never turns their back to the person addressed, and the two are never staged side-by-side facing the same direction like presenters, unless the motion explicitly stages it.",
+          ? "Obey spatial_topology exactly: fixed architecture stays fixed, openings and walkable_path stay clear, barriers stay on their declared perimeter, and every zone change follows the connector visibly."
+          : "Use physically possible blocking and eye-lines from background_lock.setting; addressed characters face one another unless the motion explicitly says otherwise.",
       },
       foley_and_ambience: {
         ambience,
@@ -2656,58 +2543,21 @@ export function buildVeoJson(
             : "None unless explicitly required by the scene",
       },
       dialogue,
-      voice_render_lock: clipAudioLawLine(),
-      lip_sync_director_note: (() => {
-        if (dialogue.length === 0)
-          return "No spoken dialogue; all visible mouths remain naturally closed.";
-        // Deterministic SECOND-BY-SECOND AUDIO MAP (the discipline that made
-        // hand-fixed prompts work): silence gaps and exactly one owner per
-        // window, so Veo can never guess a speaker from the framing.
-        const fmt = (n: number) => (Math.round(n * 10) / 10).toString();
-        const windows = dialogue
-          .filter((t) => typeof t.start_sec === "number" && typeof t.end_sec === "number")
-          .slice()
-          .sort((a, b) => (a.start_sec as number) - (b.start_sec as number));
-        let timeline = "";
-        if (windows.length === dialogue.length && windows.length > 0) {
-          const parts: string[] = [];
-          let cursor = 0;
-          for (const w of windows) {
-            const s = w.start_sec as number;
-            const e = w.end_sec as number;
-            if (s - cursor > 0.15) parts.push(`${fmt(cursor)}-${fmt(s)}s silence`);
-            const who =
-              w.speaker_id === "VOICEOVER"
-                ? "VOICEOVER only (off-screen narrator; NO on-screen mouth moves)"
-                : `${String(w.speaker_name).toUpperCase()}/${w.speaker_id} only`;
-            parts.push(`${fmt(s)}-${fmt(e)}s ${who}`);
-            cursor = Math.max(cursor, e);
-          }
-          if (clipSeconds - cursor > 0.15) parts.push(`${fmt(cursor)}-${fmt(clipSeconds)}s silence`);
-          timeline = `STRICT SEQUENTIAL AUDIO — NEVER MIX OR OVERLAP VOICES: ${parts.join("; ")}. `;
-        }
-        return `${timeline}DIALOGUE OWNERSHIP: each line belongs exclusively to its named speaker and is spoken in that person's voice from that person's physical position; no other character may produce any lip, jaw or speech-like mouth movement during that line — each line is spoken EXACTLY ONCE, never repeated or echoed. SPEAKER GAZE: the speaker looks toward the person they are addressing per the scene geometry — never automatically toward the camera, and never with their back to the person addressed. LISTENER: silent, lips naturally closed, reacting only through eyes, brows, breathing and posture. VOICEOVER: comes from a fully off-screen narrator — neither visible character may move their lips during narration. CAMERA INDEPENDENCE: camera subject, framing and focus are independent of dialogue ownership — the camera may hold the speaker, the listener's reaction, or both; when it holds the listener, the line continues as the speaker's off-screen voice and NO on-screen mouth moves to it. One voice at a time; dialogue is audio only.`;
-      })(),
+      lip_sync_director_note:
+        dialogue.length === 0
+          ? "No dialogue; all visible mouths remain naturally closed."
+          : `Dialogue start_sec/end_sec is the only clock. ${CAMERA_SPEECH_INDEPENDENCE_RULE}`,
       output_rules: {
         frame: "one clean full-screen continuous shot; never render a storyboard sheet, grid, panel, reference strip or document",
         on_screen_text: "ZERO — no letters, words, names, ages, numbers, labels, logos, captions, subtitles, badges, cards, HUD or technical overlays",
-        audio: "Dialogue and voiceover are spoken audio only. Exactly ONE voice at a time following the dialogue start_sec/end_sec windows; silent gaps between lines are mandatory; no simultaneous voices, chorus, echo, duplicated or repeated line, and no extra ad-lib speech. Apply voice_render_lock exactly: native Standard Northern Vietnamese (Hanoi) is the default and highest-priority Vietnamese accent unless the user explicitly requests another region; keep speaker identity, natural F0 range, timbre, prosody and clean wide-band fidelity stable across clips.",
+        audio: "Use each dialogue entry's voice_personality consistently; one clean native voice at a time, Standard Northern Vietnamese by default unless the user chose another accent; no overlap, repetition, echo or ad-lib.",
         reference_priority: hasReferencedVisibleCharacter
           ? "Each attached named character image is the sole appearance authority for that exact character. Do not describe, infer, reinterpret, merge or swap appearance."
           : "uploaded character and location menu references are authoritative; never merge, omit or swap identities",
       },
       negative_prompt: [
-        hasReferencedVisibleCharacter
-          ? VEO_REFERENCE_CHARACTER_NEGATIVE_LIST
-          : VEO_NEGATIVE_LIST,
-        // Continuity-specific negatives (appended, not replacing the base list):
-        "a character in a pose that contradicts the timed motion (e.g. already seated before the beat that seats them, or standing before the beat that stands them)",
-        "phantom / extra background diners, hands, legs or people at the main characters' own table",
-        "a character teleporting between seated and standing without the on-screen movement",
-        "the opening frame not matching continuity_from_previous",
-        "a railing, guardrail, parapet, wall, counter, furniture or prop crossing or blocking a doorway, threshold, stair entry or declared walkable route",
-        "a perimeter barrier migrating into the middle of a floor or appearing between characters whose declared zones have an unobstructed line of sight",
-        "a character or camera standing beyond a railing, inside a wall, over a void, or on a non-walkable surface",
+        hasReferencedVisibleCharacter ? VEO_REFERENCE_CHARACTER_NEGATIVE_LIST : VEO_NEGATIVE_LIST,
+        "opening state contradicting continuity_from_previous, unexplained pose/state change, extra background person, blocked connector, migrated railing/barrier, impossible camera or character position",
       ]
         .filter(Boolean)
         .join(", "),
