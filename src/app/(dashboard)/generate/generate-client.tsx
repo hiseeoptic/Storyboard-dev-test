@@ -1973,14 +1973,18 @@ export function GenerateClient() {
     const manifest = buildResultManifest();
     if (!manifest) return;
     try {
-      window.postMessage(
-        {
-          source: NANO_FLOW_MESSAGE_SOURCE,
-          type: NANO_FLOW_MESSAGE_TYPE,
-          manifest,
-        },
-        "*"
-      );
+      // Envelope must match NanoFlowPushMessage / the extension's listener
+      // (sidepanel.js reads d.payload). See DESIGN.md §7. When Storyboard runs
+      // embedded as an iframe inside the extension side panel, the listener
+      // lives in the parent frame, so post to window.parent (=== window when
+      // standalone, harmless). The download button is the always-works fallback.
+      const envelope = {
+        source: NANO_FLOW_MESSAGE_SOURCE,
+        type: NANO_FLOW_MESSAGE_TYPE,
+        payload: manifest,
+      };
+      window.parent.postMessage(envelope, "*");
+      if (window.parent !== window) window.postMessage(envelope, "*");
       setNanoPushed(true);
       setTimeout(() => setNanoPushed(false), 2500);
     } catch {
