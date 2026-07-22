@@ -17,6 +17,5 @@ export const cameraLaws = {
     "CAMERA-TOPOLOGY LOCK: name the camera's zone and line of sight in the same spatial map as the characters; the camera stays on a supported surface/safe side of a boundary and cannot create a view that requires a doorway, railing, wall, person or exterior void to occupy two contradictory positions",
     "PERSPECTIVE GEOMETRY: one consistent perspective per shot — objects shrink correctly with distance, parallel lines converge naturally, near/far scale relationships stay true; no fisheye or anatomy-warping field of view unless the locked visual style explicitly declares it",
     "EYE-LINE TRUTH: characters' eye-lines match the established spatial map — a character looking at someone off-frame looks in that person's true direction; the 180° axis is respected so screen direction never flips mid-conversation",
-    "RELATIVE SCREEN DIRECTION LOCK: camera reframes preserve the established left/right seating and standing relationship; never cross the axis in a way that makes characters appear to swap sides unless the script explicitly motivates that camera move",
   ],
 } as const;
