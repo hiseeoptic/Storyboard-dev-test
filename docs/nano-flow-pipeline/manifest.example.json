@@ -1,0 +1,95 @@
+{
+  "manifest_version": "1.0",
+  "generator": "storyboard-ai",
+  "generated_at": "2026-07-21T08:00:00Z",
+
+  "project": {
+    "project_id": "prj_making_tra_bac",
+    "title": "Making Tra Bac",
+    "aspect_ratio": "9:16",
+    "dialogue_language": "Vietnamese",
+    "total_duration_seconds": 20,
+    "thumbnail_title": "TRÀ BẮC CHÍNH GỐC",
+    "social_posts": {
+      "tiktok": { "caption": "Pha trà Bắc đúng kiểu 🍵", "hashtags": ["#trabac", "#travietnam"] },
+      "youtube_shorts": { "title": "Cách pha Trà Bắc chuẩn vị", "description": "…", "hashtags": ["#Shorts"] },
+      "facebook_reel": { "caption": "Bí quyết pha trà Bắc của bà", "hashtags": ["#trabac"] }
+    }
+  },
+
+  "assets": {
+    "characters": [
+      { "id": "char_lan",  "name": "Lan",  "image": null, "required": true },
+      { "id": "char_minh", "name": "Minh", "image": null, "required": true }
+    ],
+    "environments": [
+      { "id": "living_room_1", "name": "Phòng khách nhà cổ", "image": null }
+    ],
+    "products": [
+      { "id": "prod_tra", "name": "Hộp Trà Bắc", "image": null }
+    ]
+  },
+
+  "shots": [
+    {
+      "shot_id": "SHOT_001",
+      "index": 1,
+      "storyboard_name": "Making Tra Bac 1",
+      "duration_seconds": 10,
+      "marketing_role": "hook",
+
+      "storyboard_prompt": "Cinematic vertical 9:16 keyframe: an elderly Vietnamese woman (Lan) sits at a low wooden table in a traditional northern living room, warm morning light, a lacquer tray with a small clay teapot and the Tra Bac tea box in frame, shallow depth of field, photoreal, no text.",
+      "image_refs": {
+        "characters": ["char_lan"],
+        "environments": ["living_room_1"],
+        "products": ["prod_tra"]
+      },
+
+      "video_prompt": "Lan slowly lifts the clay teapot and pours steaming tea into a small cup, gentle steam rising, warm morning light, subtle camera push-in, photoreal, natural motion. Dialogue (Vietnamese): \"Trà này pha đúng kiểu Bắc mới ngon.\"",
+      "characters_in_scene": ["Lan"],
+      "video_refs": {
+        "use_generated_storyboard": true,
+        "characters": ["char_lan"],
+        "environments": [],
+        "products": []
+      },
+
+      "dialogue": "Trà này pha đúng kiểu Bắc mới ngon.",
+      "voice": "sulafat",
+      "beats": [
+        { "beat": "Lan reaches for the teapot", "camera": "[MS] static" },
+        { "beat": "pours tea, steam rises", "camera": "[CU] slow push-in" }
+      ]
+    },
+    {
+      "shot_id": "SHOT_002",
+      "index": 2,
+      "storyboard_name": "Making Tra Bac 2",
+      "duration_seconds": 10,
+      "marketing_role": "body",
+
+      "storyboard_prompt": "Cinematic vertical 9:16 keyframe: Minh (young man) sits across the table, receives the cup of tea with both hands, respectful posture, same northern living room, warm light, photoreal, no text.",
+      "image_refs": {
+        "characters": ["char_minh"],
+        "environments": ["living_room_1"],
+        "products": []
+      },
+
+      "video_prompt": "Minh receives the cup with both hands, takes a small sip, nods with a warm smile, same warm interior, subtle handheld feel, photoreal. Dialogue (Vietnamese): \"Thơm thật bà ạ.\"",
+      "characters_in_scene": ["Minh"],
+      "video_refs": {
+        "use_generated_storyboard": true,
+        "characters": ["char_minh"],
+        "environments": [],
+        "products": []
+      },
+
+      "dialogue": "Thơm thật bà ạ.",
+      "voice": "achird",
+      "beats": [
+        { "beat": "Minh receives the cup", "camera": "[MS] static" },
+        { "beat": "sips and smiles", "camera": "[CU] static" }
+      ]
+    }
+  ]
+}
