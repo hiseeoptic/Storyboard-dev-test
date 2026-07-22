@@ -15,7 +15,6 @@ import {
   Check,
   Download,
   Film,
-  Send,
   Image as ImageIcon,
   AlertTriangle,
   BookOpen,
@@ -33,7 +32,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import type { UploadedImage } from "@/components/ui/image-uploader";
+import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploader";
 import {
   generateStoryboardPlan,
   analyzeCookingRecipe,
@@ -46,12 +45,8 @@ import {
 } from "@/actions";
 import type { TopicCategory } from "@/services/topics";
 import { buildVeoJson, genreAmbientAudio } from "@/prompts";
+import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
-import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
-import {
-  NANO_FLOW_MESSAGE_SOURCE,
-  NANO_FLOW_MESSAGE_TYPE,
-} from "@/types/nano-flow";
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
@@ -862,12 +857,6 @@ type Phase = "input" | "generating" | "script" | "result";
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-// Nano Flow: Storyboard now only writes text (script + prompts). All images are
-// generated in the extension via Flow's free Nano Banana, so the paid Gemini
-// board/keyframe/thumbnail generation is turned OFF and the image-only result
-// cards are hidden. Flip to false to restore the legacy paid-image behaviour.
-const NANO_FLOW_TEXT_ONLY = true;
-
 export function GenerateClient() {
   const [lang, setLang] = useState<Lang>("vi");
   const [phase, setPhase] = useState<Phase>("input");
@@ -878,7 +867,6 @@ export function GenerateClient() {
   const [result, setResult] = useState<StoryboardResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedJson, setCopiedJson] = useState<string | null>(null);
-  const [nanoStatus, setNanoStatus] = useState<string | null>(null);
 
   // Kept after a build so any board can be reviewed and re-rendered on demand
   // (the quality-review/redo gate) without rebuilding the whole storyboard.
@@ -1108,7 +1096,7 @@ export function GenerateClient() {
   // Cooking-only intake. The source photos/text are OCR'd once into Recipe IR;
   // only the compact, reviewable IR enters the storyboard compiler.
   const [cookingSourceText, setCookingSourceText] = useState("");
-  const [cookingSourceImages] = useState<UploadedImage[]>([]);
+  const [cookingSourceImages, setCookingSourceImages] = useState<UploadedImage[]>([]);
   // Neutral default. Nature ASMR is an explicit choice, never inferred merely
   // because the user once supplied an outdoor creator as style inspiration.
   const [cookingStyle, setCookingStyle] = useState<CookingStyle>("kitchen_asmr");
@@ -1664,21 +1652,17 @@ export function GenerateClient() {
 
     // One master storyboard sheet for the whole video: all panels + the large
     // character-reference column. This remains a review/planning document.
-    // Nano Flow: skipped entirely — no paid image is generated here.
-    let posterUrl: string | null = null;
-    if (!NANO_FLOW_TEXT_ONLY) {
-      setProgressMessage(
-        lang === "vi"
-          ? `Đang vẽ bảng storyboard tổng (${segCount} cảnh trong 1 ảnh)`
-          : `Drawing the master storyboard sheet (${segCount} panels in 1 image)`
-      );
-      posterUrl = await genBoard(
-        { input, breakdown, analysis, kind: "master", provider },
-        lang === "vi" ? "Bảng tổng" : "Master board",
-        "master"
-      );
-      bump();
-    }
+    setProgressMessage(
+      lang === "vi"
+        ? `Đang vẽ bảng storyboard tổng (${segCount} cảnh trong 1 ảnh)`
+        : `Drawing the master storyboard sheet (${segCount} panels in 1 image)`
+    );
+    const posterUrl = await genBoard(
+      { input, breakdown, analysis, kind: "master", provider },
+      lang === "vi" ? "Bảng tổng" : "Master board",
+      "master"
+    );
+    bump();
 
     setBoardErrors(errs);
     setProgressPercent(100);
@@ -2437,9 +2421,8 @@ export function GenerateClient() {
   // ─── Result Phase ──────────────────────────────────────────────────
 
   if (phase === "result" && result) {
-    // Nano Flow text-only mode hides every image-only card.
-    const hasCharSheet = !NANO_FLOW_TEXT_ONLY && !!result.characterRefSheetUrl;
-    const hasPoster = !NANO_FLOW_TEXT_ONLY && !!result.storyboardPosterUrl;
+    const hasCharSheet = !!result.characterRefSheetUrl;
+    const hasPoster = !!result.storyboardPosterUrl;
     const hasWarnings = result.warnings && result.warnings.length > 0;
     const resultVeoJson = buildVeoJson(result.breakdown, {
       aspectRatio: genInput?.aspect_ratio ?? "9:16",
@@ -2461,53 +2444,6 @@ export function GenerateClient() {
       navigator.clipboard.writeText(text);
       setCopiedJson(key);
       setTimeout(() => setCopiedJson(null), 2000);
-    };
-
-    // ─── Nano Flow manifest export (M1) — see docs/nano-flow-pipeline/DESIGN.md ──
-    const buildNanoManifest = () =>
-      buildNanoFlowManifest(result.breakdown, {
-        aspectRatio: genInput?.aspect_ratio ?? "9:16",
-        dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
-        productNames: (genInput?.product_images ?? [])
-          .map((p) => p.name)
-          .filter((n): n is string => Boolean(n)),
-      });
-
-    const downloadNanoManifest = () => {
-      const manifest = buildNanoManifest();
-      const blob = new Blob([JSON.stringify(manifest, null, 2)], {
-        type: "application/json",
-      });
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = `${toAsciiSlug(result.breakdown.title).slice(0, 40) || "storyboard"}.nanoflow.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objectUrl);
-      setNanoStatus(lang === "vi" ? "Đã tải file" : "Downloaded");
-      setTimeout(() => setNanoStatus(null), 2000);
-    };
-
-    // Direct push to the AutoFlow Reel extension when this app is embedded in
-    // its side-panel iframe (DESIGN.md §7). Falls back silently to no-op when
-    // not embedded; the download button always works.
-    const pushNanoToExtension = () => {
-      const manifest = buildNanoManifest();
-      const message = {
-        source: NANO_FLOW_MESSAGE_SOURCE,
-        type: NANO_FLOW_MESSAGE_TYPE,
-        payload: manifest,
-      };
-      try {
-        window.parent?.postMessage(message, "*");
-        if (window.opener) window.opener.postMessage(message, "*");
-        setNanoStatus(lang === "vi" ? "Đã gửi sang extension" : "Sent to extension");
-      } catch {
-        setNanoStatus(lang === "vi" ? "Không gửi được" : "Send failed");
-      }
-      setTimeout(() => setNanoStatus(null), 2500);
     };
 
     return (
@@ -2604,8 +2540,8 @@ export function GenerateClient() {
           </Card>
         )}
 
-        {/* Storyboard Poster (hidden in Nano Flow text-only mode) */}
-        {!NANO_FLOW_TEXT_ONLY && (hasPoster ? (
+        {/* Storyboard Poster */}
+        {hasPoster ? (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -2657,10 +2593,10 @@ export function GenerateClient() {
               </Button>
             </CardContent>
           </Card>
-        ))}
+        )}
 
-        {/* Viral 9:16 Thumbnail / video cover (hidden in Nano Flow text-only mode) */}
-        {!NANO_FLOW_TEXT_ONLY && (result.thumbnailUrl ? (
+        {/* Viral 9:16 Thumbnail / video cover */}
+        {result.thumbnailUrl ? (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -2712,7 +2648,7 @@ export function GenerateClient() {
               </Button>
             </CardContent>
           </Card>
-        ))}
+        )}
 
         {/* Segments — the core: per-8s first frame + motion prompt */}
         <div>
@@ -2721,7 +2657,6 @@ export function GenerateClient() {
             <h2 className="text-lg font-bold">{L("segmentsTitle")}</h2>
           </div>
           <p className="mb-2 text-sm text-muted-foreground">{L("segmentsHint")}</p>
-          {!NANO_FLOW_TEXT_ONLY && (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3 text-xs text-primary">
             <RotateCw className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
@@ -2730,12 +2665,10 @@ export function GenerateClient() {
                 : "Review each board's quality before exporting. If a board is soft or off-model, hit the Redo ↻ button on that card to re-render just that one — no need to rebuild everything. Download the ZIP once you're happy."}
             </span>
           </div>
-          )}
 
           <div className="grid gap-4">
             {result.breakdown.segments.map((seg) => (
               <Card key={seg.segment_number} className="overflow-hidden">
-                {!NANO_FLOW_TEXT_ONLY && (
                 <div className="relative aspect-[16/9] bg-black/90">
                   {seg.first_frame_url ? (
                     <img src={seg.first_frame_url} alt={`Segment ${seg.segment_number}`} className="h-full w-full object-contain" />
@@ -2760,7 +2693,6 @@ export function GenerateClient() {
                   </Badge>
                   <Badge variant="outline" className="absolute bottom-2 right-2 bg-background/80">{seg.duration_seconds}s</Badge>
                 </div>
-                )}
                 <CardContent className="space-y-3 p-3">
                   <div>
                     <p className="text-sm font-semibold">{seg.title}</p>
@@ -2808,7 +2740,6 @@ export function GenerateClient() {
                       {copiedSeg === seg.segment_number ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                       {copiedSeg === seg.segment_number ? (lang === "vi" ? "Đã copy" : "Copied") : L("copyPrompt")}
                     </Button>
-                    {!NANO_FLOW_TEXT_ONLY && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -2823,7 +2754,6 @@ export function GenerateClient() {
                         <RotateCw className="h-3.5 w-3.5" />
                       )}
                     </Button>
-                    )}
                     {seg.first_frame_url && (
                       <Button
                         variant="outline"
@@ -2836,8 +2766,7 @@ export function GenerateClient() {
                     )}
                   </div>
 
-                  {/* Optional clean keyframe — hidden in Nano Flow text-only mode (paid). */}
-                  {!NANO_FLOW_TEXT_ONLY && (
+                  {/* Optional clean keyframe for users who want an extra AI-generated start frame. */}
                   <div className="rounded-md border-2 border-primary/50 bg-primary/5 p-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[11px] font-bold uppercase text-primary">
@@ -2889,7 +2818,6 @@ export function GenerateClient() {
                         : "This image is optional. Use the JSON prompt with Text-to-Video/Ingredients or crop the scene panel from the master storyboard to save cost."}
                     </p>
                   </div>
-                  )}
                 </CardContent>
               </Card>
             ))}
@@ -2948,38 +2876,6 @@ export function GenerateClient() {
               {resultJsonBlocks}
             </pre>
           </CardContent>
-        </Card>
-
-        {/* Nano Flow export (M1) — hand off to the AutoFlow Reel extension */}
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Package className="h-5 w-5" />
-                  {lang === "vi" ? "Xuất cho Extension (Nano Flow)" : "Export for Extension (Nano Flow)"}
-                </CardTitle>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {lang === "vi"
-                    ? "Gói toàn bộ shot + prompt tạo ảnh + prompt video vào 1 file .nanoflow.json để extension tự tạo ảnh Nano Banana (miễn phí) rồi ghép video. Không tạo ảnh trả phí ở đây."
-                    : "Bundles every shot + image prompt + video prompt into one .nanoflow.json so the extension generates images with free Nano Banana, then builds the video. No paid images here."}
-                </p>
-                {nanoStatus && (
-                  <p className="mt-1 text-xs font-medium text-emerald-600">{nanoStatus}</p>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={downloadNanoManifest} className="gap-1.5">
-                  <Download className="h-3.5 w-3.5" />
-                  {lang === "vi" ? "Tải .nanoflow.json" : "Download .nanoflow.json"}
-                </Button>
-                <Button variant="outline" size="sm" onClick={pushNanoToExtension} className="gap-1.5">
-                  <Send className="h-3.5 w-3.5" />
-                  {lang === "vi" ? "Gửi sang Extension" : "Send to Extension"}
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
         </Card>
 
         {/* Assembly Guide */}
@@ -3708,7 +3604,29 @@ export function GenerateClient() {
                     <Input value={charAppearance} onChange={(e) => setCharAppearance(e.target.value)} placeholder={L("charAppearance")} />
                   )}
                 </div>
-                {/* Nano Flow: bỏ tải ảnh nhân vật — ảnh tham chiếu sẽ nạp bên extension. Giữ tên + mô tả chữ. */}
+                <ImageUploader
+                  images={charImages}
+                  onChange={setCharImages}
+                  maxImages={2}
+                  label={
+                    lang === "vi"
+                      ? `Ảnh của ${charName.trim() || "nhân vật này"} (tối đa 2: chính diện + nghiêng)`
+                      : `Photos of ${charName.trim() || "this character"} (max 2: front + profile)`
+                  }
+                  hint={L("charPhotosHint")}
+                />
+                {charImages.length > 0 && (
+                  <p className="text-xs font-medium text-emerald-600">
+                    {lang === "vi"
+                      ? "Reference Lock đang bật: ảnh nhân vật sẽ được gửi trực tiếp vào model tạo hình, không chỉ chuyển thành mô tả chữ."
+                      : "Reference Lock is active: character photos go directly to the image model, not only into a text description."}
+                  </p>
+                )}
+
+                <CharacterStudio
+                  sourceImages={charImages}
+                  onApprove={(img) => setCharImages((prev) => [...prev, img].slice(0, 2))}
+                />
 
                 <Button onClick={addCharacter} disabled={!charName.trim()} className="w-full gap-2">
                   ➕ {lang === "vi"
@@ -3778,7 +3696,20 @@ export function GenerateClient() {
                       />
                     </div>
 
-                    {/* Nano Flow: bỏ tải ảnh trang sách — dùng ô dán công thức ở trên. */}
+                    <ImageUploader
+                      images={cookingSourceImages}
+                      onChange={(images) => {
+                        setCookingSourceImages(images);
+                        setCookingRecipe(null);
+                      }}
+                      maxImages={4}
+                      label={lang === "vi" ? "Ảnh trang sách / công thức để OCR" : "Cookbook / recipe pages for OCR"}
+                      hint={
+                        lang === "vi"
+                          ? "Tối đa 4 ảnh rõ chữ. Nên chụp thẳng trang, đủ sáng, không cắt mất cột nguyên liệu."
+                          : "Up to 4 legible pages. Shoot straight-on, well lit, with ingredient columns intact."
+                      }
+                    />
 
                     <div className="space-y-1.5">
                       <label className="text-sm font-medium">
@@ -3951,7 +3882,13 @@ export function GenerateClient() {
                         onChange={(e) => setProdName(e.target.value)}
                         placeholder={lang === "vi" ? "Tên món / ảnh thành phẩm" : "Dish / finished photo name"}
                       />
-                      {/* Nano Flow: bỏ tải ảnh món — giữ tên món. */}
+                      <ImageUploader
+                        images={prodImages}
+                        onChange={setProdImages}
+                        maxImages={3}
+                        label={lang === "vi" ? "Ảnh món hoàn chỉnh" : "Finished-dish photos"}
+                        hint={lang === "vi" ? "1-3 góc; ảnh chính nên rõ hơi nóng, xốt và topping." : "1-3 angles; make steam, sauce and toppings legible."}
+                      />
                     </div>
 
                     <div className="space-y-3 rounded-xl border border-dashed p-4">
@@ -3964,7 +3901,13 @@ export function GenerateClient() {
                         onChange={(e) => setIngName(e.target.value)}
                         placeholder={lang === "vi" ? "VD: Bộ nguyên liệu Udon" : "e.g. Udon ingredient set"}
                       />
-                      {/* Nano Flow: bỏ tải ảnh nguyên liệu — giữ tên nguyên liệu. */}
+                      <ImageUploader
+                        images={ingImages}
+                        onChange={setIngImages}
+                        maxImages={2}
+                        label={lang === "vi" ? "Ảnh tổng hợp / ảnh từng nguyên liệu" : "Ingredient set / individual references"}
+                        hint={lang === "vi" ? "Không bắt buộc phải gõ tên nếu đã có Recipe IR." : "A name is optional once Recipe IR exists."}
+                      />
                     </div>
                   </div>
                 </div>
@@ -4017,7 +3960,20 @@ export function GenerateClient() {
                     <Input value={prodDesc} onChange={(e) => setProdDesc(e.target.value)} placeholder={L("prodDesc")} />
                   )}
                 </div>
-                {/* Nano Flow: bỏ tải ảnh sản phẩm — ảnh nạp bên extension. Giữ tên + mô tả chữ. */}
+                <ImageUploader
+                  images={prodImages}
+                  onChange={setProdImages}
+                  maxImages={3}
+                  label={L("prodPhotos")}
+                  hint={L("prodPhotosHint")}
+                />
+                {prodImages.length > 0 && (
+                  <p className="text-xs font-medium text-emerald-600">
+                    {lang === "vi"
+                      ? "Product Reference Lock đang bật: hình dáng, màu sắc và chi tiết sản phẩm tải lên là nguồn ưu tiên cao nhất."
+                      : "Product Reference Lock is active: the uploaded design, colour and details are authoritative."}
+                  </p>
+                )}
                 <Button variant="outline" size="sm" onClick={addProduct} disabled={!prodName.trim()}>
                   {L("addProduct")}
                 </Button>
@@ -4061,8 +4017,14 @@ export function GenerateClient() {
               <div className="space-y-3 rounded-lg border border-dashed p-4">
                 <Input value={ingName} onChange={(e) => setIngName(e.target.value)} placeholder={L("ingName")} />
                 <Input value={ingDesc} onChange={(e) => setIngDesc(e.target.value)} placeholder={L("ingDesc")} />
-                {/* Nano Flow: bỏ tải ảnh nguyên liệu — giữ tên + mô tả chữ. */}
-                <Button variant="outline" size="sm" onClick={addIngredient} disabled={!ingName.trim()}>
+                <ImageUploader
+                  images={ingImages}
+                  onChange={setIngImages}
+                  maxImages={2}
+                  label={L("ingImage")}
+                  hint={L("ingImageHint")}
+                />
+                <Button variant="outline" size="sm" onClick={addIngredient} disabled={!ingName.trim() || ingImages.length === 0}>
                   {L("addIngredient")}
                 </Button>
               </div>
@@ -4130,7 +4092,20 @@ export function GenerateClient() {
                     <Input value={bgDesc} onChange={(e) => setBgDesc(e.target.value)} placeholder={L("bgDesc")} />
                   )}
                 </div>
-                {/* Nano Flow: bỏ tải ảnh bối cảnh — ảnh nạp bên extension. Giữ tên + mô tả chữ. */}
+                <ImageUploader
+                  images={bgImages}
+                  onChange={setBgImages}
+                  maxImages={3}
+                  label={L("bgPhotos")}
+                  hint={L("bgPhotosHint")}
+                />
+                {bgImages.length > 0 && (
+                  <p className="text-xs font-medium text-emerald-600">
+                    {lang === "vi"
+                      ? "Environment Reference Lock đang bật: storyboard bắt buộc có preview tổng thể và bám đúng bố cục, vật liệu, cửa, đồ đạc và ánh sáng của ảnh này."
+                      : "Environment Reference Lock is active: the storyboard must include an overview and preserve this layout, materials, openings, furniture and light."}
+                  </p>
+                )}
                 <Button variant="outline" size="sm" onClick={addBackground} disabled={!bgName.trim()}>
                   {L("addBackground")}
                 </Button>
