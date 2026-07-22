@@ -2252,16 +2252,33 @@ export function buildVeoJson(
       ]
         .flatMap((value) => {
           const raw = oneLine(value);
-          const parts = raw
-            .split(/[,;]\s*/)
-            .map((part) => part.trim())
-            .filter((part) => part.length >= 4);
+          const parts = raw.split(/[,;]\s*/).map((part) => part.trim());
           return [raw, noHex(value), scrub(value), ...parts];
         })
-        .filter((value, index, all) => value.length >= 4 && all.indexOf(value) === index)
+        // Only strip DISTINCTIVE multi-word phrases (a verbatim-copied canonical
+        // clause), never a lone common word. The old rule removed every ≥4-char
+        // comma fragment of build/voice/render_style — so "warm", "calm",
+        // "slim", "cinematic" got deleted from ordinary action prose, and with
+        // no word boundary the match ate into larger words ("warmly" → "ly").
+        // Requiring a space + ≥12 chars removes only real duplicated
+        // descriptions; a little leftover duplication is far safer than a
+        // mangled sentence.
+        .map((value) => value.trim())
+        .filter(
+          (value, index, all) =>
+            /\s/.test(value) && value.length >= 12 && all.indexOf(value) === index
+        )
         .sort((a, b) => b.length - a.length);
       for (const value of values) {
-        out = out.replace(new RegExp(`(?:,\\s*)?${escapeRegExp(value)}(?:\\s*,)?`, "giu"), " ");
+        // Unicode-aware word boundaries so a phrase never matches inside a
+        // larger word.
+        out = out.replace(
+          new RegExp(
+            `(?:,\\s*)?(?<![\\p{L}\\p{N}])${escapeRegExp(value)}(?![\\p{L}\\p{N}])(?:\\s*,)?`,
+            "giu"
+          ),
+          " "
+        );
       }
     }
     return oneLine(out)

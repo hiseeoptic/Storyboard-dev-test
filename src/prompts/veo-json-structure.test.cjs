@@ -212,6 +212,77 @@ test("Veo JSON keeps the stable structure with contextual outfits and local voic
   assert.ok(JSON.stringify(clip).length < 12000);
 });
 
+test("scene_action keeps ordinary words that also appear inside character-lock fields", () => {
+  // REGRESSION GUARD: stripCanonicalCharacterDetails used to split lock fields
+  // (build / voice / render_style …) on commas and delete every >=4-char
+  // fragment globally with NO word boundary — so "warm", "calm", "slim",
+  // "cinematic" were erased from ordinary action prose and "warmly" was gutted
+  // to "ly". Only a verbatim-copied DISTINCTIVE identity phrase (the exact hair
+  // lock) may be removed; normal words must survive intact.
+  const breakdown = {
+    character_locks: [
+      {
+        name: "Minh",
+        gender: "male",
+        is_child: false,
+        gender_age: "Vietnamese male, 32 years old",
+        build: "slim, athletic",
+        hair: "long black hair",
+        costume: "white cotton blouse, blue jeans",
+        wardrobe_materials: "soft cotton, worn denim",
+        voice: "warm, calm, measured Northern Vietnamese male voice",
+        render_style: "cinematic photoreal",
+      },
+    ],
+    scene_bible: {
+      lens: "natural medium lens",
+      lighting: "soft daylight",
+      backdrop: "quiet kitchen",
+      color_grade: "neutral natural grade",
+      film_grain: "fine organic grain",
+    },
+    style_guide: { color_palette: [] },
+    segments: [
+      {
+        segment_number: 1,
+        duration_seconds: 8,
+        title: "Sáng sớm",
+        marketing_role: "body",
+        beats: [{ beat: "Minh reaches", camera: "medium eye-level" }],
+        first_frame_prompt: "A quiet kitchen at dawn. Minh stands by the counter.",
+        motion_prompt:
+          "Minh calmly reaches for the warm teapot on the slim shelf, then warmly turns toward the cinematic dawn light and steps forward with athletic ease, his long black hair catching the glow.",
+        dialogue: "",
+        speaker: "",
+        dialogue_lines: [],
+        characters_in_scene: ["Minh"],
+        environment_ref: "custom",
+        continuity_note: "Minh stands by the counter holding the warm teapot.",
+      },
+    ],
+  };
+
+  const result = buildVeoJson(breakdown, {
+    aspectRatio: "9:16",
+    dialogueLanguage: "Vietnamese",
+  });
+  const motion = result.clips[0].scene_action.motion;
+
+  // Ordinary words that happen to be comma-fragments of build/voice/render_style
+  // MUST survive (the old bug deleted them).
+  for (const word of ["calmly", "warm", "slim", "warmly", "cinematic", "athletic"]) {
+    assert.match(
+      motion,
+      new RegExp(`\\b${word}\\b`, "i"),
+      `expected "${word}" to survive stripping, got: ${motion}`
+    );
+  }
+  // No word was gutted into a bare "ly" fragment.
+  assert.doesNotMatch(motion, /\bly\b/i);
+  // The distinctive copied identity phrase is still de-duplicated out.
+  assert.doesNotMatch(motion, /long black hair/i);
+});
+
 test("revolving-door scenes never inherit doorway or stair topology", () => {
   const layout = resolveSpatialLayout({
     layout: {
