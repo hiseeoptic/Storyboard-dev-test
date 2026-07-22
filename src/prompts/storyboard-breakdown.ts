@@ -18,7 +18,6 @@ import {
   worldContextLockBlock,
 } from "@/lib/laws";
 import { ensureDialogueClock, stripProductionTimecodes } from "@/lib/timeline-contract";
-import { wardrobeStateThrough } from "@/lib/wardrobe-continuity";
 import { contextFrameworkSystemDigest } from "@/lib/video-context";
 import {
   renderSceneIntentDirective,
@@ -33,6 +32,7 @@ import {
 import type { WorldContext } from "@/types";
 import { compileCookingRecipeDigest } from "@/lib/cooking";
 import {
+  inferRevolvingDoorOperation,
   resolveSpatialLayout,
   renderSpatialTopologyLock,
   SPATIAL_TOPOLOGY_INVARIANTS,
@@ -50,7 +50,7 @@ import {
 // Phrased as plain descriptors (no instructive "no/don't") — Veo/Kling read the
 // negative list as nouns/adjectives to avoid, and "no X" phrasing can backfire.
 const SHARED_NEGATIVE =
-  "NEGATIVE (avoid — plain descriptors): resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, warped or altered label/logo text, logo change, brand-colour change, extra products, duplicated or doubled objects (e.g. two pans / two of the same item), floating or levitating objects, objects passing through solid surfaces, physically impossible actions (e.g. lifting/holding a pan with a spatula), sudden appearing or disappearing objects, teleporting, morphing, warping, melting, distorting, deforming, object/container morphing, inconsistent physics, railing or wall crossing a doorway or walking route, perimeter barrier in the middle of a floor, blocked threshold, person or camera beyond a railing or inside a wall, contradictory zone order, unnatural motion, jittery or stuttering movement, frame skipping, mid-clip jump cuts, extra people, unmotivated hair/wardrobe/accessory changes, identity drift, face morphing, changing facial features, age shifting, extra or missing limbs, extra or fused fingers, mutated or malformed hands, human hands when the action does not require them, limbs bending or passing through objects, deformed liquid, floating ingredients, melted food, warping plate, liquid flowing upward, on-screen text overlays, captions, subtitles, burned-in dialogue text, title cards, karaoke/lyric text, camera or lens spec overlay (e.g. '50mm', 'f/2.8', '4300K', 'lux'), technical readout, HUD, info card pinned in a corner, timecode or timestamp text, watermark, duplicate subject, plastic/CGI skin.";
+  "NEGATIVE (avoid — plain descriptors): resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, warped or altered label/logo text, logo change, brand-colour change, extra products, duplicated or doubled objects (e.g. two pans / two of the same item), floating or levitating objects, objects passing through solid surfaces, physically impossible actions (e.g. lifting/holding a pan with a spatula), sudden appearing or disappearing objects, teleporting, morphing, warping, melting, distorting, deforming, object/container morphing, inconsistent physics, railing or wall crossing a doorway or walking route, perimeter barrier in the middle of a floor, blocked threshold, person or camera beyond a railing or inside a wall, contradictory zone order, unnatural motion, jittery or stuttering movement, frame skipping, mid-clip jump cuts, extra people, changed hair/wardrobe/accessories, identity drift, face morphing, changing facial features, age shifting, extra or missing limbs, extra or fused fingers, mutated or malformed hands, human hands when the action does not require them, limbs bending or passing through objects, deformed liquid, floating ingredients, melted food, warping plate, liquid flowing upward, on-screen text overlays, captions, subtitles, burned-in dialogue text, title cards, karaoke/lyric text, camera or lens spec overlay (e.g. '50mm', 'f/2.8', '4300K', 'lux'), technical readout, HUD, info card pinned in a corner, timecode or timestamp text, watermark, duplicate subject, plastic/CGI skin.";
 
 const REFERENCE_CHARACTER_SCENE_NEGATIVE =
   `NEGATIVE (avoid): duplicated or extra people, duplicated objects, floating objects, objects passing through solid surfaces, impossible physics, teleporting, morphing, warping, jitter, frame skipping, mid-clip jump cuts, on-screen text, captions, subtitles, title cards, HUD, technical readout, watermark, ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
@@ -75,12 +75,6 @@ const PHOTOREAL_REALISM =
 
 const PHOTOREAL_MATERIAL_REALISM =
   "REAL MATERIALS: leather shows grain, creases, worn scuffs and stitching; denim shows twill weave; metal has physically plausible reflections and wear; wood has varied grain; fabric has real thread, nap, folds and weight. Physically accurate light, soft imperfect shadow edges, natural optical depth of field and fine organic sensor/film texture — no plastic, toy-like or CGI surfaces.";
-
-const SEAT_RELATIVE_PLACEMENT_LOCK =
-  "SEAT/RELATIVE PLACEMENT LOCK: preserve each character's exact chair or standing mark, seated/standing/kneeling posture, facing direction and left-right/front-back relationship to the other characters from start_state through end_state and into the next strict-continuity clip. A character may change seat, side or posture only through a scripted visible action in the motion; camera reframes stay on the established 180-degree axis so screen direction never implies a seat swap.";
-
-const WARDROBE_CONTINUITY_RULE =
-  "WARDROBE CONTINUITY: establish the initial outfit once in character_lock (or only through the uploaded reference) and do not restate the full outfit elsewhere. Keep that established wardrobe unchanged unless the approved story visibly performs or explicitly declares bathing/showering, rain or water changing its condition, getting dressed/undressed, or another necessary clothing change. Declare the new state once in wardrobe_state at the transition; it persists until another motivated change.";
 
 // Concise anti-artifact tail. Product-related negatives are included ONLY when
 // the clip actually has a product, so a person-only clip never mentions products.
@@ -123,7 +117,7 @@ function veoConciseTail(
   const characterArtifacts = hasCharacterReference
     ? renderNeg
     : `extra or fused fingers, malformed hands, a third hand, an extra pair of hands, a disembodied hand entering the frame, the face changing, ${renderNeg}`;
-  return `${realityDirective} ${motionLaw} ${propCausality} ${SEAT_RELATIVE_PLACEMENT_LOCK} ${textLaw} Avoid: ${productNeg}storyboard layouts, morphing, teleporting, floating or duplicated objects, deformed food/liquid, left-right seat swaps, unexplained seated/standing changes, camera-axis flips, ${characterArtifacts}.`;
+  return `${realityDirective} ${motionLaw} ${propCausality} ${textLaw} Avoid: ${productNeg}storyboard layouts, morphing, teleporting, floating or duplicated objects, deformed food/liquid, ${characterArtifacts}.`;
 }
 
 /** One-line "Scene Bible" style tokens. Keeps lens/lighting/grade constant so
@@ -654,7 +648,7 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
         .join("\n")}\nThese are the ONLY character names permitted anywhere in CHARACTERS, IN SCENE, ACTION, DIALOGUE speaker labels and CAPTION. Preserve spelling exactly. Resolve every role, pronoun or alias in the idea/brief to one of these names. Never invent, rename, substitute or append another person. If a role is not represented in this closed cast, adapt the action without adding that person.`
     : "";
   const uploadedRule = uploadedNames.length
-    ? `\nREFERENCE-ONLY CHARACTERS (${uploadedNames.join(", ")}): use only each exact name, role, position, action, expression and dialogue. Do not write age, gender, body, face, skin, hair, eyebrows, eyelashes, initial wardrobe or other appearance prose; the attached image supplies it. The sole wardrobe exception is one minimal wardrobe_state at an approved visible or explicitly declared bathing, rain/water or clothing-change transition; never restate the reference outfit. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
+    ? `\nREFERENCE-ONLY CHARACTERS (${uploadedNames.join(", ")}): use only each exact name, role, position, action, expression and dialogue. Do not write age, gender, body, face, skin, hair, eyebrows, eyelashes, wardrobe or other appearance prose; the attached image supplies it. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
     : "";
   const briefBlock = brief.length
     ? `\nBrief:\n${brief.join("\n")}${closedCastRule}${uploadedRule}`
@@ -693,13 +687,14 @@ PROJECT-LED STORY STRUCTURE (never force one template onto every video):
 - "marketing_role" remains a legacy compatibility label; "scene_intent" is the canonical per-clip creative contract.
 
 UPLOADED REFERENCE PRIORITY (absolute hierarchy — PHOTOS beat text, text beats invention):
-- USER SETUP MENU CONTRACT (NON-NEGOTIABLE): every entered character name/role and every image group belongs together one-to-one, in menu order. Preserve ALL named characters as separate identities; never use only the first upload, never merge two people, never swap their faces, never omit a referenced character when the approved script places them in the scene, and never let generated defaults/anchors override menu uploads. Character menu photos, product photos and background/location photos are the SUPREME source of truth. FOR ANY CHARACTER WITH AN UPLOADED IMAGE, THE IMAGE IS THE ONLY INITIAL APPEARANCE AND WARDROBE AUTHORITY: do not analyze, infer, list, translate or restate face, face shape, skin, hair, eyebrows, eyelashes, eyes, body, age, height or the reference outfit anywhere in the JSON or prompts. In required appearance fields use an empty string or the literal sentinel "REFERENCE_IMAGE"; elsewhere mention only the character's exact name, role, position, action, expression and dialogue. The sole wardrobe exception is one minimal wardrobe_state when the approved story visibly performs or explicitly declares bathing/showering, rain/water changing the clothing condition, getting dressed/undressed or another necessary clothing change; never redescribe the original reference outfit. The only permitted appearance-related negative guard for that character is: ${REFERENCE_CHARACTER_ANTI_PLASTIC}. A product keeps its exact shape, colours and branding; when a LOCATION photo exists (indoor room or outdoor scene), stage every relevant segment inside that uploaded place and reuse its real layout, landmarks (furniture indoors; buildings, trees, terrain, water outdoors), colours, materials and light in every first_frame_prompt. Do NOT relocate scenes, "improve" the set, or invent a contradictory place.
+- USER SETUP MENU CONTRACT (NON-NEGOTIABLE): every entered character name/role and every image group belongs together one-to-one, in menu order. Preserve ALL named characters as separate identities; never use only the first upload, never merge two people, never swap their faces, never omit a referenced character when the approved script places them in the scene, and never let generated defaults/anchors override menu uploads. Character menu photos, product photos and background/location photos are the SUPREME source of truth. FOR ANY CHARACTER WITH AN UPLOADED IMAGE, THE IMAGE IS THE ONLY APPEARANCE AUTHORITY: do not analyze, infer, list, translate or restate face, face shape, skin, hair, eyebrows, eyelashes, eyes, body, age, height or wardrobe anywhere in the JSON or prompts. In required appearance fields use an empty string or the literal sentinel "REFERENCE_IMAGE"; elsewhere mention only the character's exact name, role, position, action, expression and dialogue. The only permitted appearance-related negative guard for that character is: ${REFERENCE_CHARACTER_ANTI_PLASTIC}. A product keeps its exact shape, colours and branding; when a LOCATION photo exists (indoor room or outdoor scene), stage every relevant segment inside that uploaded place and reuse its real layout, landmarks (furniture indoors; buildings, trees, terrain, water outdoors), colours, materials and light in every first_frame_prompt. Do NOT relocate scenes, "improve" the set, or invent a contradictory place.
 - If the story idea and an uploaded photo conflict (e.g. the idea says villa but the photo shows a small apartment), THE PHOTO WINS — adapt the story to the real place/person/product.
 - VIDEO OUTPUT TEXT CONTRACT (NON-NEGOTIABLE): every generated VIDEO frame contains ZERO readable text or graphics. Set world_context.allowed_language_text to "none — zero readable text anywhere". Names, ages, dialogue, brands, captions, lens values, Kelvin/lux and timecodes are internal production data only; never request subtitles, captions, name tags, product lettering, logos, badges, title cards, HUD or overlays. Dialogue is AUDIO ONLY. Storyboard documents may contain planning labels, but they are NEVER video start frames.
 
 FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's video must not "look AI"):
-- Every object is locked to a "DNA" that NEVER drifts and is repeated VERBATIM in every board/keyframe and every motion prompt.
-- For a TEXT-ONLY character with no uploaded image, build a detailed "character_lock" with gender, age, build, skin tone, facial structure, skin texture, eyes, brows, lashes, nose/lips, hair, ONE initial costume description, signature features, expression and DNA. Never copy that full costume into scene text. For a character WITH an uploaded image, do the opposite: keep only name/role/audio/story state and use "REFERENCE_IMAGE" or blank appearance fields; never convert the pixels into prose and never add DNA, gender, age, body, face, skin, hair or initial wardrobe descriptions. Only a motivated wardrobe_state transition may state a new condition/look minimally.
+- SINGLE-DESCRIPTION AUTHORITY: static character identity, appearance, initial wardrobe and voice are written ONCE in character_locks. Product identity is written ONCE in product_dna; style is written ONCE in scene_bible. first_frame_prompt, motion_prompt, beats, camera and continuity_note refer to those locks by exact name only and NEVER restate or paraphrase their static descriptions. Repetition is not continuity; it creates conflicting instructions.
+- Every object is locked to a "DNA" that NEVER drifts. Store that DNA once in its canonical lock, then preserve it by id/name rather than copying the prose into every scene field.
+- For a TEXT-ONLY character with no uploaded image, build a detailed "character_lock" with gender, age, build, skin tone, facial structure, skin texture, eyes, brows, lashes, nose/lips, hair, costume, signature features, expression and DNA. For a character WITH an uploaded image, do the opposite: keep only name/role/audio/story state and use "REFERENCE_IMAGE" or blank appearance fields; never convert the pixels into prose and never add DNA, gender, age, body, face, skin, hair or wardrobe descriptions.
 - CHARACTERS ARE ORIGINAL AND FICTIONAL. For TEXT-ONLY characters, use only the exact names supplied by the approved script/menu. If a role has no name, assign one ordinary given name once and keep it consistent; never copy names from rule examples or use a fixed default. NEVER use the name, likeness or description of any real, famous or recognisable public figure/celebrity/influencer. Do not write "looks like [celebrity]" or reference any real person. For UPLOADED-REFERENCE characters, do not describe appearance at all: bind the supplied pixels only to their exact menu name and keep the reference-image contract above.
 
 MULTI-CHARACTER CASTING & DIALOGUE ASSIGNMENT (mandatory whenever the story/script has 2+ people — this is what keeps a family/dialogue video coherent):
@@ -707,9 +702,9 @@ MULTI-CHARACTER CASTING & DIALOGUE ASSIGNMENT (mandatory whenever the story/scri
 - CHILDREN: keep "is_child": true when the menu/script marks a child. For a text-only child, use an age-locked description. For an uploaded-reference child, never state or infer age/body appearance; the image alone supplies it.
 - ROLE-LABELLED DIALOGUE RECOGNITION: when the idea/script contains dialogue labelled by role or an exact character name, each labelled line belongs to THAT character — copy it VERBATIM and set that character's lock name as its speaker. NEVER reassign a line to a different character. A short back-and-forth (e.g. a question + a reply, ~2-3 short lines) SHOULD share ONE 10s clip as sequential turns in "dialogue_lines" (fill the time instead of wasting a clip per line) — following the DIALOGUE turn-taking rules below. Only spill to the NEXT segment when the exchange no longer fits in ~9 seconds.
 - "characters_in_scene" (REQUIRED per segment): list the EXACT lock names of everyone VISIBLE in that segment — nobody else may appear (no background family members drifting in). The "speaker" MUST be one of them (empty speaker = voiceover). Non-speaking listed characters are present from the first frame, reacting silently, mouths closed. Do NOT invent mid-clip entrances or exits. Only an approved script that explicitly requires an arrival may use one, and then the first frame must show that named character already at the declared doorway/threshold and the motion_prompt must show the complete physically continuous walk path; otherwise every listed character stays in their starting zone for the whole clip.
-- CAST CONTINUITY: keep every character consistent across segments. For text-only characters repeat the lock as needed. For uploaded-reference characters, use only their exact name plus the attached image binding; never repeat or paraphrase their appearance in first_frame_prompt, motion_prompt, beats or camera text.
+- CAST CONTINUITY: keep every character consistent across segments. For text-only characters, character_locks is the only appearance/initial-wardrobe/voice authority; all scene fields use the exact name plus current position, pose, action, expression and prop state only. For uploaded-reference characters, use only their exact name plus the attached image binding; never repeat or paraphrase their appearance in first_frame_prompt, motion_prompt, beats or camera text.
 - If there is a hero PRODUCT, write "product_dna": exact shape, material, colours WITH RGB hex, label/logo text+colour, cap/parts — repeated verbatim.
-- Build a "scene_bible" (lens, lighting with Kelvin temps, backdrop with hex, colour grade) — the style fingerprint reused VERBATIM so lens, lighting, backdrop and tone never change.
+- Build a "scene_bible" (lens, lighting with Kelvin temps, backdrop with hex, colour grade) as the single style authority. Scene fields obey it without copying the full style fingerprint repeatedly.
 - One single set/location per segment; only camera framing and the action change.
 - Every storyboard board carries a compact REFERENCE LIBRARY: for EACH visible named character, exactly two face-readable head-and-shoulders views (FRONT + PROFILE/3-4), plus one small ENVIRONMENT OVERVIEW. No full-body/back turnaround cells are needed. Uploaded menu photos outrank any generated board anchor.
 
@@ -720,18 +715,18 @@ PHYSICAL REALISM (every clip must look real, not "AI" — this is what eliminate
 - ⚡ CAUSE BEFORE EFFECT (nothing happens by itself): if the story needs something to fall, tip, spill, open or break, the motion_prompt must FIRST show the physical cause making contact, THEN the effect with real physics timing — e.g. "as he hangs the heavy jacket, its weight pulls the top-heavy rack sideways; the rack leans, then topples to the floor". FORBIDDEN: "the coat rack falls" with no cause, "the door opens" with nobody touching it, effects that precede their causes.
 - 🚪 ONE LOCATION PER CLIP: the whole 10s lives in ONE continuous space; the set/backdrop never changes mid-clip. If the character must be somewhere else, they WALK there on screen within the same space — or it becomes the NEXT segment.
 - 🎒 PROP EXISTENCE & WARDROBE TRUTH (an undeclared prop is what makes objects teleport into hands): every object the motion_prompt uses MUST be planted in that segment's first_frame_prompt start state — in the character's hand, worn on their body, or placed in the scene (e.g. if he hangs a jacket, the first_frame_prompt says the jacket is already draped over his forearm as he enters). NEVER write "takes off his jacket" unless the jacket is part of his locked costume or explicitly declared carried. Before returning, CHECK every motion_prompt against the character_locks costume and the first_frame_prompt: any object touched in the motion that is missing from the start state is a bug — add it to the first_frame_prompt.
-- DAILY MOVEMENT MICRO-GRAMMAR: for ordinary body actions, show the visible mechanics instead of jumping states. Sitting down / taking a seat = walk through the declared route to the chair, turn the hips toward the seat, align knees and feet, shift weight, bend knees/hips, optionally brace one hand on chair/table if natural, pelvis reaches the seat, spine settles, feet plant. Standing up = feet plant under the body, torso leans forward, weight transfers to the feet, knees/hips extend, hands leave the support naturally, balance settles. Opening/entering = hand reaches handle, grip/contact, hinge/slide opens, body crosses the threshold through the clear connector, door state remains physically consistent.
 - State physics explicitly in the motion_prompt: real-world weight, gravity, momentum and balance; objects keep one solid form (object permanence); hands make real contact with props and never pass through them; liquids and food obey gravity.
-- Every motion_prompt must include a positive realism clause, e.g.: "single continuous motion, natural movement obeying real-world physics, consistent weight and gravity, stable identity, object permanence".
+- Every motion_prompt must obey real physics, stable identity and object permanence, but do not append a stock realism sentence when those rules are already carried by the structured export.
+- DAILY BODY TRANSITIONS: show a clear start, weight transfer/contact and settled end. Sitting = approach chair → turn/align → bend hips and knees → contact seat → settle. Standing = plant feet → lean/transfer weight → extend hips and knees → regain balance. Keep this choreography concise and include only steps relevant to the shot.
 - Camera moves are smooth and minimal (a slow push-in or gentle pan). Avoid combining a big camera move with big subject motion — that compounding warps the image.
 
 STAGING & BLOCKING (a real director's coverage — this is what separates a watchable video from a flat, monotonous one):
 - 🧭 SPATIAL TOPOLOGY FIRST (mandatory before writing a first frame, beat, motion or camera for every multi-zone / threshold / boundary scene): create ONE compact "spatial_layout" and make every field consume it. (1) "zone_order" lists the physically connected zones in order; (2) "fixed_architecture" locks walls, door/window openings, thresholds, stairs, counters and perimeter barriers; (3) "character_placement" assigns EACH visible character an exact zone + named architectural/prop anchor + approximate distance + facing direction; (4) "walkable_path" declares the connected load-bearing route that must remain clear; (5) "camera_zone" gives the camera a real supported position and unobstructed line of sight. Do not describe the same geometry differently in first_frame_prompt, beats, motion_prompt or camera notes.
-- 🪑 SEAT / RELATIVE PLACEMENT LOCK: once a clip establishes A sitting/standing to the left/right/front/back of B, that world-space relationship, seat/chair/standing mark, posture and facing direction stay unchanged in every beat, camera note, first_frame_prompt, motion_prompt and continuity_note. The camera may reframe but must respect the 180° axis so the viewer never reads a seat swap. A character may stand up, sit down, switch side or leave a seat ONLY when the script explicitly choreographs the visible movement path and the continuity_note records the new final state.
 - 🚪 CONNECTOR / BOUNDARY TRUTH: a doorway is an OPENING in a wall and the threshold is its walkable connector — a railing, wall, counter, furniture, planter or character can never cross or block it by accident. A railing/parapet/guard stays ONLY on the true exposed outer edge, never opposite/across a doorway, never in the middle of the usable floor, and never between two people who are looking or speaking across that doorway. Example only when the script actually contains an apartment balcony: interior room → open doorway/threshold → balcony floor → outer-perimeter railing → exterior/city beyond. This is a topology example, NOT a default location template.
+- 🔄 REVOLVING-DOOR KINEMATICS (only when the script actually names one): first classify this clip as ENTER, EXIT, PASS-THROUGH, HOLD-INSIDE or BACKGROUND-ONLY. ENTER starts before the entrance gap; EXIT starts already inside the same occupied wedge and crosses the destination threshold exactly once; HOLD-INSIDE never exits; BACKGROUND-ONLY has no occupied wedge. Establish one rotation direction and keep it. A crossing person stays between the same two rigid radial glass wings and exits only when that opening aligns with the destination floor. Never cross glass/the center shaft, change compartments, reverse, repeat an entry/exit, or describe a person as already outside before their scripted exit. Put the operation once in spatial_layout.mechanism_motion; all other fields obey it without paraphrasing it.
 - 🚶 OCCUPANCY & ROUTE: every person has one start zone and one facing direction. If motion changes zones, name the connector and show the continuous crossing; otherwise the person stays in the declared zone. Nobody stands through a wall/threshold, beyond a railing, over a void, or on a non-load-bearing surface. The camera follows the same rules and cannot be inside a wall or beyond a safety barrier.
 - 🔒 TOPOLOGY FREEZE: fixed architecture and zone order remain unchanged for the whole clip and across chained clips in the same location. Doors may open/close only through a visible hinged/sliding action, but the wall opening and threshold never migrate. If an uploaded location photo exists, derive this topology from that real photo and do not redesign it.
-- 🎭 MOTIVATED STAGING VARIATION ONLY: avoid five visually identical clips, but never violate continuity to create variety. Between clips, change framing, gesture, eyeline, hand business or camera distance first. Change a character's position, seated/standing posture or spatial relationship ONLY when the approved script or previous continuity_note provides a visible movement reason; otherwise preserve the same seat/side/standing mark exactly.
+- 🎭 VARY THE STAGING BETWEEN CLIPS: consecutive segments must NOT repeat the same two people in the same pose in the same framing (five straight clips of a couple sitting on a sofa = dead video). Between clips, change at least ONE of: a character's position in the room (standing at the window, crossing to the shelf, kneeling by the cabinet), their posture (sitting → leaning forward → standing), the spatial relationship (side-by-side → facing → one behind the other), or the shot framing. Move the story PHYSICALLY through the locked space — always by walking on screen or between segments, never teleporting.
 - ⏱️ FIRST 2-3 SECONDS DECIDE EVERYTHING (every genre, not just hooks): segment 1 must open ON an arresting, concrete, already-in-motion image — a visible action or a charged human moment mid-beat — never a static establishing wide, never someone simply standing/sitting waiting to speak, never a slow fade-in. The very first frame should make a scrolling viewer ask "what is happening here?".
 - 🎭 GESTURE MUST CARRY THE LINE'S EMOTION: every spoken line is paired with a physical action whose emotion MATCHES that exact line — the body says what the words say (or deliberately contradicts them when the story wants subtext). Name the specific action tied to that line's feeling: hurt = fingers tightening on the glass and a swallow before speaking; guilt = eyes dropping, phone lowered slowly, shoulders folding in; tenderness = hands stilling, a step closer, voice softening as the chin lifts. NEVER attach a neutral/idle gesture to an emotional line, and never write vague acting ("looks sad", "reacts", "shows emotion") — write the observable movement that produces that emotion on camera.
 - ✋ CHARACTER BUSINESS: every visible character has ONE concrete piece of physical business per clip that serves the story (setting the phone face-down on the table, wrapping both hands around a warm cup, straightening the modem's cable, folding the throw blanket while listening) — hands are NEVER idle mannequin hands hanging at the sides. Listeners react with specific micro-actions: a slow eyebrow raise, a suppressed smile tugging one corner of the mouth, a slow exhale, fingers tightening on the cup — name the exact micro-expression, never write "reacts" or "looks at him".
@@ -742,7 +737,7 @@ STAGING & BLOCKING (a real director's coverage — this is what separates a watc
 MATERIAL & SKIN REALISM (this is what kills the "AI/CGI/plastic" look — treat every clip as REAL filmed footage, never a 3D render):
 - HUMAN FACE REALISM applies ONLY to text-only generated humans with no uploaded character image. Never apply or serialize this forensic face prose for an uploaded-reference character. For an uploaded-reference character, rely on the image alone and add only this short exclusion: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.
 - TEXT-ONLY HAIR FALLBACK: only for generated characters without an uploaded image, describe natural strand behaviour instead of helmet/plastic hair. Never add this prose to an uploaded-reference character.
-- MATERIALS: every environment object and prop must read true-to-life. Describe initial garment materials once in character_lock for text-only generated characters. For uploaded-reference characters, initial wardrobe remains image-only; only a story-required replacement garment may be described minimally in wardrobe_state.
+- MATERIALS: every environment object and prop must read true-to-life. Describe garment materials only for text-only generated characters. For uploaded-reference characters, wardrobe remains image-only and must never be described in text.
 - LIGHT: physically-based, tied to time-of-day/weather, with soft imperfect shadow edges. Give scene_bible.lighting BOTH Kelvin temperature AND approximate Lux (e.g. "soft overcast dawn key 5200K, ~800 lux"), and set scene_bible.film_grain to a fine organic grain / clean-acquisition token so the filmic texture stays constant across clips.
 
 ${contextFrameworkSystemDigest()}
@@ -766,15 +761,14 @@ DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlap
   3. MAX 3 turns and MAX 2 distinct speakers per clip (a third speaker like a child interjecting is allowed only as the LAST short turn). More than that → split across segments.
   4. CAMERA DOES NOT ASSIGN SPEECH: camera and speaker are independent. Camera notes may hold the speaker, the listener's reaction, or both, but contain no dialogue timecodes and never force the framed person to speak. Only dialogue_lines.speaker owns the voice and lip movement; every other visible mouth stays closed.
   5. "characters_in_scene" must include every speaker; a voiceover speaker ("") is heard but not shown.
-  6. SPEECH-MOVEMENT COMPATIBILITY (not a blanket ban): a character MAY speak while walking, standing up, sitting down, turning away or bending when the script and context make it natural. Keep that line short, breathable and clearly owned by dialogue_lines.speaker; if the speaker's face is visible, only that mouth moves, and if the speaker turns away/off-screen, treat it as that same person's off-camera/over-shoulder voice while every other visible mouth stays closed. For dense, precise or emotionally important lines, prefer a stable pose before or after the large movement so lip-sync stays readable.
+  6. SPEECH + BODY MOVEMENT: speaking while walking, standing up, sitting down or turning is allowed when the approved script and real context make it natural. Keep the line short enough for natural breath, keep the named speaker visible/identifiable, and avoid stacking a difficult prop action at the same moment. For long or emotionally precise lines, prefer a settled pose. Never ban movement categorically.
   7. ONE CLOCK ONLY: dialogue_lines.start_s/end_s is the sole numeric clock in a clip. motion_prompt and camera notes describe ordered action/coverage with NO seconds and NO time ranges. Never create a second camera or action timeline.
   8. QUIET WINDOW: never place a dialogue window over a loud or major physical event. Complete the crash/fall/impact first in the ordered action, then begin the reaction line; do not add event timecodes outside dialogue_lines.
   9. BALANCE THE LOAD ACROSS SEGMENTS (mandatory final audit — unbalanced clips are the #1 cause of dropped/garbled lines): before returning, COUNT the spoken words in every clip. Budget = ~0.4s/word + ~0.5s gap per speaker change + breathing room ⇒ a 10s clip carries 8-22 total spoken words. A clip OVER 22 words → move its last turn(s) into the next segment (and shift that segment's lighter lines down); a clip UNDER 8 words whose line belongs to the same conversation as an adjacent clip's line → merge them into one clip's dialogue_lines. A SINGLE turn longer than ~22 words must be that clip's ONLY line — never squeeze a 24-word line into a 4-second window and never pair it with another turn. The final distribution should feel even: no clip nearly silent while its neighbour is crammed.
 - SINGLE-LINE CLIPS: if a beat is just one line, you may use "dialogue_lines" with one entry OR the plain "dialogue"+"speaker" fields — both work. For a longer monologue that fills the clip, one speaker is correct.
 - Mirror the FIRST turn into the top-level "dialogue" (its text) and "speaker" (its name) for compatibility.
 - NAME TOKENS ARE LOCKED: every character name is a fixed token spelled EXACTLY as in character_locks, identical in every field (title, first_frame_prompt, motion_prompt, beats, camera notes, dialogue speaker, continuity_note). NEVER invent a spelling variant, nickname or near-miss — a near-miss name creates a THIRD person and breaks speaker mapping. Any name appearing inside a RULE EXAMPLE is a placeholder — NEVER copy an example name into your output; use ONLY the names defined in character_locks for THIS video.
-- ${WARDROBE_CONTINUITY_RULE}
-- For an UPLOADED-REFERENCE character, never describe the initial wardrobe or hair. A wardrobe_state is allowed only for the same motivated exception above and must contain no face/body identity prose.
+- WARDROBE & HAIR: for TEXT-ONLY characters, keep the locked wardrobe/hair or one motivated change through wardrobe_state. For UPLOADED-REFERENCE characters, never describe wardrobe or hair and omit their wardrobe_state entirely; the attached named image remains the only authority.
 - ONE LOCATION, IDENTICAL IN EVERY SEGMENT: unless the script explicitly moves to a new declared location, every first_frame_prompt restates the SAME place — indoor room OR outdoor scene — with the SAME geometry, the SAME landmark positions (furniture/fixtures indoors; buildings, trees, paths, terrain, water outdoors), materials, colour palette and light sources — copy the location description consistently and change ONLY the characters' positions, poses and explicitly named props. The set must read as the same physical place in every clip; when the user uploaded a LOCATION photo, that photo's place is the only set.
 - TWO-PERSON BLOCKING (conversation geometry): when two characters share a dialogue scene, their bodies and gazes are oriented TOWARD EACH OTHER per the scene geometry — never both facing the same direction or both facing the camera in parallel like news anchors, unless the script explicitly stages it (e.g. one turns away in refusal, both watching something). State each character's facing direction in the first_frame_prompt ("[A] faces [B] across the table; [B] stands half-turned toward [A]").
 - CONTINUITY FREEZE-FRAME (what makes clip N cut smoothly into clip N+1): "continuity_note" = the physical freeze-frame at second 10 in ONE compact sentence (≤ 35 words) — who is where, facing which way, pose/expression, held props, light. The NEXT segment's first_frame_prompt must open from EXACTLY that freeze-frame (same positions, poses, wardrobe state, light) unless the story declares a time/location jump — so the cut lands invisibly. Never write a vague emotional summary; record the observable physical state.
@@ -1035,8 +1029,8 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
       "beats": [
 ${beatExample}
       ],
-      "first_frame_prompt": "string — the segment's START STATE: describe the SHARED scene/setting, name each visible character, give exact chair/standing mark, seated/standing/kneeling posture, left-right/front-back relation, action/expression, and plant every prop the motion_prompt will use. Never repeat a character's full outfit here; character_lock or the uploaded reference already establishes it. For an UPLOADED-REFERENCE character, NEVER describe face, skin, hair, brows, lashes, body, age or initial wardrobe. For a multi-zone/doorway/boundary scene, restate the SAME zone order, fixed architecture and character placements from spatial_layout.",
-      "motion_prompt": "string — a focused 70-110 word image-to-video ACTION prompt describing ONE continuous take as an UNTIMED chronological sequence. Do not repeat identity attributes, style tokens, physics clauses, dialogue text or negatives. For an UPLOADED-REFERENCE character, write only the exact name plus position, action and expression — never appearance. Use full physical contact chains, one location, smooth minimal camera movement and an exact final state. NO seconds/time ranges here; dialogue_lines is the only clock.",
+      "first_frame_prompt": "string — the segment's compact START STATE: describe the shared setting once, then use each visible character's exact name plus position, pose, expression and held/placed props. NEVER repeat gender, age, build, face, skin, hair, brows, lashes, initial outfit, voice or style from character_locks/scene_bible. For a multi-zone scene, obey spatial_layout without rewriting its five clauses.",
+      "motion_prompt": "string — a focused 45-90 word ACTION description for ONE continuous take as an UNTIMED chronological sequence. Use exact character names plus observable movement only. Do not repeat identity, appearance, wardrobe, voice, style, topology, physics boilerplate, dialogue text or negatives. Show required contact/cause chains and the final physical result. NO seconds/time ranges here; dialogue_lines is the only clock.",
       "dialogue": "string — the FIRST turn's spoken line in ${dialogueLanguage} (short, natural). Mirror of dialogue_lines[0].text.",
       "speaker": "string — the EXACT character_locks name of the FIRST turn's speaker (mirror of dialogue_lines[0].speaker). Empty string \\"\\" if voiceover.",
       "dialogue_lines": [
@@ -1045,17 +1039,18 @@ ${beatExample}
       "characters_in_scene": ["REQUIRED — array of EXACT character_locks names VISIBLE in this segment (use only names defined for THIS video). Only these people appear on screen; the speaker must be listed here; others in the list react silently."],
       "environment_ref": "string — the environment archetype id from the ENVIRONMENT ENGINE list that matches this segment's setting (e.g. 'misty_mountain_ridge_dawn'), or 'custom' if none fits. Consecutive segments in the same place reuse the same id.",
       "spatial_layout": {
-        "_note": "Keep EACH field to ONE short clause (≤ 18 words) — this is a compact geometry map, not prose. OMIT the whole spatial_layout object for a simple single-zone scene with no doorway/threshold/stair/counter/railing/edge.",
+        "_note": "Keep EACH field to ONE short clause (≤ 18 words) — this is a compact geometry map, not prose. OMIT the whole spatial_layout object for a simple single-zone scene with no doorway/threshold/stair/counter/railing/edge. mechanism_motion is optional and used only for moving architecture such as a revolving door.",
         "zone_order": "string — ordered connected zones; e.g. balcony scene: room -> doorway/threshold -> balcony floor -> outer railing -> exterior",
         "fixed_architecture": "string — immutable walls/openings/threshold/boundary; what may NEVER cross or block a connector",
-        "character_placement": "string — each character: zone + anchor/chair/standing mark + seated/standing posture + approx distance + facing + left-right/front-back relation; nobody straddles architecture or stands beyond a boundary",
+        "character_placement": "string — each character: zone + anchor + approx distance + facing; nobody straddles architecture or stands beyond a boundary",
         "walkable_path": "string — continuous route; name the connector for any zone change; keep unobstructed",
-        "camera_zone": "string — one real camera zone + side/height + line of sight; never inside a wall or beyond a railing"
+        "camera_zone": "string — one real camera zone + side/height + line of sight; never inside a wall or beyond a railing",
+        "mechanism_motion": "optional string — revolving door only: classify ENTER / EXIT / PASS-THROUGH / HOLD-INSIDE / BACKGROUND-ONLY, then one direction + one physically consistent compartment state"
       },
       "wardrobe_state": [
-        { "character": "exact character name", "outfit": "NEW current outfit, or REFERENCE_WARDROBE plus only its changed wet/damp condition", "outfit_materials": "only when a new garment needs real material", "hair": "only a story-caused wet/dry state" }
-      ] /* OMIT unless this is the first segment of an approved visible or explicitly declared bathing/rain/water/getting-dressed/necessary clothing transition. Declare once; later segments inherit it automatically. Never restate the original outfit. */,
-      "continuity_note": "string — ONE compact sentence (≤ 35 words): physical freeze-frame at second 10 — who is on which chair/mark, left/right relation, seated/standing posture, facing, expression, held props, light (the next segment opens from exactly this frame)"
+        { "character": "TEXT-ONLY character name", "outfit": "FULL current outfit description", "outfit_materials": "real fabric materials", "hair": "current hair state" }
+      ] /* TEXT-ONLY characters only. OMIT entirely for every uploaded-reference character. Otherwise omit unless a motivated look change happened. */,
+      "continuity_note": "string — ONE compact sentence (≤ 35 words): the physical freeze-frame at second 10 — who is where, facing which way, pose, expression, held props, light (the next segment opens from exactly this frame)"
     }
   ],
   "style_guide": {
@@ -1156,13 +1151,12 @@ ${turnsBlock}
 
 REWRITE RULES:
 1. Re-time the turns realistically (~0.4s per word + ~0.5s beat between speakers), strictly sequential and non-overlapping, finished by ~9s. Fill "dialogue_lines" with start_s/end_s for every turn; mirror turn 1 into "dialogue" and "speaker".
-2. Rewrite "motion_prompt" (70-110 words) as ONE untimed chronological physical sequence. State who addresses whom and the listener's silent reaction, but put NO seconds/time ranges, quoted dialogue or camera schedule in motion_prompt. SPEECH-MOVEMENT COMPATIBILITY: speaking may overlap walking, sitting, standing, turning or bending when the context calls for it, but the line stays short/breathable and clearly belongs only to dialogue_lines.speaker; dense or emotional lines prefer a stable pose. DAILY MOVEMENT MICRO-GRAMMAR: sitting, standing, entering, leaving, turning and reaching show feet/hips/knees/torso weight transfer and a settled final balance. CAUSAL CHAIN: every object interaction visibly follows reach → contact/grip → continuous transfer → release; every fall/open/spill has a visible cause first; all used props already exist in first_frame_prompt; the whole clip stays in ONE location. Keep the physical load light and meaningful, with exact micro-expressions rather than vague "reacts".
+2. Rewrite "motion_prompt" (45-90 words) as ONE untimed chronological physical sequence. State who addresses whom and the listener's silent reaction, but put NO seconds/time ranges, quoted dialogue or camera schedule in motion_prompt. Speech may accompany an ordinary body transition when the line, breath and context make it natural; otherwise place the larger movement before/after the line. CAUSAL CHAIN: every object interaction visibly follows reach → contact/grip → continuous transfer → release; every fall/open/spill has a visible cause first; all used props already exist in first_frame_prompt; the whole clip stays in ONE location. Keep the physical load light and meaningful.
 3. Rewrite "beats" (EXACTLY ${beatsPerSegment} beats) as untimed progressive framings of the same continuous action. CAMERA DOES NOT ASSIGN SPEECH: it may hold the speaker, listener reaction or both; camera notes contain no dialogue timecodes, use one calm smooth move and never force the framed person to lip-sync.
-4. Update "first_frame_prompt" only as needed (same location/lighting; for an uploaded-reference character use only the exact name, position, action and expression — never restate appearance). Set "characters_in_scene" to the EXACT lock names visible — every speaker with a non-empty name must be included.
-5. SPATIAL TOPOLOGY + SEAT LOCK: preserve the existing spatial_layout when it is physically valid; otherwise repair it without changing the intended location. For every multi-zone/doorway/boundary or seated conversation scene return all five fields: ordered connected zones; immutable architecture/openings/boundaries; exact character zone + chair/standing mark + seated/standing posture + left-right/front-back relation + facing; one unobstructed walkable route; one real supported camera zone. first_frame_prompt, beats and motion_prompt MUST all obey this same map. Doorways/thresholds remain unobstructed; railings/guards remain only on the true exposed edge; nobody or the camera stands beyond them; zone changes visibly cross the declared connector. Do not stand, sit, swap sides or change chairs unless the motion visibly performs it.
+4. Update "first_frame_prompt" only as needed: keep the same location/light, then use exact character names plus position, pose, action, expression and props only. Never restate appearance, initial wardrobe or voice from character_locks. Set "characters_in_scene" to the EXACT visible lock names — every named speaker must be included.
+5. SPATIAL TOPOLOGY: preserve the existing spatial_layout when it is physically valid; otherwise repair it without changing the intended location. For every multi-zone/doorway/boundary scene return all five core fields: ordered connected zones; immutable architecture/openings/boundaries; exact character zone + anchor distance + facing; one unobstructed walkable route; one real supported camera zone. first_frame_prompt, beats and motion_prompt MUST all obey this same map. Doorways/thresholds remain unobstructed; railings/guards remain only on the true exposed edge; nobody or the camera stands beyond them; zone changes visibly cross the declared connector. REVOLVING DOOR ONLY: classify ENTER / EXIT / PASS-THROUGH / HOLD-INSIDE / BACKGROUND-ONLY before writing mechanism_motion. EXIT opens with the character still in the same occupied wedge and crosses the destination threshold once at physical alignment; BACKGROUND-ONLY never invents an occupant. Never cross glass, reverse, change compartments or repeat a crossing.
 6. HARD CONSTRAINTS: keep "segment_number" = ${seg.segment_number}, "duration_seconds" = ${seg.duration_seconds || 10}, "marketing_role" = "${seg.marketing_role}", "environment_ref" = "${seg.environment_ref ?? "custom"}". Locked continuity mode = "${continuityMode}". ${strictContinuity ? "Open from the previous segment's exact end state and close on the next segment's exact opening state." : "Preserve only the continuity anchors declared by scene_intent/context; location, time or pose may change when this continuity mode explicitly permits it."} Update continuity_note accordingly.
 7. continuity_note = PHYSICAL SCENE STATE ONLY (who is where, holding what, in which pose/emotion, carried into the next shot). STRICTLY FORBIDDEN inside continuity_note, first_frame_prompt, motion_prompt and beats: numeric timecodes, production/meta commentary, word counts, wpm math, "moved to segment N", duration notes, quoted dialogue or editor notes. Only dialogue_lines.start_s/end_s may contain seconds.
-8. WARDROBE: never repeat the full established outfit in first_frame_prompt, motion_prompt, beats or continuity_note. Preserve an existing wardrobe_state only when this is its actual bathing/rain/water/getting-dressed/necessary clothing transition; declare it once here, and omit it from unchanged later segments because the compiler carries it forward.
 
 Return ONLY the rewritten segment as ONE JSON object with the exact segment structure (segment_number, duration_seconds, title, marketing_role, beats[], first_frame_prompt, motion_prompt, dialogue, speaker, dialogue_lines[], characters_in_scene[], environment_ref, spatial_layout{}, wardrobe_state[] — copy the segment's existing wardrobe_state unchanged if it has one, continuity_note) — no wrapper, no markdown, no prose.`;
 }
@@ -1243,7 +1237,7 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
       case "anchor":
         return hasCharacterReference
           ? "• SECONDARY BOARD ANCHOR — composition/continuity aid only. It must never override a named uploaded character image or add appearance, hair, wardrobe or accessory text."
-          : `• WARDROBE & LOOK ANCHOR — the attached already-approved storyboard frame establishes the current outfit, hairstyle and accessories. Preserve them without redescribing them. The sole exception is a motivated wardrobe_state explicitly present in this segment's character description (bathing, rain/water or a necessary clothing change); then follow that new state while keeping the SAME identity.`;
+          : `• WARDROBE & LOOK ANCHOR — the attached already-approved storyboard frame shows the character in the EXACT outfit, hairstyle and accessories to use. Copy the clothing (type, cut and colours) and every accessory (watch, glasses if any) EXACTLY in this board. Do NOT change the outfit — never switch to a suit, jacket, apron or a different shirt unless it appears in this anchor. It is the SAME character.`;
       default:
         return `• Reference — keep it consistent.`;
     }
@@ -2065,25 +2059,32 @@ Compatible with: Google Veo 3.1, Seedance 2.0, Kling, Runway, Pika`;
 
 // ─── Structured Veo 3.1 JSON export ─────────────────────────────────────────
 // Veo Flow (and Kling/Seedance JSON modes) parse a STRUCTURED prompt far more
-// reliably than one flat paragraph. We emit a canonical Veo-3.1 JSON: a shared
-// header (style / continuity / negative) + one structured object per clip. The
-// self-contained flat `prompt` is ALSO kept per clip for text-mode users.
+// reliably than one flat paragraph. Each fact therefore has exactly one
+// canonical home in the clip object. Do not prepend a second flattened prompt:
+// it repeats character/style/voice laws and makes the structured fields fight it.
 
-/** The one comprehensive negative list, reused at project + clip level. */
-export const VEO_NEGATIVE_LIST = [
-  "morphing, warping, teleporting, duplicated character or object, extra people, extra or fused fingers, malformed hands, missing limbs, identity drift or unmotivated wardrobe drift, left-right seat swap, unexplained sitting/standing posture change, camera-axis flip, objects passing through solids, impossible physics, blocked doorway or walkable path, barrier in the wrong zone, camera or person beyond a railing or inside a wall, jitter, jump cut, overlapping or repeated voices, wrong-speaker lip sync, listener lip movement, lip movement during voiceover, on-screen text, captions, labels, HUD, watermark, plastic or CGI surfaces",
-  HUMAN_FACE_REALISM_NEGATIVE,
-].join(", ");
+/**
+ * Full failure blacklist from the stable pre-18/07 Veo contract. Keep this
+ * complete: compacting it removed independent guards that Veo does not infer
+ * from broader phrases (listener lip movement, duplicate hands, HUD text...).
+ */
+const VEO_SHARED_FAILURE_NEGATIVE =
+  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair or wardrobe or accessories, warped or altered label or logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, both characters talking at once, overlapping or simultaneous voices, doubled voice, chorus, echo, a spoken line repeated or duplicated, listener lip movement, lip movement during voiceover, narrator voice coming from a visible character's mouth, wrong-speaker lip sync, swapped voices, ad-lib speech, speech bubble, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, floating character name tag, a character name or age rendered as a label, character info card overlaid on the footage, colour-temperature or Kelvin label, exposure or Kelvin or lux or timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo";
 
-const VEO_REFERENCE_CHARACTER_NEGATIVE_LIST = [
-  "morphing, teleporting, duplicated character, extra people, malformed hands, left-right seat swap, unexplained sitting/standing posture change, camera-axis flip, objects crossing solids, impossible physics, jitter, jump cuts",
-  "overlapping or repeated voices, wrong-speaker lip sync, listener lip movement, lip movement during voiceover",
-  "on-screen text, captions, labels, HUD, watermark",
-  REFERENCE_CHARACTER_ANTI_PLASTIC,
-].join(", ");
+export const VEO_REFERENCE_CHARACTER_NEGATIVE_LIST =
+  `${VEO_SHARED_FAILURE_NEGATIVE}, ${REFERENCE_CHARACTER_ANTI_PLASTIC}`;
+
+export const VEO_NEGATIVE_LIST =
+  `${VEO_SHARED_FAILURE_NEGATIVE}, ${HUMAN_FACE_REALISM_NEGATIVE}, plastic or CGI skin, plastic wig hair, painted eyebrows or eyelashes`;
 
 export const CAMERA_SPEECH_INDEPENDENCE_RULE =
-  "Camera may frame the speaker, listener or both and never assigns speech; during each dialogue window only the named speaker's voice and lips move, every other visible mouth stays closed, and an off-screen speaker continues in their own voice with no visible mouth moving.";
+  "Camera subject and dialogue owner are independent: framing a listener never transfers the line to that listener. During each dialogue window only the named speaker's voice, lips and jaw move; every other visible mouth stays naturally closed, and an off-screen or out-of-focus speaker continues from their own physical position in their own voice.";
+
+const VEO_CAMERA_FOCUS_RULE =
+  "Natural cinematic depth of field; focus follows the explicitly assigned visual subject, NOT the active speaker. A speaker may remain off-camera or softly out of focus while the listener's silent reaction is sharp; framing never transfers dialogue or lip-sync to the visible subject.";
+
+const VEO_LIP_SYNC_DIRECTOR_NOTE =
+  "DIALOGUE OWNERSHIP: each line belongs exclusively to its dialogue.speaker_id and speaker_name and is spoken in that character's locked voice from that character's physical position; no other character may produce lip, jaw or speech-like mouth movement during that line, and each line is spoken exactly once. SPEAKER GAZE: the speaker addresses the scripted person according to scene geometry, never automatically the camera. LISTENER: silent with lips naturally closed, reacting only through eyes, brows, breathing and posture. VOICEOVER: comes from a fully off-screen narrator; no visible mouth moves. CAMERA INDEPENDENCE: camera subject, framing and focus are independent of dialogue ownership; if the camera holds the listener, the named speaker continues off-screen or out of focus and the listener remains silent. Dialogue start_sec/end_sec is the only clock; one voice at a time.";
 
 interface VeoJsonOptions {
   aspectRatio: string;
@@ -2194,8 +2195,117 @@ export function buildVeoJson(
       .replace(/\b(?:then\s+)?hard\s+cuts?\s+to\b/gi, "then smoothly reframes to")
       .replace(/\b(?:then\s+)?cuts?\s+to\b/gi, "then smoothly reframes to")
       .replace(/\bjump\s+cuts?\b/gi, "smooth continuous reframe");
+  const hasIncidentalBagPressure = (...values: Array<string | null | undefined>) => {
+    const corpus = values.filter(Boolean).join(" ");
+    return /\b(?:shopping\s+bags?|bags?|straps?|handles?)\b|túi đồ|túi nặng|quai túi/iu.test(corpus)
+      && /\b(?:red\s+marks?|pressure\s+marks?|digging\s+in)\b|hằn đỏ|vệt đỏ|siết chặt/iu.test(corpus);
+  };
+  /** Keep an ordinary carrying-pressure beat clear of injury/violence filters. */
+  const softenIncidentalBagPressure = (text: string, enabled: boolean) => {
+    if (!enabled || !text) return text;
+    return text
+      .replace(/\bBàn Tay Hằn Đỏ\b/giu, "Bàn Tay Mỏi Vì Túi Nặng")
+      .replace(/\bdeep\s+red\s+marks?\b/giu, "temporary pressure lines")
+      .replace(/\bred\s+marks?\b/giu, "temporary pressure lines")
+      .replace(/\bred\s+from\s+(?:the\s+)?(?:bag\s+)?(?:straps?|handles?)\b/giu, "showing temporary pressure from the bag handles")
+      .replace(/\bdigging\s+in(?:to)?\b/giu, "pressing gently against")
+      .replace(/hằn đỏ rõ rệt/giu, "có vết hằn tạm thời")
+      .replace(/vết hằn đỏ|vệt đỏ/giu, "vết hằn tạm thời")
+      .replace(/\bđỏ\s+(?:rõ rệt\s+)?do\b/giu, "mỏi do")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  };
   const hasUploadedReference = (name: string) =>
     characterReferenceNames.has(name.trim().toLowerCase());
+  const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  /**
+   * Static identity, initial wardrobe and voice belong only in character_lock.
+   * Older model output often copied those exact strings into start/motion/end;
+   * remove the canonical values there while preserving names, blocking, acting
+   * and prop state. Prompt instructions prevent paraphrased copies upstream.
+   */
+  const stripCanonicalCharacterDetails = (
+    text: string | null | undefined,
+    clipLocks: typeof locks
+  ) => {
+    let out = cleanReferenceText(text);
+    for (const lock of clipLocks) {
+      const values = [
+        lock.gender_age,
+        lock.build,
+        lock.skin_tone,
+        lock.face_structure,
+        lock.skin_texture,
+        lock.eye_details,
+        lock.eyes,
+        lock.eyebrow_details,
+        lock.eyelash_details,
+        lock.nose_lips_details,
+        lock.hair,
+        lock.hair_details,
+        lock.costume,
+        lock.wardrobe_materials,
+        lock.signature_features,
+        lock.render_style,
+        lock.dna,
+        lock.voice,
+      ]
+        .flatMap((value) => {
+          const raw = oneLine(value);
+          const parts = raw
+            .split(/[,;]\s*/)
+            .map((part) => part.trim())
+            .filter((part) => part.length >= 4);
+          return [raw, noHex(value), scrub(value), ...parts];
+        })
+        .filter((value, index, all) => value.length >= 4 && all.indexOf(value) === index)
+        .sort((a, b) => b.length - a.length);
+      for (const value of values) {
+        out = out.replace(new RegExp(`(?:,\\s*)?${escapeRegExp(value)}(?:\\s*,)?`, "giu"), " ");
+      }
+    }
+    return oneLine(out)
+      .replace(/\b(?:wearing|dressed\s+in|with)\s*(?=[,.;]|$)/giu, "")
+      .replace(/\s+([,.;!?])/g, "$1")
+      .replace(/([,;])\s*([,.!?])/g, "$2")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  };
+  const compactActionText = (text: string | null | undefined, clipLocks: typeof locks) =>
+    stripCanonicalCharacterDetails(cleanContinuousText(text), clipLocks)
+      .replace(
+        /\b(?:single continuous motion|single continuous take),?\s*natural movement obeying real-world physics,?\s*consistent weight and gravity,?\s*stable identity,?\s*object permanence\.?/giu,
+        ""
+      )
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  /** Keep background_lock about the set only; actor state belongs in scene_action. */
+  const extractBackgroundSetting = (
+    text: string | null | undefined,
+    characterNames: string[],
+    fallback: string
+  ) => {
+    const source = oneLine(cleanReferenceText(text));
+    const firstNameIndex = characterNames
+      .map((name) => source.search(new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}($|[^\\p{L}\\p{N}])`, "iu")))
+      .filter((index) => index > 0)
+      .sort((a, b) => a - b)[0];
+    if (typeof firstNameIndex === "number") {
+      const prefix = source.slice(0, firstNameIndex).replace(/[,:;\s]+$/g, "").trim();
+      if (prefix.length >= 12) return prefix;
+    }
+    const mentionsName = (part: string) =>
+      characterNames.some((name) => exactNameMentioned(part, name));
+    const leadingSetSentences: string[] = [];
+    for (const sentence of source.split(/(?<=[.!?])\s+/).map((part) => part.trim())) {
+      if (!sentence || mentionsName(sentence)) break;
+      // A sentence beginning with a pronoun is actor/action state, not the set.
+      if (/^(?:he|she|they|his|her|their|anh|cô|chị|em|họ)\b/iu.test(sentence)) break;
+      leadingSetSentences.push(sentence);
+    }
+    if (leadingSetSentences.length > 0) return oneLine(leadingSetSentences.join(" "));
+    return oneLine(fallback);
+  };
   const exactNameMentioned = (text: string, name: string) => {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     try {
@@ -2241,23 +2351,42 @@ export function buildVeoJson(
   };
   const cameraParts = (cameraText: string) => {
     const lower = cameraText.toLowerCase();
-    const framing = /extreme close|ecu/.test(lower)
+    const firstShot = cameraText.match(/\[(MEDIUM|CLOSE|EXTREME_CLOSE|WIDE|OTS)\]/i)?.[1]
+      ?.toLowerCase();
+    const framing = firstShot === "extreme_close"
       ? "ECU"
-      : /close|\bcu\b/.test(lower)
+      : firstShot === "close" || firstShot === "ots"
         ? "CU"
-        : /medium|\bms\b/.test(lower)
+        : firstShot === "medium"
           ? "MS"
-          : /wide|\bws\b|establish/.test(lower)
+          : firstShot === "wide"
             ? "WS"
-            : "MS";
+            : /extreme close|ecu/.test(lower)
+              ? "ECU"
+              : /close|\bcu\b/.test(lower)
+                ? "CU"
+                : /wide|\bws\b|establish/.test(lower)
+                  ? "WS"
+                  : "MS";
     const angle = /low angle|\blow\b/.test(lower)
       ? "low angle"
       : /high angle|overhead|top-down/.test(lower)
         ? "high angle"
         : "eye level";
+    const cameraClauses = cameraText
+      .split(/\s*;\s*/)
+      .map((clause) =>
+        clause
+          .replace(/\[(?:MEDIUM|CLOSE|EXTREME_CLOSE|WIDE|OTS)\]\s*/gi, "")
+          .replace(/\s*\(thats where the camera is\)/gi, "")
+          .trim()
+      )
+      .filter(Boolean);
     const movement = /static|locked/.test(lower)
       ? "static"
-      : cameraText || "single slow, smooth camera move";
+      : cameraClauses.length > 1
+        ? `One continuous ${framing === "WS" ? "wide" : framing === "CU" ? "close" : "medium"} composition begins on ${cameraClauses[0]} and gently follows the same action before settling on ${cameraClauses[cameraClauses.length - 1]}, without a cut or shot-scale change`
+        : cameraClauses[0] || "single slow, smooth camera move";
     return { framing, angle, movement };
   };
 
@@ -2272,10 +2401,14 @@ export function buildVeoJson(
     const baseVisibleLocks = locks.filter((lock) =>
       onScreen.some((name) => name.toLowerCase() === lock.name.trim().toLowerCase())
     );
-    // A wardrobe transition is written once on the segment where it happens.
-    // Carry the latest state forward internally instead of forcing the model to
-    // repeat the full outfit in every later segment.
-    const wardrobeByName = wardrobeStateThrough(breakdown.segments, segIndex);
+    // MOTIVATED WARDROBE CHANGE: a segment-level wardrobe_state (shower → home
+    // clothes, etc.) overrides the base lock's costume/hair so the JSON never
+    // contradicts the scene text ("office shirt" lock vs "dark t-shirt" scene).
+    const wardrobeByName = new Map(
+      (seg.wardrobe_state ?? [])
+        .filter((w) => w && (w.character ?? "").trim() && (w.outfit ?? "").trim())
+        .map((w) => [w.character.trim().toLowerCase(), w])
+    );
     const visibleLocks = baseVisibleLocks.map((lock) => {
       const wardrobe = wardrobeByName.get(lock.name.trim().toLowerCase());
       if (!wardrobe) return lock;
@@ -2286,15 +2419,78 @@ export function buildVeoJson(
         hair: wardrobe.hair || lock.hair,
       };
     });
-    const entryState = scrub(cleanReferenceText(seg.scene_intent?.entry_exit?.entry_state)) || scrub(cleanReferenceText(seg.first_frame_prompt));
-    const exitState = scrub(cleanReferenceText(seg.scene_intent?.entry_exit?.exit_state)) || scrub(cleanReferenceText(seg.continuity_note));
-    const mainAction =
-      scrub(cleanContinuousText(seg.motion_prompt)) || scrub(cleanContinuousText(seg.scene_intent?.performance?.physical_behavior));
+    const incidentalBagPressure = hasIncidentalBagPressure(
+      seg.title,
+      seg.first_frame_prompt,
+      seg.motion_prompt,
+      seg.continuity_note,
+      seg.scene_intent?.entry_exit?.entry_state,
+      seg.scene_intent?.entry_exit?.exit_state,
+      ...beats.flatMap((beat) => [beat.beat, beat.camera])
+    );
+    const backgroundSetting = softenIncidentalBagPressure(
+      scrub(
+        extractBackgroundSetting(
+          seg.first_frame_prompt,
+          onScreen,
+          [env?.display_name, env?.scale, scrub(sb?.backdrop)].filter(Boolean).join("; ") || seg.title
+        )
+      ),
+      incidentalBagPressure
+    );
+    const sceneStateOnly = (text: string | null | undefined) => {
+      const state = softenIncidentalBagPressure(
+        scrub(stripCanonicalCharacterDetails(text, visibleLocks)),
+        incidentalBagPressure
+      );
+      if (!state || !backgroundSetting) return state;
+      return state
+        .replace(new RegExp(`^${escapeRegExp(backgroundSetting)}[\\s,.;:–—-]*`, "iu"), "")
+        .trim();
+    };
+    const declaredEntryState = sceneStateOnly(
+      seg.scene_intent?.entry_exit?.entry_state || seg.first_frame_prompt
+    );
+    const exitState = sceneStateOnly(
+      seg.scene_intent?.entry_exit?.exit_state || seg.continuity_note
+    );
+    const mainAction = softenIncidentalBagPressure(
+      scrub(compactActionText(seg.motion_prompt, visibleLocks)) ||
+        scrub(compactActionText(seg.scene_intent?.performance?.physical_behavior, visibleLocks)),
+      incidentalBagPressure
+    );
+    // The previous clip's visible end is the only legal opening for a chained
+    // clip. Keep a contradictory regenerated first_frame_prompt out of the
+    // Veo payload instead of creating two competing start clocks.
+    const prevSeg = segIndex > 0 ? breakdown.segments[segIndex - 1] : null;
+    const prevExitState = prevSeg
+      ? softenIncidentalBagPressure(
+          scrub(
+            stripCanonicalCharacterDetails(
+              prevSeg.scene_intent?.entry_exit?.exit_state || prevSeg.continuity_note,
+              locks
+            )
+          ),
+          incidentalBagPressure
+        )
+      : "";
+    const continuityFromPrev = segIndex > 0 ? prevExitState || declaredEntryState : "";
+    const entryState = continuityFromPrev || declaredEntryState;
+    const revolvingDoorOperation = inferRevolvingDoorOperation({
+      setting: seg.first_frame_prompt,
+      motion: mainAction,
+      startState: entryState,
+      endState: exitState,
+      continuityFromPrevious: continuityFromPrev,
+    });
     const resolvedSpatialLayout = resolveSpatialLayout({
       layout: seg.spatial_layout,
       setting: seg.first_frame_prompt,
-      motion: seg.motion_prompt,
-      characterNames: seg.characters_in_scene,
+      motion: mainAction,
+      characterNames: onScreen,
+      startState: entryState,
+      endState: exitState,
+      continuityFromPrevious: continuityFromPrev,
     });
     const spatialTopology = resolvedSpatialLayout
       ? {
@@ -2303,54 +2499,82 @@ export function buildVeoJson(
           character_placement: scrub(cleanReferenceText(resolvedSpatialLayout.character_placement)),
           walkable_path: scrub(cleanReferenceText(resolvedSpatialLayout.walkable_path)),
           camera_zone: scrub(cleanReferenceText(resolvedSpatialLayout.camera_zone)),
+          ...(resolvedSpatialLayout.mechanism_motion
+            ? {
+                mechanism_motion: scrub(
+                  cleanReferenceText(resolvedSpatialLayout.mechanism_motion)
+                ),
+              }
+            : {}),
           invariants: SPATIAL_TOPOLOGY_INVARIANTS,
-          seat_relative_placement_lock: SEAT_RELATIVE_PLACEMENT_LOCK,
         }
       : null;
-    // CROSS-CLIP CONTINUITY: what the PREVIOUS clip actually ended on — this is
-    // what this clip must open from. The old code mislabelled this as the
-    // current clip's own continuity_note, so a clip could open in a state that
-    // contradicted the previous clip's ending (e.g. one character already
-    // seated / standing before the beat that moves them). Falls back to this
-    // clip's own note for the very first clip (no predecessor).
-    const prevSeg = segIndex > 0 ? breakdown.segments[segIndex - 1] : null;
-    const prevExitState = prevSeg
-      ? scrub(cleanReferenceText(prevSeg.scene_intent?.entry_exit?.exit_state)) || scrub(cleanReferenceText(prevSeg.continuity_note))
-      : "";
-    const continuityFromPrev = prevExitState || scrub(cleanReferenceText(seg.continuity_note));
+    const hasRevolvingDoorMechanism = Boolean(spatialTopology?.mechanism_motion);
     const characterLock = Object.fromEntries(
       visibleLocks.map((lock) => {
         const id = charIds.get(lock.name.trim().toLowerCase()) || "CHAR_1";
+        const motivatedWardrobe = wardrobeByName.get(lock.name.trim().toLowerCase());
+        const outfit = motivatedWardrobe
+          ? { top: "See wardrobe_state", bottom: "See wardrobe_state" }
+          : splitOutfit(lock.costume);
+        const props = "Only props planted in background_lock.props or scene_action.start_state";
+        const sceneStateFields = {
+          position: resolvedSpatialLayout
+            ? "Use spatial_topology.character_placement"
+            : "Use scene_action.start_state",
+          orientation: resolvedSpatialLayout
+            ? "Use the facing direction in spatial_topology.character_placement"
+            : "Use scene_action.start_state",
+          pose: "Use scene_action.start_state",
+          foot_placement: "Physically grounded with stable contact on the declared walkable surface",
+          hand_detail: "Natural hands with correct contact on named props; no fused or extra fingers",
+        };
+        const actionFlow = {
+          pre_action: "Begin exactly in scene_action.start_state",
+          main_action: `Perform only ${lock.name}'s actions in scene_action.motion`,
+          post_action: "Finish exactly in scene_action.end_state",
+        };
         if (hasUploadedReference(lock.name)) {
-          const scriptedWardrobeState = lock.costume?.trim();
+          const referenceOutfit = motivatedWardrobe
+            ? { top: "See wardrobe_state", bottom: "See wardrobe_state" }
+            : { top: "REFERENCE_IMAGE", bottom: "REFERENCE_IMAGE" };
           return [
             id,
             {
               id,
               name: lock.name,
               reference_image_lock: REFERENCE_CHARACTER_APPEARANCE_LOCK,
-              ...(scriptedWardrobeState
-                ? { scripted_wardrobe_state: scrub(scriptedWardrobeState) }
-                : {}),
               avoid_character_surface_artifacts: REFERENCE_CHARACTER_ANTI_PLASTIC,
+              species: "REFERENCE_IMAGE",
+              gender: "REFERENCE_IMAGE",
+              age: "REFERENCE_IMAGE",
               voice_personality: oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child),
-              props: "Only props explicitly planted in background_lock.setting and action_flow",
-              position: resolvedSpatialLayout
-                ? "Use this character's exact zone, chair/standing mark, posture and left-right/front-back relation in spatial_topology.character_placement"
-                : "Use the exact starting position in background_lock.setting",
-              orientation: resolvedSpatialLayout
-                ? "Use this character's exact facing direction in spatial_topology.character_placement"
-                : "Use the exact orientation in background_lock.setting",
-              pose: "Use the exact starting seated/standing/kneeling pose in background_lock.setting; change only by scripted visible motion",
-              action_flow: {
-                pre_action: "Hold the exact starting pose assigned in scene_action.start_state",
-                main_action: `Perform only ${lock.name}'s actions in scene_action.motion; do not steal another character's action or dialogue`,
-                post_action: "Finish in the exact state assigned in scene_action.end_state",
-              },
+              body_build: "REFERENCE_IMAGE",
+              face_shape: "REFERENCE_IMAGE",
+              hair: motivatedWardrobe?.hair ? "See wardrobe_state" : "REFERENCE_IMAGE",
+              hair_microdetail: "REFERENCE_IMAGE",
+              eyes: "REFERENCE_IMAGE",
+              eyebrows: "REFERENCE_IMAGE",
+              eyelashes: "REFERENCE_IMAGE",
+              nose_lips_teeth: "REFERENCE_IMAGE",
+              skin_or_fur_color: "REFERENCE_IMAGE",
+              skin_texture: "REFERENCE_IMAGE",
+              signature_feature: "REFERENCE_IMAGE",
+              outfit_top: referenceOutfit.top,
+              outfit_bottom: referenceOutfit.bottom,
+              outfit_materials: motivatedWardrobe
+                ? "See wardrobe_state"
+                : "REFERENCE_IMAGE",
+              helmet_or_hat: "REFERENCE_IMAGE",
+              shoes_or_footwear: "REFERENCE_IMAGE",
+              props,
+              body_metrics: "REFERENCE_IMAGE; cons=no-auto-rescale,lock-proportions",
+              ...sceneStateFields,
+              expression: "Use scene_action.start_state",
+              action_flow: actionFlow,
             },
           ];
         }
-        const outfit = splitOutfit(lock.costume);
         return [
           id,
           {
@@ -2361,12 +2585,12 @@ export function buildVeoJson(
             age: scrub(lock.gender_age),
             voice_personality: oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child),
             body_build: noHex(lock.build),
-            face_shape:
-              noHex(lock.face_structure) ||
-              "Match the attached reference; preserve locked facial geometry and natural asymmetry",
+            face_shape: noHex(lock.face_structure),
             // Always append the real-hair clause so older breakdowns without
             // hair_details still cannot render a plastic wig / doll cap.
-            hair: appendHairRealism(noHex(lock.hair)),
+            hair: motivatedWardrobe?.hair
+              ? "See wardrobe_state"
+              : appendHairRealism(noHex(lock.hair)),
             hair_microdetail: noHex(lock.hair_details),
             eyes: noHex(lock.eye_details || lock.eyes),
             eyebrows: noHex(lock.eyebrow_details),
@@ -2377,26 +2601,16 @@ export function buildVeoJson(
             signature_feature: scrub(lock.signature_features),
             outfit_top: outfit.top,
             outfit_bottom: outfit.bottom,
-            outfit_materials: noHex(lock.wardrobe_materials),
-            helmet_or_hat: "None unless visible in the attached reference",
-            shoes_or_footwear: "Match the attached reference; do not invent or change",
-            props: "Only props explicitly planted in background_lock.setting and action_flow",
+            outfit_materials: motivatedWardrobe
+              ? "See wardrobe_state"
+              : noHex(lock.wardrobe_materials),
+            helmet_or_hat: "None unless declared in the initial outfit",
+            shoes_or_footwear: "Use the footwear declared in the initial outfit; do not invent a change",
+            props,
             body_metrics: "cons=no-auto-rescale,lock-proportions,keep-relative-height",
-            position: resolvedSpatialLayout
-              ? "Use this character's exact zone, chair/standing mark, posture, anchor distance and left-right/front-back relation in spatial_topology.character_placement"
-              : "Use the exact starting position in background_lock.setting",
-            orientation: resolvedSpatialLayout
-              ? "Use this character's exact facing direction in spatial_topology.character_placement; eye-line follows the same zone map"
-              : "Use the exact orientation in background_lock.setting",
-            pose: "Use the exact starting seated/standing/kneeling pose in background_lock.setting; change only by scripted visible motion",
-            foot_placement: "Physically grounded, stable contact with the floor",
-            hand_detail: "Natural hands; correct contact with named props; no fused or extra fingers",
-            expression: noHex(lock.default_expression),
-            action_flow: {
-              pre_action: "Hold the exact starting pose assigned in scene_action.start_state",
-              main_action: `Perform only ${lock.name}'s actions in scene_action.motion; do not steal another character's action or dialogue`,
-              post_action: "Finish in the exact state assigned in scene_action.end_state",
-            },
+            ...sceneStateFields,
+            expression: noHex(lock.default_expression) || "Use scene_action.start_state",
+            action_flow: actionFlow,
           },
         ];
       })
@@ -2417,65 +2631,36 @@ export function buildVeoJson(
     const dialogue = canonicalTurns
       .map((turn) => {
         const name = oneLine(turn.speaker);
-        const lock = locks.find((item) => item.name.trim().toLowerCase() === name.toLowerCase());
-        return {
+        const line = {
           speaker_id: name ? charIds.get(name.toLowerCase()) || name : "VOICEOVER",
           speaker_name: name || "VOICEOVER",
           text: oneLine(turn.text),
           language: lang,
           start_sec: turn.start_s ?? null,
           end_sec: turn.end_s ?? null,
-          voice_personality: lock
-            ? oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child)
-            : "off-screen narrator",
         };
+        // Character voices are declared once in character_lock. A voiceover has
+        // no character entry, so its profile is declared here at its first use.
+        return name ? line : { ...line, voice_personality: "off-screen narrator" };
       });
-    const cameraText = beats.map((beat) => oneLine(cleanContinuousText(beat.camera))).filter(Boolean).join("; ");
+    const cameraText = softenIncidentalBagPressure(
+      beats.map((beat) => oneLine(cleanContinuousText(beat.camera))).filter(Boolean).join("; "),
+      incidentalBagPressure
+    );
     const camera = cameraParts(cameraText);
+    const revolvingDoorCameraMovement =
+      revolvingDoorOperation === "exit"
+        ? "One continuous medium two-shot from the destination-side floor: hold the waiting character clear of the threshold, gently track the occupied wedge into alignment, then follow the exiting character's single step onto the floor and settle on the human reaction; keep both characters readable in the same shot"
+        : revolvingDoorOperation === "enter" || revolvingDoorOperation === "pass_through"
+          ? "One continuous medium shot from a supported lobby position: follow the crossing character from the origin-side gap into one wedge and along its curved arc, ending only at the physically aligned destination exit; no cut or shot change"
+          : revolvingDoorOperation === "hold"
+            ? "One continuous supported medium composition holds the same occupied wedge and the waiting character through the glass while the door rotates in one direction; no entry, exit, cut or shot change"
+            : "";
+    const cameraMovement = revolvingDoorCameraMovement || camera.movement;
     const ambience = [env?.sound_bed, opts.ambientAudio].filter(
       (value): value is string => !!value
     );
-    const flatCharacterDescription = visibleLocks
-      .map((lock) =>
-        hasUploadedReference(lock.name)
-          ? `${lock.name}. ${REFERENCE_CHARACTER_APPEARANCE_LOCK}${lock.costume?.trim() ? ` Current scripted wardrobe state: ${noHex(lock.costume)}.` : ""} Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
-          : `${lock.name}, ${noHex(lock.gender_age)}, ${noHex(lock.build)}, ${noHex(lock.hair)}, ${noHex(lock.costume)}`
-      )
-      .join(" | ");
-    const flatPrompt = buildSegmentVeoPrompt({
-      characterDescription: flatCharacterDescription,
-      realityProfile: breakdown.context_ir?.reality_profile,
-      sceneIntent: seg.scene_intent,
-      worldContext: breakdown.world_context,
-      setting: cleanReferenceText(seg.first_frame_prompt),
-      spatialLayout: seg.spatial_layout,
-      productDescription: breakdown.product_dna,
-      sceneBible: sb,
-      colorPalette: breakdown.style_guide?.color_palette ?? [],
-      motionPrompt: cleanContinuousText(seg.motion_prompt),
-      dialogue: canonicalTurns[0]?.text ?? seg.dialogue,
-      dialogueLanguage: lang,
-      speaker: canonicalTurns[0]?.speaker ?? seg.speaker,
-      dialogueTurns: canonicalTurns,
-      characterVoices: Object.fromEntries(
-        visibleLocks.map((lock) => [
-          lock.name,
-          oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child),
-        ])
-      ),
-      characterNames: locks.map((lock) => lock.name),
-      charactersInScene: onScreen,
-      speakerVoice: speaker ? oneLine(locks.find((lock) => lock.name.toLowerCase() === speaker.toLowerCase())?.voice) : undefined,
-      ambientAudio: opts.ambientAudio,
-      environmentRef: seg.environment_ref,
-      hasLocationRef: opts.hasLocationRef,
-      hasCharacterReference: hasReferencedVisibleCharacter,
-    });
     return {
-      // Single convenience field for bulk extensions/importers. Do not emit a
-      // second duplicate alias: duplicated prompt prose was part of the 19/07
-      // bloat regression. Structured fields remain canonical.
-      prompt: flatPrompt,
       scene_id: String(seg.segment_number),
       duration_sec: String(clipSeconds),
       visual_style: [
@@ -2491,39 +2676,59 @@ export function buildVeoJson(
       // images per clip. Never make them infer the cast from character_lock.
       characters_in_scene: onScreen,
       character_lock: characterLock,
+      ...(seg.wardrobe_state && seg.wardrobe_state.length > 0
+        ? {
+            wardrobe_state: seg.wardrobe_state.map((state) => ({
+              character: oneLine(state.character),
+              outfit: scrub(state.outfit),
+              outfit_materials: scrub(state.outfit_materials),
+              hair: scrub(state.hair),
+            })),
+          }
+        : {}),
       background_lock: {
         id: seg.environment_ref || `BACKGROUND_${seg.segment_number}`,
-        name: env?.display_name || seg.title,
-        setting: scrub(cleanReferenceText(seg.first_frame_prompt)),
+        name: softenIncidentalBagPressure(
+          env?.display_name || seg.title,
+          incidentalBagPressure
+        ),
+        setting: backgroundSetting,
         scenery: scrub(sb?.backdrop),
         props: noHex(breakdown.product_dna) || "Only props explicitly named in setting and action",
         lighting: [scrub(sb?.lighting), env ? scrub(`${env.lighting.key_kelvin}K, ~${env.lighting.ambient_lux} lux`) : ""]
           .filter(Boolean)
           .join("; "),
         persistence: opts.hasLocationRef
-          ? "Attached location image is the sole set authority; preserve its geometry, materials, furniture and light. spatial_topology cannot redesign it."
-          : "Preserve this location's geometry, fixed architecture, furniture and light; spatial_topology is authoritative.",
+          ? "Attached location image is the set authority; keep its geometry, furniture, materials and light."
+          : "Keep this set unchanged; spatial_topology controls its fixed geometry.",
       },
       ...(spatialTopology ? { spatial_topology: spatialTopology } : {}),
       camera: {
-        framing: camera.framing,
+        framing: revolvingDoorCameraMovement ? "MS" : camera.framing,
         angle: camera.angle,
-        movement: `ONE CONTINUOUS TAKE, no cuts or timed camera schedule. ${scrub(camera.movement)}. One calm motivated hold or smooth reframe; start and end settled.`,
-        focus: "Natural optical depth of field; freely observe speaker, listener reaction, both, or the interacted prop according to the scene intent.",
+        movement: `${scrub(cameraMovement)}. One smooth move or hold; no cuts or separate camera clock.`,
+        focus: VEO_CAMERA_FOCUS_RULE,
       },
       scene_action: {
         start_state: entryState,
         motion: mainAction,
         end_state: exitState,
-        continuity_from_previous: continuityFromPrev,
+        ...(continuityFromPrev ? { continuity_from_previous: continuityFromPrev } : {}),
         continuity_lock:
-          (segIndex > 0
-            ? "Open exactly from continuity_from_previous; it wins over a conflicting start_state. "
-            : "Open exactly from start_state. ") +
-          "Only visible ordered contact/action changes a person, prop, door or object; preserve seat/chair/standing mark, left-right/front-back relation, posture and every resulting state through end_state.",
+          segIndex > 0
+            ? "Open from continuity_from_previous; visible causes create and preserve every state change."
+            : "Open from start_state; visible causes create and preserve every state change.",
         staging: spatialTopology
-          ? "Obey spatial_topology exactly: fixed architecture stays fixed, openings and walkable_path stay clear, barriers stay on their declared perimeter, seat/standing marks and left-right relations stay locked, and every zone change follows the connector visibly."
-          : "Use physically possible blocking and eye-lines from background_lock.setting; preserve each character's starting chair/standing mark and left-right relation unless the motion explicitly changes it.",
+          ? hasRevolvingDoorMechanism
+            ? revolvingDoorOperation === "exit"
+              ? "Follow every spatial_topology field exactly. The character starts inside the same occupied wedge and exits exactly once only at destination-side alignment; no re-entry, repeated exit or crossing through glass."
+              : revolvingDoorOperation === "hold"
+                ? "Follow every spatial_topology field exactly. Keep the character inside the same occupied wedge for the whole clip; no entry, exit or compartment change."
+                : revolvingDoorOperation === "background"
+                  ? "Follow every spatial_topology field exactly. The revolving door is unoccupied background architecture; no visible character enters, exits or appears inside a compartment."
+                  : "Follow every spatial_topology field exactly. mechanism_motion is mandatory choreography: one entry, the same occupied wedge, one rotation direction and one aligned exit; no repeated crossing or intersection with glass."
+            : "Follow spatial_topology; change zones or positions only through visible scripted movement."
+          : "Keep blocking and eye-lines physically possible; change positions only through visible scripted movement.",
       },
       foley_and_ambience: {
         ambience,
@@ -2537,29 +2742,32 @@ export function buildVeoJson(
       lip_sync_director_note:
         dialogue.length === 0
           ? "No dialogue; all visible mouths remain naturally closed."
-          : `Dialogue start_sec/end_sec is the only clock. ${CAMERA_SPEECH_INDEPENDENCE_RULE}`,
+          : VEO_LIP_SYNC_DIRECTOR_NOTE,
       output_rules: {
-        frame: "one clean full-screen continuous shot; never render a storyboard sheet, grid, panel, reference strip or document",
-        on_screen_text: "ZERO — no letters, words, names, ages, numbers, labels, logos, captions, subtitles, badges, cards, HUD or technical overlays",
-        audio: "Use each dialogue entry's voice_personality consistently; one clean native voice at a time, Standard Northern Vietnamese by default unless the user chose another accent; no overlap, repetition, echo or ad-lib.",
-        wardrobe_continuity:
-          "Use the wardrobe established once in character_lock or the uploaded reference. Never change it unless the approved story visibly performs or explicitly declares bathing, rain/water or another necessary clothing transition; a declared wardrobe_state then persists.",
+        frame: "one clean full-screen continuous shot; no panels or cuts",
+        on_screen_text: "none — no captions, labels, logos, HUD or watermark",
+        audio: "Dialogue and voiceover are spoken audio only. Use each dialogue row's speaker_id as the sole voice and lip-sync owner and use that character's character_lock voice. Exactly one voice at a time; no simultaneous voices, chorus, echo, repeated line, swapped voice or ad-lib speech.",
         reference_priority: hasReferencedVisibleCharacter
-          ? "Each attached named character image is the sole appearance authority for that exact character. Do not describe, infer, reinterpret, merge or swap appearance."
-          : "uploaded character and location menu references are authoritative; never merge, omit or swap identities",
+          ? "Attached named images are the sole appearance authority; never merge or swap identities."
+          : "Preserve the exact named identities in character_lock.",
       },
       negative_prompt: [
-        hasReferencedVisibleCharacter ? VEO_REFERENCE_CHARACTER_NEGATIVE_LIST : VEO_NEGATIVE_LIST,
-        "opening state contradicting continuity_from_previous, unexplained pose/state change, unexplained seated-standing change, left-right seat swap, character side swap, camera crossing axis and flipping screen direction, extra background person, blocked connector, migrated railing/barrier, impossible camera or character position",
-      ]
-        .filter(Boolean)
-        .join(", "),
+        hasReferencedVisibleCharacter
+          ? VEO_REFERENCE_CHARACTER_NEGATIVE_LIST
+          : VEO_NEGATIVE_LIST,
+        spatialTopology
+          ? "blocked connector, moved architecture, changed zone order, impossible camera or character position"
+          : "unexplained pose or position change",
+        hasRevolvingDoorMechanism
+          ? "walking straight through a revolving door, crossing a radial glass wing, body or bag intersecting glass, reversing door rotation, changing compartments, repeating an entry or exit, exiting before the occupied opening aligns with the destination floor"
+          : "",
+      ].filter(Boolean).join(", "),
     };
   });
 
   return {
     format: "flow-veo-scene-json-v2",
-    usage: "Each item in clips is one independent prompt. Paste one object per generation. For bulk tools, use the JSONL export where each physical line is one complete prompt.",
+    usage: "Each clips item is one compact structured Veo scene. Use characters_in_scene to attach only that scene's named references; do not flatten or prepend another prose prompt.",
     aspect_ratio: opts.aspectRatio,
     clip_count: clips.length,
     clips,
