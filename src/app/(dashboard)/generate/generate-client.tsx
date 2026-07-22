@@ -862,6 +862,12 @@ type Phase = "input" | "generating" | "script" | "result";
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
+// Nano Flow: Storyboard now only writes text (script + prompts). All images are
+// generated in the extension via Flow's free Nano Banana, so the paid Gemini
+// board/keyframe/thumbnail generation is turned OFF and the image-only result
+// cards are hidden. Flip to false to restore the legacy paid-image behaviour.
+const NANO_FLOW_TEXT_ONLY = true;
+
 export function GenerateClient() {
   const [lang, setLang] = useState<Lang>("vi");
   const [phase, setPhase] = useState<Phase>("input");
@@ -1658,17 +1664,21 @@ export function GenerateClient() {
 
     // One master storyboard sheet for the whole video: all panels + the large
     // character-reference column. This remains a review/planning document.
-    setProgressMessage(
-      lang === "vi"
-        ? `Đang vẽ bảng storyboard tổng (${segCount} cảnh trong 1 ảnh)`
-        : `Drawing the master storyboard sheet (${segCount} panels in 1 image)`
-    );
-    const posterUrl = await genBoard(
-      { input, breakdown, analysis, kind: "master", provider },
-      lang === "vi" ? "Bảng tổng" : "Master board",
-      "master"
-    );
-    bump();
+    // Nano Flow: skipped entirely — no paid image is generated here.
+    let posterUrl: string | null = null;
+    if (!NANO_FLOW_TEXT_ONLY) {
+      setProgressMessage(
+        lang === "vi"
+          ? `Đang vẽ bảng storyboard tổng (${segCount} cảnh trong 1 ảnh)`
+          : `Drawing the master storyboard sheet (${segCount} panels in 1 image)`
+      );
+      posterUrl = await genBoard(
+        { input, breakdown, analysis, kind: "master", provider },
+        lang === "vi" ? "Bảng tổng" : "Master board",
+        "master"
+      );
+      bump();
+    }
 
     setBoardErrors(errs);
     setProgressPercent(100);
@@ -2427,8 +2437,9 @@ export function GenerateClient() {
   // ─── Result Phase ──────────────────────────────────────────────────
 
   if (phase === "result" && result) {
-    const hasCharSheet = !!result.characterRefSheetUrl;
-    const hasPoster = !!result.storyboardPosterUrl;
+    // Nano Flow text-only mode hides every image-only card.
+    const hasCharSheet = !NANO_FLOW_TEXT_ONLY && !!result.characterRefSheetUrl;
+    const hasPoster = !NANO_FLOW_TEXT_ONLY && !!result.storyboardPosterUrl;
     const hasWarnings = result.warnings && result.warnings.length > 0;
     const resultVeoJson = buildVeoJson(result.breakdown, {
       aspectRatio: genInput?.aspect_ratio ?? "9:16",
@@ -2593,8 +2604,8 @@ export function GenerateClient() {
           </Card>
         )}
 
-        {/* Storyboard Poster */}
-        {hasPoster ? (
+        {/* Storyboard Poster (hidden in Nano Flow text-only mode) */}
+        {!NANO_FLOW_TEXT_ONLY && (hasPoster ? (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -2646,10 +2657,10 @@ export function GenerateClient() {
               </Button>
             </CardContent>
           </Card>
-        )}
+        ))}
 
-        {/* Viral 9:16 Thumbnail / video cover */}
-        {result.thumbnailUrl ? (
+        {/* Viral 9:16 Thumbnail / video cover (hidden in Nano Flow text-only mode) */}
+        {!NANO_FLOW_TEXT_ONLY && (result.thumbnailUrl ? (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -2701,7 +2712,7 @@ export function GenerateClient() {
               </Button>
             </CardContent>
           </Card>
-        )}
+        ))}
 
         {/* Segments — the core: per-8s first frame + motion prompt */}
         <div>
@@ -2710,6 +2721,7 @@ export function GenerateClient() {
             <h2 className="text-lg font-bold">{L("segmentsTitle")}</h2>
           </div>
           <p className="mb-2 text-sm text-muted-foreground">{L("segmentsHint")}</p>
+          {!NANO_FLOW_TEXT_ONLY && (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3 text-xs text-primary">
             <RotateCw className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
@@ -2718,10 +2730,12 @@ export function GenerateClient() {
                 : "Review each board's quality before exporting. If a board is soft or off-model, hit the Redo ↻ button on that card to re-render just that one — no need to rebuild everything. Download the ZIP once you're happy."}
             </span>
           </div>
+          )}
 
           <div className="grid gap-4">
             {result.breakdown.segments.map((seg) => (
               <Card key={seg.segment_number} className="overflow-hidden">
+                {!NANO_FLOW_TEXT_ONLY && (
                 <div className="relative aspect-[16/9] bg-black/90">
                   {seg.first_frame_url ? (
                     <img src={seg.first_frame_url} alt={`Segment ${seg.segment_number}`} className="h-full w-full object-contain" />
@@ -2746,6 +2760,7 @@ export function GenerateClient() {
                   </Badge>
                   <Badge variant="outline" className="absolute bottom-2 right-2 bg-background/80">{seg.duration_seconds}s</Badge>
                 </div>
+                )}
                 <CardContent className="space-y-3 p-3">
                   <div>
                     <p className="text-sm font-semibold">{seg.title}</p>
@@ -2793,6 +2808,7 @@ export function GenerateClient() {
                       {copiedSeg === seg.segment_number ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                       {copiedSeg === seg.segment_number ? (lang === "vi" ? "Đã copy" : "Copied") : L("copyPrompt")}
                     </Button>
+                    {!NANO_FLOW_TEXT_ONLY && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -2807,6 +2823,7 @@ export function GenerateClient() {
                         <RotateCw className="h-3.5 w-3.5" />
                       )}
                     </Button>
+                    )}
                     {seg.first_frame_url && (
                       <Button
                         variant="outline"
@@ -2819,7 +2836,8 @@ export function GenerateClient() {
                     )}
                   </div>
 
-                  {/* Optional clean keyframe for users who want an extra AI-generated start frame. */}
+                  {/* Optional clean keyframe — hidden in Nano Flow text-only mode (paid). */}
+                  {!NANO_FLOW_TEXT_ONLY && (
                   <div className="rounded-md border-2 border-primary/50 bg-primary/5 p-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[11px] font-bold uppercase text-primary">
@@ -2871,6 +2889,7 @@ export function GenerateClient() {
                         : "This image is optional. Use the JSON prompt with Text-to-Video/Ingredients or crop the scene panel from the master storyboard to save cost."}
                     </p>
                   </div>
+                  )}
                 </CardContent>
               </Card>
             ))}

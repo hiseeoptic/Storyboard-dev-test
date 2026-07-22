@@ -278,7 +278,7 @@ Thứ tự này để **luôn có bản chạy được** và **2 người làm 
 - **M4 — Tóm & đặt tên ảnh vừa tạo:** §5.2 bước 5-6 (theo `mediaId`). *Kiểm thử: tên đúng thứ tự, không lẫn.*
 - **M5 — Tạo video từ ảnh đó:** §5.3 (keyframe = first frame + nhân vật = entity). *Kiểm thử theo §6.*
 - **M6 — Chạy chuỗi 3-5 shot → rồi mở rộng.** Tinh chỉnh quota, retry, trạng thái.
-- **M7 — Bỏ render ảnh trả phí ở Storyboard:** §4.3 (cờ `skip_paid_images`).
+- **M7 — Bỏ render ảnh trả phí ở Storyboard:** §4.3 (cờ `skip_paid_images`). ✅ **XONG phần chính (Claude)** — cờ `NANO_FLOW_TEXT_ONLY` trong `generate-client.tsx`: (a) `runBoards` KHÔNG gọi `generateBoardImage` (bỏ chi phí Gemini bảng tổng); (b) ẩn toàn bộ thẻ ảnh ở màn kết quả (character sheet, bảng tổng, thumbnail, khung ảnh + nút Redo/keyframe từng segment). Giữ lại: kịch bản, prompt từng shot + nút Copy, card Xuất Nano Flow, JSON, social posts. `next build` pass. *Còn tùy chọn: dọn nút ZIP ảnh nếu muốn.*
 - **M8 — Đóng gói bản DEV extension + nhãn/tách storage:** §5.4.
 
 **Ranh giới chia việc:** M1/M7 (+ một phần M2 phần schema) thuần **Storyboard**. M2-M6/M8 thuần **Extension**. Manifest schema là hợp đồng chung → ai làm bên nào cũng không phá bên kia.
@@ -299,4 +299,5 @@ Thứ tự này để **luôn có bản chạy được** và **2 người làm 
 - **2026-07-21 — v1 (Claude):** Bản thiết kế đầu tiên. Chốt kiến trúc 3 lớp, hợp đồng manifest v1.0, quy tắc ref 2 bước (§6), lộ trình M0-M8.
 - **2026-07-22 — M1 xong (Claude):** Storyboard xuất manifest (types + builder + test + nút UI). Không đổi schema.
 - **2026-07-22 — M2 xong (Claude):** Extension nạp & hiển thị manifest (`nano_manifest.js` + test + UI Nano Flow trong side panel). Không đổi schema. Bước tiếp theo: **M3** (extension tạo ảnh Nano Banana từng shot) — đây là phần đụng DOM/API Flow, khó nhất; nên để Claude làm hoặc review kỹ nếu Codex làm. Prompt giao việc ở §10.
-- **2026-07-22 — Gỡ tải ảnh ở form Storyboard (Claude):** Theo yêu cầu, bỏ toàn bộ widget tải ảnh (ảnh nhân vật + CharacterStudio, ảnh món/nguyên liệu cooking, ảnh sản phẩm, ảnh bối cảnh) khỏi `generate-client.tsx`; **giữ ô nhập mô tả chữ + ô chọn** vì storyboard vẫn cần dữ liệu này để viết prompt. Ảnh tham chiếu từ nay nạp bên extension (Nano Banana). `next build` pass. Đây là một phần của M7 (Storyboard chỉ lo phần chữ).
+- **2026-07-22 — Gỡ tải ảnh ở form Storyboard (Claude):** Theo yêu cầu, bỏ toàn bộ widget tải ảnh (ảnh nhân vật + CharacterStudio, ảnh món/nguyên liệu cooking, ảnh sản phẩm, ảnh bối cảnh) khỏi `generate-client.tsx`; **giữ ô nhập mô tả chữ + ô chọn** vì storyboard vẫn cần dữ liệu này để viết prompt. Ảnh tham chiếu từ nay nạp bên extension (Nano Banana). `next build` pass.
+- **2026-07-22 — M7 phần chính xong (Claude):** Cờ `NANO_FLOW_TEXT_ONLY = true` — tắt tạo ảnh trả phí (Gemini) trong luồng `/generate` và ẩn mọi thẻ ảnh ở màn kết quả. Storyboard giờ chỉ xuất chữ + prompt + manifest. Muốn khôi phục hành vi cũ: đặt cờ = false.
