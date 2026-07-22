@@ -32,8 +32,22 @@ const {
   inferRevolvingDoorOperation,
   resolveSpatialLayout,
 } = require("../lib/spatial-topology/index.ts");
+const {
+  stripUploadedCharacterAppearance,
+} = require("../lib/character-realism.ts");
 
-test("Veo JSON keeps the stable structure without repeating character/outfit/voice prose", () => {
+test("uploaded references keep identity image-only while preserving contextual clothing text", () => {
+  const cleaned = stripUploadedCharacterAppearance(
+    "Lan, with long black hair, wearing a soft beige knit top and dark indigo jeans, stands beside Minh.",
+    ["Lan"]
+  );
+
+  assert.doesNotMatch(cleaned, /long black hair/i);
+  assert.match(cleaned, /soft beige knit top/i);
+  assert.match(cleaned, /dark indigo jeans/i);
+});
+
+test("Veo JSON keeps the stable structure with contextual outfits and local voice binding", () => {
   const breakdown = {
     character_locks: [
       {
@@ -62,6 +76,8 @@ test("Veo JSON keeps the stable structure without repeating character/outfit/voi
         name: "Lan",
         gender: "female",
         is_child: false,
+        costume: "soft beige knit top, dark indigo jeans",
+        wardrobe_materials: "matte fine knit and natural denim",
         voice: "native Standard Northern Vietnamese, calm female voice",
       },
     ],
@@ -118,7 +134,11 @@ test("Veo JSON keeps the stable structure without repeating character/outfit/voi
     "character_lock",
   ]);
   assert.equal(Object.hasOwn(clip.scene_action, "wardrobe_lock"), false);
-  assert.equal(Object.hasOwn(clip.dialogue[0], "voice_personality"), false);
+  assert.equal(Object.hasOwn(clip.dialogue[0], "voice_personality"), true);
+  assert.equal(
+    clip.dialogue[0].voice_personality,
+    clip.character_lock.CHAR_1.voice_personality
+  );
   const stableCharacterFields = [
     "id",
     "name",
@@ -154,7 +174,12 @@ test("Veo JSON keeps the stable structure without repeating character/outfit/voi
   assert.match(clip.character_lock.CHAR_1.voice_personality, /Northern Vietnamese/i);
   assert.equal(clip.character_lock.CHAR_1.outfit_top, "light blue collared shirt");
   assert.equal(clip.character_lock.CHAR_1.outfit_bottom, "dark grey trousers");
-  assert.equal(clip.character_lock.CHAR_2.outfit_top, "REFERENCE_IMAGE");
+  assert.equal(clip.character_lock.CHAR_2.gender, "Female");
+  assert.equal(clip.character_lock.CHAR_2.outfit_top, "soft beige knit top");
+  assert.equal(clip.character_lock.CHAR_2.outfit_bottom, "dark indigo jeans");
+  assert.equal(clip.character_lock.CHAR_2.outfit_materials, "matte fine knit and natural denim");
+  assert.match(clip.character_lock.CHAR_2.reference_image_lock, /identity lock/i);
+  assert.match(clip.character_lock.CHAR_2.reference_image_lock, /do not copy clothing/i);
   assert.equal(clip.character_lock.CHAR_2.face_shape, "REFERENCE_IMAGE");
   assert.equal(clip.character_lock.CHAR_2.position, "Use spatial_topology.character_placement");
   assert.ok(clip.character_lock.CHAR_2.action_flow);
@@ -170,9 +195,15 @@ test("Veo JSON keeps the stable structure without repeating character/outfit/voi
   assert.match(clip.camera.focus, /NOT the active speaker/i);
   assert.match(clip.camera.focus, /speaker may remain off-camera/i);
   assert.match(clip.lip_sync_director_note, /dialogue\.speaker_id/i);
-  assert.match(clip.lip_sync_director_note, /camera holds the listener/i);
+  assert.match(
+    clip.lip_sync_director_note,
+    /dialogue\.speaker_id \+ dialogue\.speaker_name \+ verbatim dialogue\.voice_personality/i
+  );
+  assert.match(clip.output_rules.audio, /Never use the first character as a default/i);
   assert.match(clip.negative_prompt, /listener lip movement/i);
   assert.match(clip.negative_prompt, /wrong-speaker lip sync/i);
+  assert.match(clip.negative_prompt, /male voice for a female speaker/i);
+  assert.match(clip.negative_prompt, /Northern-to-Southern accent drift/i);
   assert.match(clip.negative_prompt, /disembodied hand/i);
   assert.match(clip.negative_prompt, /technical readout or HUD/i);
   assert.ok(clip.negative_prompt.length > 1400);
@@ -353,6 +384,16 @@ test("Veo JSON reconciles chained revolving-door exit state without changing its
   assert.match(clip.negative_prompt, /repeating an entry or exit/i);
   assert.equal(clip.dialogue[0].speaker_id, "CHAR_2");
   assert.equal(clip.dialogue[1].speaker_id, "CHAR_1");
+  assert.equal(
+    clip.dialogue[0].voice_personality,
+    clip.character_lock.CHAR_2.voice_personality
+  );
+  assert.equal(
+    clip.dialogue[1].voice_personality,
+    clip.character_lock.CHAR_1.voice_personality
+  );
+  assert.match(clip.output_rules.audio, /speaker_id, speaker_name and verbatim voice_personality/i);
+  assert.match(clip.negative_prompt, /inferring the speaker from character order or camera framing/i);
 });
 
 test("ordinary step verbs do not invent stairs", () => {
