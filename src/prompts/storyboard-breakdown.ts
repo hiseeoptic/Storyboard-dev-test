@@ -648,7 +648,7 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
         .join("\n")}\nThese are the ONLY character names permitted anywhere in CHARACTERS, IN SCENE, ACTION, DIALOGUE speaker labels and CAPTION. Preserve spelling exactly. Resolve every role, pronoun or alias in the idea/brief to one of these names. Never invent, rename, substitute or append another person. If a role is not represented in this closed cast, adapt the action without adding that person.`
     : "";
   const uploadedRule = uploadedNames.length
-    ? `\nREFERENCE-ONLY CHARACTERS (${uploadedNames.join(", ")}): use only each exact name, role, position, action, expression and dialogue. Do not write age, gender, body, face, skin, hair, eyebrows, eyelashes, wardrobe or other appearance prose; the attached image supplies it. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
+    ? `\nREFERENCE-IDENTITY CHARACTERS (${uploadedNames.join(", ")}): use the attached image only for each exact named identity, face, body proportions and hair. Do not restate those traits in prose. Generate one practical context-appropriate initial outfit from the approved story/location/weather/activity, store it only in character_locks.costume, and never copy clothing from the reference image. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
     : "";
   const briefBlock = brief.length
     ? `\nBrief:\n${brief.join("\n")}${closedCastRule}${uploadedRule}`
@@ -687,14 +687,14 @@ PROJECT-LED STORY STRUCTURE (never force one template onto every video):
 - "marketing_role" remains a legacy compatibility label; "scene_intent" is the canonical per-clip creative contract.
 
 UPLOADED REFERENCE PRIORITY (absolute hierarchy — PHOTOS beat text, text beats invention):
-- USER SETUP MENU CONTRACT (NON-NEGOTIABLE): every entered character name/role and every image group belongs together one-to-one, in menu order. Preserve ALL named characters as separate identities; never use only the first upload, never merge two people, never swap their faces, never omit a referenced character when the approved script places them in the scene, and never let generated defaults/anchors override menu uploads. Character menu photos, product photos and background/location photos are the SUPREME source of truth. FOR ANY CHARACTER WITH AN UPLOADED IMAGE, THE IMAGE IS THE ONLY APPEARANCE AUTHORITY: do not analyze, infer, list, translate or restate face, face shape, skin, hair, eyebrows, eyelashes, eyes, body, age, height or wardrobe anywhere in the JSON or prompts. In required appearance fields use an empty string or the literal sentinel "REFERENCE_IMAGE"; elsewhere mention only the character's exact name, role, position, action, expression and dialogue. The only permitted appearance-related negative guard for that character is: ${REFERENCE_CHARACTER_ANTI_PLASTIC}. A product keeps its exact shape, colours and branding; when a LOCATION photo exists (indoor room or outdoor scene), stage every relevant segment inside that uploaded place and reuse its real layout, landmarks (furniture indoors; buildings, trees, terrain, water outdoors), colours, materials and light in every first_frame_prompt. Do NOT relocate scenes, "improve" the set, or invent a contradictory place.
+- USER SETUP MENU CONTRACT (NON-NEGOTIABLE): every entered character name/role and every image group belongs together one-to-one, in menu order. Preserve ALL named characters as separate identities; never use only the first upload, never merge two people, never swap their faces, never omit a referenced character when the approved script places them in the scene, and never let generated defaults/anchors override menu uploads. Character menu photos, product photos and background/location photos are the SUPREME source of identity/location truth. FOR ANY CHARACTER WITH AN UPLOADED IMAGE, THE IMAGE IS THE ONLY IDENTITY/ANATOMY AUTHORITY: do not analyze, infer, list, translate or restate face, face shape, skin, hair, eyebrows, eyelashes, eyes, body, age or height anywhere in the JSON or prompts. Clothing in the uploaded image is NOT authoritative. Generate one practical context-appropriate initial outfit from the approved story, location, weather, activity and role; store it once in character_locks.costume/wardrobe_materials and reuse that exact lock in every clip. In required identity fields use an empty string or the literal sentinel "REFERENCE_IMAGE"; elsewhere mention only the exact name, role, position, action, expression, dialogue and the canonical outfit fields. The only permitted character-surface negative guard is: ${REFERENCE_CHARACTER_ANTI_PLASTIC}. A product keeps its exact shape, colours and branding; when a LOCATION photo exists (indoor room or outdoor scene), stage every relevant segment inside that uploaded place and reuse its real layout, landmarks (furniture indoors; buildings, trees, terrain, water outdoors), colours, materials and light in every first_frame_prompt. Do NOT relocate scenes, "improve" the set, or invent a contradictory place.
 - If the story idea and an uploaded photo conflict (e.g. the idea says villa but the photo shows a small apartment), THE PHOTO WINS — adapt the story to the real place/person/product.
 - VIDEO OUTPUT TEXT CONTRACT (NON-NEGOTIABLE): every generated VIDEO frame contains ZERO readable text or graphics. Set world_context.allowed_language_text to "none — zero readable text anywhere". Names, ages, dialogue, brands, captions, lens values, Kelvin/lux and timecodes are internal production data only; never request subtitles, captions, name tags, product lettering, logos, badges, title cards, HUD or overlays. Dialogue is AUDIO ONLY. Storyboard documents may contain planning labels, but they are NEVER video start frames.
 
 FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's video must not "look AI"):
 - SINGLE-DESCRIPTION AUTHORITY: static character identity, appearance, initial wardrobe and voice are written ONCE in character_locks. Product identity is written ONCE in product_dna; style is written ONCE in scene_bible. first_frame_prompt, motion_prompt, beats, camera and continuity_note refer to those locks by exact name only and NEVER restate or paraphrase their static descriptions. Repetition is not continuity; it creates conflicting instructions.
 - Every object is locked to a "DNA" that NEVER drifts. Store that DNA once in its canonical lock, then preserve it by id/name rather than copying the prose into every scene field.
-- For a TEXT-ONLY character with no uploaded image, build a detailed "character_lock" with gender, age, build, skin tone, facial structure, skin texture, eyes, brows, lashes, nose/lips, hair, costume, signature features, expression and DNA. For a character WITH an uploaded image, do the opposite: keep only name/role/audio/story state and use "REFERENCE_IMAGE" or blank appearance fields; never convert the pixels into prose and never add DNA, gender, age, body, face, skin, hair or wardrobe descriptions.
+- For a TEXT-ONLY character with no uploaded image, build a detailed "character_lock" with gender, age, build, skin tone, facial structure, skin texture, eyes, brows, lashes, nose/lips, hair, costume, signature features, expression and DNA. For a character WITH an uploaded image, keep identity/anatomy image-only with "REFERENCE_IMAGE" or blank identity fields, but still write one concise context-appropriate costume and its real materials in character_locks. Never copy that costume from the uploaded pixels and never repeat it in action/camera prose.
 - CHARACTERS ARE ORIGINAL AND FICTIONAL. For TEXT-ONLY characters, use only the exact names supplied by the approved script/menu. If a role has no name, assign one ordinary given name once and keep it consistent; never copy names from rule examples or use a fixed default. NEVER use the name, likeness or description of any real, famous or recognisable public figure/celebrity/influencer. Do not write "looks like [celebrity]" or reference any real person. For UPLOADED-REFERENCE characters, do not describe appearance at all: bind the supplied pixels only to their exact menu name and keep the reference-image contract above.
 
 MULTI-CHARACTER CASTING & DIALOGUE ASSIGNMENT (mandatory whenever the story/script has 2+ people — this is what keeps a family/dialogue video coherent):
@@ -737,7 +737,7 @@ STAGING & BLOCKING (a real director's coverage — this is what separates a watc
 MATERIAL & SKIN REALISM (this is what kills the "AI/CGI/plastic" look — treat every clip as REAL filmed footage, never a 3D render):
 - HUMAN FACE REALISM applies ONLY to text-only generated humans with no uploaded character image. Never apply or serialize this forensic face prose for an uploaded-reference character. For an uploaded-reference character, rely on the image alone and add only this short exclusion: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.
 - TEXT-ONLY HAIR FALLBACK: only for generated characters without an uploaded image, describe natural strand behaviour instead of helmet/plastic hair. Never add this prose to an uploaded-reference character.
-- MATERIALS: every environment object and prop must read true-to-life. Describe garment materials only for text-only generated characters. For uploaded-reference characters, wardrobe remains image-only and must never be described in text.
+- MATERIALS: every environment object, prop and locked outfit must read true-to-life. For every character, including uploaded-reference characters, choose garment materials appropriate to the context and declare them once in character_locks. Never copy reference-image clothing and never repeat garment prose in action/camera fields.
 - LIGHT: physically-based, tied to time-of-day/weather, with soft imperfect shadow edges. Give scene_bible.lighting BOTH Kelvin temperature AND approximate Lux (e.g. "soft overcast dawn key 5200K, ~800 lux"), and set scene_bible.film_grain to a fine organic grain / clean-acquisition token so the filmic texture stays constant across clips.
 
 ${contextFrameworkSystemDigest()}
@@ -768,7 +768,7 @@ DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlap
 - SINGLE-LINE CLIPS: if a beat is just one line, you may use "dialogue_lines" with one entry OR the plain "dialogue"+"speaker" fields — both work. For a longer monologue that fills the clip, one speaker is correct.
 - Mirror the FIRST turn into the top-level "dialogue" (its text) and "speaker" (its name) for compatibility.
 - NAME TOKENS ARE LOCKED: every character name is a fixed token spelled EXACTLY as in character_locks, identical in every field (title, first_frame_prompt, motion_prompt, beats, camera notes, dialogue speaker, continuity_note). NEVER invent a spelling variant, nickname or near-miss — a near-miss name creates a THIRD person and breaks speaker mapping. Any name appearing inside a RULE EXAMPLE is a placeholder — NEVER copy an example name into your output; use ONLY the names defined in character_locks for THIS video.
-- WARDROBE & HAIR: for TEXT-ONLY characters, keep the locked wardrobe/hair or one motivated change through wardrobe_state. For UPLOADED-REFERENCE characters, never describe wardrobe or hair and omit their wardrobe_state entirely; the attached named image remains the only authority.
+- WARDROBE & HAIR: hair remains reference-image authority for an uploaded character, while outfit does not. Every character gets one context-locked initial outfit in character_locks and keeps it across clips. Use wardrobe_state only for a visibly motivated change such as bathing, rain/wet clothes, contamination/damage or an explicit change of clothes; declare the transition once and inherit it afterward.
 - ONE LOCATION, IDENTICAL IN EVERY SEGMENT: unless the script explicitly moves to a new declared location, every first_frame_prompt restates the SAME place — indoor room OR outdoor scene — with the SAME geometry, the SAME landmark positions (furniture/fixtures indoors; buildings, trees, paths, terrain, water outdoors), materials, colour palette and light sources — copy the location description consistently and change ONLY the characters' positions, poses and explicitly named props. The set must read as the same physical place in every clip; when the user uploaded a LOCATION photo, that photo's place is the only set.
 - TWO-PERSON BLOCKING (conversation geometry): when two characters share a dialogue scene, their bodies and gazes are oriented TOWARD EACH OTHER per the scene geometry — never both facing the same direction or both facing the camera in parallel like news anchors, unless the script explicitly stages it (e.g. one turns away in refusal, both watching something). State each character's facing direction in the first_frame_prompt ("[A] faces [B] across the table; [B] stands half-turned toward [A]").
 - CONTINUITY FREEZE-FRAME (what makes clip N cut smoothly into clip N+1): "continuity_note" = the physical freeze-frame at second 10 in ONE compact sentence (≤ 35 words) — who is where, facing which way, pose/expression, held props, light. The NEXT segment's first_frame_prompt must open from EXACTLY that freeze-frame (same positions, poses, wardrobe state, light) unless the story declares a time/location jump — so the cut lands invisibly. Never write a vague emotional summary; record the observable physical state.
@@ -802,7 +802,7 @@ export function buildStoryboardUserPrompt(
             (entry) => entry.name.trim().toLowerCase() === name.toLowerCase()
           );
           if (referencedCharacterNames.has(name.toLowerCase())) {
-            return `- ${name}${description?.is_child ? " [CHILD]" : ""} [UPLOADED REFERENCE]: ${REFERENCE_CHARACTER_APPEARANCE_LOCK} Mention only name, role, action, position, expression and dialogue. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}. Role: ${description?.role || "use the approved script"}`;
+            return `- ${name}${description?.is_child ? " [CHILD]" : ""} [UPLOADED REFERENCE]: ${REFERENCE_CHARACTER_APPEARANCE_LOCK} Mention identity only by name, but generate one concise context-appropriate initial outfit in character_locks.costume/wardrobe_materials; never copy reference clothing or repeat outfit prose in scene actions. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}. Role: ${description?.role || "use the approved script"}`;
           }
           return `- ${name}${description?.is_child ? " [CHILD — trẻ em, khoá đúng độ tuổi trẻ con]" : ""}: ${description?.appearance || "text-only generated character"}. Personality: ${description?.personality || "follow the approved script"}. Role: ${description?.role || "follow the approved script"}`;
         })
@@ -1003,8 +1003,8 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
       "hair": "string — exact colour, length, cut, curl/wave pattern and hairstyle",
       "hair_details": "string — exact hairline and temple shape, parting, roots, density, limited scalp visibility, strand thickness/texture, baby hairs, sparse flyaways and natural sheen; never helmet/plastic/wig-like hair",
       "eyes": "string",
-      "costume": "string",
-      "wardrobe_materials": "string — the REAL materials of the outfit/props so they don't render fake, e.g. 'olive cotton-canvas jacket with visible weave, charcoal cotton tee, indigo denim twill, worn brown full-grain leather boots with grain, creases and stitching, brushed-steel pen'",
+      "costume": "string — REQUIRED for every character, including uploaded-reference characters: one practical initial outfit chosen from the approved location, weather, activity and role; never copy clothing from a character reference photo",
+      "wardrobe_materials": "string — the REAL materials of the context-locked outfit/props so they don't render fake, e.g. 'olive cotton-canvas jacket with visible weave, charcoal cotton tee, indigo denim twill, worn brown full-grain leather boots with grain, creases and stitching, brushed-steel pen'",
       "signature_features": "string",
       "default_expression": "string",
       "render_style": "${input.style}",
@@ -1048,8 +1048,8 @@ ${beatExample}
         "mechanism_motion": "optional string — revolving door only: classify ENTER / EXIT / PASS-THROUGH / HOLD-INSIDE / BACKGROUND-ONLY, then one direction + one physically consistent compartment state"
       },
       "wardrobe_state": [
-        { "character": "TEXT-ONLY character name", "outfit": "FULL current outfit description", "outfit_materials": "real fabric materials", "hair": "current hair state" }
-      ] /* TEXT-ONLY characters only. OMIT entirely for every uploaded-reference character. Otherwise omit unless a motivated look change happened. */,
+        { "character": "exact character name", "outfit": "FULL current outfit description after a visibly motivated change only", "outfit_materials": "real fabric materials", "hair": "current hair state only when the script explicitly changes it" }
+      ] /* Every character may use this only for an explicit, visibly motivated change. Otherwise omit and inherit the context-locked initial outfit. */,
       "continuity_note": "string — ONE compact sentence (≤ 35 words): the physical freeze-frame at second 10 — who is where, facing which way, pose, expression, held props, light (the next segment opens from exactly this frame)"
     }
   ],
@@ -1098,7 +1098,7 @@ export function buildSegmentRewriteUserPrompt(params: {
   const castBlock = (breakdown.character_locks ?? [])
     .map((c) => {
       if (uploadedNames.has(c.name.trim().toLowerCase())) {
-        return `- ${c.name}: ${REFERENCE_CHARACTER_APPEARANCE_LOCK} Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}`;
+        return `- ${c.name}: ${REFERENCE_CHARACTER_APPEARANCE_LOCK} Preserve the already locked contextual costume: ${c.costume || "use the established character_locks.costume"}. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}`;
       }
       return `- ${c.name}${c.is_child ? " [CHILD]" : ""}: ${[c.gender_age, c.build, c.hair, c.costume]
         .map((s) => (s ?? "").trim())
@@ -1219,9 +1219,9 @@ export function buildReferenceInstructions(refs: RefDescriptor[]): string {
     const d = r.description ? ` (${r.description.replace(/\s+/g, " ").slice(0, 220)})` : "";
     switch (r.role) {
       case "character_sheet":
-        return `• THE CHARACTER — the attached named character reference sheet is the sole appearance authority. Follow it exactly; do not analyze, infer or restate any appearance attribute in text. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
+        return `• THE CHARACTER — the attached named character reference sheet is the sole identity/anatomy authority. Follow face, body proportions and hair exactly; do not copy its clothing. Use only the separately context-locked story outfit. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
       case "face":
-        return `• THE CHARACTER — the attached portrait is the sole appearance authority. Follow the image exactly; do not analyze, infer, translate or restate face, skin, hair, eyebrows, eyelashes, body, age or wardrobe in text. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
+        return `• THE CHARACTER — the attached portrait is the sole identity/anatomy authority. Follow the image exactly for face, skin, hair, eyebrows, eyelashes, body and age; do not copy clothing from it. Use only the separately context-locked story outfit. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
       case "character":
         return `• CHARACTER "${r.name ?? "person"}" — attached named USER MENU image (${r.view === "profile" ? "profile / three-quarter" : "front"}) is the sole appearance authority for this character. Bind the image only to this exact name; do not describe, reinterpret, merge or swap the appearance. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
       case "product":
@@ -2069,7 +2069,7 @@ Compatible with: Google Veo 3.1, Seedance 2.0, Kling, Runway, Pika`;
  * from broader phrases (listener lip movement, duplicate hands, HUD text...).
  */
 const VEO_SHARED_FAILURE_NEGATIVE =
-  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair or wardrobe or accessories, warped or altered label or logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, both characters talking at once, overlapping or simultaneous voices, doubled voice, chorus, echo, a spoken line repeated or duplicated, listener lip movement, lip movement during voiceover, narrator voice coming from a visible character's mouth, wrong-speaker lip sync, swapped voices, ad-lib speech, speech bubble, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, floating character name tag, a character name or age rendered as a label, character info card overlaid on the footage, colour-temperature or Kelvin label, exposure or Kelvin or lux or timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo";
+  "resembling a real or famous person, celebrity likeness, public-figure lookalike, real identifiable individual, morphing, warping, teleporting, floating or levitating objects, duplicated or doubled objects, extra or fused fingers, malformed or mutated hands, third hand, extra pair of hands, disembodied hand entering the frame, more hands than the people present, extra or missing limbs, limbs bending or passing through objects, the face changing, identity drift, age shifting, changed hair or wardrobe or accessories, warped or altered label or logo text, brand-colour change, extra people, the same person or character duplicated or appearing twice in one frame, a second copy of a named character in the background or reflection, objects passing through solid surfaces, deformed food or liquid, melting, jittery or stuttering motion, mid-clip jump cuts, both characters talking at once, overlapping or simultaneous voices, doubled voice, chorus, echo, a spoken line repeated or duplicated, listener lip movement, lip movement during voiceover, narrator voice coming from a visible character's mouth, wrong-speaker lip sync, swapped voices, male voice for a female speaker, female voice for a male speaker, cross-gender voice swap, Northern-to-Southern accent drift, Northern-to-Central accent drift, changed speaker age, changed speaker timbre, changed base pitch, inferring the speaker from character order or camera framing, ad-lib speech, speech bubble, on-screen text, captions, subtitles, burned-in dialogue text, title cards, karaoke or lyric text, translation text, camera or lens spec overlay, technical readout or HUD, info card in a corner, floating character name tag, a character name or age rendered as a label, character info card overlaid on the footage, colour-temperature or Kelvin label, exposure or Kelvin or lux or timecode text, any readable letters numbers or typography anywhere in the frame, watermark, channel logo";
 
 export const VEO_REFERENCE_CHARACTER_NEGATIVE_LIST =
   `${VEO_SHARED_FAILURE_NEGATIVE}, ${REFERENCE_CHARACTER_ANTI_PLASTIC}`;
@@ -2084,7 +2084,7 @@ const VEO_CAMERA_FOCUS_RULE =
   "Natural cinematic depth of field; focus follows the explicitly assigned visual subject, NOT the active speaker. A speaker may remain off-camera or softly out of focus while the listener's silent reaction is sharp; framing never transfers dialogue or lip-sync to the visible subject.";
 
 const VEO_LIP_SYNC_DIRECTOR_NOTE =
-  "DIALOGUE OWNERSHIP: each line belongs exclusively to its dialogue.speaker_id and speaker_name and is spoken in that character's locked voice from that character's physical position; no other character may produce lip, jaw or speech-like mouth movement during that line, and each line is spoken exactly once. SPEAKER GAZE: the speaker addresses the scripted person according to scene geometry, never automatically the camera. LISTENER: silent with lips naturally closed, reacting only through eyes, brows, breathing and posture. VOICEOVER: comes from a fully off-screen narrator; no visible mouth moves. CAMERA INDEPENDENCE: camera subject, framing and focus are independent of dialogue ownership; if the camera holds the listener, the named speaker continues off-screen or out of focus and the listener remains silent. Dialogue start_sec/end_sec is the only clock; one voice at a time.";
+  "HARD VOICE BINDING: resolve every line locally from that row's dialogue.speaker_id + dialogue.speaker_name + verbatim dialogue.voice_personality; these three fields are inseparable and override character order, camera subject, visible face and reference image. Keep the same named speaker's gender, apparent age, native Standard Northern Vietnamese (Hanoi) accent unless explicitly overridden, timbre, resonance, base-pitch range and speaking rate identical in every clip. DIALOGUE OWNERSHIP: only that named speaker produces voice, lip and jaw movement during the row's start_sec/end_sec; every listener stays silent with lips naturally closed and reacts only through eyes, brows, breathing and posture. Each line is spoken exactly once. VOICEOVER is fully off-screen and moves no visible mouth. Camera framing never transfers speech ownership; one voice at a time, no swap, overlap, echo, repetition, ad-lib or regional-accent drift.";
 
 interface VeoJsonOptions {
   aspectRatio: string;
@@ -2339,14 +2339,23 @@ export function buildVeoJson(
   const charIds = new Map(
     locks.map((lock, index) => [lock.name.trim().toLowerCase(), `CHAR_${index + 1}`])
   );
+  // Keep the complete voice fingerprint local to every dialogue row. The
+  // canonical map is built once so the same named speaker receives the exact
+  // same profile in every clip, independent of cast order and camera framing.
+  const voiceProfilesByName = new Map(
+    locks.map((lock) => [
+      lock.name.trim().toLowerCase(),
+      oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child),
+    ])
+  );
   const splitOutfit = (costume?: string) => {
     const parts = noHex(costume)
       .split(/[,;]\s*/)
       .map((part) => part.trim())
       .filter(Boolean);
     return {
-      top: parts[0] || "Match the attached character reference",
-      bottom: parts.slice(1).join(", ") || "Match the attached character reference",
+      top: parts[0] || "context-appropriate everyday top locked once for this story",
+      bottom: parts.slice(1).join(", ") || "context-appropriate everyday bottom locked once for this story",
     };
   };
   const cameraParts = (cameraText: string) => {
@@ -2537,7 +2546,7 @@ export function buildVeoJson(
         if (hasUploadedReference(lock.name)) {
           const referenceOutfit = motivatedWardrobe
             ? { top: "See wardrobe_state", bottom: "See wardrobe_state" }
-            : { top: "REFERENCE_IMAGE", bottom: "REFERENCE_IMAGE" };
+            : splitOutfit(lock.costume);
           return [
             id,
             {
@@ -2546,7 +2555,12 @@ export function buildVeoJson(
               reference_image_lock: REFERENCE_CHARACTER_APPEARANCE_LOCK,
               avoid_character_surface_artifacts: REFERENCE_CHARACTER_ANTI_PLASTIC,
               species: "REFERENCE_IMAGE",
-              gender: "REFERENCE_IMAGE",
+              gender:
+                lock.gender === "male"
+                  ? "Male"
+                  : lock.gender === "female"
+                    ? "Female"
+                    : "REFERENCE_IMAGE",
               age: "REFERENCE_IMAGE",
               voice_personality: oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child),
               body_build: "REFERENCE_IMAGE",
@@ -2564,9 +2578,9 @@ export function buildVeoJson(
               outfit_bottom: referenceOutfit.bottom,
               outfit_materials: motivatedWardrobe
                 ? "See wardrobe_state"
-                : "REFERENCE_IMAGE",
-              helmet_or_hat: "REFERENCE_IMAGE",
-              shoes_or_footwear: "REFERENCE_IMAGE",
+                : noHex(lock.wardrobe_materials) || "real context-appropriate garment materials",
+              helmet_or_hat: "None unless declared in the context-locked outfit",
+              shoes_or_footwear: "Use the footwear declared in the context-locked outfit; never copy it from the reference image",
               props,
               body_metrics: "REFERENCE_IMAGE; cons=no-auto-rescale,lock-proportions",
               ...sceneStateFields,
@@ -2631,17 +2645,20 @@ export function buildVeoJson(
     const dialogue = canonicalTurns
       .map((turn) => {
         const name = oneLine(turn.speaker);
+        const voicePersonality = name
+          ? voiceProfilesByName.get(name.toLowerCase()) ||
+            "native Standard Northern Vietnamese (Hanoi), stable voice matching the named speaker's locked gender, age, timbre, base pitch and speaking rate"
+          : "off-screen narrator";
         const line = {
           speaker_id: name ? charIds.get(name.toLowerCase()) || name : "VOICEOVER",
           speaker_name: name || "VOICEOVER",
+          voice_personality: voicePersonality,
           text: oneLine(turn.text),
           language: lang,
           start_sec: turn.start_s ?? null,
           end_sec: turn.end_s ?? null,
         };
-        // Character voices are declared once in character_lock. A voiceover has
-        // no character entry, so its profile is declared here at its first use.
-        return name ? line : { ...line, voice_personality: "off-screen narrator" };
+        return line;
       });
     const cameraText = softenIncidentalBagPressure(
       beats.map((beat) => oneLine(cleanContinuousText(beat.camera))).filter(Boolean).join("; "),
@@ -2746,9 +2763,9 @@ export function buildVeoJson(
       output_rules: {
         frame: "one clean full-screen continuous shot; no panels or cuts",
         on_screen_text: "none — no captions, labels, logos, HUD or watermark",
-        audio: "Dialogue and voiceover are spoken audio only. Use each dialogue row's speaker_id as the sole voice and lip-sync owner and use that character's character_lock voice. Exactly one voice at a time; no simultaneous voices, chorus, echo, repeated line, swapped voice or ad-lib speech.",
+        audio: "HARD VOICE CAST: resolve every spoken line only from that dialogue row's speaker_id, speaker_name and verbatim voice_personality. The same named character must keep the identical gender, apparent age, native accent, timbre, resonance, base-pitch range and speaking rate in every clip. Never use the first character as a default and never derive voice ownership from camera framing or the visible face. Exactly one voice at a time; no overlap, chorus, echo, repetition, swap, accent drift or ad-lib speech.",
         reference_priority: hasReferencedVisibleCharacter
-          ? "Attached named images are the sole appearance authority; never merge or swap identities."
+          ? "Attached named images are identity, face, body-proportion and hair authorities only; never copy their clothing. Use the context-locked outfits in character_lock and never merge or swap identities."
           : "Preserve the exact named identities in character_lock.",
       },
       negative_prompt: [
