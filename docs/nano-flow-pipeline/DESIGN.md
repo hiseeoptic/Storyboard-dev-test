@@ -273,7 +273,7 @@ Thứ tự này để **luôn có bản chạy được** và **2 người làm 
 
 - **M0 — Khung & an toàn (xong trong tài liệu này):** nhánh dev 2 repo, backup (main = production), schema + ví dụ manifest, tài liệu thiết kế. ✅
 - **M1 — Storyboard xuất manifest:** §4.1 + §4.2 (buildNanoFlowManifest + nút export/tải file). ✅ **XONG (Claude)** — `src/types/nano-flow.ts`, `src/lib/nano-flow/manifest.ts` (+ test `manifest.test.ts`, 6/6 pass, output đã validate khớp `manifest.schema.json`), và 2 nút "Tải .nanoflow.json" / "Gửi sang Extension" trong `generate-client.tsx`. Còn lại của §4 (cờ `skip_paid_images`) nằm ở M7.
-- **M2 — Extension nạp manifest:** §5.1 (import + render hàng đợi shot + nạp ảnh assets). *Kiểm thử: nạp file M1, thấy đúng danh sách shot.*
+- **M2 — Extension nạp manifest:** §5.1 (import + render hàng đợi shot + nạp ảnh assets). ✅ **XONG (Claude)** — module thuần `nano_manifest.js` (parse/validate/toQueue/missingImages/load) + test `nano_manifest.test.js` (7/7 pass trên `manifest.example.json`); UI trong `sidepanel.html`/`sidepanel.js`: section "⚡ Nano Flow (beta)" với nút Nạp manifest (file), listener nhận **push trực tiếp** từ Storyboard AI (origin allowlist), khôi phục khi mở lại panel, và render hàng đợi shot. *Còn lại của §5.1: cho người dùng nạp ảnh thật vào các `assets` có `image=null` (nút upload per-asset) — làm cùng M3.*
 - **M3 — Tạo ảnh Nano Banana từng shot:** §5.2 (vòng lặp MODE→Nano→prompt→ref→tạo). *Kiểm thử 1 shot.*
 - **M4 — Tóm & đặt tên ảnh vừa tạo:** §5.2 bước 5-6 (theo `mediaId`). *Kiểm thử: tên đúng thứ tự, không lẫn.*
 - **M5 — Tạo video từ ảnh đó:** §5.3 (keyframe = first frame + nhân vật = entity). *Kiểm thử theo §6.*
@@ -297,4 +297,5 @@ Thứ tự này để **luôn có bản chạy được** và **2 người làm 
 
 ## Changelog thiết kế
 - **2026-07-21 — v1 (Claude):** Bản thiết kế đầu tiên. Chốt kiến trúc 3 lớp, hợp đồng manifest v1.0, quy tắc ref 2 bước (§6), lộ trình M0-M8.
-- **2026-07-22 — M1 xong (Claude):** Storyboard xuất manifest (types + builder + test + nút UI). Không đổi schema. Bước tiếp theo đề xuất: M2 (extension đọc manifest) — có thể giao Codex bằng prompt ở §10.
+- **2026-07-22 — M1 xong (Claude):** Storyboard xuất manifest (types + builder + test + nút UI). Không đổi schema.
+- **2026-07-22 — M2 xong (Claude):** Extension nạp & hiển thị manifest (`nano_manifest.js` + test + UI Nano Flow trong side panel). Không đổi schema. Bước tiếp theo: **M3** (extension tạo ảnh Nano Banana từng shot) — đây là phần đụng DOM/API Flow, khó nhất; nên để Claude làm hoặc review kỹ nếu Codex làm. Prompt giao việc ở §10.
