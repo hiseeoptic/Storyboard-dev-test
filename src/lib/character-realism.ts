@@ -15,7 +15,7 @@ export const HUMAN_FACE_REALISM_NEGATIVE =
  * identity source. Only this small rendering guard may accompany a reference.
  */
 export const REFERENCE_CHARACTER_APPEARANCE_LOCK =
-  "REFERENCE IMAGE ONLY: use the attached image as the initial appearance and wardrobe authority for this named character; add no appearance description in text. The sole wardrobe exception is a minimal wardrobe_state explicitly required by an approved bathing, rain/water or scripted clothing-change event.";
+  "REFERENCE IMAGE ONLY: use the attached image as the appearance authority for this named character; add no appearance description in text.";
 
 export const REFERENCE_CHARACTER_ANTI_PLASTIC =
   "plastic-looking hair, plastic-looking eyebrows, plastic-looking skin";
