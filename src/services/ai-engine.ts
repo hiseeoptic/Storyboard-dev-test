@@ -135,9 +135,10 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
       ],
     },
     continuity_note: STRING_SCHEMA,
-    // MOTIVATED WARDROBE CHANGE: declare the changed/current look only on the
-    // first segment where a shower, rain/water condition or scripted clothing
-    // change actually occurs. Later segments inherit it automatically.
+    // MOTIVATED WARDROBE CHANGE: when the story physically changes a
+    // character's look (shower → home clothes, getting dressed, rain), the
+    // model declares the CURRENT look here for this and every later segment,
+    // overriding the base character_lock costume/hair.
     wardrobe_state: {
       type: "ARRAY",
       items: {
