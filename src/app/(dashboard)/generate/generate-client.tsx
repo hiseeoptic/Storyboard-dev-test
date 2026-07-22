@@ -47,6 +47,12 @@ import type { TopicCategory } from "@/services/topics";
 import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
+import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
+import {
+  NANO_FLOW_MESSAGE_SOURCE,
+  NANO_FLOW_MESSAGE_TYPE,
+} from "@/types/nano-flow";
+import { Send } from "lucide-react";
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
@@ -95,6 +101,13 @@ function creativeOptionDescription<T extends string>(
   if (!option) return "";
   return lang === "vi" ? option.description_vi : option.description_en;
 }
+
+// ─── Nano Flow (text-only) ─────────────────────────────────────────────────
+// When true, Storyboard AI stops generating the paid Gemini "nano banana"
+// board images and instead writes scripts + prompts only. The images are
+// produced downstream by the AutoFlow Reel extension (free nano banana in
+// Google Flow) from the exported manifest. See docs/nano-flow-pipeline/.
+const NANO_FLOW_TEXT_ONLY = true;
 
 const t = {
   // Page
@@ -1191,6 +1204,7 @@ export function GenerateClient() {
   // the emotion from the prompt; 2-3 = include a small fixed set).
   const [copiedSeg, setCopiedSeg] = useState<number | null>(null);
   const [zipping, setZipping] = useState(false);
+  const [nanoPushed, setNanoPushed] = useState(false);
 
   const hasCharacterUploads =
     charImages.length > 0 || characters.some((character) => character.images.length > 0);
@@ -1615,6 +1629,24 @@ export function GenerateClient() {
     setPhase("generating");
     setProgressPercent(12);
 
+    // Nano Flow: text-only mode. Skip paid board image generation entirely and
+    // hand off to the extension via the exported manifest. Results screen shows
+    // the script + prompts + "Xuất cho Extension" card, no board images.
+    if (NANO_FLOW_TEXT_ONLY) {
+      setBoardErrors({});
+      setProgressPercent(100);
+      setResult({
+        breakdown,
+        characterRefSheetUrl: null,
+        storyboardPosterUrl: null,
+        thumbnailUrl: null,
+        videoPrompt,
+        warnings,
+      });
+      setPhase("result");
+      return;
+    }
+
     const segCount = breakdown.segments.length;
     // Auto-draw one master sheet for human review and continuity planning.
     // It is never used as an image-to-video start frame; each clip uses its
@@ -1904,6 +1936,56 @@ export function GenerateClient() {
     navigator.clipboard.writeText(text);
     setCopiedSeg(segNumber);
     setTimeout(() => setCopiedSeg(null), 2000);
+  };
+
+  // ─── Nano Flow: export the manifest for the AutoFlow Reel extension ───────
+  const buildResultManifest = () => {
+    if (!result) return null;
+    return buildNanoFlowManifest(result.breakdown, {
+      aspectRatio: (genInput?.aspect_ratio as "16:9" | "9:16") ?? "9:16",
+      dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+    });
+  };
+
+  // Download the manifest as a .nanoflow.json file the user can drop into the
+  // extension's "Nạp manifest" import.
+  const downloadNanoManifest = () => {
+    const manifest = buildResultManifest();
+    if (!manifest) return;
+    const safeTitle = toAsciiSlug(manifest.project.title).slice(0, 40) || "storyboard";
+    const blob = new Blob([JSON.stringify(manifest, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safeTitle}.nanoflow.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // One-click push: postMessage the manifest to the extension (which listens
+  // for NANO_FLOW_MESSAGE_SOURCE/TYPE on window). Falls back to download if the
+  // extension isn't listening.
+  const pushNanoToExtension = () => {
+    const manifest = buildResultManifest();
+    if (!manifest) return;
+    try {
+      window.postMessage(
+        {
+          source: NANO_FLOW_MESSAGE_SOURCE,
+          type: NANO_FLOW_MESSAGE_TYPE,
+          manifest,
+        },
+        "*"
+      );
+      setNanoPushed(true);
+      setTimeout(() => setNanoPushed(false), 2500);
+    } catch {
+      downloadNanoManifest();
+    }
   };
 
   // Download all segment frames + prompts as a single ZIP.
@@ -2511,6 +2593,35 @@ export function GenerateClient() {
                 </li>
               ))}
             </ol>
+          </CardContent>
+        </Card>
+
+        {/* Nano Flow: export the manifest for the AutoFlow Reel extension. */}
+        <Card className="border-emerald-400/50 bg-emerald-50/60 dark:border-emerald-600/50 dark:bg-emerald-950/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Package className="h-5 w-5 text-emerald-600" />
+              {lang === "vi" ? "Xuất cho Extension (Nano Flow)" : "Export for Extension (Nano Flow)"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {lang === "vi"
+                ? "Gửi kịch bản + prompt sang extension AutoFlow Reel để tạo ảnh storyboard bằng nano banana miễn phí trong Google Flow. Không cần tải ảnh lên ở đây."
+                : "Send the script + prompts to the AutoFlow Reel extension to generate storyboard images with free nano banana in Google Flow. No image upload needed here."}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={pushNanoToExtension} className="gap-2">
+                {nanoPushed ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                {nanoPushed
+                  ? lang === "vi" ? "Đã gửi" : "Sent"
+                  : lang === "vi" ? "Gửi sang Extension" : "Push to Extension"}
+              </Button>
+              <Button variant="outline" onClick={downloadNanoManifest} className="gap-2">
+                <Download className="h-4 w-4" />
+                {lang === "vi" ? "Tải manifest (.nanoflow.json)" : "Download manifest (.nanoflow.json)"}
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
