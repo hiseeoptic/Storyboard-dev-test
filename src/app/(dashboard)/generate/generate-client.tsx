@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploader";
+import type { UploadedImage } from "@/components/ui/image-uploader";
 import {
   generateStoryboardPlan,
   analyzeCookingRecipe,
@@ -46,7 +46,6 @@ import {
 } from "@/actions";
 import type { TopicCategory } from "@/services/topics";
 import { buildVeoJson, genreAmbientAudio } from "@/prompts";
-import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
 import {
@@ -1103,7 +1102,7 @@ export function GenerateClient() {
   // Cooking-only intake. The source photos/text are OCR'd once into Recipe IR;
   // only the compact, reviewable IR enters the storyboard compiler.
   const [cookingSourceText, setCookingSourceText] = useState("");
-  const [cookingSourceImages, setCookingSourceImages] = useState<UploadedImage[]>([]);
+  const [cookingSourceImages] = useState<UploadedImage[]>([]);
   // Neutral default. Nature ASMR is an explicit choice, never inferred merely
   // because the user once supplied an outdoor creator as style inspiration.
   const [cookingStyle, setCookingStyle] = useState<CookingStyle>("kitchen_asmr");
@@ -3690,29 +3689,7 @@ export function GenerateClient() {
                     <Input value={charAppearance} onChange={(e) => setCharAppearance(e.target.value)} placeholder={L("charAppearance")} />
                   )}
                 </div>
-                <ImageUploader
-                  images={charImages}
-                  onChange={setCharImages}
-                  maxImages={2}
-                  label={
-                    lang === "vi"
-                      ? `Ảnh của ${charName.trim() || "nhân vật này"} (tối đa 2: chính diện + nghiêng)`
-                      : `Photos of ${charName.trim() || "this character"} (max 2: front + profile)`
-                  }
-                  hint={L("charPhotosHint")}
-                />
-                {charImages.length > 0 && (
-                  <p className="text-xs font-medium text-emerald-600">
-                    {lang === "vi"
-                      ? "Reference Lock đang bật: ảnh nhân vật sẽ được gửi trực tiếp vào model tạo hình, không chỉ chuyển thành mô tả chữ."
-                      : "Reference Lock is active: character photos go directly to the image model, not only into a text description."}
-                  </p>
-                )}
-
-                <CharacterStudio
-                  sourceImages={charImages}
-                  onApprove={(img) => setCharImages((prev) => [...prev, img].slice(0, 2))}
-                />
+                {/* Nano Flow: bỏ tải ảnh nhân vật — ảnh tham chiếu sẽ nạp bên extension. Giữ tên + mô tả chữ. */}
 
                 <Button onClick={addCharacter} disabled={!charName.trim()} className="w-full gap-2">
                   ➕ {lang === "vi"
@@ -3782,20 +3759,7 @@ export function GenerateClient() {
                       />
                     </div>
 
-                    <ImageUploader
-                      images={cookingSourceImages}
-                      onChange={(images) => {
-                        setCookingSourceImages(images);
-                        setCookingRecipe(null);
-                      }}
-                      maxImages={4}
-                      label={lang === "vi" ? "Ảnh trang sách / công thức để OCR" : "Cookbook / recipe pages for OCR"}
-                      hint={
-                        lang === "vi"
-                          ? "Tối đa 4 ảnh rõ chữ. Nên chụp thẳng trang, đủ sáng, không cắt mất cột nguyên liệu."
-                          : "Up to 4 legible pages. Shoot straight-on, well lit, with ingredient columns intact."
-                      }
-                    />
+                    {/* Nano Flow: bỏ tải ảnh trang sách — dùng ô dán công thức ở trên. */}
 
                     <div className="space-y-1.5">
                       <label className="text-sm font-medium">
@@ -3968,13 +3932,7 @@ export function GenerateClient() {
                         onChange={(e) => setProdName(e.target.value)}
                         placeholder={lang === "vi" ? "Tên món / ảnh thành phẩm" : "Dish / finished photo name"}
                       />
-                      <ImageUploader
-                        images={prodImages}
-                        onChange={setProdImages}
-                        maxImages={3}
-                        label={lang === "vi" ? "Ảnh món hoàn chỉnh" : "Finished-dish photos"}
-                        hint={lang === "vi" ? "1-3 góc; ảnh chính nên rõ hơi nóng, xốt và topping." : "1-3 angles; make steam, sauce and toppings legible."}
-                      />
+                      {/* Nano Flow: bỏ tải ảnh món — giữ tên món. */}
                     </div>
 
                     <div className="space-y-3 rounded-xl border border-dashed p-4">
@@ -3987,13 +3945,7 @@ export function GenerateClient() {
                         onChange={(e) => setIngName(e.target.value)}
                         placeholder={lang === "vi" ? "VD: Bộ nguyên liệu Udon" : "e.g. Udon ingredient set"}
                       />
-                      <ImageUploader
-                        images={ingImages}
-                        onChange={setIngImages}
-                        maxImages={2}
-                        label={lang === "vi" ? "Ảnh tổng hợp / ảnh từng nguyên liệu" : "Ingredient set / individual references"}
-                        hint={lang === "vi" ? "Không bắt buộc phải gõ tên nếu đã có Recipe IR." : "A name is optional once Recipe IR exists."}
-                      />
+                      {/* Nano Flow: bỏ tải ảnh nguyên liệu — giữ tên nguyên liệu. */}
                     </div>
                   </div>
                 </div>
@@ -4046,20 +3998,7 @@ export function GenerateClient() {
                     <Input value={prodDesc} onChange={(e) => setProdDesc(e.target.value)} placeholder={L("prodDesc")} />
                   )}
                 </div>
-                <ImageUploader
-                  images={prodImages}
-                  onChange={setProdImages}
-                  maxImages={3}
-                  label={L("prodPhotos")}
-                  hint={L("prodPhotosHint")}
-                />
-                {prodImages.length > 0 && (
-                  <p className="text-xs font-medium text-emerald-600">
-                    {lang === "vi"
-                      ? "Product Reference Lock đang bật: hình dáng, màu sắc và chi tiết sản phẩm tải lên là nguồn ưu tiên cao nhất."
-                      : "Product Reference Lock is active: the uploaded design, colour and details are authoritative."}
-                  </p>
-                )}
+                {/* Nano Flow: bỏ tải ảnh sản phẩm — ảnh nạp bên extension. Giữ tên + mô tả chữ. */}
                 <Button variant="outline" size="sm" onClick={addProduct} disabled={!prodName.trim()}>
                   {L("addProduct")}
                 </Button>
@@ -4103,14 +4042,8 @@ export function GenerateClient() {
               <div className="space-y-3 rounded-lg border border-dashed p-4">
                 <Input value={ingName} onChange={(e) => setIngName(e.target.value)} placeholder={L("ingName")} />
                 <Input value={ingDesc} onChange={(e) => setIngDesc(e.target.value)} placeholder={L("ingDesc")} />
-                <ImageUploader
-                  images={ingImages}
-                  onChange={setIngImages}
-                  maxImages={2}
-                  label={L("ingImage")}
-                  hint={L("ingImageHint")}
-                />
-                <Button variant="outline" size="sm" onClick={addIngredient} disabled={!ingName.trim() || ingImages.length === 0}>
+                {/* Nano Flow: bỏ tải ảnh nguyên liệu — giữ tên + mô tả chữ. */}
+                <Button variant="outline" size="sm" onClick={addIngredient} disabled={!ingName.trim()}>
                   {L("addIngredient")}
                 </Button>
               </div>
@@ -4178,20 +4111,7 @@ export function GenerateClient() {
                     <Input value={bgDesc} onChange={(e) => setBgDesc(e.target.value)} placeholder={L("bgDesc")} />
                   )}
                 </div>
-                <ImageUploader
-                  images={bgImages}
-                  onChange={setBgImages}
-                  maxImages={3}
-                  label={L("bgPhotos")}
-                  hint={L("bgPhotosHint")}
-                />
-                {bgImages.length > 0 && (
-                  <p className="text-xs font-medium text-emerald-600">
-                    {lang === "vi"
-                      ? "Environment Reference Lock đang bật: storyboard bắt buộc có preview tổng thể và bám đúng bố cục, vật liệu, cửa, đồ đạc và ánh sáng của ảnh này."
-                      : "Environment Reference Lock is active: the storyboard must include an overview and preserve this layout, materials, openings, furniture and light."}
-                  </p>
-                )}
+                {/* Nano Flow: bỏ tải ảnh bối cảnh — ảnh nạp bên extension. Giữ tên + mô tả chữ. */}
                 <Button variant="outline" size="sm" onClick={addBackground} disabled={!bgName.trim()}>
                   {L("addBackground")}
                 </Button>
