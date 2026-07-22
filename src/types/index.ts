@@ -459,6 +459,8 @@ export interface SpatialLayout {
   walkable_path: string;
   /** A real supported camera position and valid line of sight. */
   camera_zone: string;
+  /** Optional kinematic law for moving architecture such as a revolving door. */
+  mechanism_motion?: string;
 }
 
 /**
@@ -504,8 +506,8 @@ export interface VideoSegment {
   /** MOTIVATED WARDROBE CHANGE: when a story action physically changes a
    * character's look (shower → home clothes, getting dressed, soaked by rain),
    * this lists the character's CURRENT outfit/hair for THIS segment — it
-   * overrides the base character_lock costume from this point onward. Declare
-   * it once on the first changed segment; later segments inherit it. */
+   * overrides the base character_lock costume in every prompt built for the
+   * segment. Declared on the first changed segment and every one after. */
   wardrobe_state?: {
     character: string;
     outfit: string;
