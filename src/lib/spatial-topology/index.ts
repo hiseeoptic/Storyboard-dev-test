@@ -8,10 +8,21 @@ import type { SpatialLayout } from "@/types";
  */
 
 const BALCONY = /\b(?:balcony|loggia)\b|ban công|lô gia|hiên căn hộ/iu;
+const REVOLVING_DOOR =
+  /\b(?:revolving door|rotating door|turnstile door)\b|cửa xoay/iu;
+const REVOLVING_DOOR_EXIT =
+  /\b(?:steps?|walks?|moves?)\s+out\b|\b(?:exits?|leaves?|emerges?)\b(?:.{0,48}\b(?:revolving door|rotating door|compartment)\b)?|bước ra|đi ra|ra khỏi cửa xoay|thoát khỏi cửa xoay/iu;
+const REVOLVING_DOOR_ENTER =
+  /\b(?:steps?|walks?|moves?)\s+(?:in|into)\b|\b(?:enters?|goes? into)\b(?:.{0,48}\b(?:revolving door|rotating door|compartment)\b)?|bước vào|đi vào|vào cửa xoay/iu;
+const REVOLVING_DOOR_PASS =
+  /\b(?:passes?|walks?|moves?|goes?)\s+through\b(?:.{0,48}\b(?:revolving door|rotating door)\b)?|đi xuyên qua cửa xoay|đi qua cửa xoay|bước qua cửa xoay/iu;
+const INSIDE_REVOLVING_DOOR =
+  /\binside\b.{0,56}\b(?:revolving door|compartment|wedge)\b|\b(?:revolving door|compartment|wedge)\b.{0,56}\binside\b|trong.{0,40}(?:cửa xoay|khoang cửa)|(?:cửa xoay|khoang cửa).{0,40}bên trong/iu;
 const DOORWAY =
-  /\b(?:doorway|door frame|threshold|sliding door|open door|entrance|exit)\b|khung cửa|ngưỡng cửa|cửa ra ban công|cửa kính|cửa trượt|lối vào|lối ra/iu;
+  /\b(?:doorway|door frame|threshold|sliding door|open doorway|open door|door opening|entrance door|exit door)\b|khung cửa|ngưỡng cửa|cửa ra ban công|cửa trượt|lối vào cửa|lối ra cửa/iu;
 const RAILING = /\b(?:railing|guardrail|balustrade|parapet)\b|lan can|tay vịn|tường chắn/iu;
-const STAIRS = /\b(?:stairs?|staircase|landing|steps?)\b|cầu thang|bậc thang|chiếu nghỉ/iu;
+const STAIRS =
+  /\b(?:stairs?|staircase|stairway|stairwell|stair flight|flight of stairs|stair landing|landing between stairs|steps leading|steps up to|steps down to|front steps|concrete steps|stone steps)\b|cầu thang|bậc thang|chiếu nghỉ/iu;
 const EXPOSED_EDGE =
   /\b(?:rooftop|roof edge|platform edge|cliff edge|dock edge|pool edge)\b|sân thượng|mép mái|mép bục|vách đá|mép hồ|mép bến/iu;
 
@@ -28,6 +39,91 @@ function namesLine(characterNames?: string[]): string {
     : "Every visible character occupies exactly the zone, floor position, distance from the anchor, and facing direction declared in the start state; feet stay on a real walkable surface.";
 }
 
+function mentionsEveryCurrentCharacter(text: string, characterNames?: string[]): boolean {
+  const names = (characterNames ?? []).map(clean).filter(Boolean);
+  if (names.length === 0 || !text) return false;
+  const lower = text.toLocaleLowerCase();
+  return names.every((name) => lower.includes(name.toLocaleLowerCase()));
+}
+
+export type RevolvingDoorOperation =
+  | "enter"
+  | "exit"
+  | "pass_through"
+  | "hold"
+  | "background";
+
+/** Determine the physical operation before rendering any revolving-door route. */
+export function inferRevolvingDoorOperation(params: {
+  setting?: string | null;
+  motion?: string | null;
+  startState?: string | null;
+  endState?: string | null;
+  continuityFromPrevious?: string | null;
+}): RevolvingDoorOperation | null {
+  const setting = clean(params.setting);
+  const motion = clean(params.motion);
+  const start = [clean(params.continuityFromPrevious), clean(params.startState)]
+    .filter(Boolean)
+    .join(" ");
+  const end = clean(params.endState);
+  const corpus = `${setting} ${start} ${motion} ${end}`;
+  if (!REVOLVING_DOOR.test(corpus)) return null;
+  if (REVOLVING_DOOR_PASS.test(motion)) return "pass_through";
+  if (REVOLVING_DOOR_EXIT.test(motion)) return "exit";
+  if (REVOLVING_DOOR_ENTER.test(motion)) return "enter";
+  if (INSIDE_REVOLVING_DOOR.test(start)) return "hold";
+  return "background";
+}
+
+function operationActor(
+  operation: RevolvingDoorOperation,
+  motion: string,
+  startState: string,
+  characterNames?: string[]
+): string {
+  const names = (characterNames ?? []).map(clean).filter(Boolean);
+  const source = `${motion} ${startState}`;
+  const actionPattern =
+    operation === "exit"
+      ? REVOLVING_DOOR_EXIT
+      : operation === "enter" || operation === "pass_through"
+        ? REVOLVING_DOOR_ENTER
+        : INSIDE_REVOLVING_DOOR;
+  const actionIndex = source.search(actionPattern);
+  if (actionIndex >= 0) {
+    const lower = source.toLocaleLowerCase();
+    const ranked = names
+      .map((name) => {
+        const index = lower.lastIndexOf(name.toLocaleLowerCase(), actionIndex);
+        return { name, distance: index >= 0 ? actionIndex - index : Number.POSITIVE_INFINITY };
+      })
+      .filter((item) => item.distance <= 120)
+      .sort((a, b) => a.distance - b.distance);
+    if (ranked[0]) return ranked[0].name;
+  }
+  return names.find((name) => source.toLocaleLowerCase().includes(name.toLocaleLowerCase())) || "";
+}
+
+function revolvingDoorPlacement(
+  operation: RevolvingDoorOperation,
+  actor: string,
+  characterNames?: string[]
+): string {
+  if (!actor) return namesLine(characterNames);
+  const others = (characterNames ?? []).map(clean).filter((name) => name && name !== actor);
+  const otherPlacement = others.length
+    ? ` ${others.join(", ")} ${others.length === 1 ? "waits" : "wait"} on the destination-side walkable floor, at least one full step clear of the threshold, facing ${actor}.`
+    : "";
+  if (operation === "exit" || operation === "hold") {
+    return `${actor} starts inside the same occupied wedge compartment between the same two radial glass wings, approaching the destination-side opening.${otherPlacement}`;
+  }
+  if (operation === "enter" || operation === "pass_through") {
+    return `${actor} starts on the origin-side walkable floor before the aligned entrance gap, facing the revolving door.${otherPlacement}`;
+  }
+  return namesLine(characterNames);
+}
+
 function suppliedLayout(layout?: SpatialLayout | null): SpatialLayout | null {
   if (!layout || typeof layout !== "object") return null;
   const normalized: SpatialLayout = {
@@ -36,6 +132,7 @@ function suppliedLayout(layout?: SpatialLayout | null): SpatialLayout | null {
     character_placement: clean(layout.character_placement),
     walkable_path: clean(layout.walkable_path),
     camera_zone: clean(layout.camera_zone),
+    mechanism_motion: clean(layout.mechanism_motion),
   };
   return Object.values(normalized).some(Boolean) ? normalized : null;
 }
@@ -51,15 +148,23 @@ export function resolveSpatialLayout(params: {
   setting?: string | null;
   motion?: string | null;
   characterNames?: string[];
+  startState?: string | null;
+  endState?: string | null;
+  continuityFromPrevious?: string | null;
 }): SpatialLayout | null {
   const supplied = suppliedLayout(params.layout);
-  const text = `${clean(params.setting)} ${clean(params.motion)}`;
+  const text = `${clean(params.setting)} ${clean(params.motion)} ${clean(params.startState)} ${clean(params.endState)} ${clean(params.continuityFromPrevious)}`;
   const hasBalcony = BALCONY.test(text);
-  const hasDoorway = DOORWAY.test(text);
+  const hasRevolvingDoor = REVOLVING_DOOR.test(text);
+  const revolvingDoorOperation = hasRevolvingDoor
+    ? inferRevolvingDoorOperation(params) || "background"
+    : null;
+  const hasDoorway = !hasRevolvingDoor && DOORWAY.test(text);
   const hasRailing = RAILING.test(text);
   const hasStairs = STAIRS.test(text);
   const hasEdge = EXPOSED_EDGE.test(text);
-  const highRisk = hasBalcony || hasDoorway || hasRailing || hasStairs || hasEdge;
+  const highRisk =
+    hasBalcony || hasRevolvingDoor || hasDoorway || hasRailing || hasStairs || hasEdge;
 
   if (!supplied && !highRisk) return null;
   if (supplied && !highRisk) {
@@ -90,6 +195,45 @@ export function resolveSpatialLayout(params: {
         "A continuous clear floor route runs from the interior through the doorway threshold onto the balcony. No railing, wall, furniture, planter, body, or prop cuts across this route.",
       camera_zone:
         "The camera occupies one named walkable zone on the safe side of the railing, with a direct line of sight through open air; it is never inside a wall, inside the threshold, or beyond the outer railing.",
+    };
+  } else if (hasRevolvingDoor) {
+    const actor = operationActor(
+      revolvingDoorOperation || "background",
+      clean(params.motion),
+      `${clean(params.continuityFromPrevious)} ${clean(params.startState)}`,
+      params.characterNames
+    );
+    const placement = revolvingDoorPlacement(
+      revolvingDoorOperation || "background",
+      actor,
+      params.characterNames
+    );
+    fallback = {
+      zone_order:
+        "origin-side lobby floor -> one wedge-shaped revolving-door compartment -> destination-side lobby floor",
+      fixed_architecture:
+        "One fixed circular glass enclosure surrounds one fixed center shaft. Rigid radial glass wings divide the door into wedge-shaped compartments and rotate together around that shaft; the enclosure, shaft, thresholds and lobby architecture never move or deform.",
+      character_placement: placement,
+      walkable_path:
+        revolvingDoorOperation === "exit"
+          ? "The occupant remains inside the same wedge while it follows its curved arc, then steps across the destination-side threshold exactly once only after that compartment opening fully aligns. No re-entry, repeated exit, straight shortcut through glass, center shaft or enclosure."
+          : revolvingDoorOperation === "hold"
+            ? "The occupant remains inside the same wedge between the same two radial wings for the whole clip; no entry, exit, compartment change or crossing through glass occurs."
+            : revolvingDoorOperation === "background"
+              ? "All characters remain on their declared supported lobby floor. The revolving door is background architecture only; nobody enters, exits or occupies a wedge in this clip."
+              : "Enter only through the open gap aligned with the origin side, remain inside the same wedge compartment, follow its curved floor arc, and exit only after that same compartment opening aligns with the destination side. No straight shortcut through glass, center shaft or enclosure.",
+      camera_zone:
+        revolvingDoorOperation === "exit"
+          ? "The camera occupies one supported destination-side lobby position, safely offset from the exit route and threshold, with a clear sightline to the occupied wedge and waiting characters."
+          : "The camera occupies one supported lobby position with a clear sightline through or around the glass; it never enters the rotating center or clips through a panel.",
+      mechanism_motion:
+        revolvingDoorOperation === "exit"
+          ? "The clip starts with one already occupied wedge rotating in one established direction. The occupant and every carried bag remain between the same two radial glass wings, then exit exactly once only when that opening aligns with the destination floor; never reverse, re-enter, cross a wing or center shaft."
+          : revolvingDoorOperation === "hold"
+            ? "The already occupied wedge and all radial glass wings rotate together in one direction. The occupant and every carried bag remain between the same two wings for the whole clip; no entry or exit occurs."
+            : revolvingDoorOperation === "background"
+              ? "If the unoccupied revolving door moves in the background, all radial glass wings rotate together in one direction around the fixed center shaft. No visible character enters, exits or occupies a compartment."
+              : "At the first visible movement establish one rotation direction and keep it for the entire clip. The radial wings and occupied compartment rotate together as one rigid mechanism. The person and every carried bag remain between the same two wings, never reverse, overtake, cross a wing or center shaft, and step onto the destination floor only when the opening physically aligns with it.",
     };
   } else if (hasStairs) {
     fallback = {
@@ -141,13 +285,26 @@ export function resolveSpatialLayout(params: {
     // For an explicit cast, bind only the current names and let the segment's
     // start_state carry the detailed position/facing prose.
     character_placement:
-      params.characterNames && params.characterNames.length > 0
-        ? namesLine(params.characterNames)
-        : supplied.character_placement || fallback.character_placement,
+      hasRevolvingDoor && revolvingDoorOperation !== "background"
+        ? fallback.character_placement
+        : mentionsEveryCurrentCharacter(supplied.character_placement, params.characterNames)
+          ? supplied.character_placement
+          : params.characterNames && params.characterNames.length > 0
+            ? namesLine(params.characterNames)
+            : supplied.character_placement || fallback.character_placement,
     walkable_path: fallback.walkable_path,
-    camera_zone: supplied.camera_zone
-      ? `${supplied.camera_zone} This position is valid only on a real supported walkable surface, on the safe side of every boundary, with no solid architecture blocking the sightline.`
+    camera_zone: hasRevolvingDoor && revolvingDoorOperation !== "background"
+      ? fallback.camera_zone
+      : supplied.camera_zone
+      ? /real supported walkable surface|supported lobby position/iu.test(supplied.camera_zone)
+        ? supplied.camera_zone
+        : `${supplied.camera_zone} This position is valid only on a real supported walkable surface, on the safe side of every boundary, with no solid architecture blocking the sightline.`
       : fallback.camera_zone,
+    ...(fallback.mechanism_motion
+      ? { mechanism_motion: fallback.mechanism_motion }
+      : supplied.mechanism_motion
+        ? { mechanism_motion: supplied.mechanism_motion }
+        : {}),
   };
 }
 
@@ -158,7 +315,7 @@ export const SPATIAL_TOPOLOGY_INVARIANTS =
 export function renderSpatialTopologyLock(layout?: SpatialLayout | null): string {
   const normalized = suppliedLayout(layout);
   if (!normalized) return "";
-  return `SPATIAL TOPOLOGY LOCK — ZONE ORDER: ${normalized.zone_order}; FIXED ARCHITECTURE: ${normalized.fixed_architecture}; CHARACTER PLACEMENT: ${normalized.character_placement}; CLEAR WALKABLE PATH: ${normalized.walkable_path}; CAMERA ZONE: ${normalized.camera_zone}; INVARIANTS: ${SPATIAL_TOPOLOGY_INVARIANTS}`;
+  return `SPATIAL TOPOLOGY LOCK — ZONE ORDER: ${normalized.zone_order}; FIXED ARCHITECTURE: ${normalized.fixed_architecture}; CHARACTER PLACEMENT: ${normalized.character_placement}; CLEAR WALKABLE PATH: ${normalized.walkable_path}; CAMERA ZONE: ${normalized.camera_zone}${normalized.mechanism_motion ? `; MECHANISM MOTION: ${normalized.mechanism_motion}` : ""}; INVARIANTS: ${SPATIAL_TOPOLOGY_INVARIANTS}`;
 }
 
 /** Short version for the small panels of the master overview board. */
