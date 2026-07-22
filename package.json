@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "test:timeline": "node --experimental-strip-types --test src/lib/timeline-contract.test.ts"
+    "test:timeline": "node --experimental-strip-types --test src/lib/timeline-contract.test.ts",
+    "test:nano-flow": "node --experimental-strip-types --test src/lib/nano-flow/manifest.test.ts"
   },
   "dependencies": {
     "next": "^15.1.0",

@@ -15,6 +15,7 @@ import {
   Check,
   Download,
   Film,
+  Send,
   Image as ImageIcon,
   AlertTriangle,
   BookOpen,
@@ -47,6 +48,11 @@ import type { TopicCategory } from "@/services/topics";
 import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
+import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
+import {
+  NANO_FLOW_MESSAGE_SOURCE,
+  NANO_FLOW_MESSAGE_TYPE,
+} from "@/types/nano-flow";
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
@@ -867,6 +873,7 @@ export function GenerateClient() {
   const [result, setResult] = useState<StoryboardResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedJson, setCopiedJson] = useState<string | null>(null);
+  const [nanoStatus, setNanoStatus] = useState<string | null>(null);
 
   // Kept after a build so any board can be reviewed and re-rendered on demand
   // (the quality-review/redo gate) without rebuilding the whole storyboard.
@@ -2446,6 +2453,53 @@ export function GenerateClient() {
       setTimeout(() => setCopiedJson(null), 2000);
     };
 
+    // ─── Nano Flow manifest export (M1) — see docs/nano-flow-pipeline/DESIGN.md ──
+    const buildNanoManifest = () =>
+      buildNanoFlowManifest(result.breakdown, {
+        aspectRatio: genInput?.aspect_ratio ?? "9:16",
+        dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+        productNames: (genInput?.product_images ?? [])
+          .map((p) => p.name)
+          .filter((n): n is string => Boolean(n)),
+      });
+
+    const downloadNanoManifest = () => {
+      const manifest = buildNanoManifest();
+      const blob = new Blob([JSON.stringify(manifest, null, 2)], {
+        type: "application/json",
+      });
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `${toAsciiSlug(result.breakdown.title).slice(0, 40) || "storyboard"}.nanoflow.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+      setNanoStatus(lang === "vi" ? "Đã tải file" : "Downloaded");
+      setTimeout(() => setNanoStatus(null), 2000);
+    };
+
+    // Direct push to the AutoFlow Reel extension when this app is embedded in
+    // its side-panel iframe (DESIGN.md §7). Falls back silently to no-op when
+    // not embedded; the download button always works.
+    const pushNanoToExtension = () => {
+      const manifest = buildNanoManifest();
+      const message = {
+        source: NANO_FLOW_MESSAGE_SOURCE,
+        type: NANO_FLOW_MESSAGE_TYPE,
+        payload: manifest,
+      };
+      try {
+        window.parent?.postMessage(message, "*");
+        if (window.opener) window.opener.postMessage(message, "*");
+        setNanoStatus(lang === "vi" ? "Đã gửi sang extension" : "Sent to extension");
+      } catch {
+        setNanoStatus(lang === "vi" ? "Không gửi được" : "Send failed");
+      }
+      setTimeout(() => setNanoStatus(null), 2500);
+    };
+
     return (
       <div className="space-y-8">
         {/* Header */}
@@ -2876,6 +2930,38 @@ export function GenerateClient() {
               {resultJsonBlocks}
             </pre>
           </CardContent>
+        </Card>
+
+        {/* Nano Flow export (M1) — hand off to the AutoFlow Reel extension */}
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Package className="h-5 w-5" />
+                  {lang === "vi" ? "Xuất cho Extension (Nano Flow)" : "Export for Extension (Nano Flow)"}
+                </CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Gói toàn bộ shot + prompt tạo ảnh + prompt video vào 1 file .nanoflow.json để extension tự tạo ảnh Nano Banana (miễn phí) rồi ghép video. Không tạo ảnh trả phí ở đây."
+                    : "Bundles every shot + image prompt + video prompt into one .nanoflow.json so the extension generates images with free Nano Banana, then builds the video. No paid images here."}
+                </p>
+                {nanoStatus && (
+                  <p className="mt-1 text-xs font-medium text-emerald-600">{nanoStatus}</p>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={downloadNanoManifest} className="gap-1.5">
+                  <Download className="h-3.5 w-3.5" />
+                  {lang === "vi" ? "Tải .nanoflow.json" : "Download .nanoflow.json"}
+                </Button>
+                <Button variant="outline" size="sm" onClick={pushNanoToExtension} className="gap-1.5">
+                  <Send className="h-3.5 w-3.5" />
+                  {lang === "vi" ? "Gửi sang Extension" : "Send to Extension"}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
         </Card>
 
         {/* Assembly Guide */}
