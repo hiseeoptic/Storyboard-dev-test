@@ -10,12 +10,12 @@ export const HUMAN_FACE_REALISM_NEGATIVE =
   "plastic, wax, porcelain or rubber skin, airbrushed poreless face, beauty-filter blur, excessive frequency separation, uniform pore noise, crunchy oversharpening, generic beautified face, facial topology drift, perfect bilateral symmetry, painted block eyebrows, stamped identical brows, missing brow hairs, solid-strip eyelashes, uniform doll-lash fan, duplicated lash rows, missing lower lashes, glass eyes, glowing white sclera, perfect denture teeth, helmet hair, plastic hair, wig edge, solid hair mass, repeated hair clumps, missing hairline, floating flyaway strands";
 
 /**
- * Uploaded character photos are already the complete visual specification.
- * Do not translate them back into prose: that creates a second, conflicting
- * identity source. Only this small rendering guard may accompany a reference.
+ * Uploaded character photos are the identity/anatomy specification, not a
+ * wardrobe prescription. Do not translate the person's face/body/hair back
+ * into prose, but let the story lock one context-appropriate outfit separately.
  */
 export const REFERENCE_CHARACTER_APPEARANCE_LOCK =
-  "REFERENCE IMAGE ONLY: use the attached image as the appearance authority for this named character; add no appearance description in text.";
+  "REFERENCE IMAGE IDENTITY LOCK: use the attached image only for this named character's identity, face, body proportions and hair. Do not copy clothing from the reference; use the context-locked outfit declared for the story.";
 
 export const REFERENCE_CHARACTER_ANTI_PLASTIC =
   "plastic-looking hair, plastic-looking eyebrows, plastic-looking skin";
@@ -23,8 +23,9 @@ export const REFERENCE_CHARACTER_ANTI_PLASTIC =
 /**
  * Remove appearance prose that an upstream model (or an older edited JSON)
  * may have put back into a scene after a named character reference was
- * uploaded. This intentionally targets only identity/wardrobe clauses; names,
- * positions, actions, dialogue and ordinary expressions remain intact.
+ * uploaded. This intentionally targets identity/anatomy clauses only; the
+ * separately declared contextual outfit, names, positions, actions, dialogue
+ * and ordinary expressions remain intact.
  */
 export function stripUploadedCharacterAppearance(
   text: string | null | undefined,
@@ -40,8 +41,7 @@ export function stripUploadedCharacterAppearance(
     "(?:eye|eyes)\\s+(?:colour|color|shape|details?|iris|pupil|sclera|eyelid|catchlight|tear[- ]line)|" +
     "(?:eyebrow|brows?)\\s+(?:details?|shape|colour|color|thickness|density|arch|tail|hair)|" +
     "(?:eyelash|lashes?)\\s+(?:details?|length|spacing|curvature|direction)|" +
-    "wardrobe|outfit|clothes|shirt|blouse|trouser|pants|skirt|dress|jacket|" +
-    "sweater|uniform|shoe|footwear|accessor";
+    "facial\\s+hair|beard|moustache";
   const escaped = characterNames
     .map((name) => name.trim())
     .filter(Boolean)
