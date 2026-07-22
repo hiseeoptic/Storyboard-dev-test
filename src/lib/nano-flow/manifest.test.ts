@@ -122,3 +122,46 @@ test("every shot's storyboard_prompt is style-locked", () => {
     assert.match(shot.storyboard_prompt, /NOT cartoon/);
   }
 });
+
+test("keyframe carries the story-locked outfit (direction B) with wardrobe_state override", () => {
+  // Direction B: an uploaded character's clothing is the generated context
+  // outfit (never the reference photo), and text-only characters need it too —
+  // so the keyframe prompt must state each in-scene character's outfit or the
+  // image model invents new clothes every shot (wardrobe drift).
+  const bd = {
+    title: "Outfit",
+    character_locks: [
+      { name: "Lan", costume: "cream linen blouse, navy trousers" },
+      { name: "Minh", costume: "grey tee, dark jeans" },
+    ],
+    segments: [
+      {
+        segment_number: 1,
+        characters_in_scene: ["Lan", "Minh"],
+        environment_ref: "custom",
+        first_frame_prompt: "A cafe.",
+        motion_prompt: "m",
+        full_prompt: "v1",
+      },
+      {
+        segment_number: 2,
+        characters_in_scene: ["Lan"],
+        environment_ref: "custom",
+        first_frame_prompt: "Rain outside.",
+        motion_prompt: "m",
+        full_prompt: "v2",
+        wardrobe_state: [{ character: "Lan", outfit: "beige raincoat over the blouse" }],
+      },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd);
+  const [s1, s2] = m.shots;
+  assert.ok(s1 && s2);
+  // Shot 1: both characters' locked outfits appear in the keyframe.
+  assert.match(s1.storyboard_prompt, /Lan in cream linen blouse, navy trousers/);
+  assert.match(s1.storyboard_prompt, /Minh in grey tee, dark jeans/);
+  assert.match(s1.storyboard_prompt, /never copied from a reference photo/i);
+  // Shot 2: a motivated wardrobe_state change overrides the base outfit.
+  assert.match(s2.storyboard_prompt, /Lan in beige raincoat over the blouse/);
+  assert.doesNotMatch(s2.storyboard_prompt, /cream linen blouse/);
+});

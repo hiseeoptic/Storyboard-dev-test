@@ -73,7 +73,7 @@ export function lawsSystemDigest(options?: { uploadedCharacterReferences?: boole
         id: "entity_dna_uploaded_reference_lock",
         laws: [
           ...PRODUCTION_LAWS.entity_laws.laws.slice(0, 3),
-          "Uploaded character reference pixels govern face, skin, hair, eyebrows, eyelashes, body and wardrobe; do not serialize or paraphrase those appearance attributes.",
+          "Uploaded character reference pixels govern identity only — face, skin, hair, eyebrows, eyelashes and body; do not serialize or paraphrase those identity attributes. Wardrobe is NOT taken from the reference image: dress the character in the story-locked context outfit declared in character_locks.",
           PRODUCTION_LAWS.entity_laws.laws[10]!,
           PRODUCTION_LAWS.entity_laws.laws[11]!,
         ],
@@ -93,7 +93,7 @@ ${block("TẦNG 9 · AUDIO", PRODUCTION_LAWS.audio_laws)}`;
 
 /** One-line motion/physics law clause for every per-clip Veo prompt tail. */
 export function clipMotionLawLine(): string {
-  return "LAWS (world/entity/action): gravity and real weight at all times; time continuous — no jumps; exactly one head, two arms, two legs, five fingers per hand in every frame; joints bend only naturally; feet planted carrying real weight; ONE continuous primary action travelling start-pose → end-pose through real space — NO teleporting, NO mid-clip cuts; hands make real contact and never pass through objects; objects keep one solid form and move only when moved. CAUSAL CHAIN: every object interaction shows the FULL visible chain — the hand reaches to the object, fingers close on it, it is carried along one continuous path, then released — an object never appears in a hand or changes place without this chain. PROP EXISTENCE: every object used in the motion is already on screen at second 0 (held, worn or placed in the start state, or visibly carried in) — nothing is introduced from nowhere mid-clip. PEOPLE NEVER TELEPORT: every person in the clip is placed in the start state from second 0 or visibly walks in through a real entrance — no one pops into frame or materialises mid-clip. CAUSE BEFORE EFFECT: nothing moves, falls or tips by itself — the visible physical cause makes contact first, the effect follows with real physics timing. ONE LOCATION: the whole clip stays in one continuous space; the background never switches mid-clip. SPATIAL TOPOLOGY: freeze ordered zones, connectors, fixed architecture, walkable route, character positions and camera zone before motion; openings stay unobstructed, railings stay only on true exposed edges, and movement crosses zones only through a real connector.";
+  return "LAWS (world/entity/action): gravity and real weight at all times; time continuous — no jumps; exactly one head, two arms, two legs, five fingers per hand in every frame; joints bend only naturally; feet planted carrying real weight; ONE continuous primary action travelling start-pose → end-pose through real space — NO teleporting, NO mid-clip cuts; hands make real contact and never pass through objects; objects keep one solid form and move only when moved. DAILY BODY MECHANICS: sitting, standing, entering, leaving, walking to a chair, opening a door, carrying or repositioning furniture, turning and reaching all show real weight transfer — feet step/plant, hips/knees/torso change in order, balance shifts to counter the load, hands brace or grip only when natural, a door's handle is gripped and its hinge/leaf visibly moves before the body crosses the threshold, then the body settles or continues with plausible momentum. CAUSAL CHAIN: every object interaction shows the FULL visible chain — the hand reaches to the object, fingers close on it, it is carried along one continuous path, then released — an object never appears in a hand or changes place without this chain. PROP EXISTENCE: every object used in the motion is already on screen at second 0 (held, worn or placed in the start state, or visibly carried in) — nothing is introduced from nowhere mid-clip. PEOPLE NEVER TELEPORT: every person in the clip is placed in the start state from second 0 or visibly walks in through a real entrance — no one pops into frame or materialises mid-clip. CAUSE BEFORE EFFECT: nothing moves, falls or tips by itself — the visible physical cause makes contact first, the effect follows with real physics timing. ONE LOCATION: the whole clip stays in one continuous space; the background never switches mid-clip. SPATIAL TOPOLOGY: freeze ordered zones, connectors, fixed architecture, walkable route, character positions and camera zone before motion; openings stay unobstructed, railings stay only on true exposed edges, and movement crosses zones only through a real connector.";
 }
 
 /** One-line camera law clause for per-clip prompts. */
@@ -112,9 +112,9 @@ export function lawsForVeoJson(): Record<string, unknown> {
     version: PRODUCTION_LAWS.manifest_meta.version,
     world: PRODUCTION_LAWS.world_laws.id,
     entity: PRODUCTION_LAWS.entity_laws.laws.slice(0, 3),
-    // Includes causal-chain / prop-existence / cause-before-effect /
-    // one-location / chained-continuity / people-never-teleport.
-    action: PRODUCTION_LAWS.action_continuity_laws.laws.slice(0, 14),
+    // Includes everyday-body-mechanics / causal-chain / prop-existence /
+    // cause-before-effect / one-location / chained-continuity / people-never-teleport.
+    action: PRODUCTION_LAWS.action_continuity_laws.laws.slice(0, 15),
     camera: PRODUCTION_LAWS.camera_laws.laws.slice(0, 9),
     lighting: PRODUCTION_LAWS.lighting_laws.laws.slice(0, 3),
     audio: PRODUCTION_LAWS.audio_laws.laws,

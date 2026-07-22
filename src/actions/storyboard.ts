@@ -295,7 +295,20 @@ function characterLineForPrompt(
   if (!referenceNames.has(lock.name.trim().toLowerCase())) {
     return buildCleanCharLine(lock);
   }
-  return `${lock.name}. ${REFERENCE_CHARACTER_APPEARANCE_LOCK} Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
+  // Direction B: the uploaded image is the identity/face/hair authority, but the
+  // WARDROBE is the story-generated context outfit (never the image's clothing).
+  // Surface that outfit here so the flat Veo prompt AND the manifest video
+  // prompt dress the character the same way the structured Veo JSON does —
+  // otherwise the reference character had no outfit anywhere on this path and
+  // every shot invented new clothes (wardrobe drift).
+  const outfit = [lock.costume, lock.wardrobe_materials]
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+  const outfitClause = outfit
+    ? ` Wearing the story-locked outfit: ${outfit} — chosen for this scene, kept identical across clips, never copied from the reference image.`
+    : "";
+  return `${lock.name}. ${REFERENCE_CHARACTER_APPEARANCE_LOCK}${outfitClause} Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
 }
 
 import { defaultVoiceFor, findLawViolations } from "@/lib/laws";

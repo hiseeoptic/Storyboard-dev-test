@@ -463,7 +463,15 @@ test("Veo JSON reconciles chained revolving-door exit state without changing its
     clip.dialogue[1].voice_personality,
     clip.character_lock.CHAR_1.voice_personality
   );
-  assert.match(clip.output_rules.audio, /speaker_id, speaker_name and verbatim voice_personality/i);
+  // Voice-identity binding lives ONCE in lip_sync_director_note; output_rules.audio
+  // stays a concise on-set note and must NOT duplicate the full binding essay —
+  // competing voice blocks are what made a character's voice drift clip-to-clip.
+  assert.match(
+    clip.lip_sync_director_note,
+    /speaker_id \+ dialogue\.speaker_name \+ verbatim dialogue\.voice_personality/i
+  );
+  assert.match(clip.output_rules.audio, /never use the first character as a default/i);
+  assert.doesNotMatch(clip.output_rules.audio, /timbre, resonance, base-pitch range/i);
   assert.match(clip.negative_prompt, /inferring the speaker from character order or camera framing/i);
 });
 

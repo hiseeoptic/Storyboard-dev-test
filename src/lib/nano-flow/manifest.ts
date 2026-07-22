@@ -135,10 +135,42 @@ export function buildNanoFlowManifest(
       .map((n) => charIdByName.get(n.trim().toLowerCase()))
       .filter((v): v is string => Boolean(v));
 
+  // ── Wardrobe map: the story-locked outfit per character. Direction B — an
+  //    uploaded character's clothing is this generated CONTEXT outfit, never the
+  //    reference photo's clothing — and text-only characters need it too because
+  //    first_frame_prompt no longer restates appearance. The keyframe prompt
+  //    must therefore state the outfit explicitly (the image only fixes the
+  //    face/identity), or every shot would invent new clothes (wardrobe drift).
+  const baseCostumeByName = new Map<string, string>();
+  for (const lock of breakdown.character_locks ?? []) {
+    const name = (lock.name ?? "").trim();
+    if (name && (lock.costume ?? "").trim()) {
+      baseCostumeByName.set(name.toLowerCase(), (lock.costume ?? "").trim());
+    }
+  }
+
   // ── Shots ──
   const shots: NanoFlowShot[] = segments.map((seg, i) => {
     const index = seg.segment_number || i + 1;
     const inScene = seg.characters_in_scene ?? [];
+    // A visibly motivated change (shower, rain, change of clothes) overrides the
+    // base outfit for this one shot; otherwise inherit the locked outfit.
+    const wardrobeOverride = new Map(
+      (seg.wardrobe_state ?? [])
+        .filter((w) => w && (w.character ?? "").trim() && (w.outfit ?? "").trim())
+        .map((w) => [w.character.trim().toLowerCase(), w.outfit.trim()])
+    );
+    const wardrobeParts = inScene
+      .map((n) => {
+        const key = (n ?? "").trim().toLowerCase();
+        const outfit = wardrobeOverride.get(key) ?? baseCostumeByName.get(key) ?? "";
+        return outfit ? `${(n ?? "").trim()} in ${outfit}` : "";
+      })
+      .filter(Boolean);
+    const wardrobeClause =
+      wardrobeParts.length > 0
+        ? ` Wardrobe (story-locked, identical across shots, never copied from a reference photo): ${wardrobeParts.join("; ")}.`
+        : "";
     const envRef = (seg.environment_ref ?? "").trim();
     const envIds = envRef && envRef !== "custom" ? [envRef] : [];
 
@@ -157,7 +189,9 @@ export function buildNanoFlowManifest(
 
       // Style-locked so the extension's nano banana yields a photoreal,
       // cinematic keyframe faithful to the scene — never cartoon. See §6.
-      storyboard_prompt: lockStyle(seg.first_frame_prompt || seg.motion_prompt || ""),
+      storyboard_prompt: lockStyle(
+        (seg.first_frame_prompt || seg.motion_prompt || "") + wardrobeClause
+      ),
       image_refs,
 
       video_prompt: (seg.full_prompt || seg.motion_prompt || "").trim(),
