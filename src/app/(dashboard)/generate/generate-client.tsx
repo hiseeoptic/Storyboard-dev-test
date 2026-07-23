@@ -1508,6 +1508,14 @@ export function GenerateClient() {
       return out.filter((r) => r.images.length > 0);
     };
     const cappedCharacterImages = fitCharacterRefs(characterImages);
+    // Nano Flow "has real photo" characters carry NO bytes in-app (the photo is
+    // attached later in the extension), so the downscale/fit passes above drop
+    // them. Re-add them as declared references so the server keeps their
+    // identity image-only and the manifest reserves a required reference slot.
+    const referenceOnlyChars: ImageReference[] = effectiveCharacters
+      .filter((c) => !!c.hasRealPhoto && (c.images?.length ?? 0) === 0)
+      .map((c) => ({ name: c.name, images: [], isReference: true }));
+    const finalCharacterImages = [...cappedCharacterImages, ...referenceOnlyChars];
     const cappedProductImages = fitRefs(productImages, false);
     const cappedBackgroundImages = fitRefs(backgroundImages, false);
     const cappedIngredientImages = fitRefs(ingredientImages, false);
@@ -1543,7 +1551,7 @@ export function GenerateClient() {
       story_format: storyFormat,
       visual_interpretation: visualInterpretation,
       character_representation:
-        cappedCharacterImages.length > 0 ? "uploaded_photoreal" : characterRepresentation,
+        finalCharacterImages.length > 0 ? "uploaded_photoreal" : characterRepresentation,
       directing_profile: directingProfile,
       script_provider: scriptProvider,
       numerology_style: numerologyStyle,
@@ -1562,7 +1570,10 @@ export function GenerateClient() {
       cooking_style: genre === "cooking" ? cookingStyle : undefined,
       character_descriptions: effectiveCharacters.length > 0
         ? effectiveCharacters.map((c) => {
-            const hasCharacterReference = (c.images?.length ?? 0) > 0;
+            // A declared "has real photo" character (Nano Flow) is image-only
+            // too — the photo is attached in the extension — so it must NOT
+            // carry appearance/height/body prose that would fight those pixels.
+            const hasCharacterReference = (c.images?.length ?? 0) > 0 || !!c.hasRealPhoto;
             const parsedHeight = Number.parseInt(c.heightCm ?? "", 10);
             const physicalLock = [
               Number.isFinite(parsedHeight) ? `height approximately ${parsedHeight} cm` : "",
@@ -1586,7 +1597,7 @@ export function GenerateClient() {
             };
           })
         : undefined,
-      character_images: cappedCharacterImages.length > 0 ? cappedCharacterImages : undefined,
+      character_images: finalCharacterImages.length > 0 ? finalCharacterImages : undefined,
       product_images: cappedProductImages.length > 0 ? cappedProductImages : undefined,
       ingredient_images: cappedIngredientImages.length > 0 ? cappedIngredientImages : undefined,
       background_images: cappedBackgroundImages.length > 0 ? cappedBackgroundImages : undefined,
@@ -1604,7 +1615,7 @@ export function GenerateClient() {
       aspect_ratio: aspectRatio,
       reference_expressions: 0,
       character_render:
-        cappedCharacterImages.length > 0 || characterRepresentation === "generated_human"
+        finalCharacterImages.length > 0 || characterRepresentation === "generated_human"
           ? "photo"
           : characterRepresentation !== "auto" && characterRepresentation !== "none"
             ? "stylized"
@@ -4041,13 +4052,16 @@ export function GenerateClient() {
                         onChange={(e) => setProdName(e.target.value)}
                         placeholder={lang === "vi" ? "Tên món / ảnh thành phẩm" : "Dish / finished photo name"}
                       />
-                      <ImageUploader
-                        images={prodImages}
-                        onChange={setProdImages}
-                        maxImages={3}
-                        label={lang === "vi" ? "Ảnh món hoàn chỉnh" : "Finished-dish photos"}
-                        hint={lang === "vi" ? "1-3 góc; ảnh chính nên rõ hơi nóng, xốt và topping." : "1-3 angles; make steam, sauce and toppings legible."}
-                      />
+                      {/* Nano Flow: finished-dish reference is attached in the extension. */}
+                      {!NANO_FLOW_TEXT_ONLY && (
+                        <ImageUploader
+                          images={prodImages}
+                          onChange={setProdImages}
+                          maxImages={3}
+                          label={lang === "vi" ? "Ảnh món hoàn chỉnh" : "Finished-dish photos"}
+                          hint={lang === "vi" ? "1-3 góc; ảnh chính nên rõ hơi nóng, xốt và topping." : "1-3 angles; make steam, sauce and toppings legible."}
+                        />
+                      )}
                     </div>
 
                     <div className="space-y-3 rounded-xl border border-dashed p-4">
@@ -4060,13 +4074,16 @@ export function GenerateClient() {
                         onChange={(e) => setIngName(e.target.value)}
                         placeholder={lang === "vi" ? "VD: Bộ nguyên liệu Udon" : "e.g. Udon ingredient set"}
                       />
-                      <ImageUploader
-                        images={ingImages}
-                        onChange={setIngImages}
-                        maxImages={2}
-                        label={lang === "vi" ? "Ảnh tổng hợp / ảnh từng nguyên liệu" : "Ingredient set / individual references"}
-                        hint={lang === "vi" ? "Không bắt buộc phải gõ tên nếu đã có Recipe IR." : "A name is optional once Recipe IR exists."}
-                      />
+                      {/* Nano Flow: ingredient photos are attached in the extension. */}
+                      {!NANO_FLOW_TEXT_ONLY && (
+                        <ImageUploader
+                          images={ingImages}
+                          onChange={setIngImages}
+                          maxImages={2}
+                          label={lang === "vi" ? "Ảnh tổng hợp / ảnh từng nguyên liệu" : "Ingredient set / individual references"}
+                          hint={lang === "vi" ? "Không bắt buộc phải gõ tên nếu đã có Recipe IR." : "A name is optional once Recipe IR exists."}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -4119,19 +4136,25 @@ export function GenerateClient() {
                     <Input value={prodDesc} onChange={(e) => setProdDesc(e.target.value)} placeholder={L("prodDesc")} />
                   )}
                 </div>
-                <ImageUploader
-                  images={prodImages}
-                  onChange={setProdImages}
-                  maxImages={3}
-                  label={L("prodPhotos")}
-                  hint={L("prodPhotosHint")}
-                />
-                {prodImages.length > 0 && (
-                  <p className="text-xs font-medium text-emerald-600">
-                    {lang === "vi"
-                      ? "Product Reference Lock đang bật: hình dáng, màu sắc và chi tiết sản phẩm tải lên là nguồn ưu tiên cao nhất."
-                      : "Product Reference Lock is active: the uploaded design, colour and details are authoritative."}
-                  </p>
+                {/* Nano Flow: real product photos are attached in the extension;
+                    here the product is declared by name + description only. */}
+                {!NANO_FLOW_TEXT_ONLY && (
+                  <>
+                    <ImageUploader
+                      images={prodImages}
+                      onChange={setProdImages}
+                      maxImages={3}
+                      label={L("prodPhotos")}
+                      hint={L("prodPhotosHint")}
+                    />
+                    {prodImages.length > 0 && (
+                      <p className="text-xs font-medium text-emerald-600">
+                        {lang === "vi"
+                          ? "Product Reference Lock đang bật: hình dáng, màu sắc và chi tiết sản phẩm tải lên là nguồn ưu tiên cao nhất."
+                          : "Product Reference Lock is active: the uploaded design, colour and details are authoritative."}
+                      </p>
+                    )}
+                  </>
                 )}
                 <Button variant="outline" size="sm" onClick={addProduct} disabled={!prodName.trim()}>
                   {L("addProduct")}
@@ -4176,14 +4199,23 @@ export function GenerateClient() {
               <div className="space-y-3 rounded-lg border border-dashed p-4">
                 <Input value={ingName} onChange={(e) => setIngName(e.target.value)} placeholder={L("ingName")} />
                 <Input value={ingDesc} onChange={(e) => setIngDesc(e.target.value)} placeholder={L("ingDesc")} />
-                <ImageUploader
-                  images={ingImages}
-                  onChange={setIngImages}
-                  maxImages={2}
-                  label={L("ingImage")}
-                  hint={L("ingImageHint")}
-                />
-                <Button variant="outline" size="sm" onClick={addIngredient} disabled={!ingName.trim() || ingImages.length === 0}>
+                {/* Nano Flow: object/component photos are attached in the
+                    extension; declare the object by name + description only. */}
+                {!NANO_FLOW_TEXT_ONLY && (
+                  <ImageUploader
+                    images={ingImages}
+                    onChange={setIngImages}
+                    maxImages={2}
+                    label={L("ingImage")}
+                    hint={L("ingImageHint")}
+                  />
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={addIngredient}
+                  disabled={!ingName.trim() || (!NANO_FLOW_TEXT_ONLY && ingImages.length === 0)}
+                >
                   {L("addIngredient")}
                 </Button>
               </div>
@@ -4251,19 +4283,25 @@ export function GenerateClient() {
                     <Input value={bgDesc} onChange={(e) => setBgDesc(e.target.value)} placeholder={L("bgDesc")} />
                   )}
                 </div>
-                <ImageUploader
-                  images={bgImages}
-                  onChange={setBgImages}
-                  maxImages={3}
-                  label={L("bgPhotos")}
-                  hint={L("bgPhotosHint")}
-                />
-                {bgImages.length > 0 && (
-                  <p className="text-xs font-medium text-emerald-600">
-                    {lang === "vi"
-                      ? "Environment Reference Lock đang bật: storyboard bắt buộc có preview tổng thể và bám đúng bố cục, vật liệu, cửa, đồ đạc và ánh sáng của ảnh này."
-                      : "Environment Reference Lock is active: the storyboard must include an overview and preserve this layout, materials, openings, furniture and light."}
-                  </p>
+                {/* Nano Flow: real location photos are attached in the extension;
+                    the location is declared by name + description only. */}
+                {!NANO_FLOW_TEXT_ONLY && (
+                  <>
+                    <ImageUploader
+                      images={bgImages}
+                      onChange={setBgImages}
+                      maxImages={3}
+                      label={L("bgPhotos")}
+                      hint={L("bgPhotosHint")}
+                    />
+                    {bgImages.length > 0 && (
+                      <p className="text-xs font-medium text-emerald-600">
+                        {lang === "vi"
+                          ? "Environment Reference Lock đang bật: storyboard bắt buộc có preview tổng thể và bám đúng bố cục, vật liệu, cửa, đồ đạc và ánh sáng của ảnh này."
+                          : "Environment Reference Lock is active: the storyboard must include an overview and preserve this layout, materials, openings, furniture and light."}
+                      </p>
+                    )}
+                  </>
                 )}
                 <Button variant="outline" size="sm" onClick={addBackground} disabled={!bgName.trim()}>
                   {L("addBackground")}
