@@ -920,8 +920,10 @@ export function GenerateClient() {
   const [fromStudio, setFromStudio] = useState(false);
 
   // ─── Admin: AI Provider Switch ──────────────────────────────────
-  // Default Gemini — required for face lock from uploaded photos.
-  const [provider, setProvider] = useState<AIProvider>("gemini");
+  // Default OpenAI. Nano Flow no longer generates images in this app (photos
+  // are attached in the extension), so the old "Gemini for face lock" reason no
+  // longer applies — the whole script + storyboard text pipeline runs on OpenAI.
+  const [provider, setProvider] = useState<AIProvider>("openai");
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pwInput, setPwInput] = useState("");
@@ -945,10 +947,11 @@ export function GenerateClient() {
     }
   };
 
-  // ─── Script model (default Claude Opus 4.8 — best script quality at ~$0.06
-  // each, and it works reliably; images always stay on Gemini/Nano Banana).
-  // Switchable via the hidden panel (double-click the title, passcode 2502). ──
-  const [scriptProvider, setScriptProvider] = useState<AIProvider>("claude");
+  // ─── Script model (default OpenAI — the whole text pipeline is on OpenAI now:
+  // gpt-5-mini writes the script, gpt-4o builds the storyboard JSON). Claude
+  // Opus timed out too often on the 60s script budget. Still switchable via the
+  // hidden panel (double-click the title, passcode 2502). ──
+  const [scriptProvider, setScriptProvider] = useState<AIProvider>("openai");
   const [modelPanelOpen, setModelPanelOpen] = useState(false);
   const [modelUnlocked, setModelUnlocked] = useState(false);
   const [modelPw, setModelPw] = useState("");
@@ -956,18 +959,22 @@ export function GenerateClient() {
 
   // Load saved provider choice on mount
   useEffect(() => {
+    // Key bumped to _v3 so an older saved "gemini" no longer overrides the new
+    // OpenAI default (Nano Flow: no in-app image gen, so no Gemini requirement).
     const saved =
       typeof window !== "undefined"
-        ? window.localStorage.getItem("sb_ai_provider")
+        ? window.localStorage.getItem("sb_ai_provider_v3")
         : null;
     if (saved === "gemini" || saved === "openai") {
       setProvider(saved);
     }
     // Default script writer is Claude Opus 4.8; a saved manual choice (any of
     // claude/openai/gemini) still overrides it.
+    // Key bumped to _v3 so an older saved "claude" no longer overrides the new
+    // OpenAI default (Opus kept timing out on the 60s script budget).
     const savedScript =
       typeof window !== "undefined"
-        ? window.localStorage.getItem("sb_script_provider_v2")
+        ? window.localStorage.getItem("sb_script_provider_v3")
         : null;
     if (savedScript === "gemini" || savedScript === "openai" || savedScript === "claude") {
       setScriptProvider(savedScript);
@@ -998,14 +1005,14 @@ export function GenerateClient() {
   const switchScriptProvider = (p: AIProvider) => {
     setScriptProvider(p);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("sb_script_provider_v2", p);
+      window.localStorage.setItem("sb_script_provider_v3", p);
     }
   };
 
   const switchProvider = (p: AIProvider) => {
     setProvider(p);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("sb_ai_provider", p);
+      window.localStorage.setItem("sb_ai_provider_v3", p);
     }
   };
 

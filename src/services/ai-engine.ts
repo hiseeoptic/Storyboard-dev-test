@@ -782,7 +782,10 @@ export async function generateStoryboardBreakdown(
         const openai = getOpenAIClient();
         const completion = await openai.chat.completions.create(
           {
-            model: "gpt-4o",
+            // Default gpt-4o: reliable at the strict, large storyboard JSON at
+            // $2.50/$10 per 1M tokens. Override with OPENAI_STORYBOARD_MODEL to
+            // trade cost/quality (e.g. gpt-5-mini ≈ $0.75/$4.50, cheaper + newer).
+            model: process.env.OPENAI_STORYBOARD_MODEL || "gpt-4o",
             messages: [
               {
                 role: "system",
@@ -796,7 +799,12 @@ export async function generateStoryboardBreakdown(
             max_tokens: 14000,
             response_format: { type: "json_object" },
           },
-          { timeout: boundedTimeoutMs(timing, 75_000, "OpenAI storyboard generation") }
+          // Raised from 75s: with the whole pipeline on OpenAI and no separate
+          // script stage, this single call writes the script AND the full
+          // storyboard JSON, so it needs the budget headroom (context analysis
+          // ~45s + this ≈ 225s, still inside the 270s plan budget). boundedTimeoutMs
+          // still clamps it to whatever budget actually remains.
+          { timeout: boundedTimeoutMs(timing, 180_000, "OpenAI storyboard generation") }
         );
         rawContent = completion.choices[0]?.message?.content ?? null;
       }
