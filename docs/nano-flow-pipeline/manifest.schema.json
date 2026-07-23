@@ -109,7 +109,7 @@
         "storyboard_prompt": { "type": "string", "description": "STEP A — prompt (written 100% by Storyboard) to generate the storyboard/keyframe image with Nano Banana." },
         "image_refs":        { "$ref": "#/definitions/refSelector", "description": "STEP A — which assets feed the image generation." },
 
-        "video_prompt":         { "type": "string", "description": "STEP B — full Veo prompt (written 100% by Storyboard)." },
+        "video_prompt":         { "type": ["string", "object"], "description": "STEP B — full Veo prompt (written 100% by Storyboard). Either flat prose (string) or the structured Veo clip JSON (object); the extension stringifies objects into Flow's prompt box." },
         "characters_in_scene":  { "type": "array", "items": { "type": "string" }, "description": "Exact character names on screen (mirrors Storyboard VideoSegment.characters_in_scene)." },
         "video_refs":           { "$ref": "#/definitions/videoRefSelector", "description": "STEP B — which refs to attach when generating the video." },
 
