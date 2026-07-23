@@ -37,7 +37,12 @@ const positiveNumberField = (fallback: number) =>
 export const resolvedVideoContextSchema = z.object({
   version: versionField,
   state: stateField,
-  analysis_summary: text,
+  // RESILIENCE: analysis_summary is only a human-readable note, not a lock
+  // layer. OpenAI (json_object mode, no enforced schema) sometimes omits it,
+  // which used to discard the ENTIRE 10-layer Context IR ("mismatch at
+  // analysis_summary: Required" → fall back to the legacy flow). A missing or
+  // empty summary now coerces to a placeholder instead of failing the lock.
+  analysis_summary: text.catch("Context auto-resolved from the story idea."),
   confidence: confidenceField,
   assumptions: textArray,
   evidence: textArray,
