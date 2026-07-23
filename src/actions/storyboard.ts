@@ -1707,13 +1707,18 @@ export async function generateStoryboardPlan(
     const scriptProvider = input.script_provider ?? provider;
 
     let sourceScript: string | null = null;
-    if (!compiledCooking && scriptProvider !== provider) {
-      // Script fallback chain: if the chosen script model fails (Claude
-      // overloaded, GPT timeout…), try the next-best writer before giving up —
-      // a good script is worth one extra bounded attempt.
+    // Always run a dedicated creative SCRIPT stage (except cooking, which uses
+    // its own Recipe-IR path). The script writer's dialogue-density rules
+    // (PACING AUDIT + LOAD BUDGET: 8-22 spoken words per clip, short exchanges
+    // packed into one clip) ONLY run in this stage — a single storyboard call
+    // that also improvises the story produces thin, one-line-per-clip dialogue.
+    // On OpenAI the script is written by gpt-5-mini, then gpt-4o expands it.
+    if (!compiledCooking) {
+      // Script fallback chain — NEVER Claude (this deployment has no Anthropic
+      // credit): if the chosen writer fails, try the other OpenAI/Gemini writer.
       const scriptChain: AIProvider[] = [
         scriptProvider,
-        ...(["claude", "openai", "gemini"] as AIProvider[]).filter(
+        ...(["openai", "gemini"] as AIProvider[]).filter(
           (p) => p !== scriptProvider && p !== provider
         ),
       ];
@@ -1783,8 +1788,12 @@ export async function generateStoryboardPlan(
         // stalled provider tends to time out again, while the other one
         // usually completes. Prefer the script model (it already knows the
         // story); otherwise flip gemini↔openai.
+        // NEVER fall back to Claude: this deployment has no Anthropic credit and
+        // the text pipeline standardises on OpenAI (with Gemini as the only
+        // alternate). A Claude rescue here is what surfaced the misleading
+        // "credit balance is too low" error even after switching to OpenAI.
         const fallbackProvider: AIProvider =
-          scriptProvider !== provider
+          scriptProvider !== provider && scriptProvider !== "claude"
             ? scriptProvider
             : provider === "gemini"
               ? "openai"
