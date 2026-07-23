@@ -334,6 +334,9 @@ export interface ImageReference {
   name: string;
   description?: string;
   images: string[]; // base64 encoded images
+  /** Nano Flow: this is a declared reference whose real photo is attached in the
+   * extension (so `images` may be empty here). Identity stays image-only. */
+  isReference?: boolean;
 }
 
 // ─── Character Lock ─────────────────────────────────────────────────────────

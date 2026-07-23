@@ -209,7 +209,10 @@ function buildCleanCharLine(lock?: CharacterLock): string {
 function uploadedCharacterNameSet(input: StoryboardGenerationInput): Set<string> {
   return new Set(
     (input.character_images ?? [])
-      .filter((entry) => (entry.images?.length ?? 0) > 0)
+      // A character counts as image-referenced when it carries actual bytes OR
+      // when it is a Nano Flow declared reference (real photo attached later in
+      // the extension). Both keep the identity image-only in the prompt.
+      .filter((entry) => (entry.images?.length ?? 0) > 0 || entry.isReference === true)
       .map((entry) => entry.name.trim().toLowerCase())
       .filter(Boolean)
   );
@@ -700,16 +703,19 @@ async function runAnalysis(
     backgroundDescription: "",
   };
 
+  // Only real image BYTES trigger (paid) vision analysis. A Nano Flow declared
+  // reference carries no bytes here (the photo is attached in the extension),
+  // so it must never trigger analysis or a wasted vision call.
   const hasImages =
-    (input.character_images?.length ?? 0) > 0 ||
-    (input.product_images?.length ?? 0) > 0 ||
+    (input.character_images ?? []).some((c) => (c.images?.length ?? 0) > 0) ||
+    (input.product_images ?? []).some((p) => (p.images?.length ?? 0) > 0) ||
     (input.ingredient_images?.length ?? 0) > 0 ||
-    (input.background_images?.length ?? 0) > 0;
+    (input.background_images ?? []).some((b) => (b.images?.length ?? 0) > 0);
 
   if (hasImages) {
     try {
       const a = await analyzeReferenceImages({
-        characters: input.character_images,
+        characters: input.character_images?.filter((c) => (c.images?.length ?? 0) > 0),
         products: input.product_images,
         ingredients: input.ingredient_images,
         backgrounds: input.background_images,
@@ -799,7 +805,7 @@ function enhanceInput(
   // into a prose identity. Referenced characters get name/role/action only;
   // all appearance fields defer to the attached image.
   const refNames = (input.character_images ?? [])
-    .filter((entry) => (entry.images?.length ?? 0) > 0)
+    .filter((entry) => (entry.images?.length ?? 0) > 0 || entry.isReference === true)
     .map((entry) => entry.name.trim())
     .filter(Boolean);
   if (refNames.length > 0 && enhanced.main_character) {

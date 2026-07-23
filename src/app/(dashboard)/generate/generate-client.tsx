@@ -840,6 +840,9 @@ interface CharacterEntry {
   /** True when this character is a child (khoá độ tuổi trẻ em). */
   isChild?: boolean;
   images: UploadedImage[];
+  /** Nano Flow: user declared this person has a real reference photo that will
+   * be attached in the extension (no in-app upload). Keep identity image-only. */
+  hasRealPhoto?: boolean;
 }
 
 const BODY_TYPE_TEXT: Record<CharacterEntry["bodyType"], string> = {
@@ -1085,6 +1088,10 @@ export function GenerateClient() {
   // Step 2: Characters
   const [characters, setCharacters] = useState<CharacterEntry[]>([]);
   const [charName, setCharName] = useState("");
+  // Nano Flow: the user ticks this instead of uploading a photo in-app. The
+  // real photo is attached later in the extension; here it only tells the
+  // prompt to keep this person's identity image-only (no invented face).
+  const [charHasRealPhoto, setCharHasRealPhoto] = useState(false);
   const [charRole, setCharRole] = useState("");
   const [charIsChild, setCharIsChild] = useState(false);
   const [charHeightCm, setCharHeightCm] = useState("");
@@ -1207,7 +1214,9 @@ export function GenerateClient() {
   const [nanoPushed, setNanoPushed] = useState(false);
 
   const hasCharacterUploads =
-    charImages.length > 0 || characters.some((character) => character.images.length > 0);
+    charImages.length > 0 ||
+    charHasRealPhoto ||
+    characters.some((character) => character.images.length > 0 || character.hasRealPhoto);
   const effectiveCharacterRepresentation: CharacterRepresentation = hasCharacterUploads
     ? "uploaded_photoreal"
     : characterRepresentation;
@@ -1226,11 +1235,13 @@ export function GenerateClient() {
         bodyType: charBodyType,
         isChild: charIsChild,
         images: charImages,
+        hasRealPhoto: charHasRealPhoto,
       },
     ]);
     setCharName("");
     setCharRole("");
     setCharIsChild(false);
+    setCharHasRealPhoto(false);
     setCharHeightCm("");
     setCharBodyType("standard");
     setCharAppearance("");
@@ -1351,7 +1362,7 @@ export function GenerateClient() {
     // them to the final clip only (the eating payoff, face visible).
     const effectiveCharacters = [
           ...characters,
-          ...(charImages.length > 0
+          ...(charImages.length > 0 || (charHasRealPhoto && charName.trim())
             ? [{
                 name: charName.trim() || "Main character",
                 role: charRole,
@@ -1360,6 +1371,7 @@ export function GenerateClient() {
                 bodyType: charBodyType,
                 isChild: charIsChild,
                 images: charImages,
+                hasRealPhoto: charHasRealPhoto,
               }]
             : []),
         ];
@@ -1376,9 +1388,17 @@ export function GenerateClient() {
         : []),
     ];
 
+    // Include both in-app uploads (legacy) AND Nano Flow "has real photo"
+    // declarations. A declared reference has no bytes here — the extension
+    // attaches the photo — but it must still be marked isReference so the
+    // prompt keeps that person's identity image-only.
     const rawCharacterImages: ImageReference[] = effectiveCharacters
-      .filter((c) => c.images.length > 0)
-      .map((c) => ({ name: c.name, images: c.images.slice(0, 2).map((i) => i.base64) }));
+      .filter((c) => c.images.length > 0 || c.hasRealPhoto)
+      .map((c) => ({
+        name: c.name,
+        images: c.images.slice(0, 2).map((i) => i.base64),
+        isReference: c.hasRealPhoto || c.images.length > 0,
+      }));
 
     const rawProductImages: ImageReference[] = effectiveProducts
       .filter((p) => p.images.length > 0)
@@ -3719,29 +3739,53 @@ export function GenerateClient() {
                     <Input value={charAppearance} onChange={(e) => setCharAppearance(e.target.value)} placeholder={L("charAppearance")} />
                   )}
                 </div>
-                <ImageUploader
-                  images={charImages}
-                  onChange={setCharImages}
-                  maxImages={2}
-                  label={
-                    lang === "vi"
-                      ? `Ảnh của ${charName.trim() || "nhân vật này"} (tối đa 2: chính diện + nghiêng)`
-                      : `Photos of ${charName.trim() || "this character"} (max 2: front + profile)`
-                  }
-                  hint={L("charPhotosHint")}
-                />
-                {charImages.length > 0 && (
-                  <p className="text-xs font-medium text-emerald-600">
+                {/* Nano Flow: real character photos are attached in the AutoFlow
+                    Reel extension, not here. The Storyboard app only DECLARES the
+                    character by name; tick "có ảnh thật" so the prompt keeps that
+                    person's identity image-only (no invented face) and the
+                    manifest marks a required reference slot for the extension. */}
+                {NANO_FLOW_TEXT_ONLY ? (
+                  <button
+                    type="button"
+                    onClick={() => setCharHasRealPhoto((v) => !v)}
+                    className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors ${
+                      charHasRealPhoto
+                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-700"
+                        : "border-input hover:border-primary/50"
+                    }`}
+                  >
+                    {charHasRealPhoto ? "✅" : "⬜"}{" "}
                     {lang === "vi"
-                      ? "Reference Lock đang bật: ảnh nhân vật sẽ được gửi trực tiếp vào model tạo hình, không chỉ chuyển thành mô tả chữ."
-                      : "Reference Lock is active: character photos go directly to the image model, not only into a text description."}
-                  </p>
-                )}
+                      ? "Nhân vật này CÓ ẢNH THẬT (sẽ gắn ở extension) — app không tự chế khuôn mặt"
+                      : "This character HAS a real photo (attached in the extension) — the app won't invent a face"}
+                  </button>
+                ) : (
+                  <>
+                    <ImageUploader
+                      images={charImages}
+                      onChange={setCharImages}
+                      maxImages={2}
+                      label={
+                        lang === "vi"
+                          ? `Ảnh của ${charName.trim() || "nhân vật này"} (tối đa 2: chính diện + nghiêng)`
+                          : `Photos of ${charName.trim() || "this character"} (max 2: front + profile)`
+                      }
+                      hint={L("charPhotosHint")}
+                    />
+                    {charImages.length > 0 && (
+                      <p className="text-xs font-medium text-emerald-600">
+                        {lang === "vi"
+                          ? "Reference Lock đang bật: ảnh nhân vật sẽ được gửi trực tiếp vào model tạo hình, không chỉ chuyển thành mô tả chữ."
+                          : "Reference Lock is active: character photos go directly to the image model, not only into a text description."}
+                      </p>
+                    )}
 
-                <CharacterStudio
-                  sourceImages={charImages}
-                  onApprove={(img) => setCharImages((prev) => [...prev, img].slice(0, 2))}
-                />
+                    <CharacterStudio
+                      sourceImages={charImages}
+                      onApprove={(img) => setCharImages((prev) => [...prev, img].slice(0, 2))}
+                    />
+                  </>
+                )}
 
                 <Button onClick={addCharacter} disabled={!charName.trim()} className="w-full gap-2">
                   ➕ {lang === "vi"
