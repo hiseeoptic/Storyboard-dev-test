@@ -1979,9 +1979,25 @@ export function GenerateClient() {
   // ─── Nano Flow: export the manifest for the AutoFlow Reel extension ───────
   const buildResultManifest = () => {
     if (!result) return null;
+    // Build the STRUCTURED Veo clips once and embed them in the manifest so each
+    // shot's video_prompt is the high-quality structured scene JSON (not a flat
+    // paragraph) and the keyframe prompt is composed from that same scene.
+    const veoJson = buildVeoJson(result.breakdown, {
+      aspectRatio: (genInput?.aspect_ratio as "16:9" | "9:16") ?? "9:16",
+      dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+      ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
+      hasLocationRef: (genInput?.background_images?.length ?? 0) > 0,
+      characterReferenceNames: (genInput?.character_images ?? [])
+        .filter((c) => (c.images?.length ?? 0) > 0 || c.isReference === true)
+        .map((c) => c.name),
+    });
+    const veoClips = Array.isArray((veoJson as { clips?: unknown[] }).clips)
+      ? ((veoJson as { clips: Array<Record<string, unknown>> }).clips)
+      : [];
     return buildNanoFlowManifest(result.breakdown, {
       aspectRatio: (genInput?.aspect_ratio as "16:9" | "9:16") ?? "9:16",
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+      veoClips,
     });
   };
 

@@ -123,6 +123,65 @@ test("every shot's storyboard_prompt is style-locked", () => {
   }
 });
 
+test("embeds the structured Veo clip as video_prompt and composes a rich keyframe from it", () => {
+  const bd = {
+    title: "Demo",
+    character_locks: [{ name: "Minh" }, { name: "Lan" }],
+    segments: [
+      {
+        segment_number: 1,
+        marketing_role: "hook",
+        first_frame_prompt: "A kitchen at dawn.",
+        full_prompt: "flat veo prose 1",
+        motion_prompt: "m1",
+        characters_in_scene: ["Minh", "Lan"],
+        environment_ref: "custom",
+      },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+
+  // One structured Veo clip (the shape buildVeoJson emits).
+  const veoClips = [
+    {
+      scene_id: "1",
+      visual_style: "warm cinematic, 50mm lens",
+      character_lock: {
+        CHAR_1: {
+          name: "Minh",
+          gender: "Male",
+          age: "male, ~32",
+          hair: "short black hair",
+          outfit_top: "grey cotton shirt",
+          outfit_bottom: "dark jeans",
+        },
+        CHAR_2: { name: "Lan", gender: "Female", hair: "long black hair", outfit_top: "cream blouse" },
+      },
+      background_lock: { setting: "A cozy kitchen at dawn", lighting: "soft window light" },
+      spatial_topology: { character_placement: "Minh at the counter, Lan by the table" },
+      scene_action: { start_state: "Minh pours tea while Lan watches." },
+    },
+  ] as Array<Record<string, unknown>>;
+
+  const m = buildNanoFlowManifest(bd, { veoClips });
+  const [s1] = m.shots;
+  assert.ok(s1);
+
+  // video_prompt is now the STRUCTURED clip object, not a flat string.
+  assert.equal(typeof s1.video_prompt, "object");
+  assert.equal((s1.video_prompt as Record<string, unknown>).scene_id, "1");
+  assert.ok((s1.video_prompt as Record<string, unknown>).character_lock);
+
+  // storyboard_prompt is composed from the clip: cast appearance, placement,
+  // composition + the photoreal style lock — not a one-line summary.
+  assert.match(s1.storyboard_prompt, /Minh \(Male/);
+  assert.match(s1.storyboard_prompt, /grey cotton shirt/);
+  assert.match(s1.storyboard_prompt, /Lan \(Female/);
+  assert.match(s1.storyboard_prompt, /Minh at the counter, Lan by the table/);
+  assert.match(s1.storyboard_prompt, /Minh pours tea while Lan watches/);
+  assert.match(s1.storyboard_prompt, /photorealistic/i);
+  assert.match(s1.storyboard_prompt, /NOT cartoon/);
+});
+
 test("keyframe carries the story-locked outfit (direction B) with wardrobe_state override", () => {
   // Direction B: an uploaded character's clothing is the generated context
   // outfit (never the reference photo), and text-only characters need it too —

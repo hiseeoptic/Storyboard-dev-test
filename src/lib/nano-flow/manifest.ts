@@ -19,6 +19,85 @@ export interface BuildNanoFlowManifestOptions {
   generatedAt?: string;
   /** Optional product reference names to declare as shared assets. */
   productNames?: string[];
+  /** The STRUCTURED Veo scene clips from buildVeoJson (one per segment, in
+   * order). When present, each shot's video_prompt carries the full structured
+   * clip (high-quality Veo input) instead of a flat prose paragraph, and the
+   * keyframe prompt is composed from that same structured scene so the image
+   * stays in sync with the video. */
+  veoClips?: Array<Record<string, unknown>>;
+}
+
+/** Extract a trimmed string field from an unknown clip sub-object. */
+function clipStr(v: unknown): string {
+  return typeof v === "string" ? v.trim() : "";
+}
+function clipObj(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+}
+
+// Generic scaffolding phrases buildVeoJson writes into empty lock fields — they
+// are instructions to Veo, not real appearance, so they must NOT leak into the
+// image prompt.
+const GENERIC_LOCK_VALUE =
+  /^(use |begin |perform |finish |match the attached|reference_image|context-appropriate everyday|only props|physically grounded|natural hands|cons=|see wardrobe_state|real individual hair strands|real skin with visible pores|none unless|unspecified$)/i;
+function meaningful(v: string): string {
+  return v && !GENERIC_LOCK_VALUE.test(v) ? v : "";
+}
+
+/**
+ * Compose a RICH keyframe (image) prompt from the STRUCTURED Veo clip so Nano
+ * Banana renders a keyframe faithful to the whole scene — cast appearance,
+ * wardrobe, placement, setting, composition and film look — instead of a
+ * one-line summary of the setting. Falls back to the raw scene text when no
+ * structured clip is available (e.g. unit tests).
+ */
+function buildKeyframePromptFromClip(
+  clip: Record<string, unknown> | undefined,
+  fallbackSceneText: string,
+  wardrobeClause: string
+): string {
+  if (!clip) return lockStyle(fallbackSceneText + wardrobeClause);
+
+  const bg = clipObj(clip.background_lock);
+  const setting = clipStr(bg.setting) || fallbackSceneText;
+  const scenery = clipStr(bg.scenery);
+  const lighting = clipStr(bg.lighting);
+  const startState = clipStr(clipObj(clip.scene_action).start_state);
+  const placement = clipStr(clipObj(clip.spatial_topology).character_placement);
+  const visualStyle = clipStr(clip.visual_style);
+
+  const locks = clipObj(clip.character_lock);
+  const people: string[] = [];
+  for (const key of Object.keys(locks)) {
+    const c = clipObj(locks[key]);
+    const name = clipStr(c.name);
+    if (!name) continue;
+    const bits = [
+      meaningful(clipStr(c.gender)),
+      meaningful(clipStr(c.age)),
+      meaningful(clipStr(c.body_build)),
+      meaningful(clipStr(c.hair)) ? `hair ${clipStr(c.hair)}` : "",
+      meaningful(clipStr(c.skin_or_fur_color)),
+      [clipStr(c.outfit_top), clipStr(c.outfit_bottom)].map(meaningful).filter(Boolean).join(", "),
+    ].filter(Boolean);
+    people.push(bits.length ? `${name} (${bits.join(", ")})` : name);
+  }
+
+  const base = [
+    visualStyle,
+    setting,
+    scenery && scenery !== setting ? scenery : "",
+    people.length ? `Cast: ${people.join("; ")}.` : "",
+    placement ? `Placement: ${placement}.` : "",
+    startState ? `Composition: ${startState}` : "",
+    lighting ? `Lighting: ${lighting}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return lockStyle((base || fallbackSceneText) + wardrobeClause);
 }
 
 /** Turn a display name into a stable ascii slug id (Vietnamese-aware). */
@@ -171,6 +250,9 @@ export function buildNanoFlowManifest(
       wardrobeParts.length > 0
         ? ` Wardrobe (story-locked, identical across shots, never copied from a reference photo): ${wardrobeParts.join("; ")}.`
         : "";
+    // The matching STRUCTURED Veo clip (same order as segments). Drives both the
+    // high-quality video payload and the keyframe prompt below.
+    const clip = opts.veoClips?.[i];
     const envRef = (seg.environment_ref ?? "").trim();
     const envIds = envRef && envRef !== "custom" ? [envRef] : [];
 
@@ -187,14 +269,20 @@ export function buildNanoFlowManifest(
       duration_seconds: seg.duration_seconds || 10,
       marketing_role: seg.marketing_role,
 
-      // Style-locked so the extension's nano banana yields a photoreal,
-      // cinematic keyframe faithful to the scene — never cartoon. See §6.
-      storyboard_prompt: lockStyle(
-        (seg.first_frame_prompt || seg.motion_prompt || "") + wardrobeClause
+      // RICH keyframe prompt built from the structured clip (cast appearance +
+      // wardrobe + placement + setting + composition + film look), style-locked
+      // so Nano Banana yields a photoreal keyframe faithful to the scene and in
+      // sync with the video — never a one-line summary, never cartoon. See §6.
+      storyboard_prompt: buildKeyframePromptFromClip(
+        clip,
+        seg.first_frame_prompt || seg.motion_prompt || "",
+        wardrobeClause
       ),
       image_refs,
 
-      video_prompt: (seg.full_prompt || seg.motion_prompt || "").trim(),
+      // STEP B video payload = the STRUCTURED Veo scene JSON (high quality);
+      // falls back to the flat prose prompt only when no structured clip exists.
+      video_prompt: clip ?? (seg.full_prompt || seg.motion_prompt || "").trim(),
       characters_in_scene: inScene,
       video_refs: {
         // DESIGN.md §6: keyframe = first frame; characters = identity ref;

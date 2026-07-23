@@ -58,8 +58,11 @@ export interface NanoFlowShot {
   image_refs?: NanoFlowRefSelector;
 
   // ─── STEP B: generate the video with Veo, using the STEP A image ───
-  /** Full Veo prompt written 100% by Storyboard. */
-  video_prompt: string;
+  /** STEP B video payload, written 100% by Storyboard. Normally the STRUCTURED
+   * Veo scene JSON (one clip object — the same shape as veo_prompts.json), which
+   * Veo/Flow parses far more reliably than a flat paragraph. A plain string is
+   * kept only as a legacy fallback when no structured clip is available. */
+  video_prompt: Record<string, unknown> | string;
   characters_in_scene?: string[];
   video_refs?: NanoFlowVideoRefSelector;
 
