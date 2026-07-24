@@ -171,15 +171,22 @@ test("embeds the structured Veo clip as video_prompt and composes a rich keyfram
   assert.equal((s1.video_prompt as Record<string, unknown>).scene_id, "1");
   assert.ok((s1.video_prompt as Record<string, unknown>).character_lock);
 
-  // storyboard_prompt is composed from the clip: cast appearance, placement,
-  // composition + the photoreal style lock — not a one-line summary.
-  assert.match(s1.storyboard_prompt, /Minh \(Male/);
-  assert.match(s1.storyboard_prompt, /grey cotton shirt/);
-  assert.match(s1.storyboard_prompt, /Lan \(Female/);
-  assert.match(s1.storyboard_prompt, /Minh at the counter, Lan by the table/);
-  assert.match(s1.storyboard_prompt, /Minh pours tea while Lan watches/);
-  assert.match(s1.storyboard_prompt, /photorealistic/i);
-  assert.match(s1.storyboard_prompt, /NOT cartoon/);
+  // storyboard_prompt is now a STRUCTURED (JSON) keyframe prompt composed from
+  // the clip: cast (appearance + wardrobe), placement, composition, a photoreal
+  // render note, the identity+wardrobe reference authority and a negative list.
+  const kf = JSON.parse(s1.storyboard_prompt) as Record<string, unknown>;
+  assert.equal(kf.type, "photoreal_keyframe");
+  const cast = kf.cast as Array<Record<string, string>>;
+  const minh = cast.find((c) => c.name === "Minh");
+  const lan = cast.find((c) => c.name === "Lan");
+  assert.ok(minh && lan);
+  assert.match(String(minh!.appearance), /Male/);
+  assert.match(String(minh!.wardrobe), /grey cotton shirt/);
+  assert.equal(kf.placement, "Minh at the counter, Lan by the table");
+  assert.equal(kf.composition, "Minh pours tea while Lan watches.");
+  assert.match(String(kf.render), /photorealistic/i);
+  assert.match(String(kf.negative), /NOT cartoon/);
+  assert.match(String(kf.reference_authority), /wardrobe sheet/i);
 });
 
 test("keyframe carries the story-locked outfit (direction B) with wardrobe_state override", () => {

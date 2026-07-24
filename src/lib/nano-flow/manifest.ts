@@ -51,6 +51,37 @@ function meaningful(v: string): string {
  * one-line summary of the setting. Falls back to the raw scene text when no
  * structured clip is available (e.g. unit tests).
  */
+// The photoreal render note baked into every structured keyframe prompt (the
+// JSON analogue of lockStyle's anchors) so Nano Banana never drifts to cartoon.
+const KEYFRAME_RENDER_NOTE =
+  "Photorealistic cinematic film still, shot on a professional cinema camera: " +
+  "natural realistic lighting, true-to-life skin and material textures, shallow " +
+  "depth of field, sharp focus, high dynamic range, professional colour grading, " +
+  "ultra-detailed — a real photograph.";
+const KEYFRAME_NEGATIVE =
+  "NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT CGI, NOT painting, " +
+  "NOT drawing, NOT sketch; no on-screen text, caption, watermark or logo; no extra, " +
+  "missing or fused fingers; no identity drift; the same character never duplicated in frame.";
+// IDENTITY + WARDROBE authority: the keyframe MUST follow the attached full-body
+// character reference (the wardrobe sheet) for BOTH face and outfit — this is the
+// clause the user asked for so the image obeys the reference, not a random outfit.
+const KEYFRAME_REFERENCE_AUTHORITY =
+  "For every character in cast: their face, hair and body build AND their FULL outfit " +
+  "must EXACTLY match that character's ATTACHED full-body character reference image " +
+  "(the wardrobe sheet) — copy the exact garments, colours and footwear; do NOT invent, " +
+  "restyle or swap clothing, and do NOT copy the reference's plain studio background. " +
+  "If a location photo is attached, stage the scene inside that real place. If a previous " +
+  "shot's keyframe is attached, keep the same characters, outfits, location, furniture and " +
+  "props consistent with it — only the action, pose and camera angle change.";
+
+/**
+ * Compose a STRUCTURED (JSON) keyframe image prompt from the Veo clip. Nano
+ * Banana yields far better, more faithful keyframes from a compact JSON scene
+ * than from a prose paragraph (user request), and JSON lets us pin the
+ * identity+wardrobe reference authority as its own field. Returns a JSON string
+ * ready for Flow's prompt box. Falls back to the prose style-lock only when no
+ * structured clip exists (e.g. unit tests without veoClips).
+ */
 function buildKeyframePromptFromClip(
   clip: Record<string, unknown> | undefined,
   fallbackSceneText: string,
@@ -65,39 +96,50 @@ function buildKeyframePromptFromClip(
   const startState = clipStr(clipObj(clip.scene_action).start_state);
   const placement = clipStr(clipObj(clip.spatial_topology).character_placement);
   const visualStyle = clipStr(clip.visual_style);
+  const cam = clipObj(clip.camera);
 
   const locks = clipObj(clip.character_lock);
-  const people: string[] = [];
+  const cast: Array<Record<string, string>> = [];
   for (const key of Object.keys(locks)) {
     const c = clipObj(locks[key]);
     const name = clipStr(c.name);
     if (!name) continue;
-    const bits = [
+    const appearance = [
       meaningful(clipStr(c.gender)),
       meaningful(clipStr(c.age)),
       meaningful(clipStr(c.body_build)),
       meaningful(clipStr(c.hair)) ? `hair ${clipStr(c.hair)}` : "",
       meaningful(clipStr(c.skin_or_fur_color)),
-      [clipStr(c.outfit_top), clipStr(c.outfit_bottom)].map(meaningful).filter(Boolean).join(", "),
-    ].filter(Boolean);
-    people.push(bits.length ? `${name} (${bits.join(", ")})` : name);
+    ].filter(Boolean).join(", ");
+    const wardrobe = [clipStr(c.outfit_top), clipStr(c.outfit_bottom)]
+      .map(meaningful).filter(Boolean).join(", ");
+    const entry: Record<string, string> = { name };
+    if (appearance) entry.appearance = appearance;
+    if (wardrobe) entry.wardrobe = wardrobe;
+    cast.push(entry);
   }
 
-  const base = [
-    visualStyle,
-    setting,
-    scenery && scenery !== setting ? scenery : "",
-    people.length ? `Cast: ${people.join("; ")}.` : "",
-    placement ? `Placement: ${placement}.` : "",
-    startState ? `Composition: ${startState}` : "",
-    lighting ? `Lighting: ${lighting}.` : "",
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+  const camera: Record<string, string> = {};
+  if (clipStr(cam.framing)) camera.framing = clipStr(cam.framing);
+  if (clipStr(cam.angle)) camera.angle = clipStr(cam.angle);
 
-  return lockStyle((base || fallbackSceneText) + wardrobeClause);
+  const prompt: Record<string, unknown> = {
+    type: "photoreal_keyframe",
+    render: KEYFRAME_RENDER_NOTE,
+    visual_style: visualStyle || undefined,
+    setting,
+    scenery: scenery && scenery !== setting ? scenery : undefined,
+    lighting: lighting || undefined,
+    cast,
+    placement: placement || undefined,
+    composition: startState || undefined,
+    camera: Object.keys(camera).length ? camera : undefined,
+    reference_authority: KEYFRAME_REFERENCE_AUTHORITY,
+    wardrobe_note: wardrobeClause ? wardrobeClause.trim() : undefined,
+    negative: KEYFRAME_NEGATIVE,
+  };
+  // JSON.stringify drops the undefined-valued keys, leaving a clean payload.
+  return JSON.stringify(prompt);
 }
 
 /** Turn a display name into a stable ascii slug id (Vietnamese-aware). */

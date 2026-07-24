@@ -48,6 +48,7 @@ import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
+import { wardrobeOptions } from "@/lib/nano-flow/wardrobe-catalog";
 import {
   NANO_FLOW_MESSAGE_SOURCE,
   NANO_FLOW_MESSAGE_TYPE,
@@ -2349,7 +2350,17 @@ export function GenerateClient() {
                       <label className="text-xs font-medium text-muted-foreground">
                         {lang === "vi" ? "Trang phục" : "Costume"}
                       </label>
-                      <Input value={c.costume ?? ""} onChange={(e) => updateChar(i, "costume", e.target.value)} />
+                      <Select
+                        value=""
+                        onChange={(e) => { if (e.target.value) updateChar(i, "costume", e.target.value); }}
+                        options={wardrobeOptions(c.gender, c.gender_age, (c as { is_child?: boolean }).is_child).map((o) => ({ value: o.value, label: o.label }))}
+                        placeholder={lang === "vi" ? "Chọn bộ trang phục…" : "Pick an outfit…"}
+                      />
+                      <Input
+                        value={c.costume ?? ""}
+                        onChange={(e) => updateChar(i, "costume", e.target.value)}
+                        placeholder={lang === "vi" ? "hoặc tự nhập trang phục" : "or type a costume"}
+                      />
                     </div>
                   </div>
                   <div className="space-y-1">
