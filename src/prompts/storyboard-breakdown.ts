@@ -2375,9 +2375,19 @@ export function buildVeoJson(
       .split(/[,;]\s*/)
       .map((part) => part.trim())
       .filter(Boolean);
+    // Placeholder text like "context-appropriate top" made Veo re-invent a new
+    // outfit per clip (5 clips = 5 wardrobes). Last-resort fallbacks now ORDER a
+    // concrete pick that stays identical; when a top exists but no bottom was
+    // listed, the bottom is tied to that same locked outfit instead of floating.
     return {
-      top: parts[0] || "context-appropriate everyday top locked once for this story",
-      bottom: parts.slice(1).join(", ") || "context-appropriate everyday bottom locked once for this story",
+      top:
+        parts[0] ||
+        "PICK one concrete everyday top from the approved location/weather/activity NOW and keep it pixel-identical in every clip — never re-invent per clip",
+      bottom:
+        parts.slice(1).join(", ") ||
+        (parts[0]
+          ? `one fixed matching bottom completing the locked outfit ("${parts[0]}"), identical in every clip`
+          : "PICK one concrete everyday bottom from the approved location/weather/activity NOW and keep it pixel-identical in every clip — never re-invent per clip"),
     };
   };
   const cameraParts = (cameraText: string) => {
@@ -2745,7 +2755,7 @@ export function buildVeoJson(
       camera: {
         framing: revolvingDoorCameraMovement ? "MS" : camera.framing,
         angle: camera.angle,
-        movement: `${scrub(cameraMovement)}. One smooth move or hold; no cuts or separate camera clock.`,
+        movement: `${scrub(cameraMovement)}. One smooth move or hold; no cuts or separate camera clock. PACING SAFETY VALVE: pace everything calmly across the FULL clip at real human speed — NEVER rush, whip, jerk or fast-forward a move or an action to catch up with the plan; if a move or beat cannot happen calmly within its time window, make it SMALLER or simply HOLD the current framing (a still, well-composed frame beats a hurried one). The camera settles and holds on whoever is speaking and only drifts during silent gaps between lines.`,
         focus: VEO_CAMERA_FOCUS_RULE,
       },
       scene_action: {

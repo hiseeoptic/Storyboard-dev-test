@@ -113,6 +113,25 @@ export function slugify(name: string): string {
     .replace(/_{2,}/g, "_");
 }
 
+/**
+ * Nano Flow runs image-to-video: the generated keyframe IS the first frame the
+ * clip animates from. So for the VIDEO step the START (and END) frame image is
+ * the single authority for wardrobe, hairstyle and the set — never a character
+ * reference photo (those governed only the IMAGE step). Patch the structured
+ * clip's output_rules so Veo follows the keyframe's outfit exactly.
+ */
+export function withKeyframeAuthority(
+  clip: Record<string, unknown>
+): Record<string, unknown> {
+  const rules =
+    clip.output_rules && typeof clip.output_rules === "object"
+      ? { ...(clip.output_rules as Record<string, unknown>) }
+      : {};
+  rules.reference_priority =
+    "START-FRAME AUTHORITY: this clip is generated image-to-video from an attached start frame (and possibly an end frame). That frame is the SINGLE source of truth for each character's outfit, hairstyle, grooming, props in hand and the location's layout/furniture/lighting — continue them EXACTLY as shown; never restyle wardrobe or hair away from the start frame, and never import clothing from any other reference. Character identity (face) also continues from the start frame.";
+  return { ...clip, output_rules: rules };
+}
+
 /** Prettify an environment archetype id ("misty_mountain_ridge_dawn") into a
  * human label ("Misty mountain ridge dawn"). */
 function humanizeEnvId(id: string): string {
@@ -282,7 +301,10 @@ export function buildNanoFlowManifest(
 
       // STEP B video payload = the STRUCTURED Veo scene JSON (high quality);
       // falls back to the flat prose prompt only when no structured clip exists.
-      video_prompt: clip ?? (seg.full_prompt || seg.motion_prompt || "").trim(),
+      // KEYFRAME AUTHORITY (Nano Flow §6): the clip is animated FROM the
+      // generated keyframe, so the start frame — not any uploaded photo — is
+      // the wardrobe/hair/set authority. Patch reference_priority accordingly.
+      video_prompt: clip ? withKeyframeAuthority(clip) : (seg.full_prompt || seg.motion_prompt || "").trim(),
       characters_in_scene: inScene,
       video_refs: {
         // DESIGN.md §6: keyframe = first frame; characters = identity ref;
