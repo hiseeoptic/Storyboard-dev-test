@@ -1212,7 +1212,9 @@ export function GenerateClient() {
   const [visualInterpretation, setVisualInterpretation] = useState<VisualInterpretation>("auto");
   const [characterRepresentation, setCharacterRepresentation] = useState<CharacterRepresentation>("auto");
   const [directingProfile, setDirectingProfile] = useState<DirectingProfileId>("auto");
-  const [imageQuality, setImageQuality] = useState<ImageQuality>("standard");
+  // Fixed to "standard": the quality picker UI was removed (text-only Nano Flow
+  // — the extension generates images for free), but the input contract keeps it.
+  const [imageQuality] = useState<ImageQuality>("standard");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   // Expression heads in each board's character-reference strip (0 = let Veo act
   // the emotion from the prompt; 2-3 = include a small fixed set).
@@ -4549,41 +4551,15 @@ export function GenerateClient() {
                 </div>
               </div>
 
-              {/* Image quality */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{L("imageQuality")}</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setImageQuality("standard")}
-                    className={`rounded-lg border-2 p-3 text-center text-xs font-medium transition ${
-                      imageQuality === "standard"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-muted text-muted-foreground hover:border-primary/40"
-                    }`}
-                  >
-                    {L("qualityStandard")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setImageQuality("pro")}
-                    className={`rounded-lg border-2 p-3 text-center text-xs font-medium transition ${
-                      imageQuality === "pro"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-muted text-muted-foreground hover:border-primary/40"
-                    }`}
-                  >
-                    {L("qualityPro")}
-                  </button>
-                </div>
-                <p className="text-xs text-muted-foreground">{L("qualityHint")}</p>
-              </div>
+              {/* Image quality selector removed — Nano Flow is text-only: images
+                  are generated downstream by the AutoFlow Reel extension (free
+                  nano banana in Google Flow), so paid image quality is moot. */}
 
               {/* Summary */}
               <div className="rounded-lg border bg-muted/50 p-4 text-sm space-y-1">
                 <p className="font-medium">{L("summary")}</p>
                 <p className="text-muted-foreground">
-                  <strong>{segmentCount}</strong> {L("segments")} (~{segmentCount * 10}s) · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong> · <strong>{imageQuality === "pro" ? "Pro" : "Standard"}</strong>
+                  <strong>{segmentCount}</strong> {L("segments")} (~{segmentCount * 10}s) · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong>
                   {characters.length > 0 && <> · {characters.length} {L("characters")}</>}
                   {products.length > 0 && <> · {products.length} {L("products")}</>}
                   {backgrounds.length > 0 && <> · {backgrounds.length} {L("locations")}</>}
