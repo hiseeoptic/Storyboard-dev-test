@@ -665,12 +665,12 @@ export async function generateScript(
           timeoutMs: boundedTimeoutMs(timing, 45_000, "Gemini script generation"),
         });
       } else {
-        // GPT-5-mini: strong creative writing at ~1/5 the price of gpt-4o.
+        // GPT-5.6 Sol handles the quality-first creative script-writing stage.
         // GPT-5-series models take `max_completion_tokens` (NOT `max_tokens`)
         // and only support the default temperature — sending either legacy
         // param 400s the request. Overridable via OPENAI_SCRIPT_MODEL.
         const openai = getOpenAIClient();
-        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5-mini";
+        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5.6-sol";
         const isGpt5 = scriptModel.startsWith("gpt-5") || scriptModel.startsWith("o");
         const completion = await openai.chat.completions.create(
           {
