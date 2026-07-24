@@ -191,7 +191,10 @@ test("embeds the structured Veo clip as video_prompt and composes a rich keyfram
   assert.equal(kf.composition, "Minh pours tea while Lan watches.");
   assert.match(String(kf.render), /photorealistic/i);
   assert.match(String(kf.negative), /NOT cartoon/);
+  // Anti-blur/noise guard so chained keyframes don't come back hazy (scene-2 bug).
+  assert.match(String(kf.negative), /no blur/i);
   assert.match(String(kf.reference_authority), /wardrobe sheet/i);
+  assert.match(String(kf.reference_authority), /sharp focus/i);
 
   // Each cast member carries the identity-only lock (attached ref = face only,
   // clothing comes from the story wardrobe) — ported from the clip's

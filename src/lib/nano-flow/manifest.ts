@@ -61,7 +61,10 @@ const KEYFRAME_RENDER_NOTE =
 const KEYFRAME_NEGATIVE =
   "NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT CGI, NOT painting, " +
   "NOT drawing, NOT sketch; no on-screen text, caption, watermark or logo; no extra, " +
-  "missing or fused fingers; no identity drift; the same character never duplicated in frame.";
+  "missing or fused fingers; no identity drift; the same character never duplicated in frame; " +
+  "no blur, no motion blur, no out-of-focus or hazy subject, no soft-focus mush, no smeared " +
+  "or ghosted edges, no low-resolution or upscaled blur, no compression artefacts or grainy " +
+  "noise — the frame is crisp, sharp and clean edge to edge.";
 // IDENTITY + WARDROBE authority: the keyframe MUST follow the attached full-body
 // character reference (the wardrobe sheet) for BOTH face and outfit — this is the
 // clause the user asked for so the image obeys the reference, not a random outfit.
@@ -72,7 +75,10 @@ const KEYFRAME_REFERENCE_AUTHORITY =
   "restyle or swap clothing, and do NOT copy the reference's plain studio background. " +
   "If a location photo is attached, stage the scene inside that real place. If a previous " +
   "shot's keyframe is attached, keep the same characters, outfits, location, furniture and " +
-  "props consistent with it — only the action, pose and camera angle change.";
+  "props consistent with it — only the action, pose and camera angle change. Treat any " +
+  "attached previous keyframe as a CONTINUITY reference for identity and layout only: render " +
+  "THIS frame as a brand-new, full-resolution photograph in sharp focus — never blur, soften, " +
+  "haze or blend it toward the attached references.";
 // Per-character IDENTITY lock ported from the Veo clip's reference_image_lock: the
 // attached character reference governs identity ONLY (face, body, hair) — never its
 // clothing, which is the story-locked wardrobe. This is what "hard-locks" the
