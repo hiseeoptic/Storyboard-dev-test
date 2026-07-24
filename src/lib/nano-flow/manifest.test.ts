@@ -156,8 +156,13 @@ test("embeds the structured Veo clip as video_prompt and composes a rich keyfram
         },
         CHAR_2: { name: "Lan", gender: "Female", hair: "long black hair", outfit_top: "cream blouse" },
       },
-      background_lock: { setting: "A cozy kitchen at dawn", lighting: "soft window light" },
-      spatial_topology: { character_placement: "Minh at the counter, Lan by the table" },
+      background_lock: { setting: "A cozy kitchen at dawn", lighting: "soft window light", props: "a kettle and two cups" },
+      spatial_topology: {
+        character_placement: "Minh at the counter, Lan by the table",
+        zone_order: "door -> counter -> table",
+        fixed_architecture: "counter and table fixed, no crossing",
+        invariants: "Freeze this map for the whole clip.",
+      },
       scene_action: { start_state: "Minh pours tea while Lan watches." },
     },
   ] as Array<Record<string, unknown>>;
@@ -187,6 +192,21 @@ test("embeds the structured Veo clip as video_prompt and composes a rich keyfram
   assert.match(String(kf.render), /photorealistic/i);
   assert.match(String(kf.negative), /NOT cartoon/);
   assert.match(String(kf.reference_authority), /wardrobe sheet/i);
+
+  // Each cast member carries the identity-only lock (attached ref = face only,
+  // clothing comes from the story wardrobe) — ported from the clip's
+  // reference_image_lock so the uploaded face reference is hard-locked.
+  assert.match(String(minh!.identity_lock), /identity ONLY/);
+  assert.match(String(lan!.identity_lock), /Do NOT copy clothing/i);
+
+  // The clip's fixed-geometry map is carried into the IMAGE prompt so set
+  // elements stay put across shots, plus an explicit set-continuity rule and
+  // the scene props.
+  const topo = kf.spatial_topology as Record<string, string>;
+  assert.equal(topo.zone_order, "door -> counter -> table");
+  assert.match(String(topo.fixed_architecture), /fixed/);
+  assert.match(String(kf.set_continuity), /SET CONTINUITY/);
+  assert.match(String(kf.props), /kettle/);
 });
 
 test("keyframe carries the story-locked outfit (direction B) with wardrobe_state override", () => {

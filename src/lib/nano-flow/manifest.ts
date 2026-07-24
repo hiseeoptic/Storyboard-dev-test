@@ -73,6 +73,29 @@ const KEYFRAME_REFERENCE_AUTHORITY =
   "If a location photo is attached, stage the scene inside that real place. If a previous " +
   "shot's keyframe is attached, keep the same characters, outfits, location, furniture and " +
   "props consistent with it — only the action, pose and camera angle change.";
+// Per-character IDENTITY lock ported from the Veo clip's reference_image_lock: the
+// attached character reference governs identity ONLY (face, body, hair) — never its
+// clothing, which is the story-locked wardrobe. This is what "hard-locks" the
+// uploaded face reference so the keyframe stops re-inventing the person.
+const CAST_IDENTITY_LOCK =
+  "Use the attached reference for this character's identity ONLY — face, head shape, " +
+  "hair and body proportions must match it exactly. Do NOT copy clothing from the " +
+  "reference; wear the story-locked wardrobe stated here instead.";
+// SET / ELEMENT continuity rule (user request): the physical set is fixed across the
+// whole story. Every concrete element established in an earlier shot (awning, cart,
+// table, chairs, shelving, signage, spice trays…) must reappear in later shots in the
+// SAME place and layout — nothing is silently added, removed, merged or resized.
+// Only a change of camera angle may reveal further parts of the SAME space, and an
+// element may be absent only when genuinely occluded, out of frame or blurred by depth
+// of field — never restyled away.
+const SET_CONTINUITY_RULE =
+  "SET CONTINUITY: this location is a single fixed physical space shared by every shot. " +
+  "Keep all set elements, furniture, props, architecture and their layout IDENTICAL to " +
+  "how they were established in earlier shots — do not add, drop, merge, split or resize " +
+  "them (e.g. separate compartments stay separate, a cart stays a cart). An element may " +
+  "differ only if the new camera angle genuinely occludes it, pushes it out of frame or " +
+  "softens it in depth of field; a changed angle may also reveal further parts of the " +
+  "SAME room, consistent with the fixed geometry — never a different set.";
 
 /**
  * Compose a STRUCTURED (JSON) keyframe image prompt from the Veo clip. Nano
@@ -93,8 +116,10 @@ function buildKeyframePromptFromClip(
   const setting = clipStr(bg.setting) || fallbackSceneText;
   const scenery = clipStr(bg.scenery);
   const lighting = clipStr(bg.lighting);
+  const props = meaningful(clipStr(bg.props));
   const startState = clipStr(clipObj(clip.scene_action).start_state);
-  const placement = clipStr(clipObj(clip.spatial_topology).character_placement);
+  const topo = clipObj(clip.spatial_topology);
+  const placement = clipStr(topo.character_placement);
   const visualStyle = clipStr(clip.visual_style);
   const cam = clipObj(clip.camera);
 
@@ -116,6 +141,9 @@ function buildKeyframePromptFromClip(
     const entry: Record<string, string> = { name };
     if (appearance) entry.appearance = appearance;
     if (wardrobe) entry.wardrobe = wardrobe;
+    // Ported from the Veo clip's reference_image_lock — pins the attached face
+    // reference for identity only so the keyframe stops drifting the person.
+    entry.identity_lock = CAST_IDENTITY_LOCK;
     cast.push(entry);
   }
 
@@ -123,17 +151,30 @@ function buildKeyframePromptFromClip(
   if (clipStr(cam.framing)) camera.framing = clipStr(cam.framing);
   if (clipStr(cam.angle)) camera.angle = clipStr(cam.angle);
 
+  // The Veo clip's fixed-geometry map (zone order, immovable architecture, the
+  // freeze invariants). Carrying it into the IMAGE prompt is what keeps set
+  // elements in the same place across scene 1 → scene 2 (user request), instead
+  // of the background silently rearranging between shots.
+  const spatialTopology: Record<string, string> = {};
+  for (const k of ["zone_order", "fixed_architecture", "walkable_path", "invariants"]) {
+    const v = meaningful(clipStr(topo[k]));
+    if (v) spatialTopology[k] = v;
+  }
+
   const prompt: Record<string, unknown> = {
     type: "photoreal_keyframe",
     render: KEYFRAME_RENDER_NOTE,
     visual_style: visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
+    props: props || undefined,
     lighting: lighting || undefined,
     cast,
     placement: placement || undefined,
+    spatial_topology: Object.keys(spatialTopology).length ? spatialTopology : undefined,
     composition: startState || undefined,
     camera: Object.keys(camera).length ? camera : undefined,
+    set_continuity: SET_CONTINUITY_RULE,
     reference_authority: KEYFRAME_REFERENCE_AUTHORITY,
     wardrobe_note: wardrobeClause ? wardrobeClause.trim() : undefined,
     negative: KEYFRAME_NEGATIVE,
