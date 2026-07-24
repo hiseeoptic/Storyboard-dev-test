@@ -23,6 +23,11 @@ export interface NanoFlowAsset {
   name: string;
   image: string | null;
   required?: boolean;
+  /** Characters only: the story-locked outfit for this character. The extension
+   * generates a full-body "wardrobe sheet" (identity photo + this outfit) once,
+   * then reuses it as the reference for every keyframe so face AND clothes stay
+   * identical across shots. Empty ⇒ extension derives an outfit from the scene. */
+  wardrobe?: string;
 }
 
 /** Which declared assets to attach at a given step (STEP A — image gen). */
@@ -69,6 +74,12 @@ export interface NanoFlowShot {
   dialogue?: string | null;
   voice?: string | null;
   beats?: NanoFlowBeat[];
+
+  /** A visibly motivated wardrobe change starting at this shot (rain, shower,
+   * change of clothes): { "CharacterName": "new outfit" }. The extension
+   * regenerates that character's full-body wardrobe sheet with the new outfit
+   * and uses it from this shot onward. Omit when the outfit is unchanged. */
+  wardrobe_change?: Record<string, string> | null;
 }
 
 export interface NanoFlowProject {

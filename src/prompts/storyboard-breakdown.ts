@@ -2375,19 +2375,20 @@ export function buildVeoJson(
       .split(/[,;]\s*/)
       .map((part) => part.trim())
       .filter(Boolean);
-    // Placeholder text like "context-appropriate top" made Veo re-invent a new
-    // outfit per clip (5 clips = 5 wardrobes). Last-resort fallbacks now ORDER a
-    // concrete pick that stays identical; when a top exists but no bottom was
-    // listed, the bottom is tied to that same locked outfit instead of floating.
+    // Last-resort fallbacks must read like an ACTUAL garment (they surface in
+    // the manifest / prompt), not like a shouted instruction — earlier text such
+    // as "PICK one concrete everyday top … NOW" leaked verbatim and looked
+    // ridiculous. costume is expected to be filled upstream; when it is not, we
+    // emit a plain, concrete, neutral outfit that stays consistent across clips.
     return {
       top:
         parts[0] ||
-        "PICK one concrete everyday top from the approved location/weather/activity NOW and keep it pixel-identical in every clip — never re-invent per clip",
+        "a plain solid-colour short-sleeve everyday top, kept identical in every clip",
       bottom:
         parts.slice(1).join(", ") ||
         (parts[0]
-          ? `one fixed matching bottom completing the locked outfit ("${parts[0]}"), identical in every clip`
-          : "PICK one concrete everyday bottom from the approved location/weather/activity NOW and keep it pixel-identical in every clip — never re-invent per clip"),
+          ? `a plain matching pair of trousers completing the locked outfit, kept identical in every clip`
+          : "plain dark everyday trousers, kept identical in every clip"),
     };
   };
   const cameraParts = (cameraText: string) => {

@@ -224,3 +224,45 @@ test("keyframe carries the story-locked outfit (direction B) with wardrobe_state
   assert.match(s2.storyboard_prompt, /Lan in beige raincoat over the blouse/);
   assert.doesNotMatch(s2.storyboard_prompt, /cream linen blouse/);
 });
+
+test("character assets carry the story-locked wardrobe; a change emits wardrobe_change", () => {
+  const bd = {
+    title: "Wardrobe sheet",
+    character_locks: [
+      { name: "Lan", costume: "cream linen blouse, navy trousers" },
+      { name: "Minh", costume: "grey tee, dark jeans" },
+    ],
+    segments: [
+      {
+        segment_number: 1,
+        characters_in_scene: ["Lan", "Minh"],
+        environment_ref: "custom",
+        first_frame_prompt: "A cafe.",
+        motion_prompt: "m",
+        full_prompt: "v1",
+      },
+      {
+        segment_number: 2,
+        characters_in_scene: ["Lan"],
+        environment_ref: "custom",
+        first_frame_prompt: "Rain outside.",
+        motion_prompt: "m",
+        full_prompt: "v2",
+        wardrobe_state: [{ character: "Lan", outfit: "beige raincoat over the blouse" }],
+      },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd);
+  // Each character asset is stamped with its base outfit → the extension builds
+  // one full-body wardrobe sheet per character and reuses it for every keyframe.
+  const lan = (m.assets.characters ?? []).find((c) => c.name === "Lan");
+  const minh = (m.assets.characters ?? []).find((c) => c.name === "Minh");
+  assert.equal(lan?.wardrobe, "cream linen blouse, navy trousers");
+  assert.equal(minh?.wardrobe, "grey tee, dark jeans");
+  const [s1, s2] = m.shots;
+  assert.ok(s1 && s2);
+  // No change on shot 1 → wardrobe_change is null.
+  assert.equal(s1.wardrobe_change, null);
+  // A motivated change on shot 2 → the extension regenerates Lan's sheet.
+  assert.deepEqual(s2.wardrobe_change, { Lan: "beige raincoat over the blouse" });
+});

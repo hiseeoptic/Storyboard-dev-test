@@ -246,6 +246,13 @@ export function buildNanoFlowManifest(
       baseCostumeByName.set(name.toLowerCase(), (lock.costume ?? "").trim());
     }
   }
+  // Stamp each character asset with its story-locked base outfit so the extension
+  // can build one full-body wardrobe sheet per character and reuse it for every
+  // keyframe (face + clothes identical across shots).
+  for (const c of characters) {
+    const outfit = baseCostumeByName.get(c.name.trim().toLowerCase());
+    if (outfit) c.wardrobe = outfit;
+  }
 
   // ── Shots ──
   const shots: NanoFlowShot[] = segments.map((seg, i) => {
@@ -269,6 +276,17 @@ export function buildNanoFlowManifest(
       wardrobeParts.length > 0
         ? ` Wardrobe (story-locked, identical across shots, never copied from a reference photo): ${wardrobeParts.join("; ")}.`
         : "";
+    // A wardrobe_state override that differs from the character's base outfit is
+    // a real change of clothes → tell the extension to regenerate that
+    // character's full-body sheet with the new outfit from this shot onward.
+    const wardrobeChange: Record<string, string> = {};
+    for (const n of inScene) {
+      const key = (n ?? "").trim().toLowerCase();
+      const override = wardrobeOverride.get(key);
+      if (override && override !== baseCostumeByName.get(key)) {
+        wardrobeChange[(n ?? "").trim()] = override;
+      }
+    }
     // The matching STRUCTURED Veo clip (same order as segments). Drives both the
     // high-quality video payload and the keyframe prompt below.
     const clip = opts.veoClips?.[i];
@@ -318,6 +336,7 @@ export function buildNanoFlowManifest(
       dialogue: seg.dialogue ?? null,
       voice: null,
       beats: (seg.beats ?? []).map((b) => ({ beat: b.beat, camera: b.camera })),
+      wardrobe_change: Object.keys(wardrobeChange).length ? wardrobeChange : null,
     };
   });
 

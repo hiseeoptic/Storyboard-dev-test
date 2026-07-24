@@ -238,17 +238,34 @@ Nếu bạn nạp bối cảnh như một **ảnh thứ hai** ngang hàng keyfra
 
 **Kết luận ngắn:** *keyframe = frame đầu (luôn); nhân vật = reference-entity (nên bật); bối cảnh = tắt (đã trong keyframe); sản phẩm = chỉ bật khi cần nét logo.* Đây là mặc định an toàn nhất và Storyboard sẽ sinh `video_refs` theo đúng quy tắc này.
 
-### 6.1. Khóa phong cách (chống ra ảnh hoạt hình)
+### 6.1. Nguyên tắc cắt cảnh: 1 shot = 1 cú máy = 1 keyframe
 
-**Vấn đề thực tế:** khi `storyboard_prompt` mô tả cảnh nhưng **không khóa phong cách render**, nano banana của Flow dễ "trôi" sang **hoạt hình / anime / minh hoạ 3D** — dù kịch bản là người thật. Extension nạp thẳng `storyboard_prompt` làm prompt ảnh, nên chất lượng đầu ra phụ thuộc 100% vào nội dung prompt này.
+Keyframe **không gánh cả 10s** — nó chỉ là **khung hình đầu tiên**; diễn biến do `video_prompt` điều khiển (Veo tạo chuyển động). Quy tắc:
+- **Nhiều nhân vật (2–4):** nằm chung trong 1 keyframe (như ảnh chụp nhóm); mỗi người 1 ảnh ref khóa mặt. Nhân vật *đi vào giữa cảnh* → nên tách shot riêng.
+- **Nhiều khuôn hình/góc (tường → cửa sổ → tivi):** hoặc dùng keyframe **rộng bao trọn** rồi camera đi bên trong, **hoặc cắt thành nhiều shot** (mỗi cú máy 1 keyframe, 3–10s). KHÔNG để camera lia sang vùng chưa có trong keyframe (Veo sẽ bịa, dễ sai).
+- **10s không cứng:** app cắt kịch bản sao cho mỗi shot tả được bằng 1 khung đầu.
+- **Ảnh storyboard nhiều ô** chỉ để người xem duyệt — KHÔNG bao giờ đưa vào Veo.
 
-**Giải pháp:** `buildNanoFlowManifest` bọc **mọi** `storyboard_prompt` bằng một **khóa phong cách cứng** (`lockStyle` trong `src/lib/nano-flow/manifest.ts`):
-- **Giữ nguyên câu mô tả cảnh** (bám đúng kịch bản) ở giữa — không viết lại, không đổi nội dung cảnh.
-- **Thêm mỏ neo photoreal/cinematic**: *"Photorealistic cinematic film still… shot on a professional cinema camera, natural realistic lighting, true-to-life textures, shallow depth of field, professional color grading, ultra-detailed."*
-- **Thêm phủ định cứng**: *"Strictly photorealistic — NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT CGI, NOT painting, NOT drawing, NOT sketch."*
-- **Idempotent:** nếu prompt gốc đã có "photoreal" và "NOT cartoon" thì không thêm lại → tránh nhồi trùng.
+### 6.2. Khung ĐẦU + khung CUỐI (start_end_frame) cho shot có "biến đổi"
 
-→ Kết quả: mỗi shot cho **1 keyframe photoreal, điện ảnh, đúng cảnh**; hết tình trạng ra hoạt hình.
+Với shot cần diễn biến rõ (đứng dậy → đi tới cửa sổ…), manifest khai thêm **`end_storyboard_prompt`**. Khi có:
+1. Nano tạo **2 ảnh**: khung đầu (`storyboard_prompt`) + khung cuối (`end_storyboard_prompt`), **cùng bộ ref** (cùng cảnh/nhân vật), đặt tên `"<shot>"` và `"<shot> (end)"`.
+2. Video chạy mode **`start_end_frame`** (`video:batchAsyncGenerateVideoStartAndEndImage`): `startImage` = khung đầu, `endImage` = khung cuối → **Veo nội suy chuyển động ở giữa**.
+3. Shot không khai `end_storyboard_prompt` → chạy `start_frame` 1 keyframe như thường.
+
+Map an toàn theo `mediaId` từng shot (đầu + cuối riêng), **không đoán theo gallery** → không đẩy nhầm ảnh.
+
+### 6.3. Ảnh TOÀN THÂN nhân vật (wardrobe sheet) — khóa mặt + trang phục
+
+Vấn đề cũ: 5 cảnh ra 5 bộ quần áo khác nhau, và cách "nhét keyframe trước rồi ra lệnh đổi" gây lỗi. Cách đúng:
+
+1. **Trước** khi tạo keyframe cảnh, mỗi nhân vật được tạo **1 ảnh toàn thân** (head-to-shoes, nền studio xám) mặc **đúng trang phục kịch bản** (`assets.characters[].wardrobe` do Storyboard khóa), dựng từ **ảnh nhận dạng** người dùng nạp (khóa mặt/tóc/vóc dáng). Ảnh này gọi là *wardrobe sheet*.
+2. Wardrobe sheet **thay** ảnh chân dung gốc làm **ref cho mọi keyframe** → mặt **và** quần áo đồng nhất tuyệt đối across shots. Sheet chỉ tạo **1 lần/nhân vật** rồi cache dùng lại.
+3. Khi shot khai **`wardrobe_change`** = `{ "Tên": "trang phục mới" }` (ướt mưa, thay đồ…), extension **tạo lại** sheet của nhân vật đó với bộ đồ mới và dùng **từ shot đó trở đi**.
+4. `wardrobe` rỗng → extension tự suy trang phục hợp bối cảnh (từ `sceneHint`). Sheet lỗi (không phải hết quota) → tự lùi về ảnh gốc.
+5. **Hết quota** (`USER_QUOTA_REACHED`/`RESOURCE_EXHAUSTED`) → **dừng cả loạt** với thông báo rõ "hết quota hôm nay" thay vì để từng shot fail rải rác.
+
+Chaining (nối keyframe trước làm ref liên tục) vẫn giữ để khớp bối cảnh/đạo cụ giữa các cảnh; wardrobe sheet lo phần danh tính + trang phục.
 
 ---
 
@@ -286,9 +303,14 @@ Thứ tự này để **luôn có bản chạy được** và **2 người làm 
 - **M0 — Khung & an toàn (xong trong tài liệu này):** nhánh dev 2 repo, backup (main = production), schema + ví dụ manifest, tài liệu thiết kế. ✅
 - **M1 — Storyboard xuất manifest:** §4.1 + §4.2 (buildNanoFlowManifest + nút export/tải file). ✅ **XONG (Claude)** — `src/types/nano-flow.ts`, `src/lib/nano-flow/manifest.ts` (+ test `manifest.test.ts`, 6/6 pass, output đã validate khớp `manifest.schema.json`), và 2 nút "Tải .nanoflow.json" / "Gửi sang Extension" trong `generate-client.tsx`. Còn lại của §4 (cờ `skip_paid_images`) nằm ở M7.
 - **M2 — Extension nạp manifest:** §5.1 (import + render hàng đợi shot + nạp ảnh assets). ✅ **XONG (Claude)** — module thuần `nano_manifest.js` (parse/validate/toQueue/missingImages/load) + test `nano_manifest.test.js` (7/7 pass trên `manifest.example.json`); UI trong `sidepanel.html`/`sidepanel.js`: section "⚡ Nano Flow (beta)" với nút Nạp manifest (file), listener nhận **push trực tiếp** từ Storyboard AI (origin allowlist), khôi phục khi mở lại panel, và render hàng đợi shot. *Còn lại của §5.1: cho người dùng nạp ảnh thật vào các `assets` có `image=null` (nút upload per-asset) — làm cùng M3.*
-- **M3 — Tạo ảnh Nano Banana từng shot:** §5.2 (vòng lặp MODE→Nano→prompt→ref→tạo). *Kiểm thử 1 shot.*
+- **M3 — Tạo ảnh Nano Banana từng shot:** §5.2. ✅ **ĐÃ RÁP LIVE (Claude) — chờ user test trên Flow.** Grounded 100% từ trace Flow thật user cung cấp:
+  - `inject.js`: `batchGenerateImages(pid,{prompt,aspect,model,imageInputs})` → `POST /v1/projects/{pid}/flowMedia:batchGenerateImages` (reCAPTCHA `IMAGE_GENERATION`, `imageModelName:"GEM_PIX_2"`, `structuredPrompt`, `seed`, `imageInputs`) → trả `media[0].name` (mediaId) + `workflowId`. `renameWorkflow(pid,workflowId,name)` → `PATCH /v1/flowWorkflows/{workflowId}` `metadata.displayName`. `genNanoImages(d)`: vòng lặp upload ref → tạo ảnh → đặt tên → trả mediaId.
+  - `content_script.js`: case `GEN_NANO_IMAGES` → `__afNanoImages`; relay `nanoImagesDone` → panel.
+  - `sidepanel.js`: nút "🍌 Tạo ảnh Nano (thật)" → gửi queue; nhận mediaId, lưu vào `item.generated`, hiển thị 🍌✅.
+  - ⚠️ **Cần xác nhận khi test:** (1) shape `imageInputs` cho ảnh ref (hiện đoán `[{mediaId}]`; text-only đã xác nhận chạy); (2) model `GEM_PIX_2` = Nano Banana Pro. Nếu ref chưa vào đúng, user gửi 1 trace tạo ảnh CÓ ref là chỉnh ngay.
+  - Planner + dry-run: `nano_pipeline.js` + test 5/5 (giữ nguyên).
 - **M4 — Tóm & đặt tên ảnh vừa tạo:** §5.2 bước 5-6 (theo `mediaId`). *Kiểm thử: tên đúng thứ tự, không lẫn.*
-- **M5 — Tạo video từ ảnh đó:** §5.3 (keyframe = first frame + nhân vật = entity). *Kiểm thử theo §6.*
+- **M5 — Tạo video từ ảnh đó:** §5.3 (keyframe = first frame + nhân vật = reference). ✅ **ĐÃ RÁP LIVE (Claude) — chờ user test.** `genNanoVideos` trong `inject.js` (mode `start_frame` → `video:batchAsyncGenerateVideoStartImage`, keyframe = `startImage`, nhân vật = `referenceImages`, `video_prompt` = text; fallback CHỈ keyframe nếu ref bị từ chối; đặt tên video theo tên shot), case `GEN_NANO_VIDEOS` + relay `NANO_VIDEOS_DONE` trong `content_script.js`, nút "🎬 Tạo video" + chọn model/độ dài Veo + `runNanoVideos`/`applyNanoVideoResults` trong `sidepanel.js`. Theo đúng §6: bối cảnh/sản phẩm KHÔNG attach lại (đã trong keyframe). *Kiểm thử theo §6.*
 - **M6 — Chạy chuỗi 3-5 shot → rồi mở rộng.** Tinh chỉnh quota, retry, trạng thái.
 - **M7 — Bỏ render ảnh trả phí ở Storyboard:** §4.3 (cờ `skip_paid_images`). ✅ **XONG phần chính (Claude)** — cờ `NANO_FLOW_TEXT_ONLY` trong `generate-client.tsx`: (a) `runBoards` KHÔNG gọi `generateBoardImage` (bỏ chi phí Gemini bảng tổng); (b) ẩn toàn bộ thẻ ảnh ở màn kết quả (character sheet, bảng tổng, thumbnail, khung ảnh + nút Redo/keyframe từng segment). Giữ lại: kịch bản, prompt từng shot + nút Copy, card Xuất Nano Flow, JSON, social posts. `next build` pass. *Còn tùy chọn: dọn nút ZIP ảnh nếu muốn.*
 - **M8 — Đóng gói bản DEV extension + nhãn/tách storage:** §5.4.
@@ -313,3 +335,7 @@ Thứ tự này để **luôn có bản chạy được** và **2 người làm 
 - **2026-07-22 — M2 xong (Claude):** Extension nạp & hiển thị manifest (`nano_manifest.js` + test + UI Nano Flow trong side panel). Không đổi schema. Bước tiếp theo: **M3** (extension tạo ảnh Nano Banana từng shot) — đây là phần đụng DOM/API Flow, khó nhất; nên để Claude làm hoặc review kỹ nếu Codex làm. Prompt giao việc ở §10.
 - **2026-07-22 — Gỡ tải ảnh ở form Storyboard (Claude):** Theo yêu cầu, bỏ toàn bộ widget tải ảnh (ảnh nhân vật + CharacterStudio, ảnh món/nguyên liệu cooking, ảnh sản phẩm, ảnh bối cảnh) khỏi `generate-client.tsx`; **giữ ô nhập mô tả chữ + ô chọn** vì storyboard vẫn cần dữ liệu này để viết prompt. Ảnh tham chiếu từ nay nạp bên extension (Nano Banana). `next build` pass.
 - **2026-07-22 — M7 phần chính xong (Claude):** Cờ `NANO_FLOW_TEXT_ONLY = true` — tắt tạo ảnh trả phí (Gemini) trong luồng `/generate` và ẩn mọi thẻ ảnh ở màn kết quả. Storyboard giờ chỉ xuất chữ + prompt + manifest. Muốn khôi phục hành vi cũ: đặt cờ = false.
+- **2026-07-22 — Chuyển sang commit thẳng `main` (theo yêu cầu user):** repo `storyboard-dev-test` là bản dự án của user (deploy `hiseeoptic-storyboard-ai.vercel.app`), nên từ đây commit thẳng lên `main` cả 2 repo, không dùng nhánh phụ.
+- **2026-07-22 — M3 planner + dry-run (Claude):** `nano_pipeline.js` + test (5/5) + nút "Chạy thử (dry-run)".
+- **2026-07-22 — M3 LIVE (Claude):** User cung cấp trace Flow thật → ráp `batchGenerateImages` + `renameWorkflow` + `genNanoImages` trong `inject.js`, case `GEN_NANO_IMAGES` + relay trong `content_script.js`, nút "🍌 Tạo ảnh Nano (thật)" + nhận mediaId trong `sidepanel.js`. Endpoint: `flowMedia:batchGenerateImages` (model GEM_PIX_2), đổi tên qua `flowWorkflows` PATCH. Chờ user test; cần xác nhận shape `imageInputs` cho ảnh ref.
+- **2026-07-22 — M5 LIVE (Claude):** Dựng bước tạo VIDEO từ keyframe. `genNanoVideos` trong `inject.js` tái dùng đường `start_frame` đã chạy 200 (`video:batchAsyncGenerateVideoStartImage`, `videoModelKey` Veo 3.1): keyframe = `startImage`, nhân vật = `referenceImages` (`IMAGE_USAGE_TYPE_ASSET`), `video_prompt` (+ NO_TEXT_OVERLAY) = text, có fallback CHỈ keyframe nếu Flow từ chối ref, và đặt tên video theo tên shot. Case `GEN_NANO_VIDEOS` + relay `NANO_VIDEOS_DONE` trong `content_script.js`; nút "🎬 Tạo video" + chọn model/độ dài Veo + `runNanoVideos`/`applyNanoVideoResults` trong `sidepanel.js`. Chỉ chạy shot đã có `generated.mediaId`; §6: KHÔNG attach lại bối cảnh/sản phẩm.

@@ -56,7 +56,8 @@
         "id":       { "type": "string", "description": "Stable id referenced by shots, e.g. char_lan" },
         "name":     { "type": "string", "description": "Human label, e.g. Lan" },
         "image":    { "type": ["string", "null"], "description": "data: URI or null (user attaches later in extension)" },
-        "required": { "type": "boolean", "default": false }
+        "required": { "type": "boolean", "default": false },
+        "wardrobe": { "type": "string", "description": "Characters only — the story-locked outfit. The extension builds one full-body wardrobe sheet (identity photo + this outfit) and reuses it as the reference for every keyframe so face AND clothes stay identical. Empty ⇒ extension derives an outfit from the scene." }
       }
     },
 
@@ -107,7 +108,8 @@
         "marketing_role":  { "type": "string", "enum": ["hook", "problem", "solution", "body", "cta"] },
 
         "storyboard_prompt": { "type": "string", "description": "STEP A — prompt (written 100% by Storyboard) to generate the storyboard/keyframe image with Nano Banana." },
-        "image_refs":        { "$ref": "#/definitions/refSelector", "description": "STEP A — which assets feed the image generation." },
+        "end_storyboard_prompt": { "type": "string", "description": "STEP A2 (optional) — prompt for the END keyframe of a transform shot. When present, the video uses start_end_frame mode: Veo interpolates start→end. Omit for a normal single-keyframe shot." },
+        "image_refs":        { "$ref": "#/definitions/refSelector", "description": "STEP A — which assets feed the image generation (shared by start + end keyframes)." },
 
         "video_prompt":         { "type": ["string", "object"], "description": "STEP B — full Veo prompt (written 100% by Storyboard). Either flat prose (string) or the structured Veo clip JSON (object); the extension stringifies objects into Flow's prompt box." },
         "characters_in_scene":  { "type": "array", "items": { "type": "string" }, "description": "Exact character names on screen (mirrors Storyboard VideoSegment.characters_in_scene)." },
@@ -115,7 +117,8 @@
 
         "dialogue": { "type": ["string", "null"] },
         "voice":    { "type": ["string", "null"], "description": "Maps to the extension voice list (auto/achernar/achird/...)." },
-        "beats":    { "type": "array", "items": { "$ref": "#/definitions/beat" } }
+        "beats":    { "type": "array", "items": { "$ref": "#/definitions/beat" } },
+        "wardrobe_change": { "type": ["object", "null"], "additionalProperties": { "type": "string" }, "description": "A visibly motivated change of clothes starting at this shot: { \"CharacterName\": \"new outfit\" }. The extension regenerates that character's full-body wardrobe sheet with the new outfit and uses it from this shot onward. Omit/null when unchanged." }
       }
     }
   }
