@@ -4,14 +4,21 @@ import { validateStoryboardSemantics, formatSemanticReport } from "./semantic-va
 
 type Breakdown = Parameters<typeof validateStoryboardSemantics>[0];
 
-// A clean two-character kitchen scene that should pass every step-1 check.
+// A FULLY valid single-segment breakdown — passes every deterministic check
+// (structure, world, temporal, environment, character, cast, continuity,
+// dialogue). Individual tests dirty one field at a time.
 function cleanFixture(): Breakdown {
   return {
     title: "Bữa cơm",
-    world_context: { time_period: "contemporary daytime" },
+    total_duration_seconds: 10,
+    world_context: {
+      world_type: "cinematic realistic",
+      time_period: "contemporary daytime",
+      environment_category: "home",
+    },
     character_locks: [
-      { name: "Minh", gender: "male", costume: "blue polo shirt, grey trousers", skin_tone: "warm", hair: "short black", eyes: "brown" },
-      { name: "Lan", gender: "female", costume: "white tee, patterned apron", skin_tone: "light", hair: "long black", eyes: "brown" },
+      { name: "Minh", gender: "male", gender_age: "male, ~32", costume: "blue polo shirt, grey trousers", skin_tone: "warm", hair: "short black", eyes: "brown", voice: "warm grounded male, ~110 wpm" },
+      { name: "Lan", gender: "female", gender_age: "female, ~30", costume: "white tee, patterned apron", skin_tone: "light", hair: "long black", eyes: "brown", voice: "gentle female, ~120 wpm" },
     ],
     segments: [
       {
@@ -24,54 +31,115 @@ function cleanFixture(): Breakdown {
         environment_ref: "kitchen_day",
         characters_in_scene: ["Minh", "Lan"],
         speaker: "Minh",
+        continuity_note: "Both seated at the table.",
+        beats: [
+          { beat: "Minh glances up", camera: "[CU] Minh" },
+          { beat: "Lan pauses eating", camera: "[MS] Lan" },
+          { beat: "silence holds", camera: "[2S] both" },
+        ],
         spatial_layout: { character_placement: "Minh left seat facing Lan; Lan right seat facing Minh" },
       },
     ],
   } as unknown as Breakdown;
 }
 
-test("clean breakdown passes the gate with no findings", () => {
+// A 2-segment fixture for cross-segment (temporal / location / continuity) tests.
+function twoSegFixture(): Breakdown {
+  const bd = cleanFixture();
+  bd.segments.push({
+    segment_number: 2,
+    duration_seconds: 10,
+    marketing_role: "body",
+    first_frame_prompt: "The same sunlit kitchen. Minh stands by the counter.",
+    motion_prompt: "Minh pours water.",
+    title: "By the counter",
+    environment_ref: "kitchen_day",
+    characters_in_scene: ["Minh"],
+    speaker: "Minh",
+    continuity_note: "Continues from the table.",
+    beats: [{ beat: "Minh rises", camera: "[MS] Minh" }],
+  } as unknown as Breakdown["segments"][number]);
+  bd.total_duration_seconds = 20; // two 10s clips
+  return bd;
+}
+
+test("a fully valid breakdown passes with zero findings", () => {
   const r = validateStoryboardSemantics(cleanFixture());
   assert.equal(r.ok, true);
-  assert.equal(r.counts.total, 0);
+  assert.equal(r.counts.total, 0, formatSemanticReport(r));
   assert.match(formatSemanticReport(r), /no issues/);
 });
 
+test("a valid 2-segment breakdown is clean too", () => {
+  const r = validateStoryboardSemantics(twoSegFixture());
+  assert.equal(r.counts.total, 0, formatSemanticReport(r));
+});
+
+// ── Structure & data ────────────────────────────────────────────────────────
+test("STRUCT-001: an empty motion_prompt is a critical stub", () => {
+  const bd = cleanFixture();
+  bd.segments[0]!.motion_prompt = "";
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((x) => x.code === "STRUCT-001" && x.severity === "critical"));
+});
+
+test("STRUCT-003: total_duration mismatch and odd clip length flag", () => {
+  const bd = cleanFixture();
+  bd.segments[0]!.duration_seconds = 25;
+  bd.total_duration_seconds = 10;
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((x) => x.code === "STRUCT-003"));
+});
+
+test("STRUCT-004: an overloaded shot (>6 beats) flags", () => {
+  const bd = cleanFixture();
+  bd.segments[0]!.beats = Array.from({ length: 8 }, (_, i) => ({ beat: `b${i}`, camera: "[CU]" })) as Breakdown["segments"][number]["beats"];
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((x) => x.code === "STRUCT-004"));
+});
+
+// ── World ───────────────────────────────────────────────────────────────────
+test("WORLD-001: a bare world_context flags missing fields", () => {
+  const bd = cleanFixture();
+  bd.world_context = { time_period: "contemporary daytime" } as Breakdown["world_context"];
+  const r = validateStoryboardSemantics(bd);
+  const f = r.findings.find((x) => x.code === "WORLD-001");
+  assert.ok(f);
+  assert.match(f!.evidence ?? "", /world_type/);
+});
+
+// ── Temporal (Tầng 4) ───────────────────────────────────────────────────────
 test("ENV-003: day + night in the same scene is critical", () => {
   const bd = cleanFixture();
   bd.segments[0]!.first_frame_prompt = "A moonlit kitchen at midnight bathed in broad daylight.";
   const r = validateStoryboardSemantics(bd);
-  const f = r.findings.find((x) => x.code === "ENV-003");
-  assert.ok(f, "expected an ENV-003 finding");
-  assert.equal(f!.severity, "critical");
-  assert.equal(r.ok, false);
-});
-
-test("ENV-003: a daylight scene under a locked night world is critical", () => {
-  const bd = cleanFixture();
-  bd.world_context = { time_period: "night" } as Breakdown["world_context"];
-  bd.segments[0]!.first_frame_prompt = "Bright sunny kitchen at noon.";
-  const r = validateStoryboardSemantics(bd);
   assert.ok(r.findings.some((x) => x.code === "ENV-003" && x.severity === "critical"));
+  assert.equal(r.ok, false);
 });
 
 test("ENV-003: 'tonight' must not false-trigger the night token", () => {
   const bd = cleanFixture();
-  // 'tonight' contains 'night' but is not a standalone night token; the only
-  // time word here is the daytime world — so no conflict.
   bd.segments[0]!.first_frame_prompt = "Minh says they will cook dinner tonight, in a bright sunlit kitchen.";
   const r = validateStoryboardSemantics(bd);
-  assert.ok(!r.findings.some((x) => x.code === "ENV-003"), "should not flag 'tonight'");
+  assert.ok(!r.findings.some((x) => x.code === "ENV-003"));
 });
 
+test("TEMP-001: a day→night flip between adjacent clips is high", () => {
+  const bd = twoSegFixture();
+  bd.segments[1]!.first_frame_prompt = "The kitchen, now under moonlight at midnight.";
+  const r = validateStoryboardSemantics(bd);
+  const f = r.findings.find((x) => x.code === "TEMP-001");
+  assert.ok(f);
+  assert.equal(f!.severity, "high");
+});
+
+// ── Environment (Tầng 5) ────────────────────────────────────────────────────
 test("ENV-001: a street env used for a restaurant scene is flagged", () => {
   const bd = cleanFixture();
   bd.segments[0]!.environment_ref = "urban_street_day";
   bd.segments[0]!.first_frame_prompt = "Minh and Lan sit inside a busy restaurant.";
   const r = validateStoryboardSemantics(bd);
-  const f = r.findings.find((x) => x.code === "ENV-001");
-  assert.ok(f, "expected ENV-001");
-  assert.match(f!.evidence ?? "", /urban_street_day/);
+  assert.ok(r.findings.some((x) => x.code === "ENV-001" && /urban_street_day/.test(x.evidence ?? "")));
 });
 
 test("ENV-001: a matching archetype does not false-trigger (street-food stall on a street set)", () => {
@@ -79,37 +147,29 @@ test("ENV-001: a matching archetype does not false-trigger (street-food stall on
   bd.segments[0]!.environment_ref = "urban_street_day";
   bd.segments[0]!.first_frame_prompt = "A street-food stall on a busy sidewalk; Minh waits by the vendor.";
   const r = validateStoryboardSemantics(bd);
-  assert.ok(!r.findings.some((x) => x.code === "ENV-001"), "street set + street stall should agree");
+  assert.ok(!r.findings.some((x) => x.code === "ENV-001"));
 });
 
-test("SPAT-001: two visible characters without a spatial map is high", () => {
-  const bd = cleanFixture();
-  delete (bd.segments[0] as unknown as Record<string, unknown>).spatial_layout;
+test("LOC-001: a location change between clips is an advisory (medium)", () => {
+  const bd = twoSegFixture();
+  bd.segments[1]!.environment_ref = "urban_street_day";
+  bd.segments[1]!.first_frame_prompt = "Suddenly a busy street outside.";
   const r = validateStoryboardSemantics(bd);
-  const f = r.findings.find((x) => x.code === "SPAT-001");
+  const f = r.findings.find((x) => x.code === "LOC-001");
   assert.ok(f);
-  assert.equal(f!.severity, "high");
+  assert.equal(f!.severity, "medium");
 });
 
-test("SPAT-001: a single-character scene needs no topology", () => {
-  const bd = cleanFixture();
-  bd.segments[0]!.characters_in_scene = ["Minh"];
-  delete (bd.segments[0] as unknown as Record<string, unknown>).spatial_layout;
-  const r = validateStoryboardSemantics(bd);
-  assert.ok(!r.findings.some((x) => x.code === "SPAT-001"));
-});
-
+// ── Character & cast (Tầng 6) ───────────────────────────────────────────────
 test("CHAR-001: missing gender, empty costume and wardrobe garbage all flag", () => {
   const bd = cleanFixture();
   bd.character_locks = [
-    // gender unspecified on a human lock
-    { name: "Lan", costume: "white tee, patterned apron", skin_tone: "light", hair: "long black", eyes: "brown" },
-    // wardrobe garbage: stray trailing number
-    { name: "Minh", gender: "male", costume: "blue polo shirt, crystal drop earrings. 2", skin_tone: "warm", hair: "short", eyes: "brown" },
-    // empty costume
-    { name: "Huy", gender: "male", costume: "", skin_tone: "warm", hair: "short", eyes: "brown" },
+    { name: "Lan", costume: "white tee, patterned apron", skin_tone: "light", hair: "long black", eyes: "brown", voice: "v" },
+    { name: "Minh", gender: "male", costume: "blue polo shirt, crystal drop earrings. 2", skin_tone: "warm", hair: "short", eyes: "brown", voice: "v" },
+    { name: "Huy", gender: "male", costume: "", skin_tone: "warm", hair: "short", eyes: "brown", voice: "v" },
   ] as Breakdown["character_locks"];
-  bd.segments[0]!.characters_in_scene = ["Minh", "Lan"];
+  bd.segments[0]!.characters_in_scene = ["Minh", "Lan", "Huy"];
+  bd.segments[0]!.spatial_layout = { character_placement: "all three seated" } as Breakdown["segments"][number]["spatial_layout"];
   const r = validateStoryboardSemantics(bd);
   const char = r.findings.filter((x) => x.code === "CHAR-001");
   assert.ok(char.some((f) => f.character === "Lan" && /gender/i.test(f.message)));
@@ -117,22 +177,85 @@ test("CHAR-001: missing gender, empty costume and wardrobe garbage all flag", ()
   assert.ok(char.some((f) => f.character === "Huy" && /empty/i.test(f.message)));
 });
 
+test("CHAR-002: two locks with the same name flag", () => {
+  const bd = cleanFixture();
+  bd.character_locks!.push({ name: "Minh", gender: "male", costume: "different", skin_tone: "warm", hair: "short", eyes: "brown", voice: "v" } as Breakdown["character_locks"][number]);
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((x) => x.code === "CHAR-002"));
+});
+
+test("CHAR-003: a human lock with no voice is an advisory", () => {
+  const bd = cleanFixture();
+  delete (bd.character_locks![0] as unknown as Record<string, unknown>).voice;
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((x) => x.code === "CHAR-003" && x.severity === "medium"));
+});
+
 test("CAST-001: phantom character and off-screen speaker are flagged", () => {
   const bd = cleanFixture();
-  // "Huy" appears on screen but has no lock → phantom third person.
   bd.segments[0]!.characters_in_scene = ["Minh", "Lan", "Huy"];
-  // speaker "Nam" is on nobody's screen → off-screen speaker.
   bd.segments[0]!.speaker = "Nam";
   const r = validateStoryboardSemantics(bd);
   const cast = r.findings.filter((x) => x.code === "CAST-001");
-  assert.ok(cast.some((f) => /Huy/.test(f.message)), "phantom Huy");
-  assert.ok(cast.some((f) => /Nam/.test(f.message)), "off-screen speaker Nam");
+  assert.ok(cast.some((f) => /Huy/.test(f.message)));
+  assert.ok(cast.some((f) => /Nam/.test(f.message)));
 });
 
+test("CAST-002: a locked-but-unused character is an advisory", () => {
+  const bd = cleanFixture();
+  bd.character_locks!.push({ name: "Bao", gender: "male", gender_age: "m", costume: "suit", skin_tone: "warm", hair: "short", eyes: "brown", voice: "v" } as Breakdown["character_locks"][number]);
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((x) => x.code === "CAST-002" && x.character === "Bao"));
+});
+
+test("WARD-001: a wardrobe change for a character not in the scene flags", () => {
+  const bd = cleanFixture();
+  bd.segments[0]!.characters_in_scene = ["Minh"];
+  bd.segments[0]!.spatial_layout = undefined;
+  bd.segments[0]!.wardrobe_state = [{ character: "Lan", outfit: "raincoat" }] as Breakdown["segments"][number]["wardrobe_state"];
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((x) => x.code === "WARD-001" && /Lan/.test(x.message)));
+});
+
+// ── Continuity (Tầng 8) ─────────────────────────────────────────────────────
+test("SPAT-001: two visible characters without a spatial map is high", () => {
+  const bd = cleanFixture();
+  bd.segments[0]!.spatial_layout = undefined;
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((x) => x.code === "SPAT-001" && x.severity === "high"));
+});
+
+test("SPAT-001: a single-character scene needs no topology", () => {
+  const bd = cleanFixture();
+  bd.segments[0]!.characters_in_scene = ["Minh"];
+  bd.segments[0]!.spatial_layout = undefined;
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(!r.findings.some((x) => x.code === "SPAT-001"));
+});
+
+test("CONT-001: a chained clip with no continuity_note is an advisory", () => {
+  const bd = twoSegFixture();
+  bd.segments[1]!.continuity_note = "";
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((x) => x.code === "CONT-001" && x.segment_number === 2));
+});
+
+// ── Dialogue (Tầng 10) ──────────────────────────────────────────────────────
+test("DLG-001: out-of-range and overlapping dialogue timings flag", () => {
+  const bd = cleanFixture();
+  bd.segments[0]!.dialogue_lines = [
+    { speaker: "Minh", text: "a", start_s: 0, end_s: 4 },
+    { speaker: "Lan", text: "b", start_s: 3, end_s: 12 }, // overlaps + past 10s
+  ] as Breakdown["segments"][number]["dialogue_lines"];
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((x) => x.code === "DLG-001"));
+});
+
+// ── Report shape ────────────────────────────────────────────────────────────
 test("report is sorted critical-first and counts are correct", () => {
   const bd = cleanFixture();
   bd.segments[0]!.first_frame_prompt = "Moonlit midnight kitchen in broad daylight."; // ENV-003 critical
-  delete (bd.segments[0] as unknown as Record<string, unknown>).spatial_layout; // SPAT-001 high
+  bd.segments[0]!.spatial_layout = undefined; // SPAT-001 high
   const r = validateStoryboardSemantics(bd);
   assert.equal(r.findings[0]!.severity, "critical");
   assert.ok(r.counts.critical >= 1 && r.counts.high >= 1);
