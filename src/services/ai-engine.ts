@@ -18,6 +18,10 @@ import {
   type ResolvedVideoContext,
 } from "@/lib/video-context";
 import { sceneIntentSchema } from "@/lib/scene-intent";
+import {
+  validateStoryboardSemantics,
+  formatSemanticReport,
+} from "@/lib/validation";
 import type {
   AIProvider,
   StoryboardGenerationInput,
@@ -1021,6 +1025,24 @@ export async function generateStoryboardBreakdown(
           backdrop: "consistent single location for the whole segment",
           color_grade: "neutral Rec.709 grade, photoreal premium commercial",
         };
+      }
+
+      // TẦNG 10 — SEMANTIC VALIDATION GATE (report-only for now).
+      // Run the semantic checks over the fully-normalized breakdown and log any
+      // day/night, environment, topology, character or cast violations. This is
+      // NON-BLOCKING: it never alters or rejects the output yet — it gives us a
+      // measurable signal (and a regression harness) before we turn on
+      // fail-closed enforcement. See src/lib/validation/semantic-validator.ts.
+      try {
+        const semantic = validateStoryboardSemantics(parsed);
+        if (!semantic.ok) {
+          console.warn(
+            `[semantic-gate] "${parsed.title}" — ${semantic.summary}\n${formatSemanticReport(semantic)}`
+          );
+        }
+      } catch (gateErr) {
+        // A diagnostic must never break generation.
+        console.error("[semantic-gate] validator error (ignored):", gateErr);
       }
 
       return parsed;
