@@ -15,10 +15,10 @@ export type {
   ResolvedVideoContext,
 } from "./types";
 export { resolvedVideoContextSchema, VIDEO_CONTEXT_RESPONSE_SCHEMA } from "./schema";
+export { completeContextRealityProfile } from "./reality-fallback";
 export {
   contextFrameworkSystemDigest,
   buildContextAnalysisSystemPrompt,
   buildContextAnalysisUserPrompt,
 } from "./prompt";
 export { contextIrToWorldContext } from "./mapping";
-

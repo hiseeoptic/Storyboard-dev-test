@@ -14,6 +14,7 @@ import {
 import {
   buildContextAnalysisSystemPrompt,
   buildContextAnalysisUserPrompt,
+  completeContextRealityProfile,
   contextIrToWorldContext,
   resolvedVideoContextSchema,
   VIDEO_CONTEXT_RESPONSE_SCHEMA,
@@ -754,7 +755,16 @@ export async function analyzeVideoContext(
       }
 
       if (!rawContent) throw new Error(`Empty context response from ${provider}`);
-      const parsed = resolvedVideoContextSchema.safeParse(parseJsonResponse(rawContent));
+      const rawContext = parseJsonResponse(rawContent);
+      const completedContext = completeContextRealityProfile(rawContext, input);
+      if (completedContext.used_fallback) {
+        console.warn(
+          "[AI Engine] Context response omitted part or all of reality_profile; completed it deterministically from the approved creative route."
+        );
+      }
+      const parsed = resolvedVideoContextSchema.safeParse(
+        completedContext.payload
+      );
       if (!parsed.success) {
         const firstIssue = parsed.error.issues[0];
         throw new Error(

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ResolvedVideoContext } from "../video-context/types.ts";
+import { completeContextRealityProfile } from "../video-context/reality-fallback.ts";
 import { validateResolvedVideoContext } from "./context-validator.ts";
 
 function context(): ResolvedVideoContext {
@@ -124,4 +125,65 @@ test("parallel intercut needs at least two locked locations", () => {
   fixture.layers.motion_continuity.allowed_transition_modes.push("parallel_intercut");
   const report = validateResolvedVideoContext(fixture);
   assert.ok(report.findings.some((finding) => finding.code === "CTX-017"));
+});
+
+test("missing reality profile is completed as cinematic for uploaded people", () => {
+  const completed = completeContextRealityProfile(
+    { layers: { character: { cast_ids: ["Vợ", "Chồng"] } } },
+    {
+      story_idea: "Một đôi vợ chồng nói chuyện trong phòng khách.",
+      genre: "drama",
+      style: "anime",
+      scene_count: 6,
+      character_images: [
+        { name: "Vợ", images: ["data:image/jpeg;base64,AA"] },
+        { name: "Chồng", images: ["data:image/jpeg;base64,BB"] },
+      ],
+    }
+  );
+  const profile = (
+    completed.payload as { reality_profile: ResolvedVideoContext["reality_profile"] }
+  ).reality_profile;
+  assert.equal(completed.used_fallback, true);
+  assert.equal(profile.mode, "cinematic");
+  assert.equal(profile.fidelity, "E_cinematic_simulation");
+  assert.equal(profile.salience_policy.max_high_fidelity_entities_per_clip, 3);
+});
+
+test("missing reality profile preserves stylized and fantasy world modes", () => {
+  const stylized = completeContextRealityProfile(
+    { layers: {} },
+    {
+      story_idea: "A hand-drawn character walks through a paper city.",
+      genre: "animation",
+      style: "watercolor",
+      scene_count: 3,
+      character_representation: "illustrated_2d",
+    }
+  );
+  const fantasy = completeContextRealityProfile(
+    { layers: {} },
+    {
+      story_idea: "A dragon crosses an internally consistent magical world.",
+      genre: "fantasy",
+      style: "cinematic",
+      scene_count: 3,
+    }
+  );
+  assert.equal(
+    (
+      stylized.payload as {
+        reality_profile: ResolvedVideoContext["reality_profile"];
+      }
+    ).reality_profile.mode,
+    "stylized"
+  );
+  assert.equal(
+    (
+      fantasy.payload as {
+        reality_profile: ResolvedVideoContext["reality_profile"];
+      }
+    ).reality_profile.mode,
+    "fantasy_scifi_internal"
+  );
 });
