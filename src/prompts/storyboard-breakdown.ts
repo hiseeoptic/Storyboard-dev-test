@@ -2511,33 +2511,6 @@ export function buildVeoJson(
       )
       .replace(/\s{2,}/g, " ")
       .trim();
-  /** Keep background_lock about the set only; actor state belongs in scene_action. */
-  const extractBackgroundSetting = (
-    text: string | null | undefined,
-    characterNames: string[],
-    fallback: string
-  ) => {
-    const source = oneLine(cleanReferenceText(text));
-    const firstNameIndex = characterNames
-      .map((name) => source.search(new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}($|[^\\p{L}\\p{N}])`, "iu")))
-      .filter((index) => index > 0)
-      .sort((a, b) => a - b)[0];
-    if (typeof firstNameIndex === "number") {
-      const prefix = source.slice(0, firstNameIndex).replace(/[,:;\s]+$/g, "").trim();
-      if (prefix.length >= 12) return prefix;
-    }
-    const mentionsName = (part: string) =>
-      characterNames.some((name) => exactNameMentioned(part, name));
-    const leadingSetSentences: string[] = [];
-    for (const sentence of source.split(/(?<=[.!?])\s+/).map((part) => part.trim())) {
-      if (!sentence || mentionsName(sentence)) break;
-      // A sentence beginning with a pronoun is actor/action state, not the set.
-      if (/^(?:he|she|they|his|her|their|anh|cô|chị|em|họ)\b/iu.test(sentence)) break;
-      leadingSetSentences.push(sentence);
-    }
-    if (leadingSetSentences.length > 0) return oneLine(leadingSetSentences.join(" "));
-    return oneLine(fallback);
-  };
   const exactNameMentioned = (text: string, name: string) => {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     try {
@@ -2545,6 +2518,58 @@ export function buildVeoJson(
     } catch {
       return text.toLocaleLowerCase().includes(name.toLocaleLowerCase());
     }
+  };
+  /** Keep background_lock about the set only; actor state belongs in scene_action. */
+  const extractBackgroundSetting = (
+    text: string | null | undefined,
+    characterNames: string[],
+    fallbacks: Array<string | null | undefined>
+  ) => {
+    const staticPart = (candidate: string | null | undefined): string => {
+      const source = oneLine(cleanReferenceText(candidate));
+      if (!source) return "";
+      const firstNameIndex = characterNames
+        .map((name) =>
+          source.search(
+            new RegExp(
+              `(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}($|[^\\p{L}\\p{N}])`,
+              "iu"
+            )
+          )
+        )
+        .filter((index) => index >= 0)
+        .sort((a, b) => a - b)[0];
+      if (typeof firstNameIndex === "number") {
+        const prefix = source
+          .slice(0, firstNameIndex)
+          .replace(/[,:;\s]+$/g, "")
+          .trim();
+        // A cast-led sentence has no static prefix. Do not return it, and do
+        // not trust a fallback blindly: scene_bible.backdrop can contain the
+        // same model-generated action defect.
+        return prefix.length >= 12 ? prefix : "";
+      }
+      const leadingSetSentences: string[] = [];
+      for (const sentence of source
+        .split(/(?<=[.!?])\s+/)
+        .map((part) => part.trim())) {
+        if (!sentence) continue;
+        // A sentence beginning with a pronoun is actor/action state, not the set.
+        if (/^(?:he|she|they|his|her|their|anh|cô|chị|em|họ)\b/iu.test(sentence)) {
+          break;
+        }
+        leadingSetSentences.push(sentence);
+      }
+      return oneLine(leadingSetSentences.join(" "));
+    };
+
+    const primary = staticPart(text);
+    if (primary) return primary;
+    for (const fallback of fallbacks) {
+      const candidate = staticPart(fallback);
+      if (candidate) return candidate;
+    }
+    return "A fixed physical set matching the locked location, architecture, spatial anchors, materials and lighting";
   };
   const resolveClipCast = (seg: StoryboardGenerationOutput["segments"][number]): string[] => {
     if (Array.isArray(seg.characters_in_scene)) {
@@ -2693,12 +2718,52 @@ export function buildVeoJson(
       seg.scene_intent?.entry_exit?.exit_state,
       ...beats.flatMap((beat) => [beat.beat, beat.camera])
     );
+    const contextStaticSetting = contextLocation
+      ? [
+          contextLocation.description,
+          contextLocation.spatial_anchors.length > 0
+            ? `Spatial anchors: ${contextLocation.spatial_anchors.join(", ")}`
+            : "",
+          contextLocation.fixed_elements.length > 0
+            ? `Fixed elements: ${contextLocation.fixed_elements.join(", ")}`
+            : "",
+          contextLocation.lighting_motivation
+            ? `Motivated light: ${contextLocation.lighting_motivation}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("; ")
+      : "";
+    const catalogStaticSetting = env
+      ? [
+          env.display_name,
+          env.scale,
+          ...env.materials.map(
+            (material) =>
+              `${material.surface}: ${material.material}; ${material.physics}`
+          ),
+        ].join("; ")
+      : "";
+    // Use every locked project identity, not only characters_in_scene. A model
+    // omission in that per-clip list must never let another known character's
+    // action leak into the static image/video environment authority.
+    const knownCharacterNames = [
+      ...new Set([
+        ...locks.map((lock) => oneLine(lock.name)).filter(Boolean),
+        ...onScreen,
+      ]),
+    ];
     const backgroundSetting = softenIncidentalBagPressure(
       scrub(
         extractBackgroundSetting(
           seg.first_frame_prompt,
-          onScreen,
-          [env?.display_name, env?.scale, scrub(sb?.backdrop)].filter(Boolean).join("; ") || seg.title
+          knownCharacterNames,
+          [
+            contextStaticSetting,
+            catalogStaticSetting,
+            scrub(sb?.backdrop),
+            seg.title,
+          ]
         )
       ),
       incidentalBagPressure

@@ -47,6 +47,71 @@ test("uploaded references keep identity image-only while preserving contextual c
   assert.match(cleaned, /dark indigo jeans/i);
 });
 
+test("Veo JSON never treats a known character action as the static setting", () => {
+  const result = buildVeoJson({
+    character_locks: [
+      {
+        name: "Minh",
+        gender: "male",
+        is_child: false,
+        costume: "light blue shirt, dark trousers",
+        voice: "warm male timbre, natural F0 range 90-140 Hz, speaking rate 130 wpm",
+      },
+      {
+        name: "Lan",
+        gender: "female",
+        is_child: false,
+        costume: "cream blouse, dark trousers",
+        voice: "gentle female timbre, natural F0 range 170-230 Hz, speaking rate 140 wpm",
+      },
+    ],
+    context_ir: {
+      layers: {
+        environment: {
+          locations: [{
+            id: "home_living_room",
+            description: "A modest Vietnamese apartment living room at night",
+            spatial_anchors: ["sofa", "coffee table", "entry door"],
+            fixed_elements: ["warm ceiling lamp", "street-facing window"],
+            lighting_motivation: "warm practical ceiling light",
+            sound_bed: "quiet room tone and distant motorbikes",
+            reverb_profile: "short furnished-room decay",
+          }],
+        },
+      },
+    },
+    scene_bible: {
+      backdrop: "Lan stands in the living room, facing Minh",
+    },
+    segments: [{
+      segment_number: 3,
+      duration_seconds: 10,
+      title: "Lan waits",
+      marketing_role: "body",
+      beats: [{ beat: "Lan watches the water", camera: "medium eye-level" }],
+      first_frame_prompt: "Lan stands in the living room, facing Minh.",
+      motion_prompt: "Lan looks down at the glass of water.",
+      dialogue: "",
+      speaker: "",
+      dialogue_lines: [],
+      // Reproduce the production defect: Lan was omitted from this per-scene
+      // list even though she appears in the first-frame text.
+      characters_in_scene: ["Minh"],
+      environment_ref: "custom",
+      location_id: "home_living_room",
+      continuity_note: "Lan remains beside the coffee table.",
+    }],
+  }, {
+    aspectRatio: "9:16",
+    dialogueLanguage: "Vietnamese",
+  });
+
+  const setting = result.clips[0].background_lock.setting;
+  assert.match(setting, /apartment living room at night/i);
+  assert.match(setting, /sofa|coffee table/i);
+  assert.doesNotMatch(setting, /Lan|stands in|facing Minh/i);
+});
+
 test("Veo JSON keeps the stable structure with contextual outfits and local voice binding", () => {
   const breakdown = {
     character_locks: [
