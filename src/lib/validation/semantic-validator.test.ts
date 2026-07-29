@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { completeVoiceProfile } from "../laws/audioLaws.ts";
+import { normalizeProductionContracts } from "../storyboard/production-normalizer.ts";
 import { validateStoryboardSemantics, formatSemanticReport } from "./semantic-validator.ts";
 
 type Breakdown = Parameters<typeof validateStoryboardSemantics>[0];
@@ -352,6 +354,52 @@ test("continuous transition rejects an entity state jump before visible action",
   assert.ok(r.findings.some((finding) => finding.code === "STATE-005"));
 });
 
+test("continuous start state is inherited locally before the validator", () => {
+  const bd = addContextContracts(twoSegFixture());
+  bd.segments[1]!.location_id = "office";
+  bd.segments[1]!.transition_in = {
+    mode: "continuous",
+    from_location_id: "office",
+    to_location_id: "office",
+    time_relation: "immediately",
+    preserve: ["all physical state"],
+    reset: [],
+    reason: "same action",
+  };
+  bd.segments[1]!.continuity_mode = "continuous";
+  bd.segments[0]!.state_ledger = {
+    start: [{ entity_id: "cup", state: "cool", position: "table" }],
+    changes: [],
+    end: [{ entity_id: "cup", state: "cool", position: "table" }],
+  };
+  bd.segments[1]!.state_ledger = {
+    start: [
+      {
+        entity_id: "cup",
+        state: "cool",
+        position: "in Minh's hand",
+        holder: "Minh",
+      },
+    ],
+    changes: [],
+    end: [
+      {
+        entity_id: "cup",
+        state: "cool",
+        position: "in Minh's hand",
+        holder: "Minh",
+      },
+    ],
+  };
+  const normalized = normalizeProductionContracts(bd);
+  const report = validateStoryboardSemantics(bd);
+  assert.equal(normalized.continuous_start_entries_inherited, 1);
+  assert.equal(
+    report.findings.some((finding) => finding.code === "STATE-005"),
+    false
+  );
+});
+
 test("Schema 4.0 rejects a continuity_mode that disagrees with transition_in", () => {
   const bd = addContextContracts(twoSegFixture());
   bd.segments[1]!.continuity_mode = "continuous";
@@ -456,6 +504,58 @@ test("DLG-006: unnaturally compressed speech timing fails", () => {
   ];
   const report = validateStoryboardSemantics(bd);
   assert.ok(report.findings.some((finding) => finding.code === "DLG-006"));
+});
+
+test("single-Hz voice note is completed into one valid production profile", () => {
+  const completed = completeVoiceProfile(
+    "Vietnamese, gentle tone, 220 Hz, slightly humorous, speaking rate 140 wpm",
+    "female",
+    false
+  );
+  assert.match(completed, /185-235 Hz/i);
+  assert.match(completed, /\b\d{2,3}\s*wpm\b/i);
+
+  const bd = cleanFixture();
+  bd.character_locks[1]!.voice = completed;
+  bd.segments[0]!.dialogue_lines = [
+    {
+      speaker: "Lan",
+      delivery: "on_screen",
+      camera_beat: 2,
+      text: "Em hiểu rồi.",
+      start_s: 0,
+      end_s: 2,
+    },
+  ];
+  const report = validateStoryboardSemantics(bd);
+  assert.equal(
+    report.findings.some((finding) => finding.code === "DLG-004"),
+    false
+  );
+});
+
+test("an incomplete shared voice profile is reported once, not once per clip", () => {
+  const bd = twoSegFixture();
+  bd.character_locks[0]!.voice = "Vietnamese, natural timbre, 110 Hz, 130 wpm";
+  for (const segment of bd.segments) {
+    segment.dialogue_lines = [
+      {
+        speaker: "Minh",
+        delivery: "on_screen",
+        camera_beat: 1,
+        text: "Anh hiểu rồi.",
+        start_s: 0,
+        end_s: 2,
+      },
+    ];
+  }
+  const report = validateStoryboardSemantics(bd);
+  assert.equal(
+    report.findings.filter(
+      (finding) => finding.code === "DLG-004" && finding.character === "Minh"
+    ).length,
+    1
+  );
 });
 
 // ── Report shape ────────────────────────────────────────────────────────────

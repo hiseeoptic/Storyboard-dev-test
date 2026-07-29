@@ -32,3 +32,16 @@ test("valid user dialogue windows are preserved exactly", () => {
   ];
   assert.deepEqual(ensureDialogueClock(turns), turns);
 });
+
+test("valid but unnaturally fast dialogue windows are retimed locally", () => {
+  const turns = ensureDialogueClock([
+    {
+      speaker: "Lan",
+      text: "Một hai ba bốn năm sáu bảy tám chín mười",
+      start_s: 0,
+      end_s: 3,
+    },
+  ]);
+  assert.deepEqual(dialogueClockErrors(turns), []);
+  assert.ok(turns[0]!.end_s! > 3);
+});

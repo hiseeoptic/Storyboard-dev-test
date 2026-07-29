@@ -34,3 +34,67 @@ export function defaultVoiceFor(gender?: string, isChild?: boolean): string {
     return "native voice in the project's locked language and regional accent, warm clear female timbre, natural F0 185-235 Hz with small human variation, ~118 wpm, warm-sincere, restrained context-appropriate prosody";
   return "native voice in the project's locked language and regional accent, warm grounded male timbre, natural F0 95-130 Hz with small human variation, ~110 wpm, calm-sincere, restrained context-appropriate prosody";
 }
+
+const VOICE_RANGE = /(\d{2,3})\s*(?:-|–|—|to)\s*(\d{2,3})\s*hz/i;
+const VOICE_RATE = /\b\d{2,3}\s*wpm\b/i;
+const VOICE_TIMBRE =
+  /\b(?:timbre|voice|warm|bright|dark|breathy|clear|raspy|resonant|soft|deep|light|husky|nasal|trầm|ấm|sáng|khàn|mỏng|dày)\b/i;
+
+/**
+ * Complete a model-written voice note locally. A single pitch such as
+ * "220 Hz" is not a stable human voice identity; renderers need a natural F0
+ * range plus one speaking rate. Preserve the model's acting description, but
+ * replace incomplete/conflicting numeric fragments with the canonical
+ * gender/age-safe production lock. No model call is required.
+ */
+export function completeVoiceProfile(
+  profile?: string | null,
+  gender?: string,
+  isChild?: boolean
+): string {
+  const raw = (profile ?? "").trim();
+  const range = raw.match(VOICE_RANGE);
+  const singlePitch = raw.match(/(\d{2,3})\s*hz/i);
+  const inferredGender =
+    gender ??
+    (!isChild && singlePitch
+      ? Number(singlePitch[1]) >= 160
+        ? "female"
+        : "male"
+      : undefined);
+  const low = range ? Number(range[1]) : Number.NaN;
+  const high = range ? Number(range[2]) : Number.NaN;
+  const pitchConflict =
+    !!range &&
+    ((isChild && high < 200) ||
+      (!isChild && inferredGender === "male" && low >= 160) ||
+      (!isChild && inferredGender === "female" && high <= 160) ||
+      low >= high);
+  if (
+    raw &&
+    range &&
+    !pitchConflict &&
+    VOICE_RATE.test(raw) &&
+    VOICE_TIMBRE.test(raw)
+  ) {
+    return raw;
+  }
+
+  const actingDescription = raw
+    .replace(
+      /\b(?:natural\s+)?(?:f0|fundamental frequency|pitch)?\s*~?\d{2,3}\s*(?:-|–|—|to)\s*\d{2,3}\s*hz(?:\s+with\s+small\s+human\s+variation)?/gi,
+      ""
+    )
+    .replace(
+      /\b(?:natural\s+)?(?:f0|fundamental frequency|pitch)?\s*~?\d{2,3}\s*hz\b/gi,
+      ""
+    )
+    .replace(/\b(?:speaking\s+rate\s*)?~?\d{2,3}\s*wpm\b/gi, "")
+    .replace(/\s*[,;]\s*[,;]+/g, ", ")
+    .replace(/^[\s,;.-]+|[\s,;.-]+$/g, "")
+    .replace(/\s{2,}/g, " ");
+  const fallback = defaultVoiceFor(inferredGender, isChild);
+  return actingDescription
+    ? `${actingDescription}; ${fallback}`
+    : fallback;
+}

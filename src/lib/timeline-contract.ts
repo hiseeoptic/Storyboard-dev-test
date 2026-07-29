@@ -64,6 +64,11 @@ export function dialogueClockErrors(
     if (index > 0 && start < previousEnd) {
       errors.push(`turn ${index + 1} overlaps the previous turn`);
     }
+    const seconds = end - start;
+    const words = turn.text.trim().split(/\s+/).filter(Boolean).length;
+    if (seconds > 0 && (words / seconds) * 60 > 190) {
+      errors.push(`turn ${index + 1} exceeds 190 wpm`);
+    }
     previousEnd = Math.max(previousEnd, end);
   });
   return errors;

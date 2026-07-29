@@ -33,8 +33,10 @@ import {
 } from "@/lib/character-realism";
 import {
   dialogueClockErrors,
+  ensureDialogueClock,
   enforceSingleDialogueClock,
 } from "@/lib/timeline-contract";
+import { normalizeProductionContracts } from "@/lib/storyboard/production-normalizer";
 import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
@@ -282,10 +284,14 @@ function sanitizeUploadedCharacterSceneText(
       beat: clean(beat.beat) ?? beat.beat,
       camera: cleanContinuousTake(beat.camera) ?? beat.camera,
     }));
-    // An uploaded reference owns wardrobe/hair. A model-generated
-    // wardrobe_state entry for that person is therefore discarded entirely.
-    segment.wardrobe_state = segment.wardrobe_state?.filter(
-      (state) => !referenceNames.some((name) => name.toLowerCase() === state.character.trim().toLowerCase())
+    // The uploaded image owns identity/body/hair, not clothing. Keep a
+    // story-motivated wardrobe_state so a declared outfit change can remain
+    // consistent in every downstream board and video prompt, but discard a
+    // model-written hairstyle override for the referenced identity.
+    segment.wardrobe_state = segment.wardrobe_state?.map((state) =>
+      referenceNames.includes(state.character.trim().toLowerCase())
+        ? { ...state, hair: undefined }
+        : state
     );
     if (segment.scene_intent) {
       segment.scene_intent = cleanUnknown(segment.scene_intent) as typeof segment.scene_intent;
@@ -311,7 +317,7 @@ function sanitizeUploadedCharacterContext(
       character: {
         ...context.layers.character,
         identity_rules: [
-          "Uploaded named character images are the only appearance source; do not serialize or paraphrase face, skin, hair, eyebrows, eyelashes, body, age or wardrobe.",
+          "Uploaded named character images are the only identity/anatomy source; do not serialize or paraphrase face, skin, hair, eyebrows, eyelashes, body or age. Wardrobe is a separate story-owned lock: declare one concrete context-appropriate outfit and never copy clothing from the reference image.",
         ],
       },
     },
@@ -641,46 +647,10 @@ function normalizeDialogue(
     }
     turns = mergedTurns;
 
-    // Rebuild plausible sequential, non-overlapping windows within 10s whenever
-    // timing is missing, inconsistent, or no longer matches the text length —
-    // the user edits line TEXT in the preview without touching the old
-    // timings, which silently squeezes a long new line into a short window.
-    const paceMismatch = (t: { text: string; start_s?: number; end_s?: number }) => {
-      if (t.start_s == null || t.end_s == null) return false;
-      const dur = t.end_s - t.start_s;
-      const natural = Math.max(1.2, t.text.split(/\s+/).length * 0.42);
-      return dur < natural * 0.7 || dur > natural * 2;
-    };
-    const needsRetime =
-      turns.length > 0 &&
-      turns.some((t, i) => {
-        const prev = turns[i - 1];
-        return (
-          t.start_s == null ||
-          t.end_s == null ||
-          t.start_s < 0 ||
-          t.end_s <= t.start_s ||
-          t.end_s > 9.5 ||
-          (prev && prev.end_s != null && t.start_s! < prev.end_s) ||
-          paceMismatch(t)
-        );
-      });
-    if (needsRetime) {
-      // Budget each turn by its length (~0.42s/word) + a 0.4s beat, scaled to ≤9s.
-      const raw = turns.map((t) => Math.max(1.2, t.text.split(/\s+/).length * 0.42));
-      const gap = 0.4;
-      const total = raw.reduce((a, b) => a + b, 0) + gap * (turns.length - 1);
-      const scale = total > 9 ? 9 / total : 1;
-      let cursor = 0;
-      turns = turns.map((t, i) => {
-        const dur = raw[i]! * scale;
-        const start = Math.round(cursor * 10) / 10;
-        cursor += dur;
-        const end = Math.round(Math.min(cursor, 10) * 10) / 10;
-        cursor += gap * scale;
-        return { ...t, start_s: start, end_s: end };
-      });
-    }
+    // Use the same >190 wpm boundary as Layer A. Previously this normalizer
+    // preserved 200 wpm windows while the validator rejected them, forcing
+    // Layer C to spend two repair calls on a purely mechanical clock.
+    turns = ensureDialogueClock(turns, 10);
 
     // Bind every on-screen voice to one concrete storyboard camera beat. The
     // beat itself must name that speaker; otherwise the compiled prompt cannot
@@ -917,7 +887,7 @@ function enhanceInput(
       .map((name) => `"${name}": ${analysis.characterDescriptions[name]}`)
       .join(" | ");
     extra.unshift(
-      `USER MENU CAST CONTRACT — HIGHEST PRIORITY: the user defined ${charNames.length} separate named character group(s), in this exact order: ${charNames.join(", ")}. Create one character_lock per group and preserve every name-to-photo binding one-to-one. Never collapse, merge, swap, omit or rename these people. For these uploaded-reference characters (${refNames.join(", ") || "none"}), the attached named image is the ONLY appearance authority: do not analyze, infer, list or restate face, face shape, skin, hair, eyebrows, eyelashes, eyes, body, age, height or wardrobe in character_lock, first_frame_prompt, motion_prompt, beats or camera text. Mention only the exact character name, role, position, action, expression and dialogue. Use a neutral reference sentinel in required appearance fields instead of a description. The only rendering exclusions allowed for a referenced character are: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.${textOnlyLines ? ` Text-only character descriptions: ${textOnlyLines}` : ""}`
+      `USER MENU CAST CONTRACT — HIGHEST PRIORITY: the user defined ${charNames.length} separate named character group(s), in this exact order: ${charNames.join(", ")}. Create one character_lock per group and preserve every name-to-photo binding one-to-one. Never collapse, merge, swap, omit or rename these people. For these uploaded-reference characters (${refNames.join(", ") || "none"}), the attached named image is the ONLY identity/anatomy authority: do not analyze, infer, list or restate face, face shape, skin, hair, eyebrows, eyelashes, eyes, body, age or height in character_lock, first_frame_prompt, motion_prompt, beats or camera text. Wardrobe is NOT copied from the reference: character_lock.costume and wardrobe_materials must declare one concrete story-appropriate outfit, then keep it identical across clips unless the script explicitly motivates a wardrobe_state change. Mention only the exact character name, story-locked outfit, role, position, action, expression and dialogue. Use a neutral reference sentinel only in required identity/anatomy fields, never in costume. The only rendering exclusions allowed for a referenced character are: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.${textOnlyLines ? ` Text-only character descriptions: ${textOnlyLines}` : ""}`
     );
   }
 
@@ -1079,7 +1049,7 @@ function enforceMenuCharacterContract(
       return {
         ...reconciled,
         gender_age: "",
-        gender: undefined,
+        gender: entryGender ?? existing.gender,
         is_child: entry.isChild ? true : undefined,
         build: "",
         skin_tone: "",
@@ -1092,8 +1062,8 @@ function enforceMenuCharacterContract(
         hair: "",
         hair_details: undefined,
         eyes: "",
-        costume: "",
-        wardrobe_materials: undefined,
+        costume: existing.costume,
+        wardrobe_materials: existing.wardrobe_materials,
         signature_features: "",
         dna: undefined,
       };
@@ -1799,6 +1769,7 @@ function normalizeRepairCandidate(
   enforceCookingContract(input, breakdown);
   enforceSpatialTopology(breakdown);
   synchronizeContinuityContracts(breakdown);
+  normalizeProductionContracts(breakdown);
 
   for (const segment of breakdown.segments) {
     if (segment.motion_prompt) {
@@ -2303,6 +2274,7 @@ export async function generateStoryboardPlan(
     enforceCookingContract(input, breakdown);
     enforceSpatialTopology(breakdown);
     synchronizeContinuityContracts(breakdown);
+    normalizeProductionContracts(breakdown);
 
     const referencedCharacterNames = uploadedCharacterNameSet(input);
     for (const lock of breakdown.character_locks) {

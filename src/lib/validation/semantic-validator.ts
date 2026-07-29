@@ -983,6 +983,7 @@ function checkDialogue(out: StoryboardGenerationOutput, push: Push): void {
   const locksByName = new Map(
     (out.character_locks ?? []).map((lock) => [lc(lock.name), lock])
   );
+  const validatedVoiceProfiles = new Set<string>();
   for (const seg of out.segments ?? []) {
     const turns = seg.dialogue_lines ?? [];
     if (turns.length === 0) continue;
@@ -1000,7 +1001,8 @@ function checkDialogue(out: StoryboardGenerationOutput, push: Push): void {
             segment_number: seg.segment_number,
             message: `Dialogue speaker "${speaker}" has no character voice authority.`,
           });
-        } else {
+        } else if (!validatedVoiceProfiles.has(lc(lock.name))) {
+          validatedVoiceProfiles.add(lc(lock.name));
           const voice = norm(lock.voice);
           if (!voice) {
             push({
