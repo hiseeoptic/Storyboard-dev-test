@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { REALITY_PROFILE_RESPONSE_SCHEMA, realityProfileSchema } from "@/lib/reality";
+import {
+  REALITY_PROFILE_RESPONSE_SCHEMA,
+  realityProfileSchema,
+} from "../reality/schema.ts";
 
 const text = z.string().trim().min(1);
 const textArray = z.array(text).default([]);
@@ -207,6 +210,16 @@ export const VIDEO_CONTEXT_RESPONSE_SCHEMA: Record<string, unknown> = {
   ],
 };
 
+/**
+ * OpenAI's legacy `json_object` mode guarantees only syntactically valid JSON;
+ * it does not guarantee that required Context IR fields are present. Convert
+ * the canonical Gemini schema into the strict JSON Schema dialect accepted by
+ * OpenAI Structured Outputs so both providers enforce the same 10-layer
+ * contract at generation time.
+ */
+export const OPENAI_VIDEO_CONTEXT_RESPONSE_SCHEMA =
+  toOpenAiStrictJsonSchema(VIDEO_CONTEXT_RESPONSE_SCHEMA);
+
 function stringField(): Record<string, string> {
   return { type: "STRING" };
 }
@@ -217,4 +230,46 @@ function stringArray(): Record<string, unknown> {
 
 function objectOf(properties: Record<string, unknown>): Record<string, unknown> {
   return { type: "OBJECT", properties, required: Object.keys(properties) };
+}
+
+function toOpenAiStrictJsonSchema(
+  value: unknown
+): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const source = value as Record<string, unknown>;
+  const output: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(source)) {
+    if (key === "type" && typeof entry === "string") {
+      output.type = entry.toLowerCase();
+    } else if (Array.isArray(entry)) {
+      output[key] = entry.map((item) =>
+        item && typeof item === "object" && !Array.isArray(item)
+          ? toOpenAiStrictJsonSchema(item)
+          : item
+      );
+    } else if (entry && typeof entry === "object") {
+      if (key === "properties") {
+        output.properties = Object.fromEntries(
+          Object.entries(entry as Record<string, unknown>).map(
+            ([propertyName, propertySchema]) => [
+              propertyName,
+              toOpenAiStrictJsonSchema(propertySchema),
+            ]
+          )
+        );
+      } else {
+        output[key] = toOpenAiStrictJsonSchema(entry);
+      }
+    } else {
+      output[key] = entry;
+    }
+  }
+
+  if (output.type === "object") {
+    output.additionalProperties = false;
+  }
+  return output;
 }

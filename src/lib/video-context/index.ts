@@ -14,7 +14,11 @@ export type {
   VideoContextLayers,
   ResolvedVideoContext,
 } from "./types";
-export { resolvedVideoContextSchema, VIDEO_CONTEXT_RESPONSE_SCHEMA } from "./schema";
+export {
+  OPENAI_VIDEO_CONTEXT_RESPONSE_SCHEMA,
+  resolvedVideoContextSchema,
+  VIDEO_CONTEXT_RESPONSE_SCHEMA,
+} from "./schema";
 export { completeContextRealityProfile } from "./reality-fallback";
 export {
   contextFrameworkSystemDigest,

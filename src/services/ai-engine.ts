@@ -16,6 +16,7 @@ import {
   buildContextAnalysisUserPrompt,
   completeContextRealityProfile,
   contextIrToWorldContext,
+  OPENAI_VIDEO_CONTEXT_RESPONSE_SCHEMA,
   resolvedVideoContextSchema,
   VIDEO_CONTEXT_RESPONSE_SCHEMA,
   type ResolvedVideoContext,
@@ -747,7 +748,16 @@ export async function analyzeVideoContext(
             ],
             temperature: 0.15,
             max_tokens: 7000,
-            response_format: { type: "json_object" },
+            response_format: {
+              type: "json_schema",
+              json_schema: {
+                name: "resolved_video_context",
+                description:
+                  "The complete canonical 10-layer Context IR used before storyboard generation.",
+                strict: true,
+                schema: OPENAI_VIDEO_CONTEXT_RESPONSE_SCHEMA,
+              },
+            },
           },
           { timeout: boundedTimeoutMs(timing, 45_000, "OpenAI context analysis") }
         );
@@ -767,6 +777,23 @@ export async function analyzeVideoContext(
       );
       if (!parsed.success) {
         const firstIssue = parsed.error.issues[0];
+        const diagnosticContext =
+          completedContext.payload &&
+          typeof completedContext.payload === "object" &&
+          !Array.isArray(completedContext.payload)
+            ? (completedContext.payload as Record<string, unknown>)
+            : {};
+        const diagnosticLayers =
+          diagnosticContext.layers &&
+          typeof diagnosticContext.layers === "object" &&
+          !Array.isArray(diagnosticContext.layers)
+            ? (diagnosticContext.layers as Record<string, unknown>)
+            : {};
+        console.error(
+          `[AI Engine] Context schema mismatch from ${provider}; ` +
+            `top-level keys=[${Object.keys(diagnosticContext).join(",")}], ` +
+            `layer keys=[${Object.keys(diagnosticLayers).join(",")}]`
+        );
         throw new Error(
           `Context IR schema mismatch${firstIssue ? ` at ${firstIssue.path.join(".")}: ${firstIssue.message}` : ""}`
         );

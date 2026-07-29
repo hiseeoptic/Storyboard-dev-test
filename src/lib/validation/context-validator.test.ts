@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { OPENAI_VIDEO_CONTEXT_RESPONSE_SCHEMA } from "../video-context/schema.ts";
 import type { ResolvedVideoContext } from "../video-context/types.ts";
 import { completeContextRealityProfile } from "../video-context/reality-fallback.ts";
 import { validateResolvedVideoContext } from "./context-validator.ts";
@@ -186,4 +187,57 @@ test("missing reality profile preserves stylized and fantasy world modes", () =>
     ).reality_profile.mode,
     "fantasy_scifi_internal"
   );
+});
+
+test("OpenAI Context IR schema strictly requires every declared object property", () => {
+  let totalProperties = 0;
+  let maxDepth = 0;
+  const inspect = (node: unknown, path: string, depth = 0): void => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    const schema = node as Record<string, unknown>;
+    const type = schema.type;
+    if (typeof type === "string") {
+      assert.equal(type, type.toLowerCase(), `${path}.type must use JSON Schema casing`);
+    }
+
+    if (type === "object") {
+      assert.equal(
+        schema.additionalProperties,
+        false,
+        `${path} must reject undeclared properties`
+      );
+      const properties = schema.properties as Record<string, unknown>;
+      const required = schema.required as string[];
+      totalProperties += Object.keys(properties).length;
+      maxDepth = Math.max(maxDepth, depth);
+      assert.deepEqual(
+        [...required].sort(),
+        Object.keys(properties).sort(),
+        `${path} must require every declared property`
+      );
+      for (const [key, child] of Object.entries(properties)) {
+        inspect(child, `${path}.${key}`, depth + 1);
+      }
+    }
+
+    if (type === "array") {
+      inspect(schema.items, `${path}[]`, depth + 1);
+    }
+  };
+
+  inspect(OPENAI_VIDEO_CONTEXT_RESPONSE_SCHEMA, "context");
+  const root = OPENAI_VIDEO_CONTEXT_RESPONSE_SCHEMA;
+  assert.ok(
+    (root.required as string[]).includes("layers"),
+    "the strict root schema must require layers"
+  );
+  const layers = (
+    (root.properties as Record<string, unknown>).layers as Record<string, unknown>
+  );
+  assert.ok(
+    (layers.required as string[]).includes("project_intent"),
+    "the strict layers schema must require project_intent"
+  );
+  assert.ok(totalProperties <= 5000, "schema exceeds OpenAI's property limit");
+  assert.ok(maxDepth <= 10, "schema exceeds OpenAI's nesting limit");
 });
