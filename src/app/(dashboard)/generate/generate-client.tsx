@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Sparkles,
   Loader2,
@@ -48,7 +48,15 @@ import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
-import { validatePromptExports, formatSemanticReport } from "@/lib/validation";
+import {
+  validatePromptExports,
+  validateStoryboardSemantics,
+  formatSemanticReport,
+} from "@/lib/validation";
+import {
+  fingerprintStoryboardPlan,
+  StoryboardPlanCache,
+} from "@/lib/storyboard/plan-cache";
 import { wardrobeOptions } from "@/lib/nano-flow/wardrobe-catalog";
 import {
   NANO_FLOW_MESSAGE_SOURCE,
@@ -873,6 +881,13 @@ interface BackgroundEntry {
 
 type Phase = "input" | "generating" | "script" | "result";
 
+type CachedStoryboardPlan = {
+  breakdown: StoryboardGenerationOutput;
+  analysis: StoryboardAnalysis;
+  videoPrompt: string;
+  warnings: string[];
+};
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function GenerateClient() {
@@ -898,6 +913,10 @@ export function GenerateClient() {
   // Script-review phase: the editable breakdown + carried plan data.
   const [draft, setDraft] = useState<StoryboardGenerationOutput | null>(null);
   const [planWarnings, setPlanWarnings] = useState<string[]>([]);
+  const [exportGateReport, setExportGateReport] = useState<string | null>(null);
+  // Browser-page-only cache: identical inputs reuse the finished text plan
+  // instead of paying for the script + Context IR + storyboard calls again.
+  const planCacheRef = useRef(new StoryboardPlanCache<CachedStoryboardPlan>(3));
   // Per-scene AI rewrite in the script editor (index being rewritten, or null).
   const [rewriteTarget, setRewriteTarget] = useState<number | null>(null);
 
@@ -1350,6 +1369,7 @@ export function GenerateClient() {
   const handleGenerate = async () => {
     setPhase("generating");
     setError(null);
+    setExportGateReport(null);
     setProgressPercent(5);
     setProgressMessage(L("preparing"));
 
@@ -1633,6 +1653,27 @@ export function GenerateClient() {
             : characterRender,
     };
 
+    const planFingerprint = fingerprintStoryboardPlan(input, provider);
+    const cachedPlan = planCacheRef.current.get(planFingerprint);
+    if (cachedPlan) {
+      // Always clone before putting cached data back into editable React state.
+      // The script editor must never mutate the cached baseline.
+      const restored = structuredClone(cachedPlan);
+      setGenInput(input);
+      setGenAnalysis(restored.analysis);
+      setDraft(restored.breakdown);
+      setPlanWarnings([
+        ...payloadWarnings,
+        ...(restored.warnings ?? []),
+        lang === "vi"
+          ? "Đã dùng lại kế hoạch cùng đầu vào trong phiên này — không gọi lại API."
+          : "Reused the identical plan from this browser session — no API call was made.",
+      ]);
+      setError(null);
+      setPhase("script");
+      return;
+    }
+
     setProgressPercent(6);
     setProgressMessage(L("creatingScenes"));
 
@@ -1644,6 +1685,8 @@ export function GenerateClient() {
         setPhase("input");
         return;
       }
+
+      planCacheRef.current.set(planFingerprint, structuredClone(plan.data));
 
       // Keep inputs + the generated script, then let the user REVIEW & EDIT it
       // before we spend any image generations (catch wrong gender / dialogue /
@@ -1770,6 +1813,24 @@ export function GenerateClient() {
         setPhase("script");
         return;
       }
+      // finalizeScript already runs the existing deterministic normalisers
+      // (dialogue clock, cast, continuity text and spatial topology). Validate
+      // that locally-repaired result before any prompt can leave Storyboard.
+      // This gate makes no model/API call.
+      const semanticGate = validateStoryboardSemantics(fin.data.breakdown);
+      if (!semanticGate.ok) {
+        setDraft(fin.data.breakdown);
+        setError(
+          `${
+            lang === "vi"
+              ? "Storyboard còn lỗi Critical/High nên chưa xuất prompt. Hãy sửa đúng cảnh được báo; hệ thống không tự tạo lại toàn bộ."
+              : "The storyboard still has Critical/High findings, so prompt export is blocked. Fix only the reported scene; the system will not regenerate the whole plan."
+          }\n\n${formatSemanticReport(semanticGate)}`
+        );
+        setPhase("script");
+        return;
+      }
+      setError(null);
       await runBoards(fin.data.breakdown, fin.data.videoPrompt, planWarnings);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
@@ -2009,10 +2070,27 @@ export function GenerateClient() {
     try {
       const gate = validatePromptExports(manifest);
       if (!gate.ok) {
-        console.warn(`[prompt-gate] "${manifest.project.title}" — ${gate.summary}\n${formatSemanticReport(gate)}`);
+        const report = formatSemanticReport(gate);
+        console.warn(`[prompt-gate] "${manifest.project.title}" — ${gate.summary}\n${report}`);
+        setExportGateReport(
+          `${
+            lang === "vi"
+              ? "Prompt Nano Banana/Veo còn lỗi Critical/High nên chưa được gửi hoặc tải xuống. Không có lệnh gọi API sửa lại nào được thực hiện."
+              : "The Nano Banana/Veo prompts still have Critical/High findings, so push/download is blocked. No repair API call was made."
+          }\n\n${report}`
+        );
+        return null;
       }
+      setExportGateReport(null);
     } catch (gateErr) {
-      console.error("[prompt-gate] validator error (ignored):", gateErr);
+      const message = gateErr instanceof Error ? gateErr.message : String(gateErr);
+      console.error("[prompt-gate] validator error:", gateErr);
+      setExportGateReport(
+        lang === "vi"
+          ? `Không kiểm tra được prompt nên hệ thống dừng xuất an toàn: ${message}`
+          : `Prompt validation could not complete, so export stopped safely: ${message}`
+      );
+      return null;
     }
     return manifest;
   };
@@ -2313,7 +2391,7 @@ export function GenerateClient() {
           <LangToggle />
         </div>
 
-        {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+        {error && <div className="whitespace-pre-wrap rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
 
         {/* Title */}
         <Card>
@@ -2694,6 +2772,11 @@ export function GenerateClient() {
                 ? "Gửi kịch bản + prompt sang extension AutoFlow Reel để tạo ảnh storyboard bằng nano banana miễn phí trong Google Flow. Không cần tải ảnh lên ở đây."
                 : "Send the script + prompts to the AutoFlow Reel extension to generate storyboard images with free nano banana in Google Flow. No image upload needed here."}
             </p>
+            {exportGateReport && (
+              <div className="whitespace-pre-wrap rounded-md border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-700 dark:bg-red-950/40 dark:text-red-200">
+                {exportGateReport}
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button onClick={pushNanoToExtension} className="gap-2">
                 {nanoPushed ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />}

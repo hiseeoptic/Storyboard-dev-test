@@ -11,7 +11,8 @@
     "test:timeline": "node --experimental-strip-types --test src/lib/timeline-contract.test.ts",
     "test:veo-json": "node --test src/prompts/veo-json-structure.test.cjs",
     "test:nano-flow": "node --experimental-strip-types --test src/lib/nano-flow/manifest.test.ts",
-    "test:validate": "node --experimental-strip-types --test src/lib/validation/semantic-validator.test.ts src/lib/validation/prompt-validator.test.ts"
+    "test:validate": "node --experimental-strip-types --test src/lib/validation/semantic-validator.test.ts src/lib/validation/prompt-validator.test.ts",
+    "test:plan-cache": "node --experimental-strip-types --test src/lib/storyboard/plan-cache.test.ts"
   },
   "dependencies": {
     "next": "^15.1.0",
