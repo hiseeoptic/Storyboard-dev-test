@@ -427,3 +427,55 @@ test("BIBLE-003: global scene-bible style cannot drift between clips", () => {
   });
   assert.ok(validatePromptExports(m).findings.some((f) => f.code === "BIBLE-003"));
 });
+
+test("BIBLE-003: lighting/backdrop may differ across a location change (no false flag)", () => {
+  const m = cleanManifest();
+  // Clip 2 cuts to a DIFFERENT location; its lighting + backdrop naturally change
+  // while the film-look (lens/grade) stays identical. This must NOT flag.
+  m.shots.push({
+    ...m.shots[0]!,
+    shot_id: "SHOT_002",
+    index: 2,
+    location_id: "office",
+    continuity_mode: "location_cut",
+    video_prompt: videoClip({
+      scene_id: "2",
+      location_id: "office",
+      continuity_mode: "location_cut",
+      scene_bible_tokens: {
+        lens: "50mm lens",
+        color_grade: "neutral Rec.709",
+        lighting: "cool fluorescent ceiling light",
+        backdrop: "open-plan office desks",
+      },
+    }),
+  });
+  const bible = validatePromptExports(m).findings.filter((f) => f.code === "BIBLE-003");
+  assert.equal(bible.length, 0, JSON.stringify(bible, null, 2));
+});
+
+test("BIBLE-003: lighting drift WITHIN the same location still flags", () => {
+  const m = cleanManifest();
+  m.shots.push({
+    ...m.shots[0]!,
+    shot_id: "SHOT_002",
+    index: 2,
+    location_id: "home_kitchen",
+    continuity_mode: "continuous",
+    video_prompt: videoClip({
+      scene_id: "2",
+      location_id: "home_kitchen",
+      continuity_mode: "continuous",
+      scene_bible_tokens: {
+        lens: "50mm lens",
+        color_grade: "neutral Rec.709",
+        lighting: "harsh overhead spotlight",
+        backdrop: "tiled walls, open shelving",
+      },
+    }),
+  });
+  const bible = validatePromptExports(m).findings.filter(
+    (f) => f.code === "BIBLE-003" && /lighting/i.test(`${f.message} ${f.evidence ?? ""}`)
+  );
+  assert.ok(bible.length > 0, "same-location lighting drift should still flag");
+});

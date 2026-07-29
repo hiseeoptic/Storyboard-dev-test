@@ -725,13 +725,9 @@ export function validatePromptExports(manifest: NanoFlowManifest): SemanticValid
     }
 
     const currentBible = obj(currentClip.scene_bible_tokens);
-    for (const field of [
-      "lens",
-      "color_grade",
-      "lighting",
-      "backdrop",
-      "film_grain",
-    ]) {
+    // GLOBAL film-look tokens: the camera/grade fingerprint never changes,
+    // whatever the location.
+    for (const field of ["lens", "color_grade", "film_grain"]) {
       if (str(currentBible[field]) !== str(firstBible[field])) {
         push({
           code: "BIBLE-003",
@@ -741,6 +737,36 @@ export function validatePromptExports(manifest: NanoFlowManifest): SemanticValid
           message: `Global scene-bible token "${field}" drifted between clips.`,
           evidence: `clip1=${str(firstBible[field])} -> clip${current.index}=${str(currentBible[field])}`,
         });
+      }
+    }
+    // LOCATION-SCOPED tokens: lighting and backdrop belong to a place. They must
+    // match earlier clips at the SAME location_id, but are EXPECTED to differ
+    // across a scene_cut / location_cut / parallel_intercut. Comparing them to
+    // clip 1 globally would false-flag every legitimate location change (the
+    // office↔home cross-cut), so scope them to the last clip at this location.
+    if (currentLocation) {
+      let sameLocationBible: Record<string, unknown> | null = null;
+      for (let j = index - 1; j >= 0; j--) {
+        const priorClip = obj(shots[j]!.video_prompt);
+        const priorLocation = shots[j]!.location_id ?? str(priorClip.location_id);
+        if (priorLocation === currentLocation) {
+          sameLocationBible = obj(priorClip.scene_bible_tokens);
+          break;
+        }
+      }
+      if (sameLocationBible) {
+        for (const field of ["lighting", "backdrop"]) {
+          if (str(currentBible[field]) !== str(sameLocationBible[field])) {
+            push({
+              code: "BIBLE-003",
+              severity: "high",
+              scope: "segment",
+              segment_number: current.index,
+              message: `Location-scoped scene-bible token "${field}" drifted within the same location.`,
+              evidence: `location=${currentLocation}: ${str(sameLocationBible[field])} -> clip${current.index}=${str(currentBible[field])}`,
+            });
+          }
+        }
       }
     }
   }
