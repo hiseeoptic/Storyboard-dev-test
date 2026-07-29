@@ -13,6 +13,7 @@ const locationSchema = z.object({
   fixed_elements: textArray,
   lighting_motivation: text,
   sound_bed: text,
+  reverb_profile: text,
 });
 
 // RESILIENCE helpers (see reality/schema.ts) — near-miss values coerce
@@ -169,7 +170,7 @@ export const VIDEO_CONTEXT_RESPONSE_SCHEMA: Record<string, unknown> = {
             items: objectOf({
               id: stringField(), narrative_function: stringField(), description: stringField(),
               culture_geography_fit: stringField(), spatial_anchors: stringArray(), fixed_elements: stringArray(),
-              lighting_motivation: stringField(), sound_bed: stringField(),
+              lighting_motivation: stringField(), sound_bed: stringField(), reverb_profile: stringField(),
             }),
           },
           selection_rule: stringField(),

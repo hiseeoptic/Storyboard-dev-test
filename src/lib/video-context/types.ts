@@ -58,6 +58,9 @@ export interface ContextLocationDefinition {
   fixed_elements: string[];
   lighting_motivation: string;
   sound_bed: string;
+  /** Acoustic fingerprint owned by this location, e.g. dry furnished room,
+   * short tiled reflection, open-air decay. Never inherited across a cut. */
+  reverb_profile: string;
 }
 
 export interface ContextEnvironmentLayer {

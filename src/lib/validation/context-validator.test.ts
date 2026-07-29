@@ -61,6 +61,7 @@ function context(): ResolvedVideoContext {
             fixed_elements: ["window"],
             lighting_motivation: "noon window light",
             sound_bed: "quiet home room tone",
+            reverb_profile: "short furnished-room decay",
           },
         ],
         selection_rule: "script",
@@ -109,6 +110,13 @@ test("location without a sound bed fails before storyboard API", () => {
   fixture.layers.environment.locations[0]!.sound_bed = "";
   const report = validateResolvedVideoContext(fixture);
   assert.ok(report.findings.some((finding) => finding.code === "CTX-014"));
+});
+
+test("location without a reverb authority fails before storyboard API", () => {
+  const ctx = context();
+  ctx.layers.environment.locations[0]!.reverb_profile = "";
+  const report = validateResolvedVideoContext(ctx);
+  assert.ok(report.findings.some((finding) => finding.code === "CTX-020"));
 });
 
 test("parallel intercut needs at least two locked locations", () => {

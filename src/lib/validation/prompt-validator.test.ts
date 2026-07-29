@@ -34,6 +34,7 @@ function videoClip(over: Record<string, unknown> = {}): Record<string, unknown> 
       lighting: "soft window light",
       backdrop: "tiled walls, open shelving",
       audio_bed: "quiet kitchen room tone",
+      reverb: "short furnished-room decay",
     },
     character_lock: {
       CHAR_1: { name: "Minh", voice_personality: "warm timbre, 90-130 Hz, 110 wpm" },
@@ -50,7 +51,14 @@ function videoClip(over: Record<string, unknown> = {}): Record<string, unknown> 
     camera: { framing: "MS", angle: "eye" },
     foley_and_ambience: {
       environment_sound_bed: "quiet kitchen room tone",
+      environment_reverb: "short furnished-room decay",
       ambience: ["quiet kitchen room tone"],
+    },
+    audio_transition: {
+      policy: "open",
+      to_location_id: "home_kitchen",
+      sound_bed: "quiet kitchen room tone",
+      reverb_profile: "short furnished-room decay",
     },
     output_rules: { reference_priority: "START-FRAME AUTHORITY: continue wardrobe and set from the start frame." },
     ...over,
@@ -73,6 +81,12 @@ function cleanManifest(): Manifest {
         characters_in_scene: ["Minh", "Lan"],
         location_id: "home_kitchen",
         continuity_mode: "opening",
+        beats: [
+          {
+            beat: "Minh speaks while Lan listens across the table",
+            camera: "Medium two-shot clearly showing Minh and Lan",
+          },
+        ],
       },
     ],
   } as unknown as Manifest;
@@ -227,9 +241,19 @@ test("BIBLE-002: scene-bible token must appear verbatim in final authority", () 
       lighting: "soft window light",
       backdrop: "tiled walls, open shelving",
       audio_bed: "quiet kitchen room tone",
+      reverb: "short furnished-room decay",
     },
   });
   assert.ok(validatePromptExports(m).findings.some((f) => f.code === "BIBLE-002"));
+});
+
+test("BIBLE-001: final prompt requires the location reverb token", () => {
+  const m = cleanManifest();
+  const clip = videoClip();
+  const bible = clip.scene_bible_tokens as Record<string, unknown>;
+  delete bible.reverb;
+  m.shots[0]!.video_prompt = clip;
+  assert.ok(validatePromptExports(m).findings.some((f) => f.code === "BIBLE-001"));
 });
 
 test("ORDER-001: action placed before identity/style/environment authority fails", () => {
@@ -249,12 +273,30 @@ test("VOICE-002: compiled dialogue cannot swap a character's voice", () => {
         speaker_id: "CHAR_1",
         speaker_name: "Minh",
         delivery: "on_screen",
+        camera_beat: 1,
         voice_personality: "clear timbre, 180-240 Hz, 120 wpm",
         text: "Xin chào",
       },
     ],
   });
   assert.ok(validatePromptExports(m).findings.some((f) => f.code === "VOICE-002"));
+});
+
+test("VOICE-005: on-screen dialogue must point to the beat showing its speaker", () => {
+  const m = cleanManifest();
+  m.shots[0]!.video_prompt = videoClip({
+    dialogue: [
+      {
+        speaker_id: "CHAR_1",
+        speaker_name: "Minh",
+        delivery: "on_screen",
+        camera_beat: 2,
+        voice_personality: "warm timbre, 90-130 Hz, 110 wpm",
+        text: "Xin chào",
+      },
+    ],
+  });
+  assert.ok(validatePromptExports(m).findings.some((f) => f.code === "VOICE-005"));
 });
 
 test("AUDIO-001: continuous boundary preserves exact location audio bed", () => {
@@ -269,7 +311,15 @@ test("AUDIO-001: continuous boundary preserves exact location audio bed", () => 
       continuity_mode: "continuous",
       foley_and_ambience: {
         environment_sound_bed: "different room tone",
+        environment_reverb: "long tiled-room decay",
         ambience: ["different room tone"],
+      },
+      audio_transition: {
+        policy: "preserve",
+        from_location_id: "home_kitchen",
+        to_location_id: "home_kitchen",
+        sound_bed: "different room tone",
+        reverb_profile: "long tiled-room decay",
       },
       scene_bible_tokens: {
         lens: "50mm lens",
@@ -277,8 +327,103 @@ test("AUDIO-001: continuous boundary preserves exact location audio bed", () => 
         lighting: "soft window light",
         backdrop: "tiled walls, open shelving",
         audio_bed: "different room tone",
+        reverb: "long tiled-room decay",
       },
     }),
   });
   assert.ok(validatePromptExports(m).findings.some((f) => f.code === "AUDIO-001"));
+});
+
+test("AUDIO-005: a location cut must reset instead of preserving global ambience", () => {
+  const m = cleanManifest();
+  m.shots.push({
+    ...m.shots[0]!,
+    shot_id: "SHOT_002",
+    index: 2,
+    location_id: "office",
+    continuity_mode: "location_cut",
+    video_prompt: videoClip({
+      scene_id: "2",
+      location_id: "office",
+      continuity_mode: "location_cut",
+      foley_and_ambience: {
+        environment_sound_bed: "quiet office ventilation",
+        environment_reverb: "short treated-office decay",
+        ambience: ["quiet office ventilation"],
+      },
+      audio_transition: {
+        policy: "preserve",
+        from_location_id: "home_kitchen",
+        to_location_id: "office",
+        sound_bed: "quiet office ventilation",
+        reverb_profile: "short treated-office decay",
+      },
+      scene_bible_tokens: {
+        lens: "50mm lens",
+        color_grade: "neutral Rec.709",
+        lighting: "soft window light",
+        backdrop: "tiled walls, open shelving",
+        audio_bed: "quiet office ventilation",
+        reverb: "short treated-office decay",
+      },
+    }),
+  });
+  assert.ok(validatePromptExports(m).findings.some((f) => f.code === "AUDIO-005"));
+});
+
+test("AUDIO-005: a time jump in one location uses a time reset policy", () => {
+  const m = cleanManifest();
+  m.shots.push({
+    ...m.shots[0]!,
+    shot_id: "SHOT_002",
+    index: 2,
+    continuity_mode: "time_jump",
+    video_prompt: videoClip({
+      scene_id: "2",
+      continuity_mode: "time_jump",
+      audio_transition: {
+        policy: "preserve",
+        from_location_id: "home_kitchen",
+        to_location_id: "home_kitchen",
+        sound_bed: "quiet kitchen room tone",
+        reverb_profile: "short furnished-room decay",
+      },
+    }),
+  });
+  const finding = validatePromptExports(m).findings.find(
+    (f) => f.code === "AUDIO-005"
+  );
+  assert.ok(finding);
+  assert.match(finding!.message, /reset_for_time/);
+});
+
+test("BIBLE-003: global scene-bible style cannot drift between clips", () => {
+  const m = cleanManifest();
+  m.shots.push({
+    ...m.shots[0]!,
+    shot_id: "SHOT_002",
+    index: 2,
+    continuity_mode: "continuous",
+    video_prompt: videoClip({
+      scene_id: "2",
+      continuity_mode: "continuous",
+      visual_style: "warm cinematic; 85mm lens; neutral Rec.709",
+      scene_bible_tokens: {
+        lens: "85mm lens",
+        color_grade: "neutral Rec.709",
+        lighting: "soft window light",
+        backdrop: "tiled walls, open shelving",
+        audio_bed: "quiet kitchen room tone",
+        reverb: "short furnished-room decay",
+      },
+      audio_transition: {
+        policy: "preserve",
+        from_location_id: "home_kitchen",
+        to_location_id: "home_kitchen",
+        sound_bed: "quiet kitchen room tone",
+        reverb_profile: "short furnished-room decay",
+      },
+    }),
+  });
+  assert.ok(validatePromptExports(m).findings.some((f) => f.code === "BIBLE-003"));
 });

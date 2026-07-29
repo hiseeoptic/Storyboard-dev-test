@@ -104,6 +104,9 @@ export function validateResolvedVideoContext(
     if (!isAuthority(location.sound_bed)) {
       high("CTX-014", `Location "${id || "(unnamed)"}" has no audio-bed authority.`);
     }
+    if (!isAuthority(location.reverb_profile)) {
+      high("CTX-020", `Location "${id || "(unnamed)"}" has no reverb authority.`);
+    }
     if ((location.spatial_anchors?.length ?? 0) === 0) {
       medium("CTX-015", `Location "${id || "(unnamed)"}" has no spatial anchors.`);
     }

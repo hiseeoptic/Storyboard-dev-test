@@ -113,6 +113,7 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
         properties: {
           speaker: STRING_SCHEMA,
           delivery: STRING_SCHEMA,
+          camera_beat: INTEGER_SCHEMA,
           text: STRING_SCHEMA,
           start_s: NUMBER_SCHEMA,
           end_s: NUMBER_SCHEMA,

@@ -607,6 +607,11 @@ function normalizeDialogue(
               : speaker
                 ? "on_screen"
                 : "voiceover",
+          camera_beat:
+            typeof t.camera_beat === "number" &&
+            Number.isInteger(t.camera_beat)
+              ? t.camera_beat
+              : undefined,
           text: t.text.trim(),
           start_s: typeof t.start_s === "number" ? t.start_s : undefined,
           end_s: typeof t.end_s === "number" ? t.end_s : undefined,
@@ -676,6 +681,36 @@ function normalizeDialogue(
         return { ...t, start_s: start, end_s: end };
       });
     }
+
+    // Bind every on-screen voice to one concrete storyboard camera beat. The
+    // beat itself must name that speaker; otherwise the compiled prompt cannot
+    // prove who is visible while the line is delivered.
+    turns = turns.map((turn) => {
+      if (!turn.speaker || turn.delivery !== "on_screen") {
+        return { ...turn, camera_beat: undefined };
+      }
+      const declaredIndex = (turn.camera_beat ?? 0) - 1;
+      const declaredBeat = seg.beats?.[declaredIndex];
+      if (
+        declaredBeat &&
+        exactCharacterMention(
+          `${declaredBeat.beat ?? ""} ${declaredBeat.camera ?? ""}`,
+          turn.speaker
+        )
+      ) {
+        return turn;
+      }
+      const inferredIndex = (seg.beats ?? []).findIndex((beat) =>
+        exactCharacterMention(
+          `${beat.beat ?? ""} ${beat.camera ?? ""}`,
+          turn.speaker
+        )
+      );
+      return {
+        ...turn,
+        camera_beat: inferredIndex >= 0 ? inferredIndex + 1 : undefined,
+      };
+    });
 
     // Only an on-screen delivery requires the speaker's face in the camera
     // beat. Named off-screen speech remains bound to that person's voice.
@@ -2656,6 +2691,7 @@ export async function rewriteSegment(params: {
       segment.dialogue_lines = userTurns.map((t, i) => ({
         speaker: (t.speaker ?? "").trim(),
         delivery: t.delivery,
+        camera_beat: t.camera_beat ?? modelTurns[i]?.camera_beat,
         text: t.text.trim(),
         start_s: modelTurns[i]?.start_s,
         end_s: modelTurns[i]?.end_s,

@@ -439,6 +439,9 @@ export interface DialogueTurn {
   /** Camera relationship of the voice. Named off-screen speakers remain bound
    * to their own voice without being forced into characters_in_scene. */
   delivery?: "on_screen" | "off_screen" | "voiceover";
+  /** 1-based storyboard beat that visibly contains an on-screen speaker.
+   * Omit for off-screen/voiceover delivery. */
+  camera_beat?: number;
   /** The spoken line (verbatim, in the dialogue language). */
   text: string;
   /** When this turn starts within the clip (seconds, 0-10). */

@@ -81,6 +81,7 @@ interface ImageCastEntry {
   name: string;
   wardrobe: string;
 }
+
 function parseImagePrompt(s: string): Record<string, unknown> | null {
   const t = (s ?? "").trim();
   if (!t.startsWith("{")) return null;
@@ -112,6 +113,13 @@ function containsExact(authority: unknown, token: unknown): boolean {
   const needle = str(token).toLocaleLowerCase().replace(/\s+/g, " ");
   const haystack = str(authority).toLocaleLowerCase().replace(/\s+/g, " ");
   return !!needle && haystack.includes(needle);
+}
+function mentionsExact(value: unknown, name: string): boolean {
+  const escaped = escapeRegExp(name);
+  return new RegExp(
+    `(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`,
+    "iu"
+  ).test(str(value));
 }
 
 // ── Per-shot checks ─────────────────────────────────────────────────────────
@@ -351,12 +359,14 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
   // repeat them. Each exact token must occur in its final compiled authority.
   const bible = obj(clip.scene_bible_tokens);
   const foley = obj(clip.foley_and_ambience);
+  const locks = Object.values(obj(clip.character_lock)).map(obj);
   const requiredTokens: Array<[string, unknown, unknown]> = [
     ["lens", bible.lens, clip.visual_style],
     ["color_grade", bible.color_grade, clip.visual_style],
     ["lighting", bible.lighting, bg.lighting],
     ["backdrop", bible.backdrop, bg.scenery],
     ["audio_bed", bible.audio_bed, foley.environment_sound_bed],
+    ["reverb", bible.reverb, foley.environment_reverb],
   ];
   for (const [label, token, target] of requiredTokens) {
     if (!str(token)) {
@@ -377,6 +387,29 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
         evidence: str(token),
       });
     }
+  }
+
+  // AUDIO AUTHORITY — the transition directive and the rendered ambience block
+  // must resolve to one exact per-location sound/reverb authority. This check
+  // lives in Storyboard's final prompt gate; extension intake remains separate.
+  const audioTransition = obj(clip.audio_transition);
+  if (
+    !str(audioTransition.policy) ||
+    str(audioTransition.to_location_id) !== str(clip.location_id) ||
+    !str(foley.environment_sound_bed) ||
+    str(audioTransition.sound_bed) !== str(foley.environment_sound_bed) ||
+    !str(foley.environment_reverb) ||
+    str(audioTransition.reverb_profile) !== str(foley.environment_reverb)
+  ) {
+    push({
+      code: "AUDIO-004",
+      severity: "high",
+      scope: "segment",
+      segment_number: seg,
+      message:
+        "Final prompt audio_transition must resolve exactly to this clip's location sound bed and reverb authority.",
+      evidence: `location=${str(clip.location_id) || "missing"}, policy=${str(audioTransition.policy) || "missing"}`,
+    });
   }
 
   // ORDER-001 — identity, style and environment authority must be parsed before
@@ -401,6 +434,45 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
         "Identity, scene style and environment authority must be front-loaded before scene_action.",
     });
   }
+  const authorityValues = [
+    ...locks.flatMap((lock) => [lock.name, lock.voice_personality]),
+    bible.lens,
+    bible.color_grade,
+    bible.lighting,
+    bible.backdrop,
+    bible.film_grain,
+    bible.audio_bed,
+    bible.reverb,
+    bg.id,
+    bg.setting,
+    bg.scenery,
+    bg.lighting,
+  ]
+    .map(str)
+    .filter(Boolean);
+  const lateValues = authorityValues
+    .map((value) => ({
+      value,
+      position: serialized.indexOf(JSON.stringify(value)),
+    }))
+    .filter(({ position }) => position < 0 || position > actionAt);
+  if (lateValues.length > 0) {
+    push({
+      code: "ORDER-002",
+      severity: "high",
+      scope: "segment",
+      segment_number: seg,
+      message:
+        "One or more identity/style/environment authority values are absent or occur after scene_action.",
+      evidence: lateValues
+        .slice(0, 3)
+        .map(
+          ({ value, position }) =>
+            `"${value.slice(0, 32)}"@${position} (action@${actionAt})`
+        )
+        .join(", "),
+    });
+  }
 
   const cameraMovement = str(obj(clip.camera).movement);
   if (/\bbegins?\s+on\s+(?:captures?|shows?|frames?|follows?|reveals?)\b/i.test(cameraMovement)) {
@@ -416,7 +488,6 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
 
   // VOICE BINDING — compiled dialogue must resolve to the exact named lock,
   // exact voice fingerprint and declared camera relationship.
-  const locks = Object.values(obj(clip.character_lock)).map(obj);
   const lockByName = new Map(
     locks.map((lock) => [str(lock.name).toLocaleLowerCase(), lock])
   );
@@ -465,6 +536,26 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
         segment_number: seg,
         message: `On-screen speaker "${speakerName}" is absent from the camera beat.`,
       });
+    }
+    if (delivery === "on_screen") {
+      const beatNumber = row.camera_beat;
+      const beat =
+        typeof beatNumber === "number" && Number.isInteger(beatNumber)
+          ? shot.beats?.[beatNumber - 1]
+          : undefined;
+      if (
+        !beat ||
+        !mentionsExact(`${beat.beat ?? ""} ${beat.camera ?? ""}`, speakerName)
+      ) {
+        push({
+          code: "VOICE-005",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg,
+          message: `On-screen speaker "${speakerName}" is not bound to the declared camera beat.`,
+          evidence: `camera_beat=${String(beatNumber ?? "missing")}`,
+        });
+      }
     }
     const profile = str(row.voice_personality);
     const priorName = speakingProfiles.get(profile);
@@ -527,6 +618,30 @@ export function validatePromptExports(manifest: NanoFlowManifest): SemanticValid
   const push: Push = (f) => findings.push(f);
   for (const shot of manifest.shots ?? []) checkShot(shot, push);
   const shots = manifest.shots ?? [];
+  const firstBible =
+    shots.length > 0 ? obj(obj(shots[0]!.video_prompt).scene_bible_tokens) : {};
+  if (shots.length > 0) {
+    const first = shots[0]!;
+    const firstClip = obj(first.video_prompt);
+    const firstTransition = obj(firstClip.audio_transition);
+    const firstMode =
+      first.continuity_mode ?? (str(firstClip.continuity_mode) || "opening");
+    if (
+      firstMode !== "opening" ||
+      str(firstTransition.policy) !== "open" ||
+      str(firstTransition.from_location_id)
+    ) {
+      push({
+        code: "AUDIO-005",
+        severity: "high",
+        scope: "segment",
+        segment_number: first.index,
+        message:
+          'The first clip must open its own audio authority with policy "open" and no inherited location.',
+        evidence: `mode=${firstMode}, policy=${str(firstTransition.policy) || "missing"}`,
+      });
+    }
+  }
   for (let index = 1; index < shots.length; index++) {
     const current = shots[index]!;
     const previous = shots[index - 1]!;
@@ -536,16 +651,47 @@ export function validatePromptExports(manifest: NanoFlowManifest): SemanticValid
     const previousAudio = obj(previousClip.foley_and_ambience);
     const currentBed = str(currentAudio.environment_sound_bed);
     const previousBed = str(previousAudio.environment_sound_bed);
+    const currentReverb = str(currentAudio.environment_reverb);
+    const previousReverb = str(previousAudio.environment_reverb);
     const mode = current.continuity_mode ?? str(currentClip.continuity_mode);
     const currentLocation = current.location_id ?? str(currentClip.location_id);
     const previousLocation = previous.location_id ?? str(previousClip.location_id);
+    const transition = obj(currentClip.audio_transition);
+    const locationChanged =
+      !!currentLocation &&
+      !!previousLocation &&
+      currentLocation !== previousLocation;
+    const expectedPolicy =
+      mode === "continuous"
+        ? "preserve"
+        : locationChanged
+          ? "reset_to_location"
+          : mode === "time_jump"
+            ? "reset_for_time"
+            : "reset_for_cut";
+    if (
+      str(transition.policy) !== expectedPolicy ||
+      str(transition.from_location_id) !== previousLocation ||
+      str(transition.to_location_id) !== currentLocation
+    ) {
+      push({
+        code: "AUDIO-005",
+        severity: "high",
+        scope: "segment",
+        segment_number: current.index,
+        message: `Audio boundary must use policy "${expectedPolicy}" for ${mode || "an undeclared cut"}.`,
+        evidence: `actual=${str(transition.policy) || "missing"}, ${previousLocation || "missing"} -> ${currentLocation || "missing"}`,
+      });
+    }
     if (mode === "continuous") {
       if (
         !currentLocation ||
         !previousLocation ||
         currentLocation !== previousLocation ||
         !currentBed ||
-        currentBed !== previousBed
+        currentBed !== previousBed ||
+        !currentReverb ||
+        currentReverb !== previousReverb
       ) {
         push({
           code: "AUDIO-001",
@@ -554,10 +700,10 @@ export function validatePromptExports(manifest: NanoFlowManifest): SemanticValid
           segment_number: current.index,
           message:
             "Continuous transition must preserve the exact location ambience/reverb bed.",
-          evidence: `${previousLocation}:${previousBed} -> ${currentLocation}:${currentBed}`,
+          evidence: `${previousLocation}:${previousBed}/${previousReverb} -> ${currentLocation}:${currentBed}/${currentReverb}`,
         });
       }
-    } else if (currentLocation && previousLocation && currentLocation !== previousLocation) {
+    } else if (locationChanged) {
       if (!currentBed) {
         push({
           code: "AUDIO-002",
@@ -574,6 +720,26 @@ export function validatePromptExports(manifest: NanoFlowManifest): SemanticValid
           segment_number: current.index,
           message:
             "Location changed but its declared audio bed is identical; verify this is intentional.",
+        });
+      }
+    }
+
+    const currentBible = obj(currentClip.scene_bible_tokens);
+    for (const field of [
+      "lens",
+      "color_grade",
+      "lighting",
+      "backdrop",
+      "film_grain",
+    ]) {
+      if (str(currentBible[field]) !== str(firstBible[field])) {
+        push({
+          code: "BIBLE-003",
+          severity: "high",
+          scope: "segment",
+          segment_number: current.index,
+          message: `Global scene-bible token "${field}" drifted between clips.`,
+          evidence: `clip1=${str(firstBible[field])} -> clip${current.index}=${str(currentBible[field])}`,
         });
       }
     }

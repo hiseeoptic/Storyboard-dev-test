@@ -85,6 +85,17 @@ function isNum(v: unknown): v is number {
 function sameState(a: unknown, b: unknown): boolean {
   return lc(a).replace(/\s+/g, " ") === lc(b).replace(/\s+/g, " ");
 }
+function mentionsExactName(value: unknown, name: string): boolean {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  try {
+    return new RegExp(
+      `(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`,
+      "iu"
+    ).test(norm(value));
+  } catch {
+    return lc(value).includes(name.toLocaleLowerCase());
+  }
+}
 
 // ── Time-of-day vocab (Tầng 4) ──────────────────────────────────────────────
 // Word-boundaried and specific so common words ("day", "Monday", "tonight") do
@@ -874,6 +885,30 @@ function checkCast(out: StoryboardGenerationOutput, push: Push): void {
           message: `Speaker "${sp}" is not listed in characters_in_scene (speaker not on screen).`,
           evidence: `characters_in_scene=[${visible.join(", ")}]`,
         });
+      }
+      if (
+        delivery === "on_screen" &&
+        sp &&
+        ((seg.dialogue_lines?.length ?? 0) > 0 || out.schema_version === "4.0")
+      ) {
+        const beatNumber = turn.camera_beat;
+        const beat =
+          typeof beatNumber === "number" && Number.isInteger(beatNumber)
+            ? seg.beats?.[beatNumber - 1]
+            : undefined;
+        if (
+          !beat ||
+          !mentionsExactName(`${beat.beat ?? ""} ${beat.camera ?? ""}`, sp)
+        ) {
+          push({
+            code: "CAST-004",
+            severity: "high",
+            scope: "segment",
+            segment_number: seg.segment_number,
+            message: `On-screen speaker "${sp}" is not bound to a camera beat that explicitly shows them.`,
+            evidence: `camera_beat=${String(beatNumber ?? "missing")}`,
+          });
+        }
       }
     }
 

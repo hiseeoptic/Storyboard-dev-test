@@ -756,7 +756,7 @@ NEGATIVE CONTRACT: scene-level exclusions may cover text overlays, impossible ph
 DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlapping):
 - Veo 3 generates real spoken audio. Write dialogue in the language requested. Keep each spoken line SHORT and natural.
 - Put spoken lines ONLY in the dialogue fields. Do NOT quote them inside "motion_prompt" (the system appends them once; repeating makes the character say it twice). In motion_prompt, describe only the ordered physical gestures: who turns toward whom, who speaks, and how the listener reacts. Use NO seconds or time ranges in motion_prompt or camera notes; dialogue_lines owns all speech timing.
-- FIT A SHORT EXCHANGE INTO ONE CLIP (this is the key rule — do NOT waste a whole 10s clip on one 3-word line): use the "dialogue_lines" array to place 1-3 SEQUENTIAL turns inside the same 10s clip when they belong to the same beat of conversation. Each turn = { "speaker": exact character_locks name (or "" for voiceover), "text": the line, "start_s": when they start, "end_s": when they finish }.
+- FIT A SHORT EXCHANGE INTO ONE CLIP (this is the key rule — do NOT waste a whole 10s clip on one 3-word line): use the "dialogue_lines" array to place 1-3 SEQUENTIAL turns inside the same 10s clip when they belong to the same beat of conversation. Each turn = { "speaker": exact character_locks name (or "" for voiceover), "delivery": on_screen|off_screen|voiceover, "camera_beat": 1-based beats[] index for on_screen only, "text": the line, "start_s": when they start, "end_s": when they finish }. The chosen camera beat must explicitly name/show the on-screen speaker.
 - HARD SAFETY RULES (a video model CANNOT lip-sync two mouths at once — breaking these causes garbled clips):
   1. TURN-TAKING ONLY, NEVER OVERLAP: turns are strictly sequential — turn N's end_s ≤ turn N+1's start_s. Exactly ONE person's mouth moves at any instant; everyone else has their mouth closed, listening.
   2. FIT THE SECONDS: the whole exchange must finish by ~9s (leave breathing room). Budget realistically at a natural pace — roughly 0.4s per word plus a ~0.5s beat between speakers. A short line like "Thế anh đã vo gạo chưa?" ≈ 2.5s. If the exchange does NOT fit, keep only the turns that fit and PUSH the rest into the NEXT segment — never cram or speed up speech.
@@ -1037,7 +1037,7 @@ ${beatExample}
       "dialogue": "string — the FIRST turn's spoken line in ${dialogueLanguage} (short, natural). Mirror of dialogue_lines[0].text.",
       "speaker": "string — the EXACT character_locks name of the FIRST turn's speaker (mirror of dialogue_lines[0].speaker). Empty string \\"\\" if voiceover.",
       "dialogue_lines": [
-        { "speaker": "exact character_locks name, or \\"\\" only for narrator voiceover", "delivery": "on_screen|off_screen|voiceover — on_screen requires the speaker in characters_in_scene; off_screen keeps a named speaker outside the camera beat; voiceover requires speaker=\\"\\"", "text": "the spoken line in ${dialogueLanguage}", "start_s": 0, "end_s": 3 }
+        { "speaker": "exact character_locks name, or \\"\\" only for narrator voiceover", "delivery": "on_screen|off_screen|voiceover", "camera_beat": "1-based beats[] index REQUIRED for on_screen; that exact beat must name/show the speaker. Omit for off_screen/voiceover.", "text": "the spoken line in ${dialogueLanguage}", "start_s": 0, "end_s": 3 }
       ],
       "characters_in_scene": ["REQUIRED — array of EXACT character_locks names VISIBLE in this segment. Every dialogue turn with delivery=on_screen must be listed; a named delivery=off_screen speaker must not be forced into this visible cast."],
       "environment_ref": "string — the environment archetype id from the ENVIRONMENT ENGINE list that matches this segment's setting (e.g. 'misty_mountain_ridge_dawn'), or 'custom' if none fits. Consecutive segments in the same place reuse the same id.",
@@ -1170,7 +1170,7 @@ LOCKED DIALOGUE TURNS (the user's final text — copy each line VERBATIM, same s
 ${turnsBlock}
 
 REWRITE RULES:
-1. Re-time the turns realistically (~0.4s per word + ~0.5s beat between speakers), strictly sequential and non-overlapping, finished by ~9s. Fill "dialogue_lines" with start_s/end_s for every turn; mirror turn 1 into "dialogue" and "speaker".
+1. Re-time the turns realistically (~0.4s per word + ~0.5s beat between speakers), strictly sequential and non-overlapping, finished by ~9s. Fill "dialogue_lines" with start_s/end_s for every turn; every delivery=on_screen turn also receives camera_beat pointing to the 1-based beats[] item that explicitly names/shows that speaker. Omit camera_beat for off_screen/voiceover. Mirror turn 1 into "dialogue" and "speaker".
 2. Rewrite "motion_prompt" (70-110 words) as ONE untimed chronological physical sequence. State who addresses whom and the listener's silent reaction, but put NO seconds/time ranges, quoted dialogue or camera schedule in motion_prompt. Speech may accompany an ordinary body transition when the line, breath and context make it natural; otherwise place the larger movement before/after the line. DAILY-MOVEMENT MICRO-GRAMMAR: every sit / stand / walk / door-open / carry action shows its real mechanics and weight transfer (never jump states) — opening a door = reach handle → grip → hinge/slide moves → cross the threshold; carrying furniture = grip → lift countering the load → walk the continuous path → set down before releasing. CAUSAL CHAIN: every object interaction visibly follows reach → contact/grip → continuous transfer → release; every fall/open/spill has a visible cause first; all used props already exist in first_frame_prompt; the whole clip stays in ONE location. Keep the physical load light and meaningful.
 3. Rewrite "beats" (EXACTLY ${beatsPerSegment} beats) as untimed progressive framings of the same continuous action. CAMERA DOES NOT ASSIGN SPEECH: it may hold the speaker, listener reaction or both; camera notes contain no dialogue timecodes, use one calm smooth move and never force the framed person to lip-sync.
 4. Update "first_frame_prompt" only as needed: keep the same location/light, then use exact character names plus position, pose, action, expression and props only. Never restate appearance, initial wardrobe or voice from character_locks. Set "characters_in_scene" to the EXACT visible lock names — include every on_screen speaker, but do not force a named off_screen speaker into the camera beat.
@@ -2656,6 +2656,10 @@ export function buildVeoJson(
     const contextLocation = seg.location_id
       ? contextLocationsById.get(seg.location_id.trim().toLowerCase())
       : undefined;
+    const transitionMode =
+      seg.transition_in?.mode ??
+      seg.continuity_mode ??
+      (segIndex === 0 ? "opening" : "continuous");
     const onScreen = resolveClipCast(seg);
     // The clip cast is authoritative. Never fall back to the project's full
     // lock list when a legacy segment omitted its cast field.
@@ -2918,6 +2922,10 @@ export function buildVeoJson(
               : name
                 ? "on_screen"
                 : "voiceover",
+          camera_beat:
+            name && turn.delivery !== "off_screen"
+              ? turn.camera_beat ?? null
+              : null,
           voice_personality: voicePersonality,
           text: oneLine(turn.text),
           language: lang,
@@ -2946,6 +2954,23 @@ export function buildVeoJson(
     const environmentSoundBed = scrub(
       contextLocation?.sound_bed || env?.sound_bed || opts.ambientAudio || ""
     );
+    const environmentReverb = scrub(contextLocation?.reverb_profile || "");
+    const previousLocationId =
+      segIndex > 0 ? oneLine(breakdown.segments[segIndex - 1]?.location_id) : "";
+    const locationChanged =
+      !!previousLocationId &&
+      !!seg.location_id &&
+      previousLocationId !== seg.location_id;
+    const audioPolicy =
+      transitionMode === "opening"
+        ? "open"
+        : transitionMode === "continuous"
+          ? "preserve"
+          : locationChanged
+            ? "reset_to_location"
+            : transitionMode === "time_jump"
+              ? "reset_for_time"
+              : "reset_for_cut";
     const sceneBibleTokens = {
       lens: scrub(sb?.lens),
       color_grade: scrub(sb?.color_grade),
@@ -2953,15 +2978,13 @@ export function buildVeoJson(
       backdrop: scrub(sb?.backdrop),
       film_grain: scrub(sb?.film_grain),
       audio_bed: environmentSoundBed,
+      reverb: environmentReverb,
     };
     return {
       scene_id: String(seg.segment_number),
       duration_sec: clipSeconds,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
-      continuity_mode:
-        seg.transition_in?.mode ??
-        seg.continuity_mode ??
-        (segIndex === 0 ? "opening" : "continuous"),
+      continuity_mode: transitionMode,
       ...(seg.transition_in ? { transition_in: seg.transition_in } : {}),
       ...(seg.state_ledger ? { state_ledger: seg.state_ledger } : {}),
       visual_style: [
@@ -3004,6 +3027,15 @@ export function buildVeoJson(
           ? "Attached location image is the set authority; keep its geometry, furniture, materials and light."
           : "Keep this set unchanged; spatial_topology controls its fixed geometry.",
       },
+      audio_transition: {
+        policy: audioPolicy,
+        ...(previousLocationId
+          ? { from_location_id: previousLocationId }
+          : {}),
+        to_location_id: seg.location_id || "",
+        sound_bed: environmentSoundBed,
+        reverb_profile: environmentReverb,
+      },
       ...(spatialTopology ? { spatial_topology: spatialTopology } : {}),
       camera: {
         framing: revolvingDoorCameraMovement ? "MS" : camera.framing,
@@ -3036,6 +3068,7 @@ export function buildVeoJson(
       },
       foley_and_ambience: {
         environment_sound_bed: environmentSoundBed,
+        environment_reverb: environmentReverb,
         project_ambient: scrub(opts.ambientAudio),
         ambience: [environmentSoundBed, ...ambience.map(scrub)].filter(Boolean),
         fx: ["natural clothing, footsteps and prop-contact sounds synchronized to visible action"],

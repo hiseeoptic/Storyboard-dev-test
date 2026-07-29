@@ -277,8 +277,8 @@ function addContextContracts(bd: Breakdown): Breakdown {
         strategy: "multi_location",
         primary_category: "interior",
         locations: [
-          { id: "office", narrative_function: "work", description: "office", culture_geography_fit: "fit", spatial_anchors: [], fixed_elements: [], lighting_motivation: "day", sound_bed: "office" },
-          { id: "home", narrative_function: "home", description: "home", culture_geography_fit: "fit", spatial_anchors: [], fixed_elements: [], lighting_motivation: "evening", sound_bed: "home" },
+          { id: "office", narrative_function: "work", description: "office", culture_geography_fit: "fit", spatial_anchors: [], fixed_elements: [], lighting_motivation: "day", sound_bed: "office", reverb_profile: "short treated-office decay" },
+          { id: "home", narrative_function: "home", description: "home", culture_geography_fit: "fit", spatial_anchors: [], fixed_elements: [], lighting_motivation: "evening", sound_bed: "home", reverb_profile: "soft furnished-room decay" },
         ],
         selection_rule: "script",
       },
@@ -423,6 +423,23 @@ test("named off-screen speaker keeps voice binding without entering visible cast
     ),
     false
   );
+});
+
+test("CAST-004: on-screen speaker must bind to a beat that names them", () => {
+  const bd = cleanFixture();
+  bd.character_locks[0]!.voice = "warm resonant timbre, 90-130 Hz, 110 wpm";
+  bd.segments[0]!.dialogue_lines = [
+    {
+      speaker: "Minh",
+      delivery: "on_screen",
+      camera_beat: 2,
+      text: "Anh hiểu rồi.",
+      start_s: 0,
+      end_s: 2,
+    },
+  ];
+  const report = validateStoryboardSemantics(bd);
+  assert.ok(report.findings.some((finding) => finding.code === "CAST-004"));
 });
 
 test("DLG-006: unnaturally compressed speech timing fails", () => {

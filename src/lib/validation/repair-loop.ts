@@ -115,6 +115,23 @@ function findingSignature(report: SemanticValidationReport): string {
     .join("\n");
 }
 
+function cameraBeatForSpeaker(
+  segment: VideoSegment,
+  speaker: string
+): number | undefined {
+  const name = speaker.trim();
+  if (!name) return undefined;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const exact = new RegExp(
+    `(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`,
+    "iu"
+  );
+  const index = (segment.beats ?? []).findIndex((beat) =>
+    exact.test(`${beat.beat ?? ""} ${beat.camera ?? ""}`)
+  );
+  return index >= 0 ? index + 1 : undefined;
+}
+
 function lockedDialogue(
   original: VideoSegment,
   repaired: VideoSegment
@@ -139,6 +156,13 @@ function lockedDialogue(
   const dialogue_lines = originalTurns.map((turn, index) => ({
     speaker: (turn.speaker ?? "").trim(),
     delivery: turn.delivery,
+    camera_beat:
+      repairedTurns[index]?.camera_beat ??
+      turn.camera_beat ??
+      (turn.delivery === "off_screen" || turn.delivery === "voiceover"
+        ? undefined
+        : cameraBeatForSpeaker(repaired, turn.speaker) ??
+          cameraBeatForSpeaker(original, turn.speaker)),
     text: turn.text.trim(),
     start_s: repairedTurns[index]?.start_s,
     end_s: repairedTurns[index]?.end_s,
