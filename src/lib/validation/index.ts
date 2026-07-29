@@ -9,6 +9,13 @@ export type {
   SemanticValidationReport,
 } from "./semantic-validator";
 export { validatePromptExports } from "./prompt-validator";
+export { validateStoryboardInput } from "./input-validator";
+export { validateResolvedVideoContext } from "./context-validator";
+export {
+  fingerprintStoryboardValidation,
+  hasCurrentValidationCache,
+  stampValidationCache,
+} from "./validation-fingerprint";
 export { runStoryboardRepairLoop } from "./repair-loop";
 export type {
   StoryboardRepairBatch,

@@ -703,7 +703,7 @@ MULTI-CHARACTER CASTING & DIALOGUE ASSIGNMENT (mandatory whenever the story/scri
 - FULL CAST LOCK: create ONE character_lock for EVERY distinct person who appears anywhere in the story/script — no exceptions. If the script names people by ROLE (Chồng/Vợ/Con, Bố/Mẹ, husband/wife/child…), assign each role ONE ordinary given name and state the mapping in the synopsis. Use those EXACT names consistently in every segment, beat caption, first_frame_prompt, dialogue and speaker field. NEVER invent an extra unnamed person or silently choose a name from a rule example.
 - CHILDREN: keep "is_child": true when the menu/script marks a child. For a text-only child, use an age-locked description. For an uploaded-reference child, never state or infer age/body appearance; the image alone supplies it.
 - ROLE-LABELLED DIALOGUE RECOGNITION: when the idea/script contains dialogue labelled by role or an exact character name, each labelled line belongs to THAT character — copy it VERBATIM and set that character's lock name as its speaker. NEVER reassign a line to a different character. A short back-and-forth (e.g. a question + a reply, ~2-3 short lines) SHOULD share ONE 10s clip as sequential turns in "dialogue_lines" (fill the time instead of wasting a clip per line) — following the DIALOGUE turn-taking rules below. Only spill to the NEXT segment when the exchange no longer fits in ~9 seconds.
-- "characters_in_scene" (REQUIRED per segment): list the EXACT lock names of everyone VISIBLE in that segment — nobody else may appear (no background family members drifting in). The "speaker" MUST be one of them (empty speaker = voiceover). Non-speaking listed characters are present from the first frame, reacting silently, mouths closed. Do NOT invent mid-clip entrances or exits. Only an approved script that explicitly requires an arrival may use one, and then the first frame must show that named character already at the declared doorway/threshold and the motion_prompt must show the complete physically continuous walk path; otherwise every listed character stays in their starting zone for the whole clip.
+- "characters_in_scene" (REQUIRED per segment): list the EXACT lock names of everyone VISIBLE in that segment — nobody else may appear. A turn with delivery="on_screen" MUST name one of them. A named delivery="off_screen" speaker keeps their own locked voice but remains outside the camera beat. delivery="voiceover" requires speaker="". Non-speaking listed characters react silently, mouths closed.
 - CAST CONTINUITY: keep every character consistent across segments. For text-only characters, character_locks is the only appearance/initial-wardrobe/voice authority; all scene fields use the exact name plus current position, pose, action, expression and prop state only. For uploaded-reference characters, use only their exact name plus the attached image binding; never repeat or paraphrase their appearance in first_frame_prompt, motion_prompt, beats or camera text.
 - If there is a hero PRODUCT, write "product_dna": exact shape, material, colours WITH RGB hex, label/logo text+colour, cap/parts — repeated verbatim.
 - Build a "scene_bible" (lens, lighting with Kelvin temps, backdrop with hex, colour grade) as the single style authority. Scene fields obey it without copying the full style fingerprint repeatedly.
@@ -762,7 +762,7 @@ DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlap
   2. FIT THE SECONDS: the whole exchange must finish by ~9s (leave breathing room). Budget realistically at a natural pace — roughly 0.4s per word plus a ~0.5s beat between speakers. A short line like "Thế anh đã vo gạo chưa?" ≈ 2.5s. If the exchange does NOT fit, keep only the turns that fit and PUSH the rest into the NEXT segment — never cram or speed up speech.
   3. MAX 3 turns and MAX 2 distinct speakers per clip (a third speaker like a child interjecting is allowed only as the LAST short turn). More than that → split across segments.
   4. CAMERA DOES NOT ASSIGN SPEECH: camera and speaker are independent. Camera notes may hold the speaker, the listener's reaction, or both, but contain no dialogue timecodes and never force the framed person to speak. Only dialogue_lines.speaker owns the voice and lip movement; every other visible mouth stays closed.
-  5. "characters_in_scene" must include every speaker; a voiceover speaker ("") is heard but not shown.
+  5. "characters_in_scene" must include every delivery="on_screen" speaker. A named delivery="off_screen" speaker is heard outside the camera beat; delivery="voiceover" requires speaker="".
   6. SPEECH + BODY MOVEMENT: speaking while walking, standing up, sitting down or turning is allowed when the approved script and real context make it natural. Keep the line short enough for natural breath, keep the named speaker visible/identifiable, and avoid stacking a difficult prop action at the same moment. For long or emotionally precise lines, prefer a settled pose. Never ban movement categorically.
   7. ONE CLOCK ONLY: dialogue_lines.start_s/end_s is the sole numeric clock in a clip. motion_prompt and camera notes describe ordered action/coverage with NO seconds and NO time ranges. Never create a second camera or action timeline.
   8. QUIET WINDOW: never place a dialogue window over a loud or major physical event. Complete the crash/fall/impact first in the ordered action, then begin the reaction line; do not add event timecodes outside dialogue_lines.
@@ -854,7 +854,7 @@ ${JSON.stringify(input.resolved_context, null, 2)}
   // Stage-1 approved script (written by Claude). When present, the storyboard
   // model must EXPAND this exact script into the JSON — not invent a new story.
   const scriptBlock = input.source_script
-    ? `\n\n=== APPROVED SCRIPT (Stage 1) — EXPAND THIS VERBATIM ===\nA scriptwriter already wrote the creative script below. Your job is ONLY to turn it into the technical storyboard JSON. Follow it FAITHFULLY:\n- ${characterNames.length > 0 ? `The CLOSED USER CAST above is the absolute name authority. Create exactly those ${characterNames.length} locks and no others. If this script contains a wrong, invented or alternate character name, map that role back to the appropriate closed-cast name; never copy the stray name into output.` : `Keep the SAME CAST across the whole video: create one character_lock per person in CHARACTERS (same names, same looks everywhere; carry any "(child)" mark into is_child: true).`}\n- Map each SEGMENT in the script to one 10s storyboard segment IN ORDER (same count, same beats/roles).\n- Use each segment's DIALOGUE line VERBATIM as that segment's "dialogue"; set "speaker" from the script's SPEAKER line ("VO" → speaker: ""); set "characters_in_scene" from the script's IN SCENE line (exact lock names). NEVER give a line to a different character.\n- SPEAKER ATTRIBUTION IS CRITICAL — copy the speaker label the script already wrote in front of each line, EXACTLY. Do not re-decide who is talking, do not default every line to the first character, and do not merge two people into one. If the script labels a line with a role, use that role's mapped character name from CHARACTERS. Read the words the line actually uses to address or refer to people and confirm they fit the labelled speaker; a misattributed line ruins the whole video.\n- KEEP EVERY LINE OF THE SCRIPT. Do not compress a multi-line exchange down to one line per segment: distribute the script's full back-and-forth across the segments using "dialogue_lines" (up to 3 turns per 10s segment, sequential, non-overlapping, each with its own correct speaker). Dropping the user's lines is a bug.\n- Turn each segment's ACTION into the first_frame_prompt + motion_prompt (one continuous action per clip).\n- Do NOT add, drop, reorder, or invent segments, lines or people. This script is final.\n\n${input.source_script}\n=== END APPROVED SCRIPT ===`
+    ? `\n\n=== APPROVED SCRIPT (Stage 1) — EXPAND THIS VERBATIM ===\nA scriptwriter already wrote the creative script below. Your job is ONLY to turn it into the technical storyboard JSON. Follow it FAITHFULLY:\n- ${characterNames.length > 0 ? `The CLOSED USER CAST above is the absolute name authority. Create exactly those ${characterNames.length} locks and no others. If this script contains a wrong, invented or alternate character name, map that role back to the appropriate closed-cast name; never copy the stray name into output.` : `Keep the SAME CAST across the whole video: create one character_lock per person in CHARACTERS (same names, same looks everywhere; carry any "(child)" mark into is_child: true).`}\n- Map each SEGMENT in the script to one 10s storyboard segment IN ORDER (same count, same beats/roles).\n- Use each segment's DIALOGUE line VERBATIM; set its speaker from the script's SPEAKER line ("VO" → speaker: "", delivery: "voiceover"). Use delivery="off_screen" only when the approved script explicitly places that named speaker outside the camera beat. Set "characters_in_scene" from the script's IN SCENE line. NEVER give a line to a different character.\n- SPEAKER ATTRIBUTION IS CRITICAL — copy the speaker label the script already wrote in front of each line, EXACTLY. Do not re-decide who is talking, do not default every line to the first character, and do not merge two people into one. If the script labels a line with a role, use that role's mapped character name from CHARACTERS. Read the words the line actually uses to address or refer to people and confirm they fit the labelled speaker; a misattributed line ruins the whole video.\n- KEEP EVERY LINE OF THE SCRIPT. Do not compress a multi-line exchange down to one line per segment: distribute the script's full back-and-forth across the segments using "dialogue_lines" (up to 3 turns per 10s segment, sequential, non-overlapping, each with its own correct speaker). Dropping the user's lines is a bug.\n- Turn each segment's ACTION into the first_frame_prompt + motion_prompt (one continuous action per clip).\n- Do NOT add, drop, reorder, or invent segments, lines or people. This script is final.\n\n${input.source_script}\n=== END APPROVED SCRIPT ===`
     : "";
 
   const segmentCount = input.segment_count ?? 5;
@@ -1037,9 +1037,9 @@ ${beatExample}
       "dialogue": "string — the FIRST turn's spoken line in ${dialogueLanguage} (short, natural). Mirror of dialogue_lines[0].text.",
       "speaker": "string — the EXACT character_locks name of the FIRST turn's speaker (mirror of dialogue_lines[0].speaker). Empty string \\"\\" if voiceover.",
       "dialogue_lines": [
-        { "speaker": "exact character_locks name or \\"\\" for voiceover", "text": "the spoken line in ${dialogueLanguage}", "start_s": 0, "end_s": 3 }
+        { "speaker": "exact character_locks name, or \\"\\" only for narrator voiceover", "delivery": "on_screen|off_screen|voiceover — on_screen requires the speaker in characters_in_scene; off_screen keeps a named speaker outside the camera beat; voiceover requires speaker=\\"\\"", "text": "the spoken line in ${dialogueLanguage}", "start_s": 0, "end_s": 3 }
       ],
-      "characters_in_scene": ["REQUIRED — array of EXACT character_locks names VISIBLE in this segment (use only names defined for THIS video). Only these people appear on screen; the speaker must be listed here; others in the list react silently."],
+      "characters_in_scene": ["REQUIRED — array of EXACT character_locks names VISIBLE in this segment. Every dialogue turn with delivery=on_screen must be listed; a named delivery=off_screen speaker must not be forced into this visible cast."],
       "environment_ref": "string — the environment archetype id from the ENVIRONMENT ENGINE list that matches this segment's setting (e.g. 'misty_mountain_ridge_dawn'), or 'custom' if none fits. Consecutive segments in the same place reuse the same id.",
       "location_id": "string — REQUIRED project-local id copied exactly from RESOLVED CONTEXT IR layers.environment.locations. Never invent a library id here.",
       "continuity_mode": "opening|continuous|scene_cut|location_cut|time_jump|parallel_intercut|match_cut|montage|flashback|dream|symbolic — REQUIRED Schema 4.0 selector and MUST exactly equal transition_in.mode",
@@ -1173,7 +1173,7 @@ REWRITE RULES:
 1. Re-time the turns realistically (~0.4s per word + ~0.5s beat between speakers), strictly sequential and non-overlapping, finished by ~9s. Fill "dialogue_lines" with start_s/end_s for every turn; mirror turn 1 into "dialogue" and "speaker".
 2. Rewrite "motion_prompt" (70-110 words) as ONE untimed chronological physical sequence. State who addresses whom and the listener's silent reaction, but put NO seconds/time ranges, quoted dialogue or camera schedule in motion_prompt. Speech may accompany an ordinary body transition when the line, breath and context make it natural; otherwise place the larger movement before/after the line. DAILY-MOVEMENT MICRO-GRAMMAR: every sit / stand / walk / door-open / carry action shows its real mechanics and weight transfer (never jump states) — opening a door = reach handle → grip → hinge/slide moves → cross the threshold; carrying furniture = grip → lift countering the load → walk the continuous path → set down before releasing. CAUSAL CHAIN: every object interaction visibly follows reach → contact/grip → continuous transfer → release; every fall/open/spill has a visible cause first; all used props already exist in first_frame_prompt; the whole clip stays in ONE location. Keep the physical load light and meaningful.
 3. Rewrite "beats" (EXACTLY ${beatsPerSegment} beats) as untimed progressive framings of the same continuous action. CAMERA DOES NOT ASSIGN SPEECH: it may hold the speaker, listener reaction or both; camera notes contain no dialogue timecodes, use one calm smooth move and never force the framed person to lip-sync.
-4. Update "first_frame_prompt" only as needed: keep the same location/light, then use exact character names plus position, pose, action, expression and props only. Never restate appearance, initial wardrobe or voice from character_locks. Set "characters_in_scene" to the EXACT visible lock names — every named speaker must be included.
+4. Update "first_frame_prompt" only as needed: keep the same location/light, then use exact character names plus position, pose, action, expression and props only. Never restate appearance, initial wardrobe or voice from character_locks. Set "characters_in_scene" to the EXACT visible lock names — include every on_screen speaker, but do not force a named off_screen speaker into the camera beat.
 5. SPATIAL TOPOLOGY: preserve the existing spatial_layout when it is physically valid; otherwise repair it without changing the intended location. For every multi-zone/doorway/boundary scene return all five core fields: ordered connected zones; immutable architecture/openings/boundaries; exact character zone + anchor distance + facing; one unobstructed walkable route; one real supported camera zone. first_frame_prompt, beats and motion_prompt MUST all obey this same map. Doorways/thresholds remain unobstructed; railings/guards remain only on the true exposed edge; nobody or the camera stands beyond them; zone changes visibly cross the declared connector. REVOLVING DOOR ONLY: classify ENTER / EXIT / PASS-THROUGH / HOLD-INSIDE / BACKGROUND-ONLY before writing mechanism_motion. EXIT opens with the character still in the same occupied wedge and crosses the destination threshold once at physical alignment; BACKGROUND-ONLY never invents an occupant. Never cross glass, reverse, change compartments or repeat a crossing.
 6. HARD CONSTRAINTS: keep "segment_number" = ${seg.segment_number}, "duration_seconds" = ${seg.duration_seconds || 10}, "marketing_role" = "${seg.marketing_role}", "environment_ref" = "${seg.environment_ref ?? "custom"}", "location_id" = "${seg.location_id ?? ""}", and preserve transition_in.mode/from_location_id/to_location_id. Set continuity_mode exactly equal to transition_in.mode. Locked project continuity profile = "${continuityMode}". ${strictContinuity ? "Open from the previous segment's exact end state and close on the next segment's exact opening state." : "Preserve only the continuity anchors declared by transition_in/context; location, time or pose may change when this transition explicitly permits it."} Rebuild state_ledger for the rewritten action and update continuity_note accordingly.
 7. continuity_note = PHYSICAL SCENE STATE ONLY (who is where, holding what, in which pose/emotion, carried into the next shot). STRICTLY FORBIDDEN inside continuity_note, first_frame_prompt, motion_prompt and beats: numeric timecodes, production/meta commentary, word counts, wpm math, "moved to segment N", duration notes, quoted dialogue or editor notes. Only dialogue_lines.start_s/end_s may contain seconds.
@@ -2580,6 +2580,12 @@ export function buildVeoJson(
       oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child),
     ])
   );
+  const contextLocationsById = new Map(
+    (breakdown.context_ir?.layers.environment.locations ?? []).map((location) => [
+      location.id.trim().toLowerCase(),
+      location,
+    ])
+  );
   const splitOutfit = (costume?: string) => {
     const parts = noHex(costume)
       .split(/[,;]\s*/)
@@ -2637,7 +2643,7 @@ export function buildVeoJson(
     const movement = /static|locked/.test(lower)
       ? "static"
       : cameraClauses.length > 1
-        ? `One continuous ${framing === "WS" ? "wide" : framing === "CU" ? "close" : "medium"} composition begins on ${cameraClauses[0]} and gently follows the same action before settling on ${cameraClauses[cameraClauses.length - 1]}, without a cut or shot-scale change`
+        ? `One continuous ${framing === "WS" ? "wide" : framing === "CU" ? "close" : "medium"} composition begins with ${cameraClauses[0]} and gently follows the same action before settling on ${cameraClauses[cameraClauses.length - 1]}, without a cut or shot-scale change`
         : cameraClauses[0] || "single slow, smooth camera move";
     return { framing, angle, movement };
   };
@@ -2647,6 +2653,9 @@ export function buildVeoJson(
     const clipSeconds = Math.max(1, seg.duration_seconds || 10);
     const speaker = oneLine(seg.speaker);
     const env = resolveEnvironment(seg.environment_ref, seg.first_frame_prompt);
+    const contextLocation = seg.location_id
+      ? contextLocationsById.get(seg.location_id.trim().toLowerCase())
+      : undefined;
     const onScreen = resolveClipCast(seg);
     // The clip cast is authoritative. Never fall back to the project's full
     // lock list when a legacy segment omitted its cast field.
@@ -2844,7 +2853,10 @@ export function buildVeoJson(
             name: lock.name,
             species: `Human${culture ? ` - ${culture}` : ""}${lock.is_child ? " child" : ""}`,
             gender: lock.gender === "male" ? "Male" : lock.gender === "female" ? "Female" : "Unspecified",
-            age: scrub(lock.gender_age),
+            age: scrub(lock.gender_age).replace(
+              /^(?:male|female|man|woman|nam|nữ)\b[\s,:;/-]*/iu,
+              ""
+            ),
             voice_personality: oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child),
             body_build: noHex(lock.build),
             face_shape: noHex(lock.face_structure),
@@ -2900,6 +2912,12 @@ export function buildVeoJson(
         const line = {
           speaker_id: name ? charIds.get(name.toLowerCase()) || name : "VOICEOVER",
           speaker_name: name || "VOICEOVER",
+          delivery:
+            turn.delivery === "off_screen"
+              ? "off_screen"
+              : name
+                ? "on_screen"
+                : "voiceover",
           voice_personality: voicePersonality,
           text: oneLine(turn.text),
           language: lang,
@@ -2925,9 +2943,20 @@ export function buildVeoJson(
     const ambience = [env?.sound_bed, opts.ambientAudio].filter(
       (value): value is string => !!value
     );
+    const environmentSoundBed = scrub(
+      contextLocation?.sound_bed || env?.sound_bed || opts.ambientAudio || ""
+    );
+    const sceneBibleTokens = {
+      lens: scrub(sb?.lens),
+      color_grade: scrub(sb?.color_grade),
+      lighting: scrub(sb?.lighting),
+      backdrop: scrub(sb?.backdrop),
+      film_grain: scrub(sb?.film_grain),
+      audio_bed: environmentSoundBed,
+    };
     return {
       scene_id: String(seg.segment_number),
-      duration_sec: String(clipSeconds),
+      duration_sec: clipSeconds,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
       continuity_mode:
         seg.transition_in?.mode ??
@@ -2948,6 +2977,7 @@ export function buildVeoJson(
       // images per clip. Never make them infer the cast from character_lock.
       characters_in_scene: onScreen,
       character_lock: characterLock,
+      scene_bible_tokens: sceneBibleTokens,
       ...(seg.wardrobe_state && seg.wardrobe_state.length > 0
         ? {
             wardrobe_state: seg.wardrobe_state.map((state) => ({
@@ -3005,7 +3035,9 @@ export function buildVeoJson(
           : "Keep blocking and eye-lines physically possible; change positions only through visible scripted movement.",
       },
       foley_and_ambience: {
-        ambience,
+        environment_sound_bed: environmentSoundBed,
+        project_ambient: scrub(opts.ambientAudio),
+        ambience: [environmentSoundBed, ...ambience.map(scrub)].filter(Boolean),
         fx: ["natural clothing, footsteps and prop-contact sounds synchronized to visible action"],
         music:
           opts.ambientAudio && !/no music/i.test(opts.ambientAudio)

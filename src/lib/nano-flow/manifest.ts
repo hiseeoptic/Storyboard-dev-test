@@ -382,6 +382,7 @@ export function buildNanoFlowManifest(
         seg.transition_in?.mode ??
         seg.continuity_mode ??
         (i === 0 ? "opening" : "continuous"),
+      ...(seg.location_id ? { location_id: seg.location_id } : {}),
       image_refs,
 
       // STEP B video payload = the STRUCTURED Veo scene JSON (high quality);

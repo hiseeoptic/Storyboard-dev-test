@@ -138,6 +138,7 @@ function lockedDialogue(
   const repairedTurns = repaired.dialogue_lines ?? [];
   const dialogue_lines = originalTurns.map((turn, index) => ({
     speaker: (turn.speaker ?? "").trim(),
+    delivery: turn.delivery,
     text: turn.text.trim(),
     start_s: repairedTurns[index]?.start_s,
     end_s: repairedTurns[index]?.end_s,

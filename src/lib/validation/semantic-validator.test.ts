@@ -359,6 +359,39 @@ test("Schema 4.0 rejects a continuity_mode that disagrees with transition_in", (
   assert.ok(r.findings.some((finding) => finding.code === "TRANS-005"));
 });
 
+test("parallel intercut restores the last remembered state at that location", () => {
+  const bd = addContextContracts(twoSegFixture());
+  bd.segments[0]!.state_ledger = {
+    start: [{ entity_id: "cup", state: "full", position: "office desk" }],
+    changes: [],
+    end: [{ entity_id: "cup", state: "full", position: "office desk" }],
+  };
+  const returning = {
+    ...bd.segments[0]!,
+    segment_number: 3,
+    location_id: "office",
+    continuity_mode: "parallel_intercut",
+    transition_in: {
+      mode: "parallel_intercut",
+      from_location_id: "home",
+      to_location_id: "office",
+      time_relation: "simultaneous",
+      preserve: ["office physical state"],
+      reset: [],
+      reason: "return to the call at work",
+    },
+    state_ledger: {
+      start: [{ entity_id: "cup", state: "empty", position: "office shelf" }],
+      changes: [],
+      end: [{ entity_id: "cup", state: "empty", position: "office shelf" }],
+    },
+  } as Breakdown["segments"][number];
+  bd.segments.push(returning);
+  bd.total_duration_seconds = 30;
+  const report = validateStoryboardSemantics(bd);
+  assert.ok(report.findings.some((finding) => finding.code === "STATE-006"));
+});
+
 // ── Dialogue (Tầng 10) ──────────────────────────────────────────────────────
 test("DLG-001: out-of-range and overlapping dialogue timings flag", () => {
   const bd = cleanFixture();
@@ -368,6 +401,44 @@ test("DLG-001: out-of-range and overlapping dialogue timings flag", () => {
   ] as Breakdown["segments"][number]["dialogue_lines"];
   const r = validateStoryboardSemantics(bd);
   assert.ok(r.findings.some((x) => x.code === "DLG-001"));
+});
+
+test("named off-screen speaker keeps voice binding without entering visible cast", () => {
+  const bd = cleanFixture();
+  bd.character_locks[0]!.voice = "warm resonant timbre, 90-130 Hz, 110 wpm";
+  bd.segments[0]!.characters_in_scene = ["Lan"];
+  bd.segments[0]!.dialogue_lines = [
+    {
+      speaker: "Minh",
+      delivery: "off_screen",
+      text: "Anh đang gọi từ cơ quan.",
+      start_s: 0,
+      end_s: 3,
+    },
+  ];
+  const report = validateStoryboardSemantics(bd);
+  assert.equal(
+    report.findings.some(
+      (finding) => finding.code === "CAST-001" && /Minh/.test(finding.message)
+    ),
+    false
+  );
+});
+
+test("DLG-006: unnaturally compressed speech timing fails", () => {
+  const bd = cleanFixture();
+  bd.character_locks[0]!.voice = "warm resonant timbre, 90-130 Hz, 110 wpm";
+  bd.segments[0]!.dialogue_lines = [
+    {
+      speaker: "Minh",
+      delivery: "on_screen",
+      text: "Một hai ba bốn năm sáu bảy tám chín mười",
+      start_s: 0,
+      end_s: 2,
+    },
+  ];
+  const report = validateStoryboardSemantics(bd);
+  assert.ok(report.findings.some((finding) => finding.code === "DLG-006"));
 });
 
 // ── Report shape ────────────────────────────────────────────────────────────

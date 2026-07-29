@@ -45,9 +45,17 @@ import {
 } from "@/prompts";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
 import {
+  buildStoryboardPromptPackage,
+  validateStoryboardPromptPackage,
+} from "@/lib/storyboard/prompt-package";
+import {
   buildReport,
   formatSemanticReport,
+  hasCurrentValidationCache,
   runStoryboardRepairLoop,
+  stampValidationCache,
+  validateResolvedVideoContext,
+  validateStoryboardInput,
   validatePromptExports,
   validateStoryboardSemantics,
   type SemanticValidationReport,
@@ -429,6 +437,7 @@ function enforceSceneCastContract(breakdown: StoryboardGenerationOutput): void {
   if (locks.length === 0) return;
   const byLower = new Map(locks.map((lock) => [lock.name.trim().toLowerCase(), lock.name.trim()]));
   for (const seg of breakdown.segments) {
+    const hasStructuredTurns = (seg.dialogue_lines?.length ?? 0) > 0;
     // Preserve an intentional [] hands-only cast. Only repair a missing field.
     if (Array.isArray(seg.characters_in_scene)) {
       seg.characters_in_scene = [
@@ -447,8 +456,13 @@ function enforceSceneCastContract(breakdown: StoryboardGenerationOutput): void {
       seg.motion_prompt,
       seg.continuity_note,
       seg.dialogue,
-      seg.speaker,
-      ...(seg.dialogue_lines ?? []).flatMap((turn) => [turn.speaker, turn.text]),
+      hasStructuredTurns ? "" : seg.speaker,
+      ...(seg.dialogue_lines ?? []).flatMap((turn) => [
+        turn.delivery === "off_screen" || turn.delivery === "voiceover"
+          ? ""
+          : turn.speaker,
+        turn.text,
+      ]),
     ]
       .filter(Boolean)
       .join(" ");
@@ -456,8 +470,13 @@ function enforceSceneCastContract(breakdown: StoryboardGenerationOutput): void {
       .filter((lock) => exactCharacterMention(corpus, lock.name.trim()))
       .map((lock) => lock.name.trim());
     const speakerNames = [
-      seg.speaker,
-      ...(seg.dialogue_lines ?? []).map((turn) => turn.speaker),
+      hasStructuredTurns ? "" : seg.speaker,
+      ...(seg.dialogue_lines ?? [])
+        .filter(
+          (turn) =>
+            turn.delivery !== "off_screen" && turn.delivery !== "voiceover"
+        )
+        .map((turn) => turn.speaker),
     ]
       .map((name) => byLower.get((name ?? "").trim().toLowerCase()))
       .filter((name): name is string => !!name);
@@ -535,7 +554,13 @@ function scriptSpeakerIndex(sourceScript?: string | null): Map<string, string> {
  * No language-, gender- or relationship-specific rules are baked in.
  */
 function repairTurnSpeakers(
-  turns: { speaker: string; text: string; start_s?: number; end_s?: number }[],
+  turns: {
+    speaker: string;
+    delivery?: "on_screen" | "off_screen" | "voiceover";
+    text: string;
+    start_s?: number;
+    end_s?: number;
+  }[],
   cast: { name: string }[],
   scriptIndex: Map<string, string>
 ): void {
@@ -572,12 +597,21 @@ function normalizeDialogue(
     turns = turns
       .filter((t) => t && typeof t.text === "string" && t.text.trim())
       .slice(0, MAX_TURNS)
-      .map((t) => ({
-        speaker: (t.speaker ?? "").trim(),
-        text: t.text.trim(),
-        start_s: typeof t.start_s === "number" ? t.start_s : undefined,
-        end_s: typeof t.end_s === "number" ? t.end_s : undefined,
-      }));
+      .map((t) => {
+        const speaker = (t.speaker ?? "").trim();
+        return {
+          speaker,
+          delivery:
+            t.delivery === "off_screen" || t.delivery === "voiceover"
+              ? t.delivery
+              : speaker
+                ? "on_screen"
+                : "voiceover",
+          text: t.text.trim(),
+          start_s: typeof t.start_s === "number" ? t.start_s : undefined,
+          end_s: typeof t.end_s === "number" ? t.end_s : undefined,
+        };
+      });
 
     // Re-attribute from the approved script BEFORE merging (merge compares
     // speakers, so a wrong label would merge two different people's lines).
@@ -589,7 +623,11 @@ function normalizeDialogue(
     const mergedTurns: typeof turns = [];
     for (const t of turns) {
       const last = mergedTurns[mergedTurns.length - 1];
-      if (last && last.speaker.toLowerCase() === t.speaker.toLowerCase()) {
+      if (
+        last &&
+        last.speaker.toLowerCase() === t.speaker.toLowerCase() &&
+        last.delivery === t.delivery
+      ) {
         last.text = `${last.text} ${t.text}`.trim();
         last.end_s = t.end_s ?? last.end_s;
       } else {
@@ -639,11 +677,14 @@ function normalizeDialogue(
       });
     }
 
-    // Ensure every speaker is on screen (turn-taking requires their face).
+    // Only an on-screen delivery requires the speaker's face in the camera
+    // beat. Named off-screen speech remains bound to that person's voice.
     if (turns.length > 0) {
       const onScreen = new Set((seg.characters_in_scene ?? []).map((n) => n.trim()).filter(Boolean));
-      for (const t of turns) if (t.speaker) onScreen.add(t.speaker);
-      if (onScreen.size > 0) seg.characters_in_scene = Array.from(onScreen);
+      for (const t of turns) {
+        if (t.speaker && t.delivery === "on_screen") onScreen.add(t.speaker);
+      }
+      seg.characters_in_scene = Array.from(onScreen);
     }
 
     // Write both forms back. Collapse to single-line when only one turn remains
@@ -1790,6 +1831,22 @@ function validatePreRenderGates(
       veoClips,
     });
     findings.push(...validatePromptExports(manifest).findings);
+    const promptPackage = buildStoryboardPromptPackage(breakdown, {
+      aspectRatio: input.aspect_ratio === "16:9" ? "16:9" : "9:16",
+      veoClips,
+    });
+    for (const message of validateStoryboardPromptPackage(promptPackage)) {
+      const clipNumber = message.match(/^CLIP_(\d+)/)?.[1];
+      findings.push({
+        code: "PKG-001",
+        severity: "high",
+        scope: clipNumber ? "segment" : "project",
+        ...(clipNumber
+          ? { segment_number: Number.parseInt(clipNumber, 10) }
+          : {}),
+        message: `Storyboard prompt package is inconsistent: ${message}`,
+      });
+    }
   } catch (error) {
     findings.push({
       code: "PROMPT-000",
@@ -1831,6 +1888,21 @@ async function runPreRenderLayerC(params: {
   let criticAudits = 0;
   const repairedSegments = new Set<number>();
   const repairedCharacters = new Set<string>();
+
+  // Deterministic A+B always reruns. Only the paid semantic critic is skipped,
+  // and only when the exact normalized storyboard fingerprint is unchanged.
+  const cachedPreflight = validatePreRenderGates(params.input, breakdown);
+  if (cachedPreflight.ok && hasCurrentValidationCache(breakdown)) {
+    return {
+      breakdown,
+      report: cachedPreflight,
+      status: "clean",
+      repairRounds: 0,
+      criticAudits: 0,
+      repairedSegmentNumbers: [],
+      repairedCharacterNames: [],
+    };
+  }
 
   const remember = (result: {
     rounds: number;
@@ -1912,6 +1984,7 @@ async function runPreRenderLayerC(params: {
     });
     criticAudits += 1;
     if (critic.ok) {
+      stampValidationCache(breakdown);
       return {
         breakdown,
         report: buildReport(
@@ -2012,6 +2085,15 @@ export async function generateStoryboardPlan(
         main_character: undefined,
       };
     }
+    const inputGate = validateStoryboardInput(input);
+    if (!inputGate.ok) {
+      return {
+        success: false,
+        error:
+          "Dữ liệu đầu vào chưa hợp lệ nên đã dừng trước mọi lời gọi AI.\n" +
+          formatSemanticReport(inputGate),
+      };
+    }
     const analysis = await runAnalysis(input, provider, warnings);
     const enhanced = enhanceInput(input, analysis);
 
@@ -2087,9 +2169,25 @@ export async function generateStoryboardPlan(
         deadlineMs: generationDeadlineMs,
         maxAttempts: 2,
       });
+      // Context analysis deliberately returns "resolved". This server boundary
+      // is the single deterministic owner that promotes the reviewed payload to
+      // "locked"; no downstream scene may reopen or reinterpret it.
+      const sanitizedContext = {
+        ...sanitizeUploadedCharacterContext(input, resolvedContext),
+        state: "locked" as const,
+      };
+      const contextGate = validateResolvedVideoContext(
+        sanitizedContext,
+        stage2Input
+      );
+      if (!contextGate.ok) {
+        throw new Error(
+          `Context IR không đạt khóa deterministic nên đã dừng trước API tạo storyboard.\n${formatSemanticReport(contextGate)}`
+        );
+      }
       contextBoundInput = {
         ...stage2Input,
-        resolved_context: sanitizeUploadedCharacterContext(input, resolvedContext),
+        resolved_context: sanitizedContext,
       };
     } catch (e) {
       throw new Error(
@@ -2557,6 +2655,7 @@ export async function rewriteSegment(params: {
       const modelTurns = segment.dialogue_lines ?? [];
       segment.dialogue_lines = userTurns.map((t, i) => ({
         speaker: (t.speaker ?? "").trim(),
+        delivery: t.delivery,
         text: t.text.trim(),
         start_s: modelTurns[i]?.start_s,
         end_s: modelTurns[i]?.end_s,

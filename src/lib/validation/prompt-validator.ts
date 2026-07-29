@@ -108,6 +108,12 @@ function setEq(a: Set<string>, b: Set<string>): boolean {
   return true;
 }
 
+function containsExact(authority: unknown, token: unknown): boolean {
+  const needle = str(token).toLocaleLowerCase().replace(/\s+/g, " ");
+  const haystack = str(authority).toLocaleLowerCase().replace(/\s+/g, " ");
+  return !!needle && haystack.includes(needle);
+}
+
 // ── Per-shot checks ─────────────────────────────────────────────────────────
 function checkShot(shot: NanoFlowShot, push: Push): void {
   const seg = shot.index;
@@ -305,13 +311,192 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
     });
   }
   // VID-005 — a clip needs a duration.
-  if (!str(clip.duration_sec) && typeof clip.duration_sec !== "number") {
+  if (
+    typeof clip.duration_sec !== "number" ||
+    !Number.isFinite(clip.duration_sec) ||
+    clip.duration_sec <= 0
+  ) {
     push({
-      code: "VID-005",
+      code: "DATA-001",
+      severity: "high",
+      scope: "segment",
+      segment_number: seg,
+      message: "Video clip duration_sec must be a positive JSON number, never a string.",
+      evidence: JSON.stringify(clip.duration_sec),
+    });
+  }
+
+  // STYLE-004 — a stylized medium must not inherit a live-action negative.
+  const visualStyle = str(clip.visual_style);
+  const negative = str(clip.negative_prompt);
+  const stylized = /\b(?:animation|anime|illustrat|stylized|cartoon|3d|stop[- ]motion)\b/i.test(
+    `${visualStyle} ${str(imgJson?.render)}`
+  );
+  if (
+    stylized &&
+    /\b(?:not cartoon|photoreal|live[- ]action|documentary realism)\b/i.test(
+      negative
+    )
+  ) {
+    push({
+      code: "STYLE-004",
+      severity: "high",
+      scope: "segment",
+      segment_number: seg,
+      message: "Stylized render authority conflicts with a photoreal/live-action negative.",
+    });
+  }
+
+  // SCENE-BIBLE — tokens are not trusted merely because an AI was asked to
+  // repeat them. Each exact token must occur in its final compiled authority.
+  const bible = obj(clip.scene_bible_tokens);
+  const foley = obj(clip.foley_and_ambience);
+  const requiredTokens: Array<[string, unknown, unknown]> = [
+    ["lens", bible.lens, clip.visual_style],
+    ["color_grade", bible.color_grade, clip.visual_style],
+    ["lighting", bible.lighting, bg.lighting],
+    ["backdrop", bible.backdrop, bg.scenery],
+    ["audio_bed", bible.audio_bed, foley.environment_sound_bed],
+  ];
+  for (const [label, token, target] of requiredTokens) {
+    if (!str(token)) {
+      push({
+        code: "BIBLE-001",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg,
+        message: `Compiled prompt is missing required scene-bible token "${label}".`,
+      });
+    } else if (!containsExact(target, token)) {
+      push({
+        code: "BIBLE-002",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg,
+        message: `Scene-bible token "${label}" is not repeated verbatim in its final authority field.`,
+        evidence: str(token),
+      });
+    }
+  }
+
+  // ORDER-001 — identity, style and environment authority must be parsed before
+  // action. Presence alone is insufficient when those keys trail scene_action.
+  const serialized = JSON.stringify(clip);
+  const actionAt = serialized.indexOf('"scene_action"');
+  const authorityPositions = [
+    serialized.indexOf('"character_lock"'),
+    serialized.indexOf('"scene_bible_tokens"'),
+    serialized.indexOf('"background_lock"'),
+  ];
+  if (
+    actionAt < 0 ||
+    authorityPositions.some((position) => position < 0 || position > actionAt)
+  ) {
+    push({
+      code: "ORDER-001",
+      severity: "high",
+      scope: "segment",
+      segment_number: seg,
+      message:
+        "Identity, scene style and environment authority must be front-loaded before scene_action.",
+    });
+  }
+
+  const cameraMovement = str(obj(clip.camera).movement);
+  if (/\bbegins?\s+on\s+(?:captures?|shows?|frames?|follows?|reveals?)\b/i.test(cameraMovement)) {
+    push({
+      code: "CAM-002",
       severity: "medium",
       scope: "segment",
       segment_number: seg,
-      message: "Video clip has no duration_sec.",
+      message: "Camera movement contains malformed compiled grammar.",
+      evidence: cameraMovement.slice(0, 100),
+    });
+  }
+
+  // VOICE BINDING — compiled dialogue must resolve to the exact named lock,
+  // exact voice fingerprint and declared camera relationship.
+  const locks = Object.values(obj(clip.character_lock)).map(obj);
+  const lockByName = new Map(
+    locks.map((lock) => [str(lock.name).toLocaleLowerCase(), lock])
+  );
+  const speakingProfiles = new Map<string, string>();
+  const dialogue = Array.isArray(clip.dialogue) ? clip.dialogue.map(obj) : [];
+  for (const row of dialogue) {
+    const speakerName = str(row.speaker_name);
+    const delivery = str(row.delivery) || (speakerName === "VOICEOVER" ? "voiceover" : "on_screen");
+    if (speakerName === "VOICEOVER") {
+      if (delivery !== "voiceover") {
+        push({
+          code: "VOICE-001",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg,
+          message: "Narrator row must be explicitly marked voiceover.",
+        });
+      }
+      continue;
+    }
+    const lock = lockByName.get(speakerName.toLocaleLowerCase());
+    if (!lock) {
+      push({
+        code: "VOICE-001",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg,
+        message: `Dialogue row names "${speakerName}" but no matching character lock exists.`,
+      });
+      continue;
+    }
+    if (str(row.voice_personality) !== str(lock.voice_personality)) {
+      push({
+        code: "VOICE-002",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg,
+        message: `Voice fingerprint for "${speakerName}" does not match their character lock verbatim.`,
+      });
+    }
+    if (delivery === "on_screen" && !shotCast.some((name) => name.toLocaleLowerCase() === speakerName.toLocaleLowerCase())) {
+      push({
+        code: "VOICE-003",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg,
+        message: `On-screen speaker "${speakerName}" is absent from the camera beat.`,
+      });
+    }
+    const profile = str(row.voice_personality);
+    const priorName = speakingProfiles.get(profile);
+    if (profile && priorName && priorName !== speakerName) {
+      push({
+        code: "VOICE-004",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg,
+        message: `Two different speakers share the same voice fingerprint ("${priorName}" and "${speakerName}").`,
+      });
+    }
+    if (profile) speakingProfiles.set(profile, speakerName);
+  }
+
+  if (serialized.length > 40_000) {
+    push({
+      code: "BUDGET-001",
+      severity: "high",
+      scope: "segment",
+      segment_number: seg,
+      message: "Compiled clip exceeds the safe prompt budget.",
+      evidence: `${serialized.length} characters`,
+    });
+  } else if (serialized.length > 30_000) {
+    push({
+      code: "BUDGET-001",
+      severity: "medium",
+      scope: "segment",
+      segment_number: seg,
+      message: "Compiled clip is approaching the prompt budget.",
+      evidence: `${serialized.length} characters`,
     });
   }
 
@@ -341,5 +526,57 @@ export function validatePromptExports(manifest: NanoFlowManifest): SemanticValid
   const findings: SemanticFinding[] = [];
   const push: Push = (f) => findings.push(f);
   for (const shot of manifest.shots ?? []) checkShot(shot, push);
+  const shots = manifest.shots ?? [];
+  for (let index = 1; index < shots.length; index++) {
+    const current = shots[index]!;
+    const previous = shots[index - 1]!;
+    const currentClip = obj(current.video_prompt);
+    const previousClip = obj(previous.video_prompt);
+    const currentAudio = obj(currentClip.foley_and_ambience);
+    const previousAudio = obj(previousClip.foley_and_ambience);
+    const currentBed = str(currentAudio.environment_sound_bed);
+    const previousBed = str(previousAudio.environment_sound_bed);
+    const mode = current.continuity_mode ?? str(currentClip.continuity_mode);
+    const currentLocation = current.location_id ?? str(currentClip.location_id);
+    const previousLocation = previous.location_id ?? str(previousClip.location_id);
+    if (mode === "continuous") {
+      if (
+        !currentLocation ||
+        !previousLocation ||
+        currentLocation !== previousLocation ||
+        !currentBed ||
+        currentBed !== previousBed
+      ) {
+        push({
+          code: "AUDIO-001",
+          severity: "high",
+          scope: "segment",
+          segment_number: current.index,
+          message:
+            "Continuous transition must preserve the exact location ambience/reverb bed.",
+          evidence: `${previousLocation}:${previousBed} -> ${currentLocation}:${currentBed}`,
+        });
+      }
+    } else if (currentLocation && previousLocation && currentLocation !== previousLocation) {
+      if (!currentBed) {
+        push({
+          code: "AUDIO-002",
+          severity: "high",
+          scope: "segment",
+          segment_number: current.index,
+          message: `${mode} enters a new location without resetting to its audio bed.`,
+        });
+      } else if (currentBed === previousBed) {
+        push({
+          code: "AUDIO-003",
+          severity: "medium",
+          scope: "segment",
+          segment_number: current.index,
+          message:
+            "Location changed but its declared audio bed is identical; verify this is intentional.",
+        });
+      }
+    }
+  }
   return buildReport(findings, "prompt gate");
 }

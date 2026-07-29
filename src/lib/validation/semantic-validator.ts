@@ -393,6 +393,13 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
   const profile = context?.reality_profile;
   const maxTracked = profile?.salience_policy.max_high_fidelity_entities_per_clip ?? 6;
   const usesSegmentContracts = context?.segment_contract_version === "1.0";
+  // Per-location memory survives intervening clips. This is essential for
+  // parallel intercuts (home ↔ office ↔ home), where adjacency alone would
+  // forget the last physical state at the location being revisited.
+  const latestEndByLocation = new Map<
+    string,
+    Map<string, NonNullable<(typeof segs)[number]["state_ledger"]>["end"][number]>
+  >();
 
   if (usesSegmentContracts) {
     if (out.schema_version !== "4.0") {
@@ -670,6 +677,45 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
         }
       }
     }
+
+    if (locationId && transition?.mode === "parallel_intercut") {
+      const remembered = latestEndByLocation.get(locationId);
+      const reset = (transition.reset ?? []).join(" ").toLowerCase();
+      for (const entry of startEntries) {
+        const prior = remembered?.get(entry.entity_id);
+        if (!prior) continue;
+        const entityReset = reset.includes(entry.entity_id.toLowerCase());
+        const stateChanged =
+          !sameState(prior.state, entry.state) &&
+          !entityReset &&
+          !/\b(?:state|condition|appearance)\b/.test(reset);
+        const positionChanged =
+          !sameState(prior.position, entry.position) &&
+          !entityReset &&
+          !/\b(?:position|pose|blocking|location)\b/.test(reset);
+        const holderChanged =
+          norm(prior.holder) !== norm(entry.holder) &&
+          !entityReset &&
+          !/\b(?:holder|possession|ownership|prop)\b/.test(reset);
+        if (stateChanged || positionChanged || holderChanged) {
+          push({
+            code: "STATE-006",
+            severity: "high",
+            scope: "segment",
+            segment_number: seg.segment_number,
+            message: `Parallel intercut forgot the last state of "${entry.entity_id}" at location "${locationId}".`,
+            evidence: `remembered=${prior.state}@${prior.position} -> return=${entry.state}@${entry.position}; reset=[${transition.reset.join(", ")}]`,
+          });
+        }
+      }
+    }
+
+    if (locationId) {
+      latestEndByLocation.set(
+        locationId,
+        new Map(endEntries.map((entry) => [entry.entity_id, entry]))
+      );
+    }
   });
 }
 
@@ -785,12 +831,41 @@ function checkCast(out: StoryboardGenerationOutput, push: Push): void {
       }
     }
 
-    // CAST-001(b) — a named speaker who is not on screen (voiceover = "").
-    const speakers = new Set<string>();
-    if (norm(seg.speaker)) speakers.add(norm(seg.speaker));
-    for (const turn of seg.dialogue_lines ?? []) if (norm(turn.speaker)) speakers.add(norm(turn.speaker));
-    for (const sp of speakers) {
-      if (!visibleLc.has(sp.toLowerCase())) {
+    // CAST-001(b) — on-screen speech needs that person in the camera beat.
+    // Named off-screen delivery is legal and stays bound to its own voice.
+    const turns =
+      (seg.dialogue_lines?.length ?? 0) > 0
+        ? seg.dialogue_lines!
+        : norm(seg.speaker)
+          ? [{ speaker: norm(seg.speaker), text: norm(seg.dialogue), delivery: "on_screen" as const }]
+          : [];
+    for (const turn of turns) {
+      const sp = norm(turn.speaker);
+      const delivery =
+        turn.delivery === "off_screen" || turn.delivery === "voiceover"
+          ? turn.delivery
+          : sp
+            ? "on_screen"
+            : "voiceover";
+      if (delivery === "voiceover" && sp) {
+        push({
+          code: "CAST-003",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: `Voiceover turn incorrectly names "${sp}" as an on-character speaker.`,
+        });
+      }
+      if (delivery === "off_screen" && !sp) {
+        push({
+          code: "CAST-003",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: "Named off-screen delivery has no speaker identity.",
+        });
+      }
+      if (delivery === "on_screen" && sp && !visibleLc.has(sp.toLowerCase())) {
         push({
           code: "CAST-001",
           severity: "high",
@@ -870,12 +945,76 @@ function checkContinuity(out: StoryboardGenerationOutput, push: Push): void {
 // TẦNG 10 — AUDIO / DIALOGUE — spoken turns must fit and sync inside the clip.
 // ═══════════════════════════════════════════════════════════════════════════
 function checkDialogue(out: StoryboardGenerationOutput, push: Push): void {
+  const locksByName = new Map(
+    (out.character_locks ?? []).map((lock) => [lc(lock.name), lock])
+  );
   for (const seg of out.segments ?? []) {
     const turns = seg.dialogue_lines ?? [];
     if (turns.length === 0) continue;
     const dur = isNum(seg.duration_seconds) ? seg.duration_seconds : 10;
     let prevEnd = -Infinity;
     turns.forEach((t, idx) => {
+      const speaker = norm(t.speaker);
+      if (speaker) {
+        const lock = locksByName.get(speaker.toLowerCase());
+        if (!lock) {
+          push({
+            code: "DLG-002",
+            severity: "high",
+            scope: "segment",
+            segment_number: seg.segment_number,
+            message: `Dialogue speaker "${speaker}" has no character voice authority.`,
+          });
+        } else {
+          const voice = norm(lock.voice);
+          if (!voice) {
+            push({
+              code: "DLG-003",
+              severity: "high",
+              scope: "segment",
+              segment_number: seg.segment_number,
+              character: lock.name,
+              message: `Speaking character "${lock.name}" has no locked voice profile.`,
+            });
+          } else {
+            const hz = voice.match(
+              /(\d{2,3})\s*(?:-|–|—|to)\s*(\d{2,3})\s*hz/i
+            );
+            const hasRate = /\b\d{2,3}\s*wpm\b/i.test(voice);
+            const hasTimbre = /\b(?:timbre|voice|warm|bright|dark|breathy|clear|raspy|resonant|soft|deep|light|husky|nasal|trầm|ấm|sáng|khàn|mỏng|dày)\b/i.test(
+              voice
+            );
+            if (!hz || !hasRate || !hasTimbre) {
+              push({
+                code: "DLG-004",
+                severity: "high",
+                scope: "character",
+                character: lock.name,
+                message:
+                  "Voice profile must deterministically lock timbre, natural F0 range (Hz), and speaking rate (wpm).",
+                evidence: voice,
+              });
+            } else {
+              const low = Number(hz[1]);
+              const high = Number(hz[2]);
+              const pitchConflict =
+                (lock.is_child && high < 200) ||
+                (!lock.is_child && lock.gender === "male" && low >= 160) ||
+                (!lock.is_child && lock.gender === "female" && high <= 160);
+              if (pitchConflict || low >= high) {
+                push({
+                  code: "DLG-005",
+                  severity: "high",
+                  scope: "character",
+                  character: lock.name,
+                  message: "Locked F0 range conflicts with the speaker's gender/age authority.",
+                  evidence: `${lock.gender ?? "unknown"}, child=${!!lock.is_child}, F0=${low}-${high}Hz`,
+                });
+              }
+            }
+          }
+        }
+      }
       const s = t.start_s;
       const e = t.end_s;
       if (!isNum(s) || !isNum(e)) return; // timing optional on some turns
@@ -892,6 +1031,30 @@ function checkDialogue(out: StoryboardGenerationOutput, push: Push): void {
           message: `Dialogue turn ${idx + 1} has invalid timing (${problems.join("; ")}).`,
           evidence: `start_s=${s}, end_s=${e}, clip=${dur}s`,
         });
+      }
+      const seconds = e - s;
+      if (seconds > 0) {
+        const words = norm(t.text).split(/\s+/).filter(Boolean).length;
+        const wpm = (words / seconds) * 60;
+        if (wpm > 190) {
+          push({
+            code: "DLG-006",
+            severity: "high",
+            scope: "segment",
+            segment_number: seg.segment_number,
+            message: `Dialogue turn ${idx + 1} is too fast for natural speech.`,
+            evidence: `${words} words / ${seconds.toFixed(1)}s = ${Math.round(wpm)} wpm`,
+          });
+        } else if (wpm > 170) {
+          push({
+            code: "DLG-006",
+            severity: "medium",
+            scope: "segment",
+            segment_number: seg.segment_number,
+            message: `Dialogue turn ${idx + 1} is close to the natural-speech limit.`,
+            evidence: `${Math.round(wpm)} wpm`,
+          });
+        }
       }
       prevEnd = Math.max(prevEnd, e);
     });

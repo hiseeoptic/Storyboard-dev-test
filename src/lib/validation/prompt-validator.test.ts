@@ -24,9 +24,21 @@ function imagePrompt(over: Record<string, unknown> = {}): string {
 function videoClip(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     scene_id: "1",
-    duration_sec: "10",
-    visual_style: "warm cinematic",
-    character_lock: { CHAR_1: { name: "Minh" }, CHAR_2: { name: "Lan" } },
+    duration_sec: 10,
+    location_id: "home_kitchen",
+    continuity_mode: "opening",
+    visual_style: "warm cinematic; 50mm lens; neutral Rec.709",
+    scene_bible_tokens: {
+      lens: "50mm lens",
+      color_grade: "neutral Rec.709",
+      lighting: "soft window light",
+      backdrop: "tiled walls, open shelving",
+      audio_bed: "quiet kitchen room tone",
+    },
+    character_lock: {
+      CHAR_1: { name: "Minh", voice_personality: "warm timbre, 90-130 Hz, 110 wpm" },
+      CHAR_2: { name: "Lan", voice_personality: "clear timbre, 180-240 Hz, 120 wpm" },
+    },
     background_lock: {
       name: "Home kitchen",
       setting: "A sunlit kitchen with a wooden table",
@@ -36,6 +48,10 @@ function videoClip(over: Record<string, unknown> = {}): Record<string, unknown> 
     spatial_topology: { character_placement: "Minh left facing Lan; Lan right facing Minh" },
     scene_action: { start_state: "Minh sits across from Lan", motion: "they talk", end_state: "silence holds" },
     camera: { framing: "MS", angle: "eye" },
+    foley_and_ambience: {
+      environment_sound_bed: "quiet kitchen room tone",
+      ambience: ["quiet kitchen room tone"],
+    },
     output_rules: { reference_priority: "START-FRAME AUTHORITY: continue wardrobe and set from the start frame." },
     ...over,
   };
@@ -55,6 +71,8 @@ function cleanManifest(): Manifest {
         storyboard_prompt: imagePrompt(),
         video_prompt: videoClip(),
         characters_in_scene: ["Minh", "Lan"],
+        location_id: "home_kitchen",
+        continuity_mode: "opening",
       },
     ],
   } as unknown as Manifest;
@@ -192,4 +210,75 @@ test("report label reads 'prompt gate'", () => {
   m.shots[0]!.video_prompt = videoClip({ background_lock: { name: "x", setting: "" } });
   const r = validatePromptExports(m);
   assert.match(r.summary, /prompt gate/);
+});
+
+test("DATA-001: duration_sec encoded as a string fails closed", () => {
+  const m = cleanManifest();
+  m.shots[0]!.video_prompt = videoClip({ duration_sec: "10" });
+  assert.ok(validatePromptExports(m).findings.some((f) => f.code === "DATA-001"));
+});
+
+test("BIBLE-002: scene-bible token must appear verbatim in final authority", () => {
+  const m = cleanManifest();
+  m.shots[0]!.video_prompt = videoClip({
+    scene_bible_tokens: {
+      lens: "85mm lens",
+      color_grade: "neutral Rec.709",
+      lighting: "soft window light",
+      backdrop: "tiled walls, open shelving",
+      audio_bed: "quiet kitchen room tone",
+    },
+  });
+  assert.ok(validatePromptExports(m).findings.some((f) => f.code === "BIBLE-002"));
+});
+
+test("ORDER-001: action placed before identity/style/environment authority fails", () => {
+  const m = cleanManifest();
+  const clip = videoClip();
+  const action = clip.scene_action;
+  delete clip.scene_action;
+  m.shots[0]!.video_prompt = { scene_action: action, ...clip };
+  assert.ok(validatePromptExports(m).findings.some((f) => f.code === "ORDER-001"));
+});
+
+test("VOICE-002: compiled dialogue cannot swap a character's voice", () => {
+  const m = cleanManifest();
+  m.shots[0]!.video_prompt = videoClip({
+    dialogue: [
+      {
+        speaker_id: "CHAR_1",
+        speaker_name: "Minh",
+        delivery: "on_screen",
+        voice_personality: "clear timbre, 180-240 Hz, 120 wpm",
+        text: "Xin chào",
+      },
+    ],
+  });
+  assert.ok(validatePromptExports(m).findings.some((f) => f.code === "VOICE-002"));
+});
+
+test("AUDIO-001: continuous boundary preserves exact location audio bed", () => {
+  const m = cleanManifest();
+  m.shots.push({
+    ...m.shots[0]!,
+    shot_id: "SHOT_002",
+    index: 2,
+    continuity_mode: "continuous",
+    video_prompt: videoClip({
+      scene_id: "2",
+      continuity_mode: "continuous",
+      foley_and_ambience: {
+        environment_sound_bed: "different room tone",
+        ambience: ["different room tone"],
+      },
+      scene_bible_tokens: {
+        lens: "50mm lens",
+        color_grade: "neutral Rec.709",
+        lighting: "soft window light",
+        backdrop: "tiled walls, open shelving",
+        audio_bed: "different room tone",
+      },
+    }),
+  });
+  assert.ok(validatePromptExports(m).findings.some((f) => f.code === "AUDIO-001"));
 });

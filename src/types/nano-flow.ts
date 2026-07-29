@@ -69,6 +69,8 @@ export interface NanoFlowShot {
     | "flashback"
     | "dream"
     | "symbolic";
+  /** Project-local Context-IR location id used for per-location memory/audio. */
+  location_id?: string;
 
   // ─── STEP A: generate the storyboard/keyframe image with Nano Banana ───
   /** Prompt written 100% by Storyboard to create the image. */

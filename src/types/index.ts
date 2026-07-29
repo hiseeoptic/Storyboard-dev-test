@@ -436,6 +436,9 @@ export interface ShotBeat {
 export interface DialogueTurn {
   /** Exact character_locks name of who speaks this turn. "" = voiceover. */
   speaker: string;
+  /** Camera relationship of the voice. Named off-screen speakers remain bound
+   * to their own voice without being forced into characters_in_scene. */
+  delivery?: "on_screen" | "off_screen" | "voiceover";
   /** The spoken line (verbatim, in the dialogue language). */
   text: string;
   /** When this turn starts within the clip (seconds, 0-10). */
@@ -613,6 +616,13 @@ export interface SocialPosts {
 export interface StoryboardGenerationOutput {
   /** Additive storyboard contract. Older saved projects may omit it. */
   schema_version?: "4.0";
+  /** Cost-control proof that the current exact storyboard already passed the
+   * paid semantic critic. Free deterministic gates still rerun on every export. */
+  validation_cache?: {
+    version: "1.0";
+    fingerprint: string;
+    validated_at: string;
+  };
   title: string;
   synopsis: string;
   total_duration_seconds: number;

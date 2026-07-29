@@ -25,7 +25,7 @@ function cleanFixture(): StoryboardGenerationOutput {
         skin_tone: "warm",
         hair: "short black hair",
         eyes: "brown",
-        voice: "calm adult voice",
+        voice: "calm resonant timbre, 90-130 Hz, 110 wpm",
       },
     ],
     segments: [
