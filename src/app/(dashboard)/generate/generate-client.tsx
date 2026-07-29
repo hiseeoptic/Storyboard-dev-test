@@ -48,6 +48,7 @@ import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
+import { validatePromptExports, formatSemanticReport } from "@/lib/validation";
 import { wardrobeOptions } from "@/lib/nano-flow/wardrobe-catalog";
 import {
   NANO_FLOW_MESSAGE_SOURCE,
@@ -1997,11 +1998,23 @@ export function GenerateClient() {
     const veoClips = Array.isArray((veoJson as { clips?: unknown[] }).clips)
       ? ((veoJson as { clips: Array<Record<string, unknown>> }).clips)
       : [];
-    return buildNanoFlowManifest(result.breakdown, {
+    const manifest = buildNanoFlowManifest(result.breakdown, {
       aspectRatio: (genInput?.aspect_ratio as "16:9" | "9:16") ?? "9:16",
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
       veoClips,
     });
+    // LỚP B — prompt-level gate over the EXPORTED image + video prompts
+    // (report-only, non-blocking). Surfaces ENV-002 / SYNC-001 / structure drift
+    // before the manifest reaches the extension. See src/lib/validation.
+    try {
+      const gate = validatePromptExports(manifest);
+      if (!gate.ok) {
+        console.warn(`[prompt-gate] "${manifest.project.title}" — ${gate.summary}\n${formatSemanticReport(gate)}`);
+      }
+    } catch (gateErr) {
+      console.error("[prompt-gate] validator error (ignored):", gateErr);
+    }
+    return manifest;
   };
 
   // Download the manifest as a .nanoflow.json file the user can drop into the

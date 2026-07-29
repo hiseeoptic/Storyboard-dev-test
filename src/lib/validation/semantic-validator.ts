@@ -603,7 +603,18 @@ export function validateStoryboardSemantics(
   checkContinuity(output, push);
   checkDialogue(output, push);
 
-  // Stable ordering: severity first, then segment number, then code.
+  return buildReport(findings, "semantic gate");
+}
+
+/**
+ * Sort findings (severity → segment → code), count by severity and derive the
+ * `ok` flag + summary. Shared by every gate (breakdown, prompt-level, …) so they
+ * all speak the same report shape. `ok` is false when any critical/high remains.
+ */
+export function buildReport(
+  findings: SemanticFinding[],
+  label = "gate"
+): SemanticValidationReport {
   const rank: Record<SemanticSeverity, number> = { critical: 0, high: 1, medium: 2 };
   findings.sort(
     (a, b) =>
@@ -621,16 +632,16 @@ export function validateStoryboardSemantics(
   const ok = counts.critical === 0 && counts.high === 0;
   const summary = ok
     ? findings.length
-      ? `semantic gate: clean (no critical/high; ${counts.medium} advisory)`
-      : "semantic gate: clean"
-    : `semantic gate: ${counts.critical} critical, ${counts.high} high, ${counts.medium} medium`;
+      ? `${label}: clean (no critical/high; ${counts.medium} advisory)`
+      : `${label}: clean`
+    : `${label}: ${counts.critical} critical, ${counts.high} high, ${counts.medium} medium`;
 
   return { ok, findings, counts, summary };
 }
 
 /** Render a report as compact log lines (one per finding). */
 export function formatSemanticReport(report: SemanticValidationReport): string {
-  if (report.findings.length === 0) return "✅ semantic gate: no issues found";
+  if (report.findings.length === 0) return "✅ no issues found";
   const lines = report.findings.map((f) => {
     const where =
       f.scope === "segment"

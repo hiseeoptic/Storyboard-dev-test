@@ -1,5 +1,6 @@
 export {
   validateStoryboardSemantics,
+  buildReport,
   formatSemanticReport,
 } from "./semantic-validator";
 export type {
@@ -7,3 +8,4 @@ export type {
   SemanticSeverity,
   SemanticValidationReport,
 } from "./semantic-validator";
+export { validatePromptExports } from "./prompt-validator";
