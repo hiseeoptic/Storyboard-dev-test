@@ -8,6 +8,7 @@ import type {
   NanoFlowAsset,
   NanoFlowManifest,
   NanoFlowRefSelector,
+  NanoFlowScene,
   NanoFlowShot,
 } from "@/types/nano-flow";
 
@@ -361,6 +362,38 @@ export function buildNanoFlowManifest(
       products: [], // step A default: leave product to the user/Storyboard to opt in per shot
     };
 
+    // The boundary entering this shot (reused for scene 1 below).
+    const shotContinuity =
+      seg.transition_in?.mode ??
+      seg.continuity_mode ??
+      (i === 0 ? "opening" : "continuous");
+
+    // Schema 4.1 — turn each beat into a SCENE with its OWN script-accurate image
+    // prompt: the shot's locked context (cast/wardrobe/setting/look) rendered at
+    // THIS beat's moment + camera. The extension generates one image per scene
+    // instead of collapsing the 10s shot into a single keyframe (which dropped the
+    // per-beat action and made Veo guess the frame). storyboard_prompt stays as
+    // the single-image fallback for consumers that ignore scenes[].
+    const scenes: NanoFlowScene[] = (seg.beats ?? [])
+      .filter((b) => (b?.beat ?? "").trim())
+      .map((b, bi) => ({
+        scene_no: bi + 1,
+        ...(b.camera ? { camera: b.camera } : {}),
+        action: (b.beat ?? "").trim(),
+        image_prompt: buildKeyframePromptFromClip(
+          clip,
+          [b.beat, b.camera ? `Camera: ${b.camera}` : ""].filter(Boolean).join(". "),
+          wardrobeClause,
+          realityMode
+        ),
+        image_refs,
+        ...(seg.location_id ? { location_id: seg.location_id } : {}),
+        // Scene 1 inherits the shot's boundary; later scenes flow on within the
+        // same 10s unless a future per-beat continuity is authored.
+        transition_from_prev: bi === 0 ? shotContinuity : "continuous",
+        ...(bi === 0 ? { dialogue: seg.dialogue ?? null } : {}),
+      }));
+
     return {
       shot_id: `SHOT_${String(index).padStart(3, "0")}`,
       index,
@@ -378,10 +411,7 @@ export function buildNanoFlowManifest(
         wardrobeClause,
         realityMode
       ),
-      continuity_mode:
-        seg.transition_in?.mode ??
-        seg.continuity_mode ??
-        (i === 0 ? "opening" : "continuous"),
+      continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
       image_refs,
 
@@ -404,6 +434,7 @@ export function buildNanoFlowManifest(
       dialogue: seg.dialogue ?? null,
       voice: null,
       beats: (seg.beats ?? []).map((b) => ({ beat: b.beat, camera: b.camera })),
+      ...(scenes.length ? { scenes } : {}),
       wardrobe_change: Object.keys(wardrobeChange).length ? wardrobeChange : null,
     };
   });

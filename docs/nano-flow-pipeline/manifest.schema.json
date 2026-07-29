@@ -96,6 +96,23 @@
       }
     },
 
+    "scene": {
+      "type": "object",
+      "description": "Schema 4.1 — one SCENE inside a shot, generated as its own Nano Banana image.",
+      "required": ["scene_no", "action", "image_prompt"],
+      "additionalProperties": false,
+      "properties": {
+        "scene_no":     { "type": "integer", "minimum": 1, "description": "1-based order within the shot." },
+        "camera":       { "type": "string", "description": "Camera framing for this scene, e.g. \"[CLOSE]\"." },
+        "action":       { "type": "string", "description": "The scripted action/moment this scene depicts." },
+        "image_prompt": { "type": "string", "description": "Prompt (100% Storyboard) to generate THIS scene's image — shot's locked context at this scene's moment." },
+        "image_refs":   { "$ref": "#/definitions/refSelector", "description": "Assets to attach for this scene's image gen." },
+        "location_id":  { "type": "string", "description": "Environment asset id for this scene (a shot may span locations)." },
+        "transition_from_prev": { "type": "string", "enum": ["opening", "continuous", "scene_cut", "location_cut", "time_jump", "parallel_intercut", "match_cut", "montage", "flashback", "dream", "symbolic"], "description": "How this scene continues from the previous scene (or prior shot for scene 1)." },
+        "dialogue":     { "type": ["string", "null"] }
+      }
+    },
+
     "shot": {
       "type": "object",
       "required": ["shot_id", "index", "storyboard_name", "storyboard_prompt", "video_prompt"],
@@ -106,8 +123,11 @@
         "storyboard_name": { "type": "string", "description": "Name given to the Nano Banana image, ordered." },
         "duration_seconds":{ "type": "number", "default": 10 },
         "marketing_role":  { "type": "string", "enum": ["hook", "problem", "solution", "body", "cta"] },
+        "continuity_mode": { "type": "string", "enum": ["opening", "continuous", "scene_cut", "location_cut", "time_jump", "parallel_intercut", "match_cut", "montage", "flashback", "dream", "symbolic"], "description": "Schema 4.0 — continuity decision for the boundary entering this shot." },
+        "location_id":     { "type": "string", "description": "Environment asset id this shot's scenes default to (per-location memory/background ref)." },
 
-        "storyboard_prompt": { "type": "string", "description": "STEP A — prompt (written 100% by Storyboard) to generate the storyboard/keyframe image with Nano Banana." },
+        "storyboard_prompt": { "type": "string", "description": "STEP A — single-image FALLBACK keyframe prompt. When scenes[] is present the extension renders per-scene images instead; this is kept for consumers that ignore scenes." },
+        "scenes": { "type": "array", "items": { "$ref": "#/definitions/scene" }, "description": "Schema 4.1 — ordered SCENES of this shot, one generated image each (built from beats). Replaces the single-keyframe collapse; a shot may span locations." },
         "end_storyboard_prompt": { "type": "string", "description": "STEP A2 (optional) — prompt for the END keyframe of a transform shot. When present, the video uses start_end_frame mode: Veo interpolates start→end. Omit for a normal single-keyframe shot." },
         "image_refs":        { "$ref": "#/definitions/refSelector", "description": "STEP A — which assets feed the image generation (shared by start + end keyframes)." },
 

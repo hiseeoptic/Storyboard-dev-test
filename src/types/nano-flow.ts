@@ -15,6 +15,23 @@ export type NanoFlowMarketingRole =
   | "body"
   | "cta";
 
+/** Schema 4.0/4.1 continuity decision for a boundary — used both for the boundary
+ * ENTERING a shot and (4.1) for the boundary between two SCENES inside a shot. The
+ * app picks this per boundary from the script; the extension uses it to decide
+ * whether to nối liền (continuous) or cắt (scene_cut/location_cut/…). */
+export type NanoFlowContinuityMode =
+  | "opening"
+  | "continuous"
+  | "scene_cut"
+  | "location_cut"
+  | "time_jump"
+  | "parallel_intercut"
+  | "match_cut"
+  | "montage"
+  | "flashback"
+  | "dream"
+  | "symbolic";
+
 /** A reference image declared once per project; shots reference it by `id`.
  * `image === null` means the slot is declared but the real image is attached
  * later on the extension side (e.g. a real person's / product's photo). */
@@ -49,6 +66,35 @@ export interface NanoFlowBeat {
   camera?: string;
 }
 
+/** Schema 4.1 — a single SCENE inside a shot. Each scene is generated as its OWN
+ * Nano Banana image from `image_prompt` (written 100% by Storyboard, script-
+ * accurate), REPLACING the old "one keyframe per 10s shot" model that lost the
+ * per-beat action. A 10s shot carries 1..N scenes (menu-selected via
+ * beats_per_segment). Scenes may sit in DIFFERENT locations (cross-cut office/
+ * home) via `location_id`, and the extension renders one image per scene — no
+ * single-keyframe collapse and no risky frame-chaining. */
+export interface NanoFlowScene {
+  /** 1-based order within the shot. */
+  scene_no: number;
+  /** Camera framing for this scene (e.g. "[CLOSE]", "over_the_shoulder"). */
+  camera?: string;
+  /** The scripted action/moment this scene depicts (the beat). */
+  action: string;
+  /** Prompt written 100% by Storyboard to generate THIS scene's image. Carries
+   * the shot's locked context (cast/wardrobe/setting/look) with this scene's
+   * specific moment — so every scene stays on-script and consistent. */
+  image_prompt: string;
+  /** Which declared assets to attach for this scene's image gen. */
+  image_refs?: NanoFlowRefSelector;
+  /** Location this scene happens in (an environment asset id). A shot may span
+   * locations; the extension attaches that location's background overview ref. */
+  location_id?: string;
+  /** How this scene continues from the PREVIOUS scene (or from the prior shot for
+   * scene 1). Lets the extension nối liền vs cắt per boundary. */
+  transition_from_prev?: NanoFlowContinuityMode;
+  dialogue?: string | null;
+}
+
 export interface NanoFlowShot {
   shot_id: string;
   index: number;
@@ -57,18 +103,7 @@ export interface NanoFlowShot {
   duration_seconds?: number;
   marketing_role?: NanoFlowMarketingRole;
   /** Schema 4.0 continuity decision for the boundary entering this shot. */
-  continuity_mode?:
-    | "opening"
-    | "continuous"
-    | "scene_cut"
-    | "location_cut"
-    | "time_jump"
-    | "parallel_intercut"
-    | "match_cut"
-    | "montage"
-    | "flashback"
-    | "dream"
-    | "symbolic";
+  continuity_mode?: NanoFlowContinuityMode;
   /** Project-local Context-IR location id used for per-location memory/audio. */
   location_id?: string;
 
@@ -89,6 +124,12 @@ export interface NanoFlowShot {
   dialogue?: string | null;
   voice?: string | null;
   beats?: NanoFlowBeat[];
+
+  /** Schema 4.1 — the ordered SCENES that make up this shot, one generated image
+   * each (built from `beats`). When present the extension renders one image PER
+   * scene instead of collapsing the shot to a single keyframe. `storyboard_prompt`
+   * remains the backward-compatible single-image fallback when `scenes` is empty. */
+  scenes?: NanoFlowScene[];
 
   /** A visibly motivated wardrobe change starting at this shot (rain, shower,
    * change of clothes): { "CharacterName": "new outfit" }. The extension
