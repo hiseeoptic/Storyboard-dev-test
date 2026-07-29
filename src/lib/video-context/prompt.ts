@@ -28,10 +28,12 @@ CORE RULES:
 - Environment location ids are PROJECT-LOCAL semantic ids such as "location_01". Never output an environment library/archetype id.
 - A multi-location script must use a multi-location strategy. Do not force exact spatial continuity between scenes that intentionally change location; choose strict, soft, montage, match-cut, symbolic or scene-cut continuity from the story evidence.
 - One fact, one owner: location/light motivation/sound bed belong to Environment; event timing belongs to Motion/Timeline; spoken timing belongs to Audio; camera/grade belong to Visual Language.
-- Resolve TWO independent reality choices: reality mode (documentary/cinematic/commercial/stylized/symbolic-surreal/fantasy-scifi-internal) and fidelity depth (A basic visual / B physical / C material / D micro-behavior / E cinematic simulation). Macro/meso/micro/material/temporal/causal are validation dimensions, not extra world modes.
+- Resolve TWO independent reality choices: reality mode (documentary/cinematic/commercial/stylized/symbolic-surreal/fantasy-scifi-internal) and fidelity depth. Fidelity is ALWAYS E_cinematic_simulation for final output, but E obeys the selected mode: live action uses filmed real-world detail; animation/stylized/fantasy preserves its own declared surface and physics language and must never be forced into photorealism. Macro/meso/micro/material/temporal/causal are validation dimensions, not extra world modes.
 - Fidelity is SELECTIVE: high detail belongs only to hero and causally interacted entities. Backgrounds stay macro/meso unless the script makes them important. Never spend prompt budget describing invisible pores, fibres or grass blades.
+- Set max_high_fidelity_entities_per_clip to a context-appropriate integer from 3 through 6 inclusive.
+- Set layers.audio_validation.post_render_policy exactly to "report_only_no_auto_regeneration": QA may report the affected clip/timecode, but must never call a model or regenerate automatically.
 - Output compact JSON only. Do not repeat the script and do not generate prose prompts.
-- Set version to "2.0", state to "resolved", and confidence to a number from 0 to 1.`;
+- Set version to "2.0", segment_contract_version to "1.0", state to "resolved", and confidence to a number from 0 to 1.`;
 }
 
 export function buildContextAnalysisUserPrompt(input: StoryboardGenerationInput): string {

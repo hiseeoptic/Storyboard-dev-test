@@ -1813,18 +1813,16 @@ export function GenerateClient() {
         setPhase("script");
         return;
       }
-      // finalizeScript already runs the existing deterministic normalisers
-      // (dialogue clock, cast, continuity text and spatial topology). Validate
-      // that locally-repaired result before any prompt can leave Storyboard.
-      // This gate makes no model/API call.
+      // finalizeScript already ran deterministic A+B plus the bounded Layer-C
+      // targeted repair loop. This local check is only a fail-closed backup.
       const semanticGate = validateStoryboardSemantics(fin.data.breakdown);
       if (!semanticGate.ok) {
         setDraft(fin.data.breakdown);
         setError(
           `${
             lang === "vi"
-              ? "Storyboard còn lỗi Critical/High nên chưa xuất prompt. Hãy sửa đúng cảnh được báo; hệ thống không tự tạo lại toàn bộ."
-              : "The storyboard still has Critical/High findings, so prompt export is blocked. Fix only the reported scene; the system will not regenerate the whole plan."
+              ? "Storyboard vẫn còn lỗi Critical/High sau vòng tự sửa nên chưa xuất prompt. Hệ thống đã dừng an toàn và không tạo ảnh/video."
+              : "The storyboard still has Critical/High findings after targeted auto-repair, so prompt export remains blocked. No image/video was generated."
           }\n\n${formatSemanticReport(semanticGate)}`
         );
         setPhase("script");
@@ -2064,9 +2062,9 @@ export function GenerateClient() {
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
       veoClips,
     });
-    // LỚP B — prompt-level gate over the EXPORTED image + video prompts
-    // (report-only, non-blocking). Surfaces ENV-002 / SYNC-001 / structure drift
-    // before the manifest reaches the extension. See src/lib/validation.
+    // Final client-side backup for LỚP B. The server-side Layer C already
+    // validates and repairs A+B before approval; this pure check catches drift
+    // introduced while assembling the downloadable manifest.
     try {
       const gate = validatePromptExports(manifest);
       if (!gate.ok) {
@@ -2075,8 +2073,8 @@ export function GenerateClient() {
         setExportGateReport(
           `${
             lang === "vi"
-              ? "Prompt Nano Banana/Veo còn lỗi Critical/High nên chưa được gửi hoặc tải xuống. Không có lệnh gọi API sửa lại nào được thực hiện."
-              : "The Nano Banana/Veo prompts still have Critical/High findings, so push/download is blocked. No repair API call was made."
+              ? "Prompt Nano Banana/Veo vẫn còn lỗi Critical/High nên chưa được gửi hoặc tải xuống. Đây là kiểm tra dự phòng cuối và không tiêu thêm lượt sửa AI."
+              : "The Nano Banana/Veo prompts still have Critical/High findings, so push/download is blocked. This final backup check does not spend another repair call."
           }\n\n${report}`
         );
         return null;

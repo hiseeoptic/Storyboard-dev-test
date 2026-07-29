@@ -82,6 +82,21 @@ test("IMG-001: an image prompt without a photoreal lock flags", () => {
   assert.ok(r.findings.some((f) => f.code === "IMG-001" && f.severity === "high"));
 });
 
+test("IMG-001: a declared stylized medium does not get forced into photoreal", () => {
+  const m = cleanManifest();
+  m.shots[0]!.storyboard_prompt = imagePrompt({
+    type: "stylized_keyframe",
+    render: "Stylized 3D animation with one locked graphic medium",
+    negative: "no text, no medium drift",
+  });
+  const r = validatePromptExports(m);
+  assert.equal(
+    r.findings.some((f) => f.code === "IMG-001"),
+    false,
+    JSON.stringify(r.findings, null, 2)
+  );
+});
+
 test("IMG-002: a cast member with no pinned wardrobe flags (advisory)", () => {
   const m = cleanManifest();
   m.shots[0]!.storyboard_prompt = imagePrompt({

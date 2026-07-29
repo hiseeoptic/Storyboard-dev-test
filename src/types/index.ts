@@ -374,11 +374,9 @@ export interface CharacterLock {
   render_style: string;
   /** One verbatim forensic-DNA line (with RGB hex) repeated in every keyframe. */
   dna?: string;
-  /** TẦNG 9 (audio law): FULL locked voice profile, identical in every clip —
-   * defaults to native Standard Northern Vietnamese (Hanoi), then locks timbre,
-   * natural F0 range, rate, prosody and emotion, e.g. "native Standard Northern
-   * Vietnamese (Hanoi), warm grounded male timbre, natural F0 95-130 Hz with
-   * small human variation, ~110 wpm, calm-sincere". */
+  /** TẦNG 9 (audio law): FULL locked voice profile, identical in every clip.
+   * Language/accent come from the project context; timbre, natural F0 range,
+   * rate, prosody and emotion are locked per character. */
   voice?: string;
 }
 
@@ -466,9 +464,67 @@ export interface SpatialLayout {
   mechanism_motion?: string;
 }
 
+/** How the edit from the previous clip enters this clip. Physical state is
+ * inherited only by `continuous`; every other mode preserves only the anchors
+ * explicitly listed in `preserve`. */
+export type SegmentTransitionMode =
+  | "opening"
+  | "continuous"
+  | "scene_cut"
+  | "location_cut"
+  | "time_jump"
+  | "parallel_intercut"
+  | "match_cut"
+  | "montage"
+  | "flashback"
+  | "dream"
+  | "symbolic";
+
+export interface SegmentTransitionContract {
+  mode: SegmentTransitionMode;
+  /** Project-local ids from context_ir.layers.environment.locations. */
+  from_location_id?: string;
+  to_location_id: string;
+  /** e.g. "same moment", "later that evening", "simultaneous phone call". */
+  time_relation: string;
+  /** State dimensions intentionally carried across the edit. */
+  preserve: string[];
+  /** State dimensions intentionally reset by the edit. */
+  reset: string[];
+  /** Short story-grounded justification; never generic "continues". */
+  reason: string;
+}
+
+/** Compact state ledger for hero/interacted entities only. It is deliberately
+ * bounded by RealityProfile.salience_policy (3-6 entities), not a transcript of
+ * every background object. */
+export interface SegmentEntityState {
+  entity_id: string;
+  state: string;
+  position: string;
+  holder?: string | null;
+  traces?: string[];
+}
+
+export interface SegmentStateChange {
+  entity_id: string;
+  from: string;
+  action: string;
+  to: string;
+  caused_by: string;
+  trace?: string;
+}
+
+export interface SegmentStateLedger {
+  start: SegmentEntityState[];
+  changes: SegmentStateChange[];
+  end: SegmentEntityState[];
+}
+
 /**
  * One ~10s segment = exactly one Omni Flash / Veo image-to-video generation.
- * Segments are chained: the start frame of N+1 continues from N's end.
+ * A segment may physically continue the previous clip or enter through an
+ * explicit editorial transition. `transition_in` is the authority.
  */
 export interface VideoSegment {
   segment_number: number;
@@ -498,6 +554,15 @@ export interface VideoSegment {
    * this segment's world to a physically-grounded spec (materials, Kelvin+Lux
    * light, atmosphere) so the setting renders real, not CGI. */
   environment_ref?: string | null;
+  /** Project-local location id from context_ir, independent of library archetypes. */
+  location_id?: string;
+  /** Schema 4.0 per-boundary continuity selector. Kept equal to
+   * transition_in.mode; transition_in remains the detailed authority. */
+  continuity_mode?: SegmentTransitionMode;
+  /** Explicit edit contract from the previous clip into this one. */
+  transition_in?: SegmentTransitionContract;
+  /** Start → caused changes → end for the 3-6 hero/interacted entities. */
+  state_ledger?: SegmentStateLedger;
   /** Spatial topology contract. Required by the prompt for multi-zone,
    * doorway, balcony, stair, edge, barrier, or counter-divider scenes; older
    * projects are repaired deterministically by the prompt compiler. */
@@ -517,7 +582,7 @@ export interface VideoSegment {
     outfit_materials?: string;
     hair?: string;
   }[];
-  /** How this segment visually connects to the previous one (seamless join). */
+  /** Legacy human-readable end-state note; structured authority is state_ledger. */
   continuity_note: string;
   /** Filled by the image pipeline — the generated start frame. */
   first_frame_url?: string | null;
@@ -546,6 +611,8 @@ export interface SocialPosts {
 }
 
 export interface StoryboardGenerationOutput {
+  /** Additive storyboard contract. Older saved projects may omit it. */
+  schema_version?: "4.0";
   title: string;
   synopsis: string;
   total_duration_seconds: number;

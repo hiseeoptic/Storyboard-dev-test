@@ -36,6 +36,7 @@ const positiveNumberField = (fallback: number) =>
 
 export const resolvedVideoContextSchema = z.object({
   version: versionField,
+  segment_contract_version: z.preprocess(() => "1.0", z.literal("1.0")),
   state: stateField,
   // RESILIENCE: analysis_summary is only a human-readable note, not a lock
   // layer. OpenAI (json_object mode, no enforced schema) sometimes omits it,
@@ -121,6 +122,10 @@ export const resolvedVideoContextSchema = z.object({
       ambience_strategy: text,
       music_strategy: text,
       validation_priorities: textArray,
+      post_render_policy: z.preprocess(
+        () => "report_only_no_auto_regeneration",
+        z.literal("report_only_no_auto_regeneration")
+      ),
     }),
   }),
 });
@@ -130,6 +135,7 @@ export const VIDEO_CONTEXT_RESPONSE_SCHEMA: Record<string, unknown> = {
   type: "OBJECT",
   properties: {
     version: { type: "STRING" },
+    segment_contract_version: { type: "STRING" },
     state: { type: "STRING" },
     analysis_summary: { type: "STRING" },
     confidence: { type: "NUMBER" },
@@ -185,6 +191,7 @@ export const VIDEO_CONTEXT_RESPONSE_SCHEMA: Record<string, unknown> = {
         audio_validation: objectOf({
           dialogue_mode: stringField(), language: stringField(), voice_strategy: stringField(),
           ambience_strategy: stringField(), music_strategy: stringField(), validation_priorities: stringArray(),
+          post_render_policy: stringField(),
         }),
       },
       required: [
@@ -194,7 +201,7 @@ export const VIDEO_CONTEXT_RESPONSE_SCHEMA: Record<string, unknown> = {
     },
   },
   required: [
-    "version", "state", "analysis_summary", "confidence", "assumptions", "evidence",
+    "version", "segment_contract_version", "state", "analysis_summary", "confidence", "assumptions", "evidence",
     "reality_profile", "layers",
   ],
 };

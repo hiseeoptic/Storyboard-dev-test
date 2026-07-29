@@ -49,6 +49,8 @@ test("manifest has the fixed contract shape", () => {
   assert.equal(m.project.title, "Making Trà Bắc");
   assert.equal(m.project.aspect_ratio, "9:16");
   assert.equal(m.project.thumbnail_title, "TRÀ BẮC CHÍNH GỐC");
+  assert.equal(m.shots[0]?.continuity_mode, "opening");
+  assert.equal(m.shots[1]?.continuity_mode, "continuous");
 });
 
 test("characters become declared assets, referenced by id in shots", () => {
@@ -113,6 +115,35 @@ test("style lock is idempotent — no duplicate anchors when already present", (
 test("style lock respects an existing photoreal prompt", () => {
   const src = "Photorealistic close-up of hands, NOT cartoon.";
   assert.equal(lockStyle(src), src);
+});
+
+test("style lock keeps a stylized Reality E project out of photoreal", () => {
+  const locked = lockStyle("A fox crosses a moonlit bridge", "stylized");
+  assert.match(locked, /Reality E stylized/i);
+  assert.doesNotMatch(locked, /Strictly photorealistic/i);
+  assert.match(locked, /no accidental live-action photoreal conversion/i);
+});
+
+test("structured keyframe respects a stylized Reality E context", () => {
+  const bd = fixture();
+  bd.context_ir = {
+    reality_profile: { mode: "stylized" },
+  } as unknown as NonNullable<typeof bd.context_ir>;
+  const m = buildNanoFlowManifest(bd, {
+    veoClips: [
+      {
+        visual_style: "stylized graphic world",
+        background_lock: { setting: "Moonlit bridge" },
+        character_lock: {},
+        scene_action: { start_state: "A fox waits at the bridge" },
+        camera: { framing: "MS", angle: "eye" },
+      },
+    ],
+  });
+  const prompt = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  assert.equal(prompt.type, "stylized_keyframe");
+  assert.match(String(prompt.render), /Reality E.*stylized/i);
+  assert.doesNotMatch(String(prompt.render), /real photograph/i);
 });
 
 test("every shot's storyboard_prompt is style-locked", () => {

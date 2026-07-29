@@ -3,6 +3,7 @@ import type { SceneFunction, SceneIntentIR } from "@/lib/scene-intent";
 import type {
   MarketingRole,
   SceneBible,
+  SegmentTransitionMode,
   StoryboardGenerationInput,
   StoryboardGenerationOutput,
 } from "@/types";
@@ -184,6 +185,11 @@ export function compileCookingStoryboard(
     ];
     while (beats.length < beatCount) beats.push(defaults[beats.length]!);
     const visibleIds = scene.visible_ingredient_ids.filter((id) => validIngredientIds.has(id));
+    const locationId =
+      input.resolved_context?.layers.environment.locations[0]?.id ?? "location_01";
+    const trackedIds = visibleIds.slice(0, 6);
+    const transitionMode: SegmentTransitionMode =
+      index === 0 ? "opening" : index === 1 ? "scene_cut" : "continuous";
     // Diegetic audio is the hook for cooking: mix the real contact sounds
     // forward, layered and crisp, so each clip is immersive rather than sparse.
     const soundLine = scene.asmr_cues.length
@@ -251,6 +257,61 @@ export function compileCookingStoryboard(
           : []
         : (input.character_descriptions ?? []).slice(0, 1).map((character) => character.name),
       environment_ref: "custom",
+      location_id: locationId,
+      continuity_mode: transitionMode,
+      transition_in: {
+        mode: transitionMode,
+        ...(index > 0 ? { from_location_id: locationId } : {}),
+        to_location_id: locationId,
+        time_relation:
+          index === 0
+            ? "project opening"
+            : index === 1
+              ? "editorial reset from finished-dish preview to recipe beginning"
+              : "next ordered recipe operation",
+        preserve:
+          index === 1
+            ? ["dish identity", "location identity", "visual language"]
+            : index === 0
+              ? []
+              : ["location", "ingredient identity", "material state", "cook identity"],
+        reset:
+          index === 1
+            ? ["food preparation state", "hand pose", "camera framing"]
+            : index === 0
+              ? []
+              : ["camera framing"],
+        reason:
+          index === 0
+            ? "First clip establishes the finished-dish hook."
+            : index === 1
+              ? "The approved cooking structure intentionally cuts back to raw ingredients."
+              : "The recipe continues causally into the next operation.",
+      },
+      state_ledger: {
+        start: trackedIds.map((entityId) => ({
+          entity_id: entityId,
+          state: scene.start_frame,
+          position: "declared cooking work surface or vessel",
+          holder: "",
+          traces: [],
+        })),
+        changes: trackedIds.map((entityId) => ({
+          entity_id: entityId,
+          from: scene.start_frame,
+          action: scene.action_timeline,
+          to: scene.end_state,
+          caused_by: "the cook's visible hands and declared cooking tools",
+          trace: "",
+        })),
+        end: trackedIds.map((entityId) => ({
+          entity_id: entityId,
+          state: scene.end_state,
+          position: "declared final vessel or work-surface position",
+          holder: "",
+          traces: [],
+        })),
+      },
       continuity_note: `${scene.continuity_note}${visibleIds.length ? ` Ingredient state ids: ${visibleIds.join(", ")}.` : ""}`,
     };
   });
@@ -258,6 +319,7 @@ export function compileCookingStoryboard(
   const context = input.resolved_context;
   const recipe = input.cooking_recipe;
   return {
+    schema_version: "4.0",
     title: plan.title,
     synopsis: plan.synopsis,
     total_duration_seconds: segments.length * 10,

@@ -56,6 +56,19 @@ export interface NanoFlowShot {
   storyboard_name: string;
   duration_seconds?: number;
   marketing_role?: NanoFlowMarketingRole;
+  /** Schema 4.0 continuity decision for the boundary entering this shot. */
+  continuity_mode?:
+    | "opening"
+    | "continuous"
+    | "scene_cut"
+    | "location_cut"
+    | "time_jump"
+    | "parallel_intercut"
+    | "match_cut"
+    | "montage"
+    | "flashback"
+    | "dream"
+    | "symbolic";
 
   // ─── STEP A: generate the storyboard/keyframe image with Nano Banana ───
   /** Prompt written 100% by Storyboard to create the image. */

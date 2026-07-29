@@ -16,10 +16,11 @@
 //   • SYNC-001 — the image and video prompts must agree on cast; drift between the
 //               two compilers is only visible when both artifacts exist.
 //
-// 100% deterministic (JSON + regex, no LLM). Report-only for now. It reuses the
-// finding/report types and buildReport() from semantic-validator so both gates
-// speak one language. No scene/character/video is hardcoded — cast is read from
-// the manifest; only unit-test fixtures use example names.
+// 100% deterministic (JSON + regex, no LLM). The server-side Lớp-C loop consumes
+// this report before approval; the browser runs it again as an export-time
+// fail-closed backup. It reuses the finding/report types and buildReport() from
+// semantic-validator so both gates speak one language. No scene/character/video
+// is hardcoded — cast is read from the manifest; only tests use example names.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import type { NanoFlowManifest, NanoFlowShot } from "@/types/nano-flow";
@@ -138,16 +139,25 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
 
   // ─────────────────────────── IMAGE PROMPT ────────────────────────────────
   if (imgJson) {
-    // IMG-001 — the keyframe must be photoreal-locked or it drifts to cartoon.
+    // IMG-001 — the keyframe must name its render medium. Photoreal is required
+    // only for live-action projects; stylized/animation projects keep Reality E
+    // inside their own declared visual language.
     const render = str(imgJson.render).toLowerCase();
     const negative = str(imgJson.negative).toLowerCase();
-    if (!/photoreal/.test(render) || !/not cartoon/.test(negative)) {
+    const hasDeclaredMedium =
+      /\b(photoreal|live[- ]action|documentary|cinematic film|animation|anime|illustrat|stylized|3d|stop[- ]motion|cartoon)\b/.test(
+        render
+      );
+    const liveAction = /\b(photoreal|live[- ]action|documentary|cinematic film)\b/.test(
+      render
+    );
+    if (!hasDeclaredMedium || (liveAction && !/not cartoon/.test(negative))) {
       push({
         code: "IMG-001",
         severity: "high",
         scope: "segment",
         segment_number: seg,
-        message: "Image prompt is not photoreal-locked (missing photoreal render note or NOT-cartoon negative).",
+        message: "Image prompt has no coherent render-medium lock, or its live-action lock lacks the NOT-cartoon guard.",
       });
     }
     // IMG-003 — the image needs a setting to place the scene.
@@ -188,14 +198,22 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
       }
     }
   } else if (imgRaw) {
-    // Prose fallback (lockStyle): must still be photoreal-locked.
-    if (!/photoreal/i.test(imgRaw) || !/not cartoon/i.test(imgRaw)) {
+    // Prose fallback must still declare one render medium; only live-action
+    // prose needs the NOT-cartoon guard.
+    const hasDeclaredMedium =
+      /\b(photoreal|live[- ]action|documentary|cinematic film|animation|anime|illustrat|stylized|3d|stop[- ]motion|cartoon)\b/i.test(
+        imgRaw
+      );
+    const liveAction = /\b(photoreal|live[- ]action|documentary|cinematic film)\b/i.test(
+      imgRaw
+    );
+    if (!hasDeclaredMedium || (liveAction && !/not cartoon/i.test(imgRaw))) {
       push({
         code: "IMG-001",
         severity: "high",
         scope: "segment",
         segment_number: seg,
-        message: "Prose image prompt is not photoreal-locked (missing photoreal anchor or NOT-cartoon negative).",
+        message: "Prose image prompt has no coherent render-medium lock.",
       });
     }
   } else {

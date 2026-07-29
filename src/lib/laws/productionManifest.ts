@@ -15,7 +15,7 @@ import { actionLaws } from "./actionLaws";
 import { sceneIntentLaws } from "./sceneIntentLaws";
 import { cameraLaws } from "./cameraLaws";
 import { lightingLaws } from "./lightingLaws";
-import { audioLaws, NORTHERN_VIETNAMESE_VOICE_RENDER_LOCK } from "./audioLaws";
+import { audioLaws, CONTEXTUAL_VOICE_RENDER_LOCK } from "./audioLaws";
 
 interface LawBlock {
   readonly __layer: string;
@@ -103,7 +103,7 @@ export function clipCameraLawLine(): string {
 
 /** One-line audio law clause for per-clip prompts. */
 export function clipAudioLawLine(): string {
-  return `AUDIO LAW: the voice comes from the speaker's mouth with exact lip-sync; one constant low ambient bed for this location; diegetic sounds follow the visible actions; natural breathing room around the line; no music drowning the voice. ${NORTHERN_VIETNAMESE_VOICE_RENDER_LOCK}`;
+  return `AUDIO LAW: the voice comes from the speaker's mouth with exact lip-sync; one constant low ambient bed for this location; diegetic sounds follow the visible actions; natural breathing room around the line; no music drowning the voice. ${CONTEXTUAL_VOICE_RENDER_LOCK}`;
 }
 
 /** Compact JSON block for the Veo JSON export (laws travel with the prompts). */

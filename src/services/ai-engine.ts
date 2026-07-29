@@ -8,6 +8,8 @@ import {
   buildStoryboardSystemPrompt,
   buildStoryboardUserPrompt,
   buildSegmentRewriteUserPrompt,
+  buildStoryboardRepairUserPrompt,
+  buildStoryboardCriticUserPrompt,
 } from "@/prompts";
 import {
   buildContextAnalysisSystemPrompt,
@@ -20,10 +22,14 @@ import {
 import { sceneIntentSchema } from "@/lib/scene-intent";
 import {
   validateStoryboardSemantics,
+  buildReport,
   formatSemanticReport,
+  type SemanticFinding,
+  type StoryboardRepairBatch,
 } from "@/lib/validation";
 import type {
   AIProvider,
+  CharacterLock,
   StoryboardGenerationInput,
   StoryboardGenerationOutput,
   VideoSegment,
@@ -116,6 +122,77 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
     // CAST-SYNC + ENVIRONMENT ENGINE per-segment locks.
     characters_in_scene: STRING_ARRAY_SCHEMA,
     environment_ref: STRING_SCHEMA,
+    location_id: STRING_SCHEMA,
+    continuity_mode: STRING_SCHEMA,
+    transition_in: {
+      type: "OBJECT",
+      properties: {
+        mode: STRING_SCHEMA,
+        from_location_id: STRING_SCHEMA,
+        to_location_id: STRING_SCHEMA,
+        time_relation: STRING_SCHEMA,
+        preserve: STRING_ARRAY_SCHEMA,
+        reset: STRING_ARRAY_SCHEMA,
+        reason: STRING_SCHEMA,
+      },
+      required: [
+        "mode",
+        "to_location_id",
+        "time_relation",
+        "preserve",
+        "reset",
+        "reason",
+      ],
+    },
+    state_ledger: {
+      type: "OBJECT",
+      properties: {
+        start: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: {
+              entity_id: STRING_SCHEMA,
+              state: STRING_SCHEMA,
+              position: STRING_SCHEMA,
+              holder: STRING_SCHEMA,
+              traces: STRING_ARRAY_SCHEMA,
+            },
+            required: ["entity_id", "state", "position"],
+          },
+        },
+        changes: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: {
+              entity_id: STRING_SCHEMA,
+              from: STRING_SCHEMA,
+              action: STRING_SCHEMA,
+              to: STRING_SCHEMA,
+              caused_by: STRING_SCHEMA,
+              trace: STRING_SCHEMA,
+            },
+            required: ["entity_id", "from", "action", "to", "caused_by"],
+          },
+        },
+        end: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: {
+              entity_id: STRING_SCHEMA,
+              state: STRING_SCHEMA,
+              position: STRING_SCHEMA,
+              holder: STRING_SCHEMA,
+              traces: STRING_ARRAY_SCHEMA,
+            },
+            required: ["entity_id", "state", "position"],
+          },
+        },
+      },
+      required: ["start", "changes", "end"],
+    },
     // PHYSICAL TOPOLOGY: compact and separate from prose so scene geometry,
     // blocking, motion and camera all consume one authoritative map. Optional
     // in the transport schema for backward compatibility; the system prompt
@@ -166,8 +243,69 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
     "first_frame_prompt",
     "motion_prompt",
     "dialogue",
+    "location_id",
+    "continuity_mode",
+    "transition_in",
+    "state_ledger",
     "continuity_note",
   ],
+};
+
+const STORYBOARD_REPAIR_RESPONSE_SCHEMA: Record<string, unknown> = {
+  type: "OBJECT",
+  properties: {
+    segments: {
+      type: "ARRAY",
+      items: SEGMENT_ITEM_SCHEMA,
+    },
+    character_locks: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          name: STRING_SCHEMA,
+          gender: STRING_SCHEMA,
+          costume: STRING_SCHEMA,
+          wardrobe_materials: STRING_SCHEMA,
+          voice: STRING_SCHEMA,
+        },
+        required: ["name", "gender", "costume"],
+      },
+    },
+  },
+  required: ["segments", "character_locks"],
+};
+
+const STORYBOARD_CRITIC_RESPONSE_SCHEMA: Record<string, unknown> = {
+  type: "OBJECT",
+  properties: {
+    clean: BOOLEAN_SCHEMA,
+    findings: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          code: STRING_SCHEMA,
+          severity: STRING_SCHEMA,
+          scope: STRING_SCHEMA,
+          segment_number: INTEGER_SCHEMA,
+          character: STRING_SCHEMA,
+          message: STRING_SCHEMA,
+          evidence: STRING_SCHEMA,
+        },
+        required: [
+          "code",
+          "severity",
+          "scope",
+          "segment_number",
+          "character",
+          "message",
+          "evidence",
+        ],
+      },
+    },
+  },
+  required: ["clean", "findings"],
 };
 
 // Gemini's JSON mode is much more reliable when it gets a concrete schema.
@@ -175,6 +313,7 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
 const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
   type: "OBJECT",
   properties: {
+    schema_version: STRING_SCHEMA,
     title: STRING_SCHEMA,
     synopsis: STRING_SCHEMA,
     total_duration_seconds: INTEGER_SCHEMA,
@@ -335,7 +474,7 @@ const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
       required: ["color_palette", "art_direction", "visual_references", "consistency_notes"],
     },
   },
-  required: ["title", "synopsis", "world_context", "social_posts", "thumbnail_title", "character_locks", "segments", "style_guide"],
+  required: ["schema_version", "title", "synopsis", "world_context", "social_posts", "thumbnail_title", "character_locks", "segments", "style_guide"],
 };
 
 async function sleep(ms: number): Promise<void> {
@@ -620,7 +759,35 @@ export async function analyzeVideoContext(
           `Context IR schema mismatch${firstIssue ? ` at ${firstIssue.path.join(".")}: ${firstIssue.message}` : ""}`
         );
       }
-      return parsed.data;
+      // Product decision: final outputs always use the deepest simulation
+      // budget. The selected mode remains authoritative, so stylized/animated
+      // worlds keep their own look instead of being forced into photorealism.
+      return {
+        ...parsed.data,
+        reality_profile: {
+          ...parsed.data.reality_profile,
+          fidelity: "E_cinematic_simulation",
+          dimensions: {
+            macro: true,
+            meso: true,
+            micro: true,
+            material_reaction: true,
+            temporal_continuity: true,
+            causal_integrity: true,
+          },
+          salience_policy: {
+            ...parsed.data.reality_profile.salience_policy,
+            max_high_fidelity_entities_per_clip: Math.min(
+              6,
+              Math.max(
+                3,
+                parsed.data.reality_profile.salience_policy
+                  .max_high_fidelity_entities_per_clip
+              )
+            ),
+          },
+        },
+      };
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       console.error(
@@ -870,6 +1037,7 @@ export async function generateStoryboardBreakdown(
         parsed.context_ir = input.resolved_context;
         parsed.world_context = contextIrToWorldContext(input.resolved_context);
       }
+      parsed.schema_version = "4.0";
 
       const targetCount = input.segment_count ?? input.scene_count ?? 5;
 
@@ -879,6 +1047,9 @@ export async function generateStoryboardBreakdown(
       }
       parsed.segments.forEach((seg, i) => {
         seg.segment_number = i + 1;
+        if (seg.transition_in) {
+          seg.continuity_mode = seg.transition_in.mode;
+        }
         if (!seg.duration_seconds) seg.duration_seconds = 10;
         if (!Array.isArray(seg.beats)) seg.beats = [];
         if (!seg.marketing_role) {
@@ -1027,12 +1198,12 @@ export async function generateStoryboardBreakdown(
         };
       }
 
-      // TẦNG 10 — SEMANTIC VALIDATION GATE (report-only for now).
+      // TẦNG 10 — low-level semantic diagnostic. The action layer later runs
+      // the authoritative fail-closed A+B gate and bounded Lớp-C repair.
       // Run the semantic checks over the fully-normalized breakdown and log any
       // day/night, environment, topology, character or cast violations. This is
-      // NON-BLOCKING: it never alters or rejects the output yet — it gives us a
-      // measurable signal (and a regression harness) before we turn on
-      // fail-closed enforcement. See src/lib/validation/semantic-validator.ts.
+      // This check stays non-blocking so deterministic normalization can finish
+      // before the authoritative gate decides whether repair is required.
       try {
         const semantic = validateStoryboardSemantics(parsed);
         if (!semantic.ok) {
@@ -1067,6 +1238,12 @@ function validateSegment(data: unknown): data is VideoSegment {
   if (typeof data !== "object" || data === null) return false;
   const d = data as Record<string, unknown>;
   return typeof d.motion_prompt === "string" && typeof d.first_frame_prompt === "string";
+}
+
+function validateCharacterRepair(data: unknown): data is CharacterLock {
+  if (typeof data !== "object" || data === null) return false;
+  const candidate = data as Record<string, unknown>;
+  return typeof candidate.name === "string" && candidate.name.trim().length > 0;
 }
 
 /**
@@ -1155,6 +1332,10 @@ export async function rewriteStoryboardSegment(params: {
       parsed.duration_seconds = original.duration_seconds || 10;
       parsed.marketing_role = original.marketing_role;
       parsed.environment_ref = original.environment_ref;
+      parsed.location_id = original.location_id;
+      parsed.transition_in = original.transition_in;
+      parsed.continuity_mode =
+        original.transition_in?.mode ?? original.continuity_mode;
       if (!parsed.title) parsed.title = original.title;
       if (!Array.isArray(parsed.beats) || parsed.beats.length === 0) {
         parsed.beats = original.beats;
@@ -1163,6 +1344,7 @@ export async function rewriteStoryboardSegment(params: {
         if (!b.camera) b.camera = "[EYE]";
       });
       if (!parsed.continuity_note) parsed.continuity_note = original.continuity_note;
+      if (!parsed.state_ledger) parsed.state_ledger = original.state_ledger;
       // The rewrite invalidates any previously rendered assets for this segment.
       parsed.first_frame_url = null;
       parsed.keyframe_url = null;
@@ -1183,5 +1365,376 @@ export async function rewriteStoryboardSegment(params: {
 
   throw new Error(
     `Segment rewrite failed after ${MAX_RETRIES} attempts: ${lastError?.message}`
+  );
+}
+
+/**
+ * Lớp-C semantic critic for topology/causality/ontology defects that cannot be
+ * decided reliably with regex alone. It returns a report only; mutation remains
+ * isolated in repairStoryboardSegments.
+ */
+export async function critiqueStoryboard(params: {
+  input: StoryboardGenerationInput;
+  breakdown: StoryboardGenerationOutput;
+  round: number;
+  provider?: AIProvider;
+  timing?: GenerationTimingOptions;
+}) {
+  const provider = params.provider ?? "gemini";
+  const systemPrompt =
+    "You are a strict pre-render storyboard quality critic. Judge only against the supplied locked context and return actionable JSON findings. Never rewrite the storyboard.";
+  const userPrompt = buildStoryboardCriticUserPrompt({
+    input: params.input,
+    breakdown: params.breakdown,
+    round: params.round,
+  });
+  const maxAttempts = attemptLimit(2, params.timing);
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      let rawContent: string | null = null;
+      if (provider === "claude") {
+        rawContent = await claudeGenerateText({
+          systemPrompt,
+          userPrompt:
+            userPrompt +
+            "\n\nReturn ONLY the critic JSON — no markdown or prose.",
+          maxTokens: 4500,
+          timeoutMs: boundedTimeoutMs(
+            params.timing,
+            45_000,
+            "Claude storyboard critic"
+          ),
+        });
+      } else if (provider === "gemini") {
+        rawContent = await geminiGenerateText({
+          systemPrompt,
+          userPrompt,
+          jsonMode: true,
+          responseSchema: STORYBOARD_CRITIC_RESPONSE_SCHEMA,
+          temperature: 0.1,
+          maxOutputTokens: 6144,
+          model: STORYBOARD_TEXT_MODEL,
+          thinkingBudget: 1024,
+          thinkingLevel: "low",
+          timeoutMs: boundedTimeoutMs(
+            params.timing,
+            60_000,
+            "Gemini storyboard critic"
+          ),
+        });
+      } else {
+        const openai = getOpenAIClient();
+        const completion = await openai.chat.completions.create(
+          {
+            model:
+              process.env.OPENAI_STORYBOARD_CRITIC_MODEL || "gpt-4o-mini",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            temperature: 0.1,
+            max_tokens: 4000,
+            response_format: { type: "json_object" },
+          },
+          {
+            timeout: boundedTimeoutMs(
+              params.timing,
+              70_000,
+              "OpenAI storyboard critic"
+            ),
+          }
+        );
+        rawContent = completion.choices[0]?.message?.content ?? null;
+      }
+
+      if (!rawContent) throw new Error(`Empty critic response from ${provider}`);
+      const parsed = parseJsonResponse(rawContent) as {
+        findings?: unknown[];
+      };
+      if (!Array.isArray(parsed.findings)) {
+        throw new Error("Critic response has no findings array");
+      }
+
+      const segmentNumbers = new Set(
+        params.breakdown.segments.map((segment) => segment.segment_number)
+      );
+      const characterNames = new Set(
+        params.breakdown.character_locks.map((lock) =>
+          lock.name.trim().toLowerCase()
+        )
+      );
+      const findings: SemanticFinding[] = [];
+
+      for (const raw of parsed.findings) {
+        if (!raw || typeof raw !== "object") continue;
+        const finding = raw as Record<string, unknown>;
+        const severity =
+          finding.severity === "critical" || finding.severity === "high"
+            ? finding.severity
+            : null;
+        const scope =
+          finding.scope === "segment" ||
+          finding.scope === "character" ||
+          finding.scope === "project"
+            ? finding.scope
+            : null;
+        const message =
+          typeof finding.message === "string" ? finding.message.trim() : "";
+        if (!severity || !scope || !message) continue;
+
+        const segmentNumber =
+          typeof finding.segment_number === "number" &&
+          segmentNumbers.has(finding.segment_number)
+            ? finding.segment_number
+            : undefined;
+        const character =
+          typeof finding.character === "string" &&
+          characterNames.has(finding.character.trim().toLowerCase())
+            ? finding.character.trim()
+            : undefined;
+        const safeScope =
+          scope === "segment" && segmentNumber === undefined
+            ? "project"
+            : scope === "character" && character === undefined
+              ? "project"
+              : scope;
+
+        findings.push({
+          code:
+            typeof finding.code === "string" && finding.code.trim()
+              ? finding.code.trim()
+              : "CRITIC-001",
+          severity,
+          scope: safeScope,
+          segment_number:
+            safeScope === "segment" ? segmentNumber : undefined,
+          character: safeScope === "character" ? character : undefined,
+          message,
+          evidence:
+            typeof finding.evidence === "string" && finding.evidence.trim()
+              ? finding.evidence.trim()
+              : undefined,
+        });
+      }
+
+      return buildReport(findings, "Layer C semantic critic");
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        `[AI Engine] Storyboard critic audit ${params.round}, transport attempt ${attempt + 1}/${maxAttempts} failed:`,
+        lastError.message
+      );
+      if (attempt < maxAttempts - 1) {
+        await sleep(RETRY_DELAY_MS * (attempt + 1));
+      }
+    }
+  }
+
+  throw new Error(
+    `Storyboard critic failed after ${maxAttempts} transport attempts: ${lastError?.message}`
+  );
+}
+
+/**
+ * Lớp C remote critic/repair call. Every failing segment is repaired in one
+ * compact batch; the caller merges only requested segment numbers and runs the
+ * free deterministic validator again. This function never invokes image/video
+ * generation.
+ */
+export async function repairStoryboardSegments(params: {
+  input: StoryboardGenerationInput;
+  breakdown: StoryboardGenerationOutput;
+  segmentNumbers: number[];
+  characterNames: string[];
+  findings: SemanticFinding[];
+  round: number;
+  provider?: AIProvider;
+  timing?: GenerationTimingOptions;
+}): Promise<StoryboardRepairBatch> {
+  const provider = params.provider ?? "gemini";
+  const requested = new Set(params.segmentNumbers);
+  const requestedCharacters = new Set(
+    params.characterNames.map((name) => name.trim().toLowerCase())
+  );
+  if (requested.size === 0 && requestedCharacters.size === 0) {
+    return { segments: [], character_locks: [] };
+  }
+
+  const systemPrompt = buildStoryboardSystemPrompt(
+    hasUploadedCharacterReferences(params.input)
+  );
+  const userPrompt = buildStoryboardRepairUserPrompt({
+    input: params.input,
+    breakdown: params.breakdown,
+    segmentNumbers: [...requested].sort((a, b) => a - b),
+    characterNames: [...requestedCharacters].sort(),
+    findings: params.findings,
+    round: params.round,
+  });
+  const maxAttempts = attemptLimit(2, params.timing);
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      let rawContent: string | null = null;
+
+      if (provider === "claude") {
+        rawContent = await claudeGenerateText({
+          systemPrompt,
+          userPrompt:
+            userPrompt +
+            "\n\nReturn ONLY the requested JSON wrapper — no markdown or prose.",
+          maxTokens: Math.min(
+            16000,
+            Math.max(
+              5000,
+              requested.size * 3500 + requestedCharacters.size * 1200
+            )
+          ),
+          timeoutMs: boundedTimeoutMs(
+            params.timing,
+            75_000,
+            "Claude storyboard repair"
+          ),
+        });
+      } else if (provider === "gemini") {
+        rawContent = await geminiGenerateText({
+          systemPrompt,
+          userPrompt,
+          jsonMode: true,
+          responseSchema: STORYBOARD_REPAIR_RESPONSE_SCHEMA,
+          temperature: attempt === 0 ? 0.2 : 0.1,
+          maxOutputTokens: Math.min(
+            24576,
+            Math.max(
+              8192,
+              requested.size * 4600 + requestedCharacters.size * 1400
+            )
+          ),
+          model: STORYBOARD_TEXT_MODEL,
+          thinkingBudget: 0,
+          thinkingLevel: "low",
+          timeoutMs: boundedTimeoutMs(
+            params.timing,
+            90_000,
+            "Gemini storyboard repair"
+          ),
+        });
+      } else {
+        const openai = getOpenAIClient();
+        const completion = await openai.chat.completions.create(
+          {
+            model:
+              process.env.OPENAI_STORYBOARD_REPAIR_MODEL ||
+              process.env.OPENAI_STORYBOARD_MODEL ||
+              "gpt-4o",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            temperature: attempt === 0 ? 0.2 : 0.1,
+            max_tokens: Math.min(
+              14000,
+              Math.max(
+                5000,
+                requested.size * 3500 + requestedCharacters.size * 1200
+              )
+            ),
+            response_format: { type: "json_object" },
+          },
+          {
+            timeout: boundedTimeoutMs(
+              params.timing,
+              100_000,
+              "OpenAI storyboard repair"
+            ),
+          }
+        );
+        rawContent = completion.choices[0]?.message?.content ?? null;
+      }
+
+      if (!rawContent) throw new Error(`Empty repair response from ${provider}`);
+      const parsed = parseJsonResponse(rawContent) as {
+        segments?: unknown[];
+        character_locks?: unknown[];
+      };
+      if (
+        !Array.isArray(parsed.segments) ||
+        !Array.isArray(parsed.character_locks)
+      ) {
+        throw new Error(
+          "Repair response must contain segments and character_locks arrays"
+        );
+      }
+
+      const repaired: VideoSegment[] = [];
+      const seen = new Set<number>();
+      for (const rawSegment of parsed.segments) {
+        if (!validateSegment(rawSegment)) {
+          throw new Error("Repair response contains an invalid segment");
+        }
+        if (!requested.has(rawSegment.segment_number)) continue;
+        if (seen.has(rawSegment.segment_number)) {
+          throw new Error(
+            `Repair response duplicated segment ${rawSegment.segment_number}`
+          );
+        }
+        seen.add(rawSegment.segment_number);
+        if (rawSegment.scene_intent != null) {
+          const intent = sceneIntentSchema.safeParse(rawSegment.scene_intent);
+          rawSegment.scene_intent = intent.success ? intent.data : undefined;
+        }
+        repaired.push(rawSegment);
+      }
+
+      const missing = [...requested].filter((number) => !seen.has(number));
+      if (missing.length > 0) {
+        throw new Error(
+          `Repair response omitted segment(s): ${missing.join(", ")}`
+        );
+      }
+
+      const repairedCharacters: CharacterLock[] = [];
+      const seenCharacters = new Set<string>();
+      for (const rawLock of parsed.character_locks) {
+        if (!validateCharacterRepair(rawLock)) {
+          throw new Error("Repair response contains an invalid character lock");
+        }
+        const key = rawLock.name.trim().toLowerCase();
+        if (!requestedCharacters.has(key)) continue;
+        if (seenCharacters.has(key)) {
+          throw new Error(`Repair response duplicated character lock "${rawLock.name}"`);
+        }
+        seenCharacters.add(key);
+        repairedCharacters.push(rawLock);
+      }
+      const missingCharacters = [...requestedCharacters].filter(
+        (name) => !seenCharacters.has(name)
+      );
+      if (missingCharacters.length > 0) {
+        throw new Error(
+          `Repair response omitted character lock(s): ${missingCharacters.join(", ")}`
+        );
+      }
+      return {
+        segments: repaired,
+        character_locks: repairedCharacters,
+      };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        `[AI Engine] Storyboard repair round ${params.round}, transport attempt ${attempt + 1}/${maxAttempts} failed:`,
+        lastError.message
+      );
+      if (attempt < maxAttempts - 1) {
+        await sleep(RETRY_DELAY_MS * (attempt + 1));
+      }
+    }
+  }
+
+  throw new Error(
+    `Storyboard repair failed after ${maxAttempts} transport attempts: ${lastError?.message}`
   );
 }

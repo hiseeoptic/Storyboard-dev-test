@@ -85,9 +85,10 @@ const KEYFRAME_REFERENCE_AUTHORITY =
 function buildKeyframePromptFromClip(
   clip: Record<string, unknown> | undefined,
   fallbackSceneText: string,
-  wardrobeClause: string
+  wardrobeClause: string,
+  realityMode: string
 ): string {
-  if (!clip) return lockStyle(fallbackSceneText + wardrobeClause);
+  if (!clip) return lockStyle(fallbackSceneText + wardrobeClause, realityMode);
 
   const bg = clipObj(clip.background_lock);
   const setting = clipStr(bg.setting) || fallbackSceneText;
@@ -123,9 +124,14 @@ function buildKeyframePromptFromClip(
   if (clipStr(cam.framing)) camera.framing = clipStr(cam.framing);
   if (clipStr(cam.angle)) camera.angle = clipStr(cam.angle);
 
+  const liveAction = ["documentary", "cinematic", "commercial"].includes(
+    realityMode
+  );
   const prompt: Record<string, unknown> = {
-    type: "photoreal_keyframe",
-    render: KEYFRAME_RENDER_NOTE,
+    type: liveAction ? "photoreal_keyframe" : `${slugify(realityMode)}_keyframe`,
+    render: liveAction
+      ? KEYFRAME_RENDER_NOTE
+      : `Reality E keyframe in the project's locked ${realityMode} medium. Preserve its exact design language, materials, proportions, lighting logic and internal physics; never convert it to live-action photorealism.`,
     visual_style: visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
@@ -136,7 +142,9 @@ function buildKeyframePromptFromClip(
     camera: Object.keys(camera).length ? camera : undefined,
     reference_authority: KEYFRAME_REFERENCE_AUTHORITY,
     wardrobe_note: wardrobeClause ? wardrobeClause.trim() : undefined,
-    negative: KEYFRAME_NEGATIVE,
+    negative: liveAction
+      ? KEYFRAME_NEGATIVE
+      : "No visual-medium drift, no accidental photoreal conversion, no inconsistent character design, no on-screen text, caption, watermark or logo; no duplicated subject or broken internal physics.",
   };
   // JSON.stringify drops the undefined-valued keys, leaving a clean payload.
   return JSON.stringify(prompt);
@@ -202,8 +210,19 @@ const STYLE_SUFFIX =
  * generated keyframes never come back as cartoon. The scene text is preserved
  * verbatim in the middle; only style anchors are added, and only when missing.
  */
-export function lockStyle(rawPrompt: string): string {
+export function lockStyle(rawPrompt: string, realityMode = "cinematic"): string {
   const base = (rawPrompt || "").trim();
+  const liveAction = ["documentary", "cinematic", "commercial"].includes(
+    realityMode
+  );
+  if (!liveAction) {
+    const prefix = `Reality E ${realityMode} keyframe in one locked visual medium. `;
+    const suffix =
+      ` Preserve the project's exact ${realityMode} design language and internal physics; no medium drift, no accidental live-action photoreal conversion, no text or watermark.`;
+    if (!base) return `${prefix}${suffix.trim()}`.trim();
+    if (base.toLowerCase().includes(`reality e ${realityMode}`)) return base;
+    return `${prefix}${base}${/[.!?]$/.test(base) ? "" : "."}${suffix}`.trim();
+  }
   if (!base) return (STYLE_PREFIX + STYLE_SUFFIX.trim()).trim();
   const lower = base.toLowerCase();
   const hasPhotoAnchor = /\bphoto ?realistic|photo-realistic|photoreal\b/.test(lower);
@@ -225,6 +244,7 @@ export function buildNanoFlowManifest(
 ): NanoFlowManifest {
   const segments = breakdown.segments ?? [];
   const title = breakdown.title || "Untitled";
+  const realityMode = breakdown.context_ir?.reality_profile.mode ?? "cinematic";
 
   // ── Character assets: union of character_locks + every characters_in_scene
   //    name, so no shot can reference a character that isn't declared. ──
@@ -253,7 +273,7 @@ export function buildNanoFlowManifest(
   const envIdSeen = new Set<string>();
   const environments: NanoFlowAsset[] = [];
   for (const seg of segments) {
-    const ref = (seg.environment_ref ?? "").trim();
+    const ref = (seg.location_id ?? seg.environment_ref ?? "").trim();
     if (!ref || ref === "custom" || envIdSeen.has(ref)) continue;
     envIdSeen.add(ref);
     environments.push({ id: ref, name: humanizeEnvId(ref), image: null });
@@ -332,7 +352,7 @@ export function buildNanoFlowManifest(
     // The matching STRUCTURED Veo clip (same order as segments). Drives both the
     // high-quality video payload and the keyframe prompt below.
     const clip = opts.veoClips?.[i];
-    const envRef = (seg.environment_ref ?? "").trim();
+    const envRef = (seg.location_id ?? seg.environment_ref ?? "").trim();
     const envIds = envRef && envRef !== "custom" ? [envRef] : [];
 
     const image_refs: NanoFlowRefSelector = {
@@ -355,8 +375,13 @@ export function buildNanoFlowManifest(
       storyboard_prompt: buildKeyframePromptFromClip(
         clip,
         seg.first_frame_prompt || seg.motion_prompt || "",
-        wardrobeClause
+        wardrobeClause,
+        realityMode
       ),
+      continuity_mode:
+        seg.transition_in?.mode ??
+        seg.continuity_mode ??
+        (i === 0 ? "opening" : "continuous"),
       image_refs,
 
       // STEP B video payload = the STRUCTURED Veo scene JSON (high quality);

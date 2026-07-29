@@ -125,9 +125,10 @@ test("Veo JSON keeps the stable structure with contextual outfits and local voic
   const clip = result.clips[0];
 
   assert.equal(Object.hasOwn(clip, "prompt"), false);
-  assert.deepEqual(Object.keys(clip).slice(0, 6), [
+  assert.deepEqual(Object.keys(clip).slice(0, 7), [
     "scene_id",
     "duration_sec",
+    "continuity_mode",
     "visual_style",
     "scene_role",
     "characters_in_scene",
@@ -203,7 +204,10 @@ test("Veo JSON keeps the stable structure with contextual outfits and local voic
   assert.match(clip.negative_prompt, /listener lip movement/i);
   assert.match(clip.negative_prompt, /wrong-speaker lip sync/i);
   assert.match(clip.negative_prompt, /male voice for a female speaker/i);
-  assert.match(clip.negative_prompt, /Northern-to-Southern accent drift/i);
+  assert.match(
+    clip.negative_prompt,
+    /accent or dialect drift away from the locked character voice/i
+  );
   assert.match(clip.negative_prompt, /disembodied hand/i);
   assert.match(clip.negative_prompt, /technical readout or HUD/i);
   assert.ok(clip.negative_prompt.length > 1400);
@@ -432,9 +436,10 @@ test("Veo JSON reconciles chained revolving-door exit state without changing its
   });
 
   const clip = result.clips[1];
-  assert.deepEqual(Object.keys(clip).slice(0, 6), [
+  assert.deepEqual(Object.keys(clip).slice(0, 7), [
     "scene_id",
     "duration_sec",
+    "continuity_mode",
     "visual_style",
     "scene_role",
     "characters_in_scene",

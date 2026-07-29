@@ -9,14 +9,14 @@
 //
 // This module is that missing gate. It is 100% DETERMINISTIC (regex + structural
 // checks, no LLM), so — unlike an LLM "critic" — it is reliable, repeatable and
-// unit-tested. It is the FIRST, hardest line of defence; a soft LLM critic and a
-// regenerate loop are layered ON TOP later (Lớp C), never instead of this.
+// unit-tested. It is the FIRST, hardest line of defence; the bounded Lớp-C
+// critic/targeted-repair loop is layered ON TOP, never instead of this.
 //
 // COVERAGE — organised by the 10 DNA layers. Every check that materially affects
 // the generated 10s video and can be judged reliably from the breakdown alone is
 // here. Checks that need the *derived* prompt (ENV-002 background/action split,
 // SYNC-001 image↔video) belong to the prompt-level gate (Lớp B); checks that need
-// semantic judgement (subtle SPAT-002, prop-teleport) belong to the LLM critic.
+// semantic judgement (subtle SPAT-002, prop-teleport) belongs to the LLM critic.
 //
 // NO SCENE, CHARACTER OR VIDEO IS HARDCODED AS A DEFAULT. Every name is read
 // dynamically from the breakdown; only unit-test fixtures use example names.
@@ -55,6 +55,20 @@ export interface SemanticValidationReport {
 
 type Push = (f: SemanticFinding) => void;
 
+const TRANSITION_MODES = new Set([
+  "opening",
+  "continuous",
+  "scene_cut",
+  "location_cut",
+  "time_jump",
+  "parallel_intercut",
+  "match_cut",
+  "montage",
+  "flashback",
+  "dream",
+  "symbolic",
+]);
+
 // ── Small text helpers ──────────────────────────────────────────────────────
 function norm(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
@@ -67,6 +81,9 @@ function head(text: string, n = 48): string {
 }
 function isNum(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
+}
+function sameState(a: unknown, b: unknown): boolean {
+  return lc(a).replace(/\s+/g, " ") === lc(b).replace(/\s+/g, " ");
 }
 
 // ── Time-of-day vocab (Tầng 4) ──────────────────────────────────────────────
@@ -294,7 +311,10 @@ function checkTemporal(out: StoryboardGenerationOutput, push: Push): void {
   for (let i = 1; i < segs.length; i++) {
     const a = perSeg[i - 1];
     const b = perSeg[i];
-    if (a && b && a !== b) {
+    const transition = segs[i]!.transition_in;
+    const explicitlyEdited =
+      transition && transition.mode !== "continuous" && transition.mode !== "opening";
+    if (a && b && a !== b && !explicitlyEdited) {
       push({
         code: "TEMP-001",
         severity: "high",
@@ -341,7 +361,12 @@ function checkEnvironment(out: StoryboardGenerationOutput, push: Push): void {
   for (let i = 1; i < segs.length; i++) {
     const a = primaryCat[i - 1];
     const b = primaryCat[i];
-    if (a && b && a !== b) {
+    const transition = segs[i]!.transition_in;
+    const declaredLocationChange =
+      transition &&
+      transition.mode !== "continuous" &&
+      transition.from_location_id !== transition.to_location_id;
+    if (a && b && a !== b && !declaredLocationChange) {
       push({
         code: "LOC-001",
         severity: "medium",
@@ -352,6 +377,300 @@ function checkEnvironment(out: StoryboardGenerationOutput, push: Push): void {
       });
     }
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONTEXT IR CONTRACT — project-local locations, edit boundaries and compact
+// entity state are typed authorities. New Context IR projects fail closed;
+// legacy projects remain readable and are validated only when fields exist.
+// ═══════════════════════════════════════════════════════════════════════════
+function checkContextContracts(out: StoryboardGenerationOutput, push: Push): void {
+  const context = out.context_ir;
+  const segs = out.segments ?? [];
+  const locations = new Set(
+    context?.layers.environment.locations.map((location) => location.id) ?? []
+  );
+  const profile = context?.reality_profile;
+  const maxTracked = profile?.salience_policy.max_high_fidelity_entities_per_clip ?? 6;
+  const usesSegmentContracts = context?.segment_contract_version === "1.0";
+
+  if (usesSegmentContracts) {
+    if (out.schema_version !== "4.0") {
+      push({
+        code: "SCHEMA-001",
+        severity: "high",
+        scope: "project",
+        message: "Context IR output must declare storyboard schema_version 4.0.",
+        evidence: `schema_version=${out.schema_version ?? "missing"}`,
+      });
+    }
+    if (profile?.fidelity !== "E_cinematic_simulation") {
+      push({
+        code: "REAL-001",
+        severity: "high",
+        scope: "project",
+        message: "Final Context IR is not locked to Reality E cinematic simulation.",
+        evidence: `fidelity=${profile?.fidelity ?? "missing"}`,
+      });
+    }
+    if (maxTracked < 3 || maxTracked > 6) {
+      push({
+        code: "REAL-002",
+        severity: "high",
+        scope: "project",
+        message: "High-fidelity entity budget must be between 3 and 6.",
+        evidence: `max=${maxTracked}`,
+      });
+    }
+    if (
+      context?.layers.audio_validation?.post_render_policy !==
+      "report_only_no_auto_regeneration"
+    ) {
+      push({
+        code: "QA-001",
+        severity: "high",
+        scope: "project",
+        message: "Post-render policy must report defects without automatic regeneration.",
+      });
+    }
+  }
+
+  segs.forEach((seg, index) => {
+    const locationId = norm(seg.location_id);
+    const transition = seg.transition_in;
+    const continuityMode = seg.continuity_mode;
+    const ledger = seg.state_ledger;
+    const contractRequired = usesSegmentContracts;
+
+    if (contractRequired && !locationId) {
+      push({
+        code: "LOC-002",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg.segment_number,
+        message: "Context IR segment has no project-local location_id.",
+      });
+    } else if (locationId && locations.size > 0 && !locations.has(locationId)) {
+      push({
+        code: "LOC-002",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg.segment_number,
+        message: "Segment location_id is not declared in Context IR.",
+        evidence: `location_id=${locationId}`,
+      });
+    }
+
+    if (contractRequired && !transition) {
+      push({
+        code: "TRANS-001",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg.segment_number,
+        message: "Context IR segment has no transition_in contract.",
+      });
+    } else if (transition) {
+      if (contractRequired && !continuityMode) {
+        push({
+          code: "TRANS-005",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: "Schema 4.0 segment has no continuity_mode.",
+        });
+      } else if (continuityMode && continuityMode !== transition.mode) {
+        push({
+          code: "TRANS-005",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: "continuity_mode disagrees with transition_in.mode.",
+          evidence: `continuity_mode=${continuityMode}, transition_in.mode=${transition.mode}`,
+        });
+      }
+      if (!TRANSITION_MODES.has(transition.mode)) {
+        push({
+          code: "TRANS-001",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: "transition_in.mode is unsupported.",
+          evidence: `mode=${transition.mode}`,
+        });
+      }
+      if (index === 0 && transition.mode !== "opening") {
+        push({
+          code: "TRANS-002",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: "The first segment must enter with transition mode opening.",
+        });
+      }
+      if (index > 0 && transition.mode === "opening") {
+        push({
+          code: "TRANS-002",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: "Only the first segment may use transition mode opening.",
+        });
+      }
+      if (locationId && transition.to_location_id !== locationId) {
+        push({
+          code: "TRANS-003",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: "transition_in.to_location_id disagrees with segment.location_id.",
+          evidence: `to=${transition.to_location_id}, segment=${locationId}`,
+        });
+      }
+      const previous = segs[index - 1];
+      if (
+        previous &&
+        transition.from_location_id &&
+        previous.location_id &&
+        transition.from_location_id !== previous.location_id
+      ) {
+        push({
+          code: "TRANS-003",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: "transition_in.from_location_id disagrees with the previous segment.",
+          evidence: `from=${transition.from_location_id}, previous=${previous.location_id}`,
+        });
+      }
+      if (
+        previous &&
+        transition.mode === "continuous" &&
+        previous.location_id &&
+        locationId &&
+        previous.location_id !== locationId
+      ) {
+        push({
+          code: "TRANS-004",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: "A continuous transition cannot silently change physical location.",
+          evidence: `${previous.location_id} -> ${locationId}`,
+        });
+      }
+    }
+
+    if (contractRequired && !ledger) {
+      push({
+        code: "STATE-001",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg.segment_number,
+        message: "Context IR segment has no structured state_ledger.",
+      });
+      return;
+    }
+    if (!ledger) return;
+
+    const startEntries = Array.isArray(ledger.start) ? ledger.start : [];
+    const changeEntries = Array.isArray(ledger.changes) ? ledger.changes : [];
+    const endEntries = Array.isArray(ledger.end) ? ledger.end : [];
+    const ids = new Set([
+      ...startEntries.map((entry) => entry.entity_id),
+      ...changeEntries.map((entry) => entry.entity_id),
+      ...endEntries.map((entry) => entry.entity_id),
+    ].filter(Boolean));
+    if (ids.size > maxTracked || ids.size > 6) {
+      push({
+        code: "STATE-002",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg.segment_number,
+        message: "State ledger exceeds the approved 3-6 high-fidelity entity budget.",
+        evidence: `tracked=${ids.size}, max=${Math.min(6, maxTracked)}`,
+      });
+    }
+
+    const start = new Map(startEntries.map((entry) => [entry.entity_id, entry]));
+    const end = new Map(endEntries.map((entry) => [entry.entity_id, entry]));
+    const current = new Map(
+      startEntries.map((entry) => [entry.entity_id, entry.state])
+    );
+    for (const change of changeEntries) {
+      const before = current.get(change.entity_id);
+      if (!before || !sameState(before, change.from)) {
+        push({
+          code: "STATE-003",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: `State change for "${change.entity_id}" does not start from its current state.`,
+          evidence: `ledger=${before ?? "missing"} vs change.from=${change.from}`,
+        });
+      }
+      if (!norm(change.caused_by) || !norm(change.action)) {
+        push({
+          code: "CAUSE-001",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: `State change for "${change.entity_id}" has no visible cause/action.`,
+        });
+      }
+      current.set(change.entity_id, change.to);
+    }
+    for (const entityId of ids) {
+      const startEntry = start.get(entityId);
+      const endEntry = end.get(entityId);
+      if (!startEntry || !endEntry) {
+        push({
+          code: "STATE-004",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: `Tracked entity "${entityId}" is missing from the start or end snapshot.`,
+        });
+        continue;
+      }
+      const expectedEnd = current.get(entityId);
+      if (expectedEnd && !sameState(expectedEnd, endEntry.state)) {
+        push({
+          code: "STATE-004",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: `End state for "${entityId}" does not match its final caused change.`,
+          evidence: `expected=${expectedEnd} vs end=${endEntry.state}`,
+        });
+      }
+    }
+
+    const previous = segs[index - 1];
+    if (previous?.state_ledger && transition?.mode === "continuous") {
+      const previousEnd = new Map(
+        (Array.isArray(previous.state_ledger.end) ? previous.state_ledger.end : [])
+          .map((entry) => [entry.entity_id, entry])
+      );
+      for (const entry of startEntries) {
+        const prior = previousEnd.get(entry.entity_id);
+        if (
+          prior &&
+          (!sameState(prior.state, entry.state) ||
+            !sameState(prior.position, entry.position) ||
+            norm(prior.holder) !== norm(entry.holder))
+        ) {
+          push({
+            code: "STATE-005",
+            severity: "high",
+            scope: "segment",
+            segment_number: seg.segment_number,
+            message: `Continuous transition changes "${entry.entity_id}" before any visible action.`,
+            evidence: `previous=${prior.state}@${prior.position} -> start=${entry.state}@${entry.position}`,
+          });
+        }
+      }
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -598,6 +917,7 @@ export function validateStoryboardSemantics(
   checkWorldContext(output, push);
   checkTemporal(output, push);
   checkEnvironment(output, push);
+  checkContextContracts(output, push);
   checkCharacter(output, push);
   checkCast(output, push);
   checkContinuity(output, push);

@@ -4,6 +4,8 @@ export {
   buildStoryboardSystemPrompt,
   buildStoryboardUserPrompt,
   buildSegmentRewriteUserPrompt,
+  buildStoryboardRepairUserPrompt,
+  buildStoryboardCriticUserPrompt,
   buildCharacterRefSheetPrompt,
   buildSegmentFirstFramePrompt,
   buildKeyframePrompt,

@@ -40,7 +40,7 @@ const FIDELITIES = ["A_basic_visual", "B_physical", "C_material", "D_micro_behav
 const SUB_FIDELITIES = ["macro_only", "meso", "material", "micro"] as const;
 
 const modeCoerce = coerceEnum(MODES, "cinematic");
-const fidelityCoerce = coerceEnum(FIDELITIES, "C_material", { letterPrefix: true });
+const fidelityCoerce = coerceEnum(FIDELITIES, "E_cinematic_simulation", { letterPrefix: true });
 const fgCoerce = coerceEnum(SUB_FIDELITIES, "material");
 const bgCoerce = coerceEnum(SUB_FIDELITIES, "meso");
 
@@ -66,8 +66,8 @@ export const realityProfileSchema = z.object({
     max_high_fidelity_entities_per_clip: z.preprocess((v) => {
       const n = typeof v === "string" ? Number.parseInt(v, 10) : v;
       if (typeof n !== "number" || Number.isNaN(n)) return 3;
-      return Math.min(6, Math.max(1, Math.round(n)));
-    }, z.number().int().min(1).max(6)),
+      return Math.min(6, Math.max(3, Math.round(n)));
+    }, z.number().int().min(3).max(6)),
   }),
 });
 
@@ -113,4 +113,3 @@ export const REALITY_PROFILE_RESPONSE_SCHEMA: Record<string, unknown> = {
     "allowed_deviations", "salience_policy",
   ],
 };
-

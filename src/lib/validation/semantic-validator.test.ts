@@ -240,6 +240,125 @@ test("CONT-001: a chained clip with no continuity_note is an advisory", () => {
   assert.ok(r.findings.some((x) => x.code === "CONT-001" && x.segment_number === 2));
 });
 
+function addContextContracts(bd: Breakdown): Breakdown {
+  bd.schema_version = "4.0";
+  bd.context_ir = {
+    version: "2.0",
+    segment_contract_version: "1.0",
+    state: "locked",
+    analysis_summary: "test",
+    confidence: 1,
+    assumptions: [],
+    evidence: [],
+    reality_profile: {
+      mode: "cinematic",
+      fidelity: "E_cinematic_simulation",
+      dimensions: {
+        macro: true,
+        meso: true,
+        micro: true,
+        material_reaction: true,
+        temporal_continuity: true,
+        causal_integrity: true,
+      },
+      target_authenticity: "filmed reality",
+      physics_model: "real world",
+      allowed_deviations: [],
+      salience_policy: {
+        hero_entities: [],
+        interaction_entities: [],
+        foreground_fidelity: "micro",
+        background_fidelity: "meso",
+        max_high_fidelity_entities_per_clip: 3,
+      },
+    },
+    layers: {
+      environment: {
+        strategy: "multi_location",
+        primary_category: "interior",
+        locations: [
+          { id: "office", narrative_function: "work", description: "office", culture_geography_fit: "fit", spatial_anchors: [], fixed_elements: [], lighting_motivation: "day", sound_bed: "office" },
+          { id: "home", narrative_function: "home", description: "home", culture_geography_fit: "fit", spatial_anchors: [], fixed_elements: [], lighting_motivation: "evening", sound_bed: "home" },
+        ],
+        selection_rule: "script",
+      },
+      audio_validation: {
+        post_render_policy: "report_only_no_auto_regeneration",
+      },
+    },
+  } as unknown as Breakdown["context_ir"];
+  bd.segments.forEach((segment, index) => {
+    segment.location_id = index === 0 ? "office" : "home";
+    segment.transition_in = {
+      mode: index === 0 ? "opening" : "location_cut",
+      ...(index > 0 ? { from_location_id: "office" } : {}),
+      to_location_id: index === 0 ? "office" : "home",
+      time_relation: index === 0 ? "opening" : "later",
+      preserve: index === 0 ? [] : ["identity", "emotion"],
+      reset: index === 0 ? [] : ["location", "pose", "lighting"],
+      reason: index === 0 ? "opening" : "story moves home",
+    };
+    segment.continuity_mode = segment.transition_in.mode;
+    segment.state_ledger = { start: [], changes: [], end: [] };
+  });
+  return bd;
+}
+
+test("explicit location cut is valid and does not require physical chaining", () => {
+  const bd = addContextContracts(twoSegFixture());
+  const r = validateStoryboardSemantics(bd);
+  assert.equal(
+    r.findings.some((finding) => finding.code.startsWith("TRANS-") || finding.code.startsWith("STATE-")),
+    false,
+    formatSemanticReport(r)
+  );
+});
+
+test("Context IR fails closed when location, transition and state ledger are absent", () => {
+  const bd = addContextContracts(cleanFixture());
+  delete bd.segments[0]!.location_id;
+  delete bd.segments[0]!.transition_in;
+  delete bd.segments[0]!.state_ledger;
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((finding) => finding.code === "LOC-002"));
+  assert.ok(r.findings.some((finding) => finding.code === "TRANS-001"));
+  assert.ok(r.findings.some((finding) => finding.code === "STATE-001"));
+});
+
+test("continuous transition rejects an entity state jump before visible action", () => {
+  const bd = addContextContracts(twoSegFixture());
+  bd.segments[1]!.location_id = "office";
+  bd.segments[1]!.transition_in = {
+    mode: "continuous",
+    from_location_id: "office",
+    to_location_id: "office",
+    time_relation: "immediately",
+    preserve: ["all physical state"],
+    reset: [],
+    reason: "same action",
+  };
+  bd.segments[1]!.continuity_mode = "continuous";
+  bd.segments[0]!.state_ledger = {
+    start: [{ entity_id: "cup", state: "on table", position: "table left" }],
+    changes: [],
+    end: [{ entity_id: "cup", state: "on table", position: "table left" }],
+  };
+  bd.segments[1]!.state_ledger = {
+    start: [{ entity_id: "cup", state: "in hand", position: "counter" }],
+    changes: [],
+    end: [{ entity_id: "cup", state: "in hand", position: "counter" }],
+  };
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((finding) => finding.code === "STATE-005"));
+});
+
+test("Schema 4.0 rejects a continuity_mode that disagrees with transition_in", () => {
+  const bd = addContextContracts(twoSegFixture());
+  bd.segments[1]!.continuity_mode = "continuous";
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(r.findings.some((finding) => finding.code === "TRANS-005"));
+});
+
 // ── Dialogue (Tầng 10) ──────────────────────────────────────────────────────
 test("DLG-001: out-of-range and overlapping dialogue timings flag", () => {
   const bd = cleanFixture();

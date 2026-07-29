@@ -106,6 +106,9 @@ export interface ContextAudioValidationLayer {
   ambience_strategy: string;
   music_strategy: string;
   validation_priorities: string[];
+  /** Post-render QA may report clip/timecode defects but never spends API
+   * credit on an automatic repair or regeneration. */
+  post_render_policy: "report_only_no_auto_regeneration";
 }
 
 export interface VideoContextLayers {
@@ -123,6 +126,9 @@ export interface VideoContextLayers {
 
 export interface ResolvedVideoContext {
   version: "2.0";
+  /** Enables additive per-segment location/transition/state contracts. Older
+   * stored Context IR objects without this field retain legacy behaviour. */
+  segment_contract_version?: "1.0";
   state: Exclude<ContextResolutionState, "open">;
   analysis_summary: string;
   confidence: number;

@@ -2,8 +2,10 @@
 
 import {
   analyzeVideoContext,
+  critiqueStoryboard,
   generateScript,
   generateStoryboardBreakdown,
+  repairStoryboardSegments,
   rewriteStoryboardSegment,
 } from "@/services/ai-engine";
 import {
@@ -36,10 +38,21 @@ import {
 import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
+  buildVeoJson,
   genreAmbientAudio,
   isPhotoStyle,
   type RefDescriptor,
 } from "@/prompts";
+import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
+import {
+  buildReport,
+  formatSemanticReport,
+  runStoryboardRepairLoop,
+  validatePromptExports,
+  validateStoryboardSemantics,
+  type SemanticValidationReport,
+  type StoryboardRepairStatus,
+} from "@/lib/validation";
 import type {
   ActionResult,
   AIProvider,
@@ -268,6 +281,12 @@ function sanitizeUploadedCharacterSceneText(
     );
     if (segment.scene_intent) {
       segment.scene_intent = cleanUnknown(segment.scene_intent) as typeof segment.scene_intent;
+    }
+    if (segment.transition_in) {
+      segment.transition_in = cleanUnknown(segment.transition_in) as typeof segment.transition_in;
+    }
+    if (segment.state_ledger) {
+      segment.state_ledger = cleanUnknown(segment.state_ledger) as typeof segment.state_ledger;
     }
   }
 }
@@ -1261,6 +1280,12 @@ function enforceMenuCharacterContract(
     if (seg.scene_intent) {
       seg.scene_intent = fixNestedText(seg.scene_intent) as typeof seg.scene_intent;
     }
+    if (seg.transition_in) {
+      seg.transition_in = fixNestedText(seg.transition_in) as typeof seg.transition_in;
+    }
+    if (seg.state_ledger) {
+      seg.state_ledger = fixNestedText(seg.state_ledger) as typeof seg.state_ledger;
+    }
     if (Array.isArray(seg.wardrobe_state)) {
       seg.wardrobe_state = seg.wardrobe_state
         .map((state) => ({
@@ -1663,6 +1688,308 @@ function buildBoardRefs(
 
 // ─── Phase 1: script + prompts (no images) ────────────────────────────────
 
+/** Schema 4.0 exposes a compact per-boundary continuity_mode while keeping the
+ * richer transition_in object as the single authority. Never let them drift. */
+function synchronizeContinuityContracts(
+  breakdown: StoryboardGenerationOutput
+): void {
+  if (breakdown.context_ir?.segment_contract_version === "1.0") {
+    breakdown.schema_version = "4.0";
+  }
+  for (const segment of breakdown.segments) {
+    if (segment.transition_in) {
+      segment.continuity_mode = segment.transition_in.mode;
+    }
+  }
+}
+
+/**
+ * Re-apply the existing deterministic guards after a Layer-C segment batch is
+ * merged. The repair model is never trusted to own cast, dialogue, topology or
+ * uploaded-reference policy.
+ */
+function normalizeRepairCandidate(
+  input: StoryboardGenerationInput,
+  breakdown: StoryboardGenerationOutput,
+  analysis: StoryboardAnalysis,
+  sourceScript?: string | null
+): void {
+  enforceMenuCharacterContract(input, breakdown, analysis);
+  sanitizeUploadedCharacterSceneText(input, breakdown);
+  normalizeDialogue(breakdown, sourceScript ?? undefined);
+  enforceSingleDialogueClock(breakdown);
+  enforceSceneCastContract(breakdown);
+  sanitizeContinuityNotes(breakdown);
+  enforceCookingContract(input, breakdown);
+  enforceSpatialTopology(breakdown);
+  synchronizeContinuityContracts(breakdown);
+
+  for (const segment of breakdown.segments) {
+    if (segment.motion_prompt) {
+      segment.motion_prompt = makeVeoSafe(segment.motion_prompt);
+    }
+    if (segment.first_frame_prompt) {
+      segment.first_frame_prompt = makeVeoSafe(segment.first_frame_prompt);
+    }
+  }
+
+  const hasRefImages =
+    (input.character_images?.length ?? 0) > 0 ||
+    (input.product_images?.length ?? 0) > 0;
+  if (hasRefImages) {
+    for (const segment of breakdown.segments) {
+      if (segment.motion_prompt) {
+        segment.motion_prompt = stripHexCodes(segment.motion_prompt);
+      }
+      if (segment.first_frame_prompt) {
+        segment.first_frame_prompt = stripHexCodes(segment.first_frame_prompt);
+      }
+    }
+  }
+}
+
+/**
+ * Compose the free Layer-A source check with Layer-B checks over the exact
+ * Nano Banana/Veo prompts that would be exported. No network/render call.
+ */
+function validatePreRenderGates(
+  input: StoryboardGenerationInput,
+  breakdown: StoryboardGenerationOutput
+): SemanticValidationReport {
+  const semantic = validateStoryboardSemantics(breakdown);
+  const findings = [...semantic.findings];
+
+  try {
+    const veoJson = buildVeoJson(breakdown, {
+      aspectRatio: input.aspect_ratio === "16:9" ? "16:9" : "9:16",
+      dialogueLanguage:
+        input.dialogue_language ??
+        breakdown.context_ir?.layers.audio_validation.language ??
+        "the locked project language",
+      ambientAudio: genreAmbientAudio(input.genre, input.video_goal),
+      hasLocationRef: (input.background_images?.length ?? 0) > 0,
+      characterReferenceNames: (input.character_images ?? [])
+        .filter(
+          (character) =>
+            (character.images?.length ?? 0) > 0 ||
+            character.isReference === true
+        )
+        .map((character) => character.name),
+    });
+    const veoClips = Array.isArray(
+      (veoJson as { clips?: unknown[] }).clips
+    )
+      ? (veoJson as { clips: Array<Record<string, unknown>> }).clips
+      : [];
+    const manifest = buildNanoFlowManifest(breakdown, {
+      aspectRatio: input.aspect_ratio === "16:9" ? "16:9" : "9:16",
+      dialogueLanguage:
+        input.dialogue_language ??
+        breakdown.context_ir?.layers.audio_validation.language ??
+        "the locked project language",
+      veoClips,
+    });
+    findings.push(...validatePromptExports(manifest).findings);
+  } catch (error) {
+    findings.push({
+      code: "PROMPT-000",
+      severity: "high",
+      scope: "project",
+      message: "Compiled Nano Banana/Veo prompts could not be validated.",
+      evidence: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return buildReport(findings, "pre-render Layer A+B gate");
+}
+
+interface PreRenderLayerCResult {
+  breakdown: StoryboardGenerationOutput;
+  report: SemanticValidationReport;
+  status: StoryboardRepairStatus;
+  repairRounds: number;
+  criticAudits: number;
+  repairedSegmentNumbers: number[];
+  repairedCharacterNames: string[];
+}
+
+/**
+ * Full Lớp C: deterministic A+B → semantic critic → targeted repair → repeat.
+ * A maximum of two mutation rounds means the critic runs at most three audits
+ * (before repair and once after each repair) and can never loop indefinitely.
+ */
+async function runPreRenderLayerC(params: {
+  input: StoryboardGenerationInput;
+  breakdown: StoryboardGenerationOutput;
+  analysis: StoryboardAnalysis;
+  provider: AIProvider;
+  deadlineMs: number;
+  sourceScript?: string | null;
+}): Promise<PreRenderLayerCResult> {
+  let breakdown = params.breakdown;
+  let repairRounds = 0;
+  let criticAudits = 0;
+  const repairedSegments = new Set<number>();
+  const repairedCharacters = new Set<string>();
+
+  const remember = (result: {
+    rounds: number;
+    repaired_segment_numbers: number[];
+    repaired_character_names: string[];
+  }) => {
+    repairRounds += result.rounds;
+    result.repaired_segment_numbers.forEach((number) =>
+      repairedSegments.add(number)
+    );
+    result.repaired_character_names.forEach((name) =>
+      repairedCharacters.add(name)
+    );
+  };
+  const remoteRepair = async (
+    candidate: StoryboardGenerationOutput,
+    request: {
+      round: number;
+      target_segment_numbers: number[];
+      target_character_names: string[];
+      findings: Parameters<typeof repairStoryboardSegments>[0]["findings"];
+    }
+  ) =>
+    repairStoryboardSegments({
+      input: params.input,
+      breakdown: candidate,
+      segmentNumbers: request.target_segment_numbers,
+      characterNames: request.target_character_names,
+      findings: request.findings,
+      round: repairRounds + request.round,
+      provider: params.provider,
+      timing: {
+        deadlineMs: params.deadlineMs,
+        maxAttempts: 2,
+      },
+    });
+  const normalize = (candidate: StoryboardGenerationOutput) =>
+    normalizeRepairCandidate(
+      params.input,
+      candidate,
+      params.analysis,
+      params.sourceScript
+    );
+
+  for (let audit = 1; audit <= 3; audit++) {
+    // Deterministic gates are free and always get first chance to target an
+    // obvious defect before the semantic critic spends a call.
+    const deterministic = await runStoryboardRepairLoop({
+      breakdown,
+      maxRounds: Math.max(0, 2 - repairRounds),
+      validate: (candidate) =>
+        validatePreRenderGates(params.input, candidate),
+      repair: remoteRepair,
+      afterMerge: normalize,
+    });
+    remember(deterministic);
+    breakdown = deterministic.breakdown;
+    if (!deterministic.report.ok) {
+      return {
+        breakdown,
+        report: deterministic.report,
+        status: deterministic.status,
+        repairRounds,
+        criticAudits,
+        repairedSegmentNumbers: [...repairedSegments].sort((a, b) => a - b),
+        repairedCharacterNames: [...repairedCharacters].sort(),
+      };
+    }
+
+    const critic = await critiqueStoryboard({
+      input: params.input,
+      breakdown,
+      round: audit,
+      provider: params.provider,
+      timing: {
+        deadlineMs: params.deadlineMs,
+        maxAttempts: 2,
+      },
+    });
+    criticAudits += 1;
+    if (critic.ok) {
+      return {
+        breakdown,
+        report: buildReport(
+          [...deterministic.report.findings, ...critic.findings],
+          "pre-render A+B+C gate"
+        ),
+        status: "clean",
+        repairRounds,
+        criticAudits,
+        repairedSegmentNumbers: [...repairedSegments].sort((a, b) => a - b),
+        repairedCharacterNames: [...repairedCharacters].sort(),
+      };
+    }
+
+    if (repairRounds >= 2 || audit === 3) {
+      return {
+        breakdown,
+        report: critic,
+        status: "exhausted",
+        repairRounds,
+        criticAudits,
+        repairedSegmentNumbers: [...repairedSegments].sort((a, b) => a - b),
+        repairedCharacterNames: [...repairedCharacters].sort(),
+      };
+    }
+
+    // Feed the critic report into one targeted mutation batch. After the merge,
+    // switch validation back to deterministic A+B; the next outer audit asks a
+    // fresh critic instead of trusting stale findings.
+    let merged = false;
+    const criticRepair = await runStoryboardRepairLoop({
+      breakdown,
+      maxRounds: 1,
+      validate: (candidate) =>
+        merged
+          ? validatePreRenderGates(params.input, candidate)
+          : buildReport(
+              [
+                ...validatePreRenderGates(params.input, candidate).findings,
+                ...critic.findings,
+              ],
+              "pre-render A+B+C gate"
+            ),
+      repair: remoteRepair,
+      afterMerge: async (candidate) => {
+        normalize(candidate);
+        merged = true;
+      },
+    });
+    remember(criticRepair);
+    breakdown = criticRepair.breakdown;
+    if (
+      criticRepair.status === "unrepairable" ||
+      criticRepair.status === "no_progress"
+    ) {
+      return {
+        breakdown,
+        report: criticRepair.report,
+        status: criticRepair.status,
+        repairRounds,
+        criticAudits,
+        repairedSegmentNumbers: [...repairedSegments].sort((a, b) => a - b),
+        repairedCharacterNames: [...repairedCharacters].sort(),
+      };
+    }
+  }
+
+  return {
+    breakdown,
+    report: validatePreRenderGates(params.input, breakdown),
+    status: "exhausted",
+    repairRounds,
+    criticAudits,
+    repairedSegmentNumbers: [...repairedSegments].sort((a, b) => a - b),
+    repairedCharacterNames: [...repairedCharacters].sort(),
+  };
+}
+
 export async function generateStoryboardPlan(
   input: StoryboardGenerationInput,
   provider: AIProvider = "gemini"
@@ -1751,8 +2078,9 @@ export async function generateStoryboardPlan(
       : enhanced;
 
     // Stage 1.5: analyse the approved script/brief into the canonical neutral
-    // 10-layer Context IR. This is best-effort during the migration: an API
-    // failure warns and falls back to the legacy direct storyboard path.
+    // 10-layer Context IR. New generation fails closed here: continuing without
+    // location/transition/state authorities would spend more API credit on a
+    // storyboard that cannot pass the export gate.
     let contextBoundInput = stage2Input;
     try {
       const resolvedContext = await analyzeVideoContext(stage2Input, provider, {
@@ -1764,12 +2092,13 @@ export async function generateStoryboardPlan(
         resolved_context: sanitizeUploadedCharacterContext(input, resolvedContext),
       };
     } catch (e) {
-      warnings.push(
-        `Không khóa được Context IR 10 tầng — tạm dùng luồng cũ. (${e instanceof Error ? e.message : String(e)})`
+      throw new Error(
+        `Không khóa được Context IR 10 tầng nên đã dừng trước bước tạo storyboard; không gọi API tạo lại hoặc tiếp tục bằng dữ liệu thiếu khóa. (${e instanceof Error ? e.message : String(e)})`
       );
     }
 
     let breakdown: StoryboardGenerationOutput;
+    let activeStoryboardProvider = provider;
     if (compiledCooking) {
       const compactPlan = await generateCompactCookingScenePlan(
         contextBoundInput,
@@ -1812,6 +2141,7 @@ export async function generateStoryboardPlan(
           deadlineMs: generationDeadlineMs,
           maxAttempts: 1,
         });
+        activeStoryboardProvider = fallbackProvider;
       }
     }
 
@@ -1839,6 +2169,7 @@ export async function generateStoryboardPlan(
     sanitizeContinuityNotes(breakdown);
     enforceCookingContract(input, breakdown);
     enforceSpatialTopology(breakdown);
+    synchronizeContinuityContracts(breakdown);
 
     const referencedCharacterNames = uploadedCharacterNameSet(input);
     for (const lock of breakdown.character_locks) {
@@ -1895,6 +2226,44 @@ export async function generateStoryboardPlan(
       sb.backdrop = stripHexCodes(sb.backdrop ?? "");
       sb.color_grade = stripHexCodes(sb.color_grade ?? "");
       sb.lighting = stripHexCodes(sb.lighting ?? "");
+    }
+
+    // LỚP C — automatic, targeted PRE-RENDER repair. A+B validation itself is
+    // free. Only critical/high segments are sent together in one compact text
+    // repair call per round; clean segments and approved dialogue stay frozen.
+    // This never calls Nano Banana, Veo or any image/video generation endpoint.
+    const repairResult = await runPreRenderLayerC({
+      input: contextBoundInput,
+      breakdown,
+      analysis,
+      provider: activeStoryboardProvider,
+      deadlineMs: generationDeadlineMs,
+      sourceScript,
+    });
+    breakdown = repairResult.breakdown;
+
+    if (!repairResult.report.ok) {
+      throw new Error(
+        `Lớp C đã dừng an toàn sau ${repairResult.repairRounds} vòng sửa và ` +
+          `${repairResult.criticAudits} lượt critic (${repairResult.status}); ` +
+          `Storyboard vẫn còn lỗi Critical/High nên không xuất prompt và không gọi API ảnh/video.\n` +
+          formatSemanticReport(repairResult.report)
+      );
+    }
+    if (repairResult.repairRounds > 0) {
+      const repairedParts = [
+        repairResult.repairedSegmentNumbers.length > 0
+          ? `cảnh ${repairResult.repairedSegmentNumbers.join(", ")}`
+          : "",
+        repairResult.repairedCharacterNames.length > 0
+          ? `khóa nhân vật ${repairResult.repairedCharacterNames.join(", ")}`
+          : "",
+      ].filter(Boolean);
+      warnings.push(
+        `Lớp C đã tự sửa ${repairedParts.join(" và ")} ` +
+          `trong ${repairResult.repairRounds} vòng, được critic xác nhận sạch sau ` +
+          `${repairResult.criticAudits} lượt; không tạo lại cảnh sạch.`
+      );
     }
 
     // Prompt assembly is best-effort: if it fails, still return the script so
@@ -2005,6 +2374,9 @@ function assemblePlanPrompts(
       worldContext: breakdown.world_context,
       setting: makeVeoSafe(seg.first_frame_prompt ?? ""),
       spatialLayout: seg.spatial_layout,
+      locationId: seg.location_id,
+      transitionIn: seg.transition_in,
+      stateLedger: seg.state_ledger,
       productDescription:
         !ctx.isCooking || showFinishedDish ? productDesc : undefined,
       ingredients:
@@ -2071,6 +2443,10 @@ function assemblePlanPrompts(
       setting: makeVeoSafe(s.first_frame_prompt ?? ""),
       spatial_layout: s.spatial_layout,
       environment_ref: s.environment_ref,
+      location_id: s.location_id,
+      continuity_mode: s.continuity_mode,
+      transition_in: s.transition_in,
+      state_ledger: s.state_ledger,
       characters_in_scene: s.characters_in_scene,
       continuity_note: s.continuity_note,
       beats: s.beats,
@@ -2104,15 +2480,40 @@ export async function finalizeScript(params: {
     // stale generated dialogue can never outrank what the user currently sees.
     // No script index here on purpose: at the approval boundary the user's own
     // speaker edits in the preview are authoritative and must not be rewritten.
-    enforceMenuCharacterContract(params.input, params.breakdown, params.analysis);
-    normalizeDialogue(params.breakdown);
-    enforceSingleDialogueClock(params.breakdown);
-    enforceSceneCastContract(params.breakdown);
-    sanitizeContinuityNotes(params.breakdown);
-    sanitizeUploadedCharacterSceneText(params.input, params.breakdown);
-    enforceSpatialTopology(params.breakdown);
-    const videoPrompt = assemblePlanPrompts(params.input, params.breakdown, params.analysis, provider);
-    return { success: true, data: { breakdown: params.breakdown, videoPrompt } };
+    let breakdown = params.breakdown;
+    normalizeRepairCandidate(params.input, breakdown, params.analysis);
+
+    // User edits can reintroduce a timing/continuity/prompt mismatch. Run the
+    // same bounded Layer C at the approval boundary, preserving their exact
+    // dialogue while repairing only the scenes rejected by A+B.
+    const finalizeDeadlineMs = Date.now() + 120_000;
+    const repairResult = await runPreRenderLayerC({
+      input: params.input,
+      breakdown,
+      analysis: params.analysis,
+      provider,
+      deadlineMs: finalizeDeadlineMs,
+    });
+    breakdown = repairResult.breakdown;
+
+    if (!repairResult.report.ok) {
+      return {
+        success: false,
+        error:
+          `Lớp C đã dừng sau ${repairResult.repairRounds} vòng sửa và ` +
+          `${repairResult.criticAudits} lượt critic (${repairResult.status}). ` +
+          `Storyboard vẫn còn lỗi Critical/High nên chưa xuất prompt; không có ảnh/video nào được tạo lại.\n\n` +
+          formatSemanticReport(repairResult.report),
+      };
+    }
+
+    const videoPrompt = assemblePlanPrompts(
+      params.input,
+      breakdown,
+      params.analysis,
+      provider
+    );
+    return { success: true, data: { breakdown, videoPrompt } };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Lỗi xử lý kịch bản" };
   }
