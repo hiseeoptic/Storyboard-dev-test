@@ -53,6 +53,25 @@ test("manifest has the fixed contract shape", () => {
   assert.equal(m.shots[1]?.continuity_mode, "continuous");
 });
 
+test("Schema 4.1 — beats become per-scene image prompts (scenes[]); no beats ⇒ keyframe fallback", () => {
+  const m = buildNanoFlowManifest(fixture());
+  const [shot1, shot2] = m.shots;
+  assert.ok(shot1 && shot2);
+  // shot 1 has one beat → exactly one scene, carrying THIS beat's moment + camera
+  assert.equal(shot1.scenes?.length, 1);
+  const s1 = shot1.scenes?.[0];
+  assert.ok(s1);
+  assert.equal(s1.scene_no, 1);
+  assert.equal(s1.action, "pours tea");
+  assert.equal(s1.camera, "[CU] push-in");
+  assert.ok(s1.image_prompt.length > 0, "scene must carry its own image prompt");
+  // scene 1 inherits the shot's boundary continuity
+  assert.equal(s1.transition_from_prev, "opening");
+  // shot 2 has no beats → no scenes[]; the single-keyframe fallback still stands
+  assert.equal(shot2.scenes, undefined);
+  assert.ok(shot2.storyboard_prompt.length > 0);
+});
+
 test("characters become declared assets, referenced by id in shots", () => {
   const m = buildNanoFlowManifest(fixture());
   const [shot1] = m.shots;
