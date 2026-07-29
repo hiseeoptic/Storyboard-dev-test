@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildNanoFlowManifest, lockStyle, slugify } from "./manifest.ts";
+import { buildNanoFlowManifest, lockStyle, slugify, withKeyframeAuthority } from "./manifest.ts";
 
 // Minimal breakdown fixture — only the fields buildNanoFlowManifest reads.
 function fixture() {
@@ -303,4 +303,18 @@ test("character assets carry the story-locked wardrobe; a change emits wardrobe_
   assert.equal(s1.wardrobe_change, null);
   // A motivated change on shot 2 → the extension regenerates Lan's sheet.
   assert.deepEqual(s2.wardrobe_change, { Lan: "beige raincoat over the blouse" });
+});
+
+test("withKeyframeAuthority separates wardrobe-sheet (identity) from keyframe (set)", () => {
+  const patched = withKeyframeAuthority({ scene_id: "1", output_rules: { audio: "keep" } });
+  const rules = patched.output_rules as Record<string, string>;
+  // Existing rules survive; the reference-role clause is (re)written.
+  assert.equal(rules.audio, "keep");
+  const rp = rules.reference_priority;
+  // Sheets own face/outfit and must NOT bring their studio backdrop…
+  assert.match(rp, /wardrobe sheet/i);
+  assert.match(rp, /ignore the sheet's plain studio backdrop|never import a studio/i);
+  // …and the keyframe is the single authority for the environment/set.
+  assert.match(rp, /keyframe/i);
+  assert.match(rp, /environment|set and its geometry/i);
 });

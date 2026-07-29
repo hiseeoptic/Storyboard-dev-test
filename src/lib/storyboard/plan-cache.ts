@@ -83,6 +83,19 @@ export function fingerprintStoryboardPlan(
       feed("};");
       return;
     }
+    if (typeof value === "string") {
+      // Large strings are base64 image payloads (character/background/product
+      // references). Hash a cheap proxy — length + a head/tail sample — so the
+      // fingerprint never iterates megabytes on the main thread. A different
+      // image still changes its length or its sampled edges, so cache keys stay
+      // distinct; identical images still hash identically.
+      if (value.length > 1024) {
+        feed(`string#${value.length}:${value.slice(0, 256)}~${value.slice(-256)};`);
+      } else {
+        feed(`string:${value};`);
+      }
+      return;
+    }
     feed(`${typeof value}:${String(value)};`);
   };
 

@@ -166,7 +166,28 @@ export function resolveSpatialLayout(params: {
   const highRisk =
     hasBalcony || hasRevolvingDoor || hasDoorway || hasRailing || hasStairs || hasEdge;
 
-  if (!supplied && !highRisk) return null;
+  if (!supplied && !highRisk) {
+    // A simple single-zone scene needs no doorway/edge/stair topology. But a
+    // scene with TWO OR MORE visible characters still needs their placement
+    // locked (who is left/right, facing whom, at what distance) or the extension
+    // and Veo can swap seats and sides between shots — and the now-enforced
+    // SPAT-001 gate would block/repair the most common scene of all. Synthesise a
+    // minimal single-zone layout whose placement defers to the start state, so
+    // positions stay fixed without inventing geometry. Truly single-character
+    // simple scenes stay null — there is nothing to lock.
+    const names = (params.characterNames ?? []).map(clean).filter(Boolean);
+    if (names.length < 2) return null;
+    return {
+      zone_order: "one continuous declared walkable scene zone",
+      fixed_architecture:
+        "Walls, openings, furniture and fixed set pieces keep their declared positions for the whole clip.",
+      character_placement: namesLine(names),
+      walkable_path:
+        "All movement follows the visible load-bearing floor and does not pass through people, furniture or architecture.",
+      camera_zone:
+        "The camera occupies one real supported position with an unobstructed line of sight.",
+    };
+  }
   if (supplied && !highRisk) {
     return {
       zone_order: supplied.zone_order || "one continuous declared walkable scene zone",

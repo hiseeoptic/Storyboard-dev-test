@@ -59,3 +59,23 @@ test("cache refreshes hits and evicts only the oldest entry", () => {
   assert.equal(cache.get("c"), 3);
   assert.equal(cache.size, 2);
 });
+
+test("fingerprint proxies large image payloads instead of hashing the whole body", () => {
+  const bigA = "data:image/png;base64," + "A".repeat(500_000);
+  const bigB = "data:image/png;base64," + "B".repeat(500_000);
+  const withImg = (imgs: string[]) => input({ reference_images: imgs });
+  // Deterministic: the same image hashes identically.
+  assert.equal(
+    fingerprintStoryboardPlan(withImg([bigA]), "openai"),
+    fingerprintStoryboardPlan(withImg([bigA]), "openai")
+  );
+  // Distinct: a different image still changes the fingerprint (length/edges).
+  assert.notEqual(
+    fingerprintStoryboardPlan(withImg([bigA]), "openai"),
+    fingerprintStoryboardPlan(withImg([bigB]), "openai")
+  );
+  // Proxied: the fed-char count (3rd hash segment) stays tiny, not ~500K — so
+  // the main thread never iterates the whole base64 body.
+  const fedChars = parseInt(fingerprintStoryboardPlan(withImg([bigA]), "openai").split("-")[2] ?? "0", 16);
+  assert.ok(fedChars < 5000, `fed ${fedChars} chars — large payloads must be proxied`);
+});

@@ -178,7 +178,7 @@ export function withKeyframeAuthority(
       ? { ...(clip.output_rules as Record<string, unknown>) }
       : {};
   rules.reference_priority =
-    "START-FRAME AUTHORITY: this clip is generated image-to-video from an attached start frame (and possibly an end frame). That frame is the SINGLE source of truth for each character's outfit, hairstyle, grooming, props in hand and the location's layout/furniture/lighting — continue them EXACTLY as shown; never restyle wardrobe or hair away from the start frame, and never import clothing from any other reference. Character identity (face) also continues from the start frame.";
+    "REFERENCE ROLES (do NOT mix them): each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop; never import a studio/grey/white background or its lighting from a wardrobe sheet. The attached KEYFRAME (the storyboard start frame) is the SINGLE source of truth for the ENVIRONMENT — background, spatial layout, furniture, props, doors, windows, lighting and camera composition — reproduce it EXACTLY. Identity and clothing come from the sheets; the entire set and its geometry come from the keyframe. Never restyle wardrobe or hair away from the sheets, and never change or invent set geometry, furniture or lighting away from the keyframe. Character face continues from both.";
   return { ...clip, output_rules: rules };
 }
 
