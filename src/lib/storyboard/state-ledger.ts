@@ -128,6 +128,24 @@ function isReleaseOrPlace(value: string): boolean {
   );
 }
 
+function changesPositionOrPossession(value: string): boolean {
+  return (
+    isLiftOrHold(value) ||
+    isReleaseOrPlace(value) ||
+    /\b(?:push(?:es|ed|ing)?|pull(?:s|ed|ing)?|move(?:s|d|ing)?|slide(?:s|d|ing)?|rotate(?:s|d|ing)?|roll(?:s|ed|ing)?|pour(?:s|ed|ing)?|tilt(?:s|ed|ing)?|transfer(?:s|red|ring)?)\b|(?:kéo|đẩy|di\s+chuyển|trượt|xoay|lăn|rót|nghiêng|chuyển)/iu.test(
+      value
+    )
+  );
+}
+
+function isContactOnlyAction(value: string): boolean {
+  const hasContact =
+    /\b(?:touch(?:es|ed|ing)?|contact(?:s|ed|ing)?)\b|(?:chạm|tiếp\s+xúc)/iu.test(
+      value
+    );
+  return hasContact && !changesPositionOrPossession(value);
+}
+
 function relationAppliedToSnapshot(
   snapshot: SegmentEntityState,
   relation: RelationalEntityState | null,
@@ -229,7 +247,17 @@ export function normalizeStateLedgerDimensions(
         let nextPosition =
           clean(change.to_position) || currentPosition;
         let nextHolder = clean(change.to_holder) || currentHolder;
-        if (toRelation?.kind === "position") {
+        const contactOnly =
+          isContactOnlyAction(actionText) ||
+          (toRelation?.kind === "contact" &&
+            !changesPositionOrPossession(actionText));
+        if (contactOnly) {
+          // Touch is transient contact, not possession. Ignore an LLM-provided
+          // to_holder/to_position unless the action also contains a real
+          // grip/lift/carry/place/push/pull movement.
+          nextPosition = currentPosition;
+          nextHolder = currentHolder;
+        } else if (toRelation?.kind === "position") {
           nextPosition = toRelation.position || nextPosition;
         } else if (toRelation?.kind === "held") {
           nextHolder =
@@ -271,7 +299,17 @@ export function normalizeStateLedgerDimensions(
           endRelation,
           intrinsic
         );
-        if (endRelation?.kind === "contact") {
+        if (entityChanges.length > 0) {
+          // The final caused change is authoritative for every dimension.
+          // This also prevents a stale "held by X" end label from overriding
+          // a contact-only action that never established possession.
+          normalized = {
+            ...normalized,
+            state: intrinsic,
+            position: currentPosition || normalized.position,
+            holder: currentHolder,
+          };
+        } else if (endRelation?.kind === "contact") {
           normalized = {
             ...normalized,
             position: currentPosition || normalized.position,
@@ -289,14 +327,6 @@ export function normalizeStateLedgerDimensions(
               currentHolder ||
               normalized.holder ||
               "",
-          };
-        } else if (entityChanges.length > 0) {
-          // The final caused change is authoritative for every dimension.
-          normalized = {
-            ...normalized,
-            state: intrinsic,
-            position: currentPosition || normalized.position,
-            holder: currentHolder,
           };
         }
         if (changed(endEntry, normalized)) {

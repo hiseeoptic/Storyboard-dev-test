@@ -436,6 +436,8 @@ test("state ledger separates intrinsic condition from touch, holder and position
       from: "on table",
       action: "Minh reaches and touches the side of the glass",
       to: "touched by Minh",
+      to_position: "on coffee table",
+      to_holder: "Minh",
       caused_by: "Minh's right hand",
     }],
     end: [{ entity_id: "glass", state: "touched by Minh", position: "on coffee table", holder: "" }],
@@ -480,6 +482,53 @@ test("state ledger separates intrinsic condition from touch, holder and position
     false,
     formatSemanticReport(report)
   );
+});
+
+test("contact-only holder cleanup uses the project cast instead of a default name", () => {
+  const actorName = "SUBJECT_9";
+  const bd = {
+    character_locks: [{
+      name: actorName,
+      gender: "female",
+      costume: "plain shirt and trousers",
+      voice: "clear female timbre, natural F0 range 170-230 Hz, speaking rate 130 wpm",
+    }],
+    segments: [{
+      segment_number: 1,
+      motion_prompt: `${actorName} touches the prop without lifting it.`,
+      state_ledger: {
+        start: [{
+          entity_id: "prop_42",
+          state: "intact",
+          position: "on the declared surface",
+          holder: "",
+        }],
+        changes: [{
+          entity_id: "prop_42",
+          from: "intact",
+          from_position: "on the declared surface",
+          from_holder: "",
+          action: `${actorName} touches the prop`,
+          to: `touched by ${actorName}`,
+          to_position: "on the declared surface",
+          to_holder: actorName,
+          caused_by: `${actorName}'s hand`,
+        }],
+        end: [{
+          entity_id: "prop_42",
+          state: `touched by ${actorName}`,
+          position: "on the declared surface",
+          holder: "",
+        }],
+      },
+    }],
+  } as unknown as Breakdown;
+
+  normalizeProductionContracts(bd);
+  const change = bd.segments[0]!.state_ledger!.changes[0]!;
+  assert.equal(change.to_holder, "");
+  assert.equal(bd.segments[0]!.state_ledger!.end[0]!.holder, "");
+  assert.doesNotMatch(JSON.stringify(bd), /\bMinh\b|\bLan\b/);
 });
 
 test("critic cannot deny a visible touch/lift cause but still keeps real transformation defects", () => {
