@@ -1813,23 +1813,29 @@ export function GenerateClient() {
         setPhase("script");
         return;
       }
-      // finalizeScript already ran deterministic A+B plus the bounded Layer-C
-      // targeted repair loop. This local check is only a fail-closed backup.
+      // NON-BLOCKING gate (user's explicit request: "ra bản preview + báo scene
+      // nào lỗi, đừng chặn"). A remaining Critical/High no longer blocks the build
+      // — we flag the affected scenes and STILL dựng storyboard, so the user gets
+      // the boards + prompts and re-runs only the flagged scenes (Flow-Veo style).
       const semanticGate = validateStoryboardSemantics(fin.data.breakdown);
+      const gateWarnings: string[] = [];
       if (!semanticGate.ok) {
-        setDraft(fin.data.breakdown);
-        setError(
-          `${
-            lang === "vi"
-              ? "Storyboard vẫn còn lỗi Critical/High sau vòng tự sửa nên chưa xuất prompt. Hệ thống đã dừng an toàn và không tạo ảnh/video."
-              : "The storyboard still has Critical/High findings after targeted auto-repair, so prompt export remains blocked. No image/video was generated."
-          }\n\n${formatSemanticReport(semanticGate)}`
+        const bad = [
+          ...new Set(
+            semanticGate.findings
+              .filter((f) => f.severity === "critical" || f.severity === "high")
+              .map((f) => f.segment_number)
+              .filter((n): n is number => typeof n === "number")
+          ),
+        ].sort((a, b) => a - b);
+        gateWarnings.push(
+          lang === "vi"
+            ? `${bad.length ? `⚠️ Còn lỗi ở cảnh ${bad.join(", ")}` : "⚠️ Còn vài cảnh cần xem lại"} — vẫn dựng storyboard; xem lại hoặc chạy lại RIÊNG cảnh đó trong trình chỉnh sửa.\n${formatSemanticReport(semanticGate)}`
+            : `${bad.length ? `⚠️ Scenes ${bad.join(", ")} still have issues` : "⚠️ Some scenes need review"} — building anyway; review or re-run just those scenes.\n${formatSemanticReport(semanticGate)}`
         );
-        setPhase("script");
-        return;
       }
       setError(null);
-      await runBoards(fin.data.breakdown, fin.data.videoPrompt, planWarnings);
+      await runBoards(fin.data.breakdown, fin.data.videoPrompt, [...planWarnings, ...gateWarnings]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
       setPhase("script");
@@ -2065,6 +2071,9 @@ export function GenerateClient() {
     // Final client-side backup for LỚP B. The server-side Layer C already
     // validates and repairs A+B before approval; this pure check catches drift
     // introduced while assembling the downloadable manifest.
+    // NON-BLOCKING backup (user request): flag any remaining Critical/High but
+    // STILL export — the user re-runs only the flagged scenes (Flow-Veo style)
+    // and never loses the whole export.
     try {
       const gate = validatePromptExports(manifest);
       if (!gate.ok) {
@@ -2073,22 +2082,21 @@ export function GenerateClient() {
         setExportGateReport(
           `${
             lang === "vi"
-              ? "Prompt Nano Banana/Veo vẫn còn lỗi Critical/High nên chưa được gửi hoặc tải xuống. Đây là kiểm tra dự phòng cuối và không tiêu thêm lượt sửa AI."
-              : "The Nano Banana/Veo prompts still have Critical/High findings, so push/download is blocked. This final backup check does not spend another repair call."
+              ? "⚠️ Một số prompt còn lỗi Critical/High — VẪN xuất/gửi được; xem lại hoặc chạy lại RIÊNG cảnh liên quan."
+              : "⚠️ Some Nano Banana/Veo prompts still have Critical/High findings — exported anyway; review or re-run just those scenes."
           }\n\n${report}`
         );
-        return null;
+      } else {
+        setExportGateReport(null);
       }
-      setExportGateReport(null);
     } catch (gateErr) {
       const message = gateErr instanceof Error ? gateErr.message : String(gateErr);
       console.error("[prompt-gate] validator error:", gateErr);
       setExportGateReport(
         lang === "vi"
-          ? `Không kiểm tra được prompt nên hệ thống dừng xuất an toàn: ${message}`
-          : `Prompt validation could not complete, so export stopped safely: ${message}`
+          ? `⚠️ Không kiểm tra được prompt (vẫn xuất bình thường): ${message}`
+          : `⚠️ Prompt validation could not complete (exporting anyway): ${message}`
       );
-      return null;
     }
     return manifest;
   };
