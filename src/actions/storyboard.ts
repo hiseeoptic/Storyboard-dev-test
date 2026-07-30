@@ -1882,6 +1882,38 @@ interface PreRenderLayerCResult {
   repairedCharacterNames: string[];
 }
 
+// ── Token-safety + non-blocking export ──────────────────────────────────────
+// The paid Lớp C critic + auto-repair loop below fired multiple LLM calls per
+// segment on EVERY generation (đốt token) and hard-blocked the WHOLE export on
+// any single Critical/High. It is now OFF by default: validation stays free and
+// deterministic (validatePreRenderGates), report-only and NON-BLOCKING, so the
+// user always gets the script + prompts and re-runs only the flagged scenes
+// (Flow-Veo style). Set STORYBOARD_LLM_REPAIR=1 to restore the old paid loop.
+const LLM_REPAIR_ENABLED = process.env.STORYBOARD_LLM_REPAIR === "1";
+
+/** Non-blocking flag: list the scenes still carrying a Critical/High finding so
+ * the UI can mark them + offer a per-scene "Tạo lại", without blocking the rest
+ * of the export or spending a single API call. */
+function flagUnresolvedScenes(
+  report: SemanticValidationReport,
+  warnings: string[]
+): void {
+  const bad = [
+    ...new Set(
+      report.findings
+        .filter((f) => f.severity === "critical" || f.severity === "high")
+        .map((f) => f.segment_number)
+        .filter((n): n is number => typeof n === "number")
+    ),
+  ].sort((a, b) => a - b);
+  warnings.push(
+    (bad.length
+      ? `⚠️ Còn lỗi ở cảnh ${bad.join(", ")}`
+      : "⚠️ Còn vài cảnh cần xem lại") +
+      " — đã xuất phần còn lại; bạn chạy lại RIÊNG cảnh đó (không chặn cả dự án, không gọi thêm API)."
+  );
+}
+
 /**
  * Full Lớp C: deterministic A+B → semantic critic → targeted repair → repeat.
  * A maximum of two mutation rounds means the critic runs at most three audits
@@ -2352,39 +2384,41 @@ export async function generateStoryboardPlan(
     // free. Only critical/high segments are sent together in one compact text
     // repair call per round; clean segments and approved dialogue stay frozen.
     // This never calls Nano Banana, Veo or any image/video generation endpoint.
-    const repairResult = await runPreRenderLayerC({
-      input: contextBoundInput,
-      breakdown,
-      analysis,
-      provider: activeStoryboardProvider,
-      deadlineMs: generationDeadlineMs,
-      sourceScript,
-    });
-    breakdown = repairResult.breakdown;
-
-    if (!repairResult.report.ok) {
-      throw new Error(
-        `Lớp C đã dừng an toàn sau ${repairResult.repairRounds} vòng sửa và ` +
-          `${repairResult.criticAudits} lượt critic (${repairResult.status}); ` +
-          `Storyboard vẫn còn lỗi Critical/High nên không xuất prompt và không gọi API ảnh/video.\n` +
-          formatSemanticReport(repairResult.report)
-      );
+    let preRenderReport: SemanticValidationReport;
+    if (LLM_REPAIR_ENABLED) {
+      const repairResult = await runPreRenderLayerC({
+        input: contextBoundInput,
+        breakdown,
+        analysis,
+        provider: activeStoryboardProvider,
+        deadlineMs: generationDeadlineMs,
+        sourceScript,
+      });
+      breakdown = repairResult.breakdown;
+      preRenderReport = repairResult.report;
+      if (repairResult.repairRounds > 0) {
+        const repairedParts = [
+          repairResult.repairedSegmentNumbers.length > 0
+            ? `cảnh ${repairResult.repairedSegmentNumbers.join(", ")}`
+            : "",
+          repairResult.repairedCharacterNames.length > 0
+            ? `khóa nhân vật ${repairResult.repairedCharacterNames.join(", ")}`
+            : "",
+        ].filter(Boolean);
+        warnings.push(
+          `Lớp C đã tự sửa ${repairedParts.join(" và ")} ` +
+            `trong ${repairResult.repairRounds} vòng, được critic xác nhận sạch sau ` +
+            `${repairResult.criticAudits} lượt; không tạo lại cảnh sạch.`
+        );
+      }
+    } else {
+      // FREE deterministic gate only — no LLM critic/repair, so ZERO token burn.
+      preRenderReport = validatePreRenderGates(contextBoundInput, breakdown);
     }
-    if (repairResult.repairRounds > 0) {
-      const repairedParts = [
-        repairResult.repairedSegmentNumbers.length > 0
-          ? `cảnh ${repairResult.repairedSegmentNumbers.join(", ")}`
-          : "",
-        repairResult.repairedCharacterNames.length > 0
-          ? `khóa nhân vật ${repairResult.repairedCharacterNames.join(", ")}`
-          : "",
-      ].filter(Boolean);
-      warnings.push(
-        `Lớp C đã tự sửa ${repairedParts.join(" và ")} ` +
-          `trong ${repairResult.repairRounds} vòng, được critic xác nhận sạch sau ` +
-          `${repairResult.criticAudits} lượt; không tạo lại cảnh sạch.`
-      );
-    }
+    // NON-BLOCKING: never throw. The export always proceeds; any unresolved
+    // Critical/High scene is flagged per-scene so the user re-runs only those
+    // (Flow-Veo style) instead of losing the whole project.
+    if (!preRenderReport.ok) flagUnresolvedScenes(preRenderReport, warnings);
 
     // Prompt assembly is best-effort: if it fails, still return the script so
     // the user can review/edit it (the prompts get rebuilt on finalize anyway).
@@ -2605,28 +2639,20 @@ export async function finalizeScript(params: {
     let breakdown = params.breakdown;
     normalizeRepairCandidate(params.input, breakdown, params.analysis);
 
-    // User edits can reintroduce a timing/continuity/prompt mismatch. Run the
-    // same bounded Layer C at the approval boundary, preserving their exact
-    // dialogue while repairing only the scenes rejected by A+B.
-    const finalizeDeadlineMs = Date.now() + 120_000;
-    const repairResult = await runPreRenderLayerC({
-      input: params.input,
-      breakdown,
-      analysis: params.analysis,
-      provider,
-      deadlineMs: finalizeDeadlineMs,
-    });
-    breakdown = repairResult.breakdown;
-
-    if (!repairResult.report.ok) {
-      return {
-        success: false,
-        error:
-          `Lớp C đã dừng sau ${repairResult.repairRounds} vòng sửa và ` +
-          `${repairResult.criticAudits} lượt critic (${repairResult.status}). ` +
-          `Storyboard vẫn còn lỗi Critical/High nên chưa xuất prompt; không có ảnh/video nào được tạo lại.\n\n` +
-          formatSemanticReport(repairResult.report),
-      };
+    // The paid Lớp C loop is OFF by default (it đốt token và chặn cả finalize chỉ
+    // vì 1 cảnh lỗi). The user-approved script now ALWAYS finalizes; the bounded
+    // repair runs only when STORYBOARD_LLM_REPAIR=1, and even then never fails the
+    // finalize on validation — user edits at the approval boundary are respected.
+    if (LLM_REPAIR_ENABLED) {
+      const finalizeDeadlineMs = Date.now() + 120_000;
+      const repairResult = await runPreRenderLayerC({
+        input: params.input,
+        breakdown,
+        analysis: params.analysis,
+        provider,
+        deadlineMs: finalizeDeadlineMs,
+      });
+      breakdown = repairResult.breakdown;
     }
 
     const videoPrompt = assemblePlanPrompts(
