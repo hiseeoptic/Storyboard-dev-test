@@ -62,6 +62,8 @@ export function normalizeProductionContracts(
         inherited.state.trim() !== entry.state.trim() ||
         inherited.position.trim() !== entry.position.trim() ||
         (inherited.holder ?? "").trim() !== (entry.holder ?? "").trim() ||
+        (inherited.orientation ?? "").trim() !==
+          (entry.orientation ?? "").trim() ||
         JSON.stringify(inherited.traces ?? []) !==
           JSON.stringify(entry.traces ?? []);
       if (!changed) return entry;
@@ -71,6 +73,7 @@ export function normalizeProductionContracts(
         state: inherited.state,
         position: inherited.position,
         holder: inherited.holder,
+        orientation: inherited.orientation,
         traces: inherited.traces ? [...inherited.traces] : undefined,
       };
     });
@@ -82,6 +85,7 @@ export function normalizeProductionContracts(
           state: entry.state,
           position: entry.position,
           holder: (entry.holder ?? "").trim(),
+          orientation: (entry.orientation ?? "").trim(),
         },
       ])
     );
@@ -94,11 +98,17 @@ export function normalizeProductionContracts(
         }
         change.from_position = expected.position;
         change.from_holder = expected.holder;
+        change.from_orientation = expected.orientation;
       }
       startState.set(entityKey, {
         state: change.to,
         position: change.to_position || expected?.position || "",
         holder: (change.to_holder ?? expected?.holder ?? "").trim(),
+        orientation: (
+          change.to_orientation ??
+          expected?.orientation ??
+          ""
+        ).trim(),
       });
     }
   }

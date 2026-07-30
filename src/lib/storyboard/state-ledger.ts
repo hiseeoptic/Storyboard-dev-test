@@ -10,9 +10,10 @@ type LedgerBreakdown = Pick<
 >;
 
 export interface RelationalEntityState {
-  kind: "position" | "contact" | "held";
+  kind: "position" | "contact" | "held" | "orientation";
   position?: string;
   holder?: string;
+  orientation?: string;
 }
 
 function clean(value: string | null | undefined): string {
@@ -105,13 +106,23 @@ export function relationalEntityState(
   ) {
     return { kind: "position", position: raw };
   }
+  if (
+    /^(?:(?:screen|display|face)\s+(?:up|down)|face[- ]?(?:up|down)|upright|upside[- ]down|horizontal|vertical|tilted(?:\s+\w+)?|rotated(?:\s+\w+)?)$/iu.test(
+      raw
+    ) ||
+    /^(?:úp|ngửa|thẳng đứng|nằm ngang|nghiêng|màn hình (?:úp|ngửa|hướng lên|hướng xuống))$/iu.test(
+      raw
+    )
+  ) {
+    return { kind: "orientation", orientation: raw };
+  }
   return null;
 }
 
 export function hasVisibleCausalAction(
   value: string | null | undefined
 ): boolean {
-  return /\b(?:reach(?:es|ed|ing)?|touch(?:es|ed|ing)?|contact(?:s|ed|ing)?|grip(?:s|ped|ping)?|grasp(?:s|ed|ing)?|hold(?:s|ing)?|lift(?:s|ed|ing)?|pick(?:s|ed|ing)?\s+up|raise(?:s|d|ing)?|lower(?:s|ed|ing)?|carry|carries|carried|carrying|place(?:s|d|ing)?|set(?:s|ting)?\s+down|put(?:s|ting)?\s+down|release(?:s|d|ing)?|pour(?:s|ed|ing)?|tilt(?:s|ed|ing)?|push(?:es|ed|ing)?|pull(?:s|ed|ing)?|slide(?:s|d|ing)?|rotate(?:s|d|ing)?|press(?:es|ed|ing)?|open(?:s|ed|ing)?|close(?:s|d|ing)?|move(?:s|d|ing)?)\b|(?:đưa\s+tay|chạm|tiếp\s+xúc|nắm|cầm|giữ|nhấc|nâng|hạ|mang|đặt|thả|rót|nghiêng|kéo|đẩy|trượt|xoay|ấn|mở|đóng|di\s+chuyển)/iu.test(
+  return /\b(?:reach(?:es|ed|ing)?|touch(?:es|ed|ing)?|contact(?:s|ed|ing)?|grip(?:s|ped|ping)?|grasp(?:s|ed|ing)?|hold(?:s|ing)?|lift(?:s|ed|ing)?|pick(?:s|ed|ing)?\s+up|raise(?:s|d|ing)?|lower(?:s|ed|ing)?|carry|carries|carried|carrying|place(?:s|d|ing)?|set(?:s|ting)?\s+down|put(?:s|ting)?\s+down|release(?:s|d|ing)?|pour(?:s|ed|ing)?|tilt(?:s|ed|ing)?|push(?:es|ed|ing)?|pull(?:s|ed|ing)?|slide(?:s|d|ing)?|rotate(?:s|d|ing)?|flip(?:s|ped|ping)?|turn(?:s|ed|ing)?\s+(?:over|face[- ]?(?:up|down))|press(?:es|ed|ing)?|open(?:s|ed|ing)?|close(?:s|d|ing)?|move(?:s|d|ing)?)\b|(?:đưa\s+tay|chạm|tiếp\s+xúc|nắm|cầm|giữ|nhấc|nâng|hạ|mang|đặt|thả|rót|nghiêng|kéo|đẩy|trượt|xoay|lật|úp|ngửa|ấn|mở|đóng|di\s+chuyển)/iu.test(
     clean(value)
   );
 }
@@ -155,6 +166,13 @@ function relationAppliedToSnapshot(
   if (relation.kind === "contact") {
     return { ...snapshot, state: intrinsicState };
   }
+  if (relation.kind === "orientation") {
+    return {
+      ...snapshot,
+      state: intrinsicState,
+      orientation: relation.orientation || snapshot.orientation || "",
+    };
+  }
   return {
     ...snapshot,
     state: intrinsicState,
@@ -167,6 +185,21 @@ function relationAppliedToSnapshot(
         ? relation.holder || snapshot.holder || ""
         : snapshot.holder,
   };
+}
+
+export function isLawfulPassiveStateChange(
+  from: string | null | undefined,
+  to: string | null | undefined
+): boolean {
+  const before = clean(from).toLowerCase();
+  const after = clean(to).toLowerCase();
+  const startsWarm =
+    /\b(?:hot|warm|heated|steaming|nóng|ấm|bốc hơi)\b/iu.test(before);
+  const endsCool =
+    /\b(?:cool|cooled|cold|room temperature|nguội|mát|lạnh|nhiệt độ phòng)\b/iu.test(
+      after
+    );
+  return startsWarm && endsCool;
 }
 
 function changed(before: unknown, after: unknown): boolean {
@@ -236,17 +269,24 @@ export function normalizeStateLedgerDimensions(
 
       let currentPosition = clean(startEntry?.position);
       let currentHolder = clean(startEntry?.holder);
+      let currentOrientation = clean(startEntry?.orientation);
       for (const change of entityChanges) {
         const before = { ...change };
+        const rawFrom = clean(change.from);
+        const rawTo = clean(change.to);
         const toRelation = relationalEntityState(change.to, characterNames);
         change.from = intrinsic;
         change.from_position = clean(change.from_position) || currentPosition;
         change.from_holder = clean(change.from_holder) || currentHolder;
+        change.from_orientation =
+          clean(change.from_orientation) || currentOrientation;
 
         const actionText = `${clean(change.caused_by)} ${clean(change.action)}`;
         let nextPosition =
           clean(change.to_position) || currentPosition;
         let nextHolder = clean(change.to_holder) || currentHolder;
+        let nextOrientation =
+          clean(change.to_orientation) || currentOrientation;
         const contactOnly =
           isContactOnlyAction(actionText) ||
           (toRelation?.kind === "contact" &&
@@ -277,15 +317,32 @@ export function normalizeStateLedgerDimensions(
           nextHolder = "";
           nextPosition = clean(endEntry?.position) || nextPosition;
         }
+        if (toRelation?.kind === "orientation") {
+          nextOrientation =
+            toRelation.orientation ||
+            clean(endEntry?.orientation) ||
+            nextOrientation;
+        }
 
         if (!toRelation && clean(change.to)) {
           intrinsic = clean(change.to);
         }
+        if (isLawfulPassiveStateChange(rawFrom, rawTo)) {
+          change.caused_by = "ambient heat exchange over elapsed story time";
+          if (
+            !/\b(?:cool|heat|temperature|nguội|nhiệt)\b/iu.test(change.action)
+          ) {
+            change.action =
+              "The exposed warm object remains in room air and gradually releases heat";
+          }
+        }
         change.to = intrinsic;
         change.to_position = nextPosition;
         change.to_holder = nextHolder;
+        change.to_orientation = nextOrientation;
         currentPosition = nextPosition;
         currentHolder = nextHolder;
+        currentOrientation = nextOrientation;
         if (changed(before, change)) normalizedFields += 1;
       }
 
@@ -308,12 +365,14 @@ export function normalizeStateLedgerDimensions(
             state: intrinsic,
             position: currentPosition || normalized.position,
             holder: currentHolder,
+            orientation: currentOrientation,
           };
         } else if (endRelation?.kind === "contact") {
           normalized = {
             ...normalized,
             position: currentPosition || normalized.position,
             holder: currentHolder,
+            orientation: currentOrientation,
           };
         } else if (endRelation?.kind === "held") {
           normalized = {
@@ -326,6 +385,16 @@ export function normalizeStateLedgerDimensions(
               endRelation.holder ||
               currentHolder ||
               normalized.holder ||
+              "",
+            orientation: currentOrientation || normalized.orientation || "",
+          };
+        } else if (endRelation?.kind === "orientation") {
+          normalized = {
+            ...normalized,
+            orientation:
+              endRelation.orientation ||
+              currentOrientation ||
+              normalized.orientation ||
               "",
           };
         }

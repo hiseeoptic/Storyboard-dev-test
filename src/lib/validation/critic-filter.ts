@@ -3,6 +3,7 @@ import type { SemanticFinding } from "./semantic-validator.ts";
 import {
   changeHasOnlyRelationalOrStableState,
   hasVisibleCausalAction,
+  isLawfulPassiveStateChange,
 } from "../storyboard/state-ledger.ts";
 
 function clean(value: string | null | undefined): string {
@@ -23,6 +24,28 @@ function quotedEntity(finding: SemanticFinding): string {
   ).toLowerCase();
 }
 
+function isSubjectiveOrCameraScaleInference(
+  finding: SemanticFinding
+): boolean {
+  const text = `${finding.message} ${finding.evidence ?? ""}`;
+  const cameraScaleOnly =
+    /(?:wide\s+(?:shot|view|framing)|góc\s+(?:rộng|toàn)).{0,140}(?:may\s+imply|imply|suggest|different\s+position|contradict)|(?:placement|position).{0,140}(?:wide\s+(?:shot|view|framing)|góc\s+(?:rộng|toàn))/iu.test(
+      text
+    ) &&
+    !/(?:outside|inside)\s+(?:a\s+)?wall|beyond\s+(?:the\s+)?railing|blocked\s+(?:door|route|threshold)|cross(?:es|ing)?\s+solid|trong\s+tường|ngoài\s+lan\s+can|chặn\s+(?:cửa|lối)/iu.test(
+      text
+    );
+  const dialogueDirectnessTaste =
+    /response\s+does\s+not\s+directly\s+(?:address|acknowledge|answer)|potential\s+confusion\s+in\s+(?:the\s+)?emotional\s+exchange|câu\s+trả\s+lời\s+không\s+(?:trực\s+tiếp|đáp\s+thẳng)/iu.test(
+      text
+    );
+  const emotionalPerformanceTaste =
+    /action\s+contradicts\s+(?:the\s+)?intended\s+emotional\s+tone|dialogue\s+does\s+not\s+(?:reflect|convey).{0,100}(?:emotion|regret|weight)|does\s+not\s+convey\s+the\s+weight|không\s+thể\s+hiện\s+đủ.{0,80}(?:cảm\s+xúc|hối\s+hận)/iu.test(
+      text
+    );
+  return cameraScaleOnly || dialogueDirectnessTaste || emotionalPerformanceTaste;
+}
+
 /**
  * Reject a narrow class of self-contradictory LLM critic findings. The critic
  * may not claim "no cause/contact" when the structured ledger already has a
@@ -39,6 +62,9 @@ export function filterContradictoryCriticFindings(
     .filter(Boolean);
 
   return findings.filter((finding) => {
+    if (isSubjectiveOrCameraScaleInference(finding)) {
+      return false;
+    }
     if (
       finding.scope !== "segment" ||
       !finding.segment_number ||
@@ -79,13 +105,19 @@ export function filterContradictoryCriticFindings(
       : segment.state_ledger.changes;
     const criticText = `${finding.message} ${finding.evidence ?? ""}`;
 
-    const isProven = (change: (typeof relevant)[number]) =>
+    const isProven = (change: (typeof relevant)[number]) => {
+      if (isLawfulPassiveStateChange(change.from, change.to)) {
+        return true;
+      }
+      return Boolean(
         clean(change.caused_by) &&
-        clean(change.action) &&
-        changeHasOnlyRelationalOrStableState(change, characterNames) &&
-        hasVisibleCausalAction(
-          `${change.caused_by} ${change.action} ${segment.motion_prompt} ${criticText}`
-        );
+          clean(change.action) &&
+          changeHasOnlyRelationalOrStableState(change, characterNames) &&
+          hasVisibleCausalAction(
+            `${change.caused_by} ${change.action} ${segment.motion_prompt} ${criticText}`
+          )
+      );
+    };
     // A finding that names one entity is discharged by that entity's proof.
     // A vague whole-segment finding is suppressed only when every change in
     // the segment has the same explicit proof.

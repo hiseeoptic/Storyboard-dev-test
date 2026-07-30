@@ -595,6 +595,177 @@ test("critic cannot deny a visible touch/lift cause but still keeps real transfo
   assert.deepEqual(filtered.map((finding) => finding.code), ["CRITIC-002"]);
 });
 
+test("critic rejects camera-scale and emotional taste while accepting cooling and a caused orientation flip", () => {
+  const actorA = "CAST_ALPHA";
+  const actorB = "CAST_BETA";
+  const makeSegment = (segmentNumber: number) => ({
+    segment_number: segmentNumber,
+    duration_seconds: 10,
+    title: `Segment ${segmentNumber}`,
+    marketing_role: "body" as const,
+    beats: [],
+    first_frame_prompt: "A locked room with declared character anchors.",
+    motion_prompt: "",
+    dialogue: "",
+    speaker: "",
+    characters_in_scene: [actorA, actorB],
+    environment_ref: "custom",
+    continuity_note: "The declared physical state persists.",
+    state_ledger: { start: [], changes: [], end: [] },
+  });
+  const bd = {
+    character_locks: [
+      {
+        name: actorA,
+        gender: "male",
+        costume: "plain shirt and trousers",
+        voice: "warm male timbre, natural F0 range 90-140 Hz, speaking rate 130 wpm",
+      },
+      {
+        name: actorB,
+        gender: "female",
+        costume: "plain blouse and trousers",
+        voice: "clear female timbre, natural F0 range 170-230 Hz, speaking rate 130 wpm",
+      },
+    ],
+    segments: [1, 2, 3, 4, 6].map(makeSegment),
+  } as unknown as Breakdown;
+  const cooling = bd.segments.find((segment) => segment.segment_number === 2)!;
+  cooling.motion_prompt =
+    "The warm glass remains exposed on the table as story time passes.";
+  cooling.state_ledger = {
+    start: [{
+      entity_id: "glass_of_water",
+      state: "warm",
+      position: "on table",
+      holder: "",
+    }],
+    changes: [{
+      entity_id: "glass_of_water",
+      from: "warm",
+      action: "the water gradually cools",
+      to: "cool",
+      caused_by: "ambient room air",
+    }],
+    end: [{
+      entity_id: "glass_of_water",
+      state: "cool",
+      position: "on table",
+      holder: "",
+    }],
+  };
+  const phone = bd.segments.find((segment) => segment.segment_number === 6)!;
+  phone.motion_prompt =
+    `${actorA} reaches to the phone, turns it face down, then releases it on the table.`;
+  phone.state_ledger = {
+    start: [{
+      entity_id: "phone",
+      state: "face up",
+      position: "on table",
+      holder: "",
+    }],
+    changes: [{
+      entity_id: "phone",
+      from: "face up",
+      action: `${actorA} turns the phone face down`,
+      to: "face down",
+      caused_by: `${actorA}'s hand`,
+    }],
+    end: [{
+      entity_id: "phone",
+      state: "face down",
+      position: "on table",
+      holder: "",
+    }],
+  };
+
+  normalizeProductionContracts(bd);
+  assert.equal(phone.state_ledger.changes[0]!.from, "physical condition unchanged");
+  assert.equal(phone.state_ledger.changes[0]!.to, "physical condition unchanged");
+  assert.equal(phone.state_ledger.changes[0]!.from_orientation, "face up");
+  assert.equal(phone.state_ledger.changes[0]!.to_orientation, "face down");
+  assert.equal(phone.state_ledger.end[0]!.orientation, "face down");
+  assert.match(cooling.state_ledger.changes[0]!.caused_by, /ambient heat exchange/i);
+
+  const reported = [
+    {
+      code: "CRITIC-001",
+      severity: "critical",
+      scope: "segment",
+      segment_number: 1,
+      message:
+        "Character placement contradicts spatial layout; the camera captures a wide shot which may imply a different positioning.",
+      evidence:
+        "Wide view of both characters while their declared anchors are three metres apart.",
+    },
+    {
+      code: "CRITIC-002",
+      severity: "high",
+      scope: "segment",
+      segment_number: 2,
+      message:
+        "State change of the glass of water is not properly tracked; it cools without a clear cause.",
+      evidence: "The glass is warm at the start and cool at the end.",
+    },
+    {
+      code: "CRITIC-003",
+      severity: "high",
+      scope: "segment",
+      segment_number: 3,
+      message:
+        "Dialogue ownership is inconsistent because the response does not directly address the question.",
+      evidence: "Potential confusion in the emotional exchange.",
+    },
+    {
+      code: "CRITIC-004",
+      severity: "high",
+      scope: "segment",
+      segment_number: 4,
+      message:
+        "Character action contradicts the intended emotional tone.",
+      evidence:
+        "The dialogue does not convey the weight of regret shown by the lowered gaze.",
+    },
+    {
+      code: "CRITIC-006",
+      severity: "high",
+      scope: "segment",
+      segment_number: 6,
+      message:
+        "Prop state change of the phone occurs without a clear cause.",
+      evidence: "The phone changes from face up to face down.",
+    },
+  ] as unknown as Parameters<typeof filterContradictoryCriticFindings>[0];
+
+  assert.deepEqual(
+    filterContradictoryCriticFindings(reported, bd),
+    []
+  );
+
+  phone.motion_prompt = "The phone remains untouched on the table.";
+  phone.state_ledger.changes[0]!.action = "the phone orientation changes";
+  phone.state_ledger.changes[0]!.caused_by = "unknown";
+  const realDefects = filterContradictoryCriticFindings(
+    [
+      {
+        code: "CRITIC-REAL-SPATIAL",
+        severity: "critical",
+        scope: "segment",
+        segment_number: 1,
+        message: "Character placement blocks the only doorway route.",
+        evidence: "A body stands inside the wall and blocks the threshold.",
+      },
+      reported[4]!,
+    ],
+    bd
+  );
+  assert.deepEqual(
+    realDefects.map((finding) => finding.code),
+    ["CRITIC-REAL-SPATIAL", "CRITIC-006"]
+  );
+  assert.doesNotMatch(JSON.stringify(bd), /\bMinh\b|\bLan\b/);
+});
+
 test("Schema 4.0 rejects a continuity_mode that disagrees with transition_in", () => {
   const bd = addContextContracts(twoSegFixture());
   bd.segments[1]!.continuity_mode = "continuous";

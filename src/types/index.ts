@@ -509,6 +509,8 @@ export interface SegmentEntityState {
   state: string;
   position: string;
   holder?: string | null;
+  /** Facing/rotation such as face-up, face-down, upright or tilted. */
+  orientation?: string | null;
   traces?: string[];
 }
 
@@ -525,6 +527,8 @@ export interface SegmentStateChange {
   to_position?: string;
   from_holder?: string | null;
   to_holder?: string | null;
+  from_orientation?: string | null;
+  to_orientation?: string | null;
   trace?: string;
 }
 

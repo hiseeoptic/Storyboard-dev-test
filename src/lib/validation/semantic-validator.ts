@@ -619,6 +619,7 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
           state: entry.state,
           position: entry.position,
           holder: norm(entry.holder),
+          orientation: norm(entry.orientation),
         },
       ])
     );
@@ -664,7 +665,9 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
         ((norm(change.from_position) &&
           !sameState(before.position, change.from_position)) ||
           (change.from_holder !== undefined &&
-            norm(change.from_holder) !== before.holder))
+            norm(change.from_holder) !== before.holder) ||
+          (change.from_orientation !== undefined &&
+            norm(change.from_orientation) !== before.orientation))
       ) {
         push({
           code: "STATE-008",
@@ -672,7 +675,7 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
           scope: "segment",
           segment_number: seg.segment_number,
           message: `Relational change for "${change.entity_id}" does not start from its current position/holder.`,
-          evidence: `ledger=${before.position}@${before.holder || "none"} vs change=${change.from_position ?? "missing"}@${norm(change.from_holder) || "none"}`,
+          evidence: `ledger=${before.position}@${before.holder || "none"}@${before.orientation || "none"} vs change=${change.from_position ?? "missing"}@${norm(change.from_holder) || "none"}@${norm(change.from_orientation) || "none"}`,
         });
       }
       if (!norm(change.caused_by) || !norm(change.action)) {
@@ -691,6 +694,10 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
           change.to_holder !== undefined
             ? norm(change.to_holder)
             : before?.holder || "",
+        orientation:
+          change.to_orientation !== undefined
+            ? norm(change.to_orientation)
+            : before?.orientation || "",
       });
     }
     for (const entityId of ids) {
@@ -711,7 +718,8 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
         expectedEnd &&
         (!sameState(expectedEnd.state, endEntry.state) ||
           !sameState(expectedEnd.position, endEntry.position) ||
-          expectedEnd.holder !== norm(endEntry.holder))
+          expectedEnd.holder !== norm(endEntry.holder) ||
+          expectedEnd.orientation !== norm(endEntry.orientation))
       ) {
         push({
           code: "STATE-004",
@@ -719,7 +727,7 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
           scope: "segment",
           segment_number: seg.segment_number,
           message: `End snapshot for "${entityId}" does not match its final caused state/position/holder change.`,
-          evidence: `expected=${expectedEnd.state}@${expectedEnd.position}@${expectedEnd.holder || "none"} vs end=${endEntry.state}@${endEntry.position}@${norm(endEntry.holder) || "none"}`,
+          evidence: `expected=${expectedEnd.state}@${expectedEnd.position}@${expectedEnd.holder || "none"}@${expectedEnd.orientation || "none"} vs end=${endEntry.state}@${endEntry.position}@${norm(endEntry.holder) || "none"}@${norm(endEntry.orientation) || "none"}`,
         });
       }
     }
@@ -736,7 +744,8 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
           prior &&
           (!sameState(prior.state, entry.state) ||
             !sameState(prior.position, entry.position) ||
-            norm(prior.holder) !== norm(entry.holder))
+            norm(prior.holder) !== norm(entry.holder) ||
+            norm(prior.orientation) !== norm(entry.orientation))
         ) {
           push({
             code: "STATE-005",
@@ -769,7 +778,16 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
           norm(prior.holder) !== norm(entry.holder) &&
           !entityReset &&
           !/\b(?:holder|possession|ownership|prop)\b/.test(reset);
-        if (stateChanged || positionChanged || holderChanged) {
+        const orientationChanged =
+          norm(prior.orientation) !== norm(entry.orientation) &&
+          !entityReset &&
+          !/\b(?:orientation|rotation|facing)\b/.test(reset);
+        if (
+          stateChanged ||
+          positionChanged ||
+          holderChanged ||
+          orientationChanged
+        ) {
           push({
             code: "STATE-006",
             severity: "high",
