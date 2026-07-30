@@ -25,6 +25,7 @@ import { sceneIntentSchema } from "@/lib/scene-intent";
 import {
   validateStoryboardSemantics,
   buildReport,
+  filterContradictoryCriticFindings,
   formatSemanticReport,
   type SemanticFinding,
   type StoryboardRepairBatch,
@@ -175,6 +176,10 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
               action: STRING_SCHEMA,
               to: STRING_SCHEMA,
               caused_by: STRING_SCHEMA,
+              from_position: STRING_SCHEMA,
+              to_position: STRING_SCHEMA,
+              from_holder: STRING_SCHEMA,
+              to_holder: STRING_SCHEMA,
               trace: STRING_SCHEMA,
             },
             required: ["entity_id", "from", "action", "to", "caused_by"],
@@ -1558,7 +1563,10 @@ export async function critiqueStoryboard(params: {
         });
       }
 
-      return buildReport(findings, "Layer C semantic critic");
+      return buildReport(
+        filterContradictoryCriticFindings(findings, params.breakdown),
+        "Layer C semantic critic"
+      );
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       console.error(

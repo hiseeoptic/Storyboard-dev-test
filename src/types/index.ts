@@ -514,10 +514,17 @@ export interface SegmentEntityState {
 
 export interface SegmentStateChange {
   entity_id: string;
+  /** Intrinsic physical condition before/after (temperature, fullness,
+   * integrity, open/closed…). Never encode location, contact or possession. */
   from: string;
   action: string;
   to: string;
   caused_by: string;
+  /** Relational dimensions for movement and possession. */
+  from_position?: string;
+  to_position?: string;
+  from_holder?: string | null;
+  to_holder?: string | null;
   trace?: string;
 }
 

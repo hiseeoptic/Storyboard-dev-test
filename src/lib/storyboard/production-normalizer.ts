@@ -1,9 +1,11 @@
 import type { StoryboardGenerationOutput } from "../../types/index.ts";
 import { completeVoiceProfile } from "../laws/audioLaws.ts";
+import { normalizeStateLedgerDimensions } from "./state-ledger.ts";
 
 export interface ProductionNormalizationResult {
   voice_profiles_completed: number;
   continuous_start_entries_inherited: number;
+  state_ledger_dimensions_normalized: number;
 }
 
 function key(value: string): string {
@@ -23,6 +25,8 @@ export function normalizeProductionContracts(
 ): ProductionNormalizationResult {
   let voiceProfilesCompleted = 0;
   let continuousStartsInherited = 0;
+  const stateLedgerDimensionsNormalized =
+    normalizeStateLedgerDimensions(breakdown);
 
   for (const lock of breakdown.character_locks ?? []) {
     const before = (lock.voice ?? "").trim();
@@ -74,21 +78,34 @@ export function normalizeProductionContracts(
     const startState = new Map(
       current.state_ledger.start.map((entry) => [
         key(entry.entity_id),
-        entry.state,
+        {
+          state: entry.state,
+          position: entry.position,
+          holder: (entry.holder ?? "").trim(),
+        },
       ])
     );
     for (const change of current.state_ledger.changes) {
       const entityKey = key(change.entity_id);
-      const expectedFrom = startState.get(entityKey);
-      if (expectedFrom && change.from.trim() !== expectedFrom.trim()) {
-        change.from = expectedFrom;
+      const expected = startState.get(entityKey);
+      if (expected) {
+        if (change.from.trim() !== expected.state.trim()) {
+          change.from = expected.state;
+        }
+        change.from_position = expected.position;
+        change.from_holder = expected.holder;
       }
-      startState.set(entityKey, change.to);
+      startState.set(entityKey, {
+        state: change.to,
+        position: change.to_position || expected?.position || "",
+        holder: (change.to_holder ?? expected?.holder ?? "").trim(),
+      });
     }
   }
 
   return {
     voice_profiles_completed: voiceProfilesCompleted,
     continuous_start_entries_inherited: continuousStartsInherited,
+    state_ledger_dimensions_normalized: stateLedgerDimensionsNormalized,
   };
 }

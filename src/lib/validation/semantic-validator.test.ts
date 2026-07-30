@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { completeVoiceProfile } from "../laws/audioLaws.ts";
 import { normalizeProductionContracts } from "../storyboard/production-normalizer.ts";
+import { filterContradictoryCriticFindings } from "./critic-filter.ts";
 import { validateStoryboardSemantics, formatSemanticReport } from "./semantic-validator.ts";
 
 type Breakdown = Parameters<typeof validateStoryboardSemantics>[0];
@@ -398,6 +399,151 @@ test("continuous start state is inherited locally before the validator", () => {
     report.findings.some((finding) => finding.code === "STATE-005"),
     false
   );
+});
+
+test("state ledger separates intrinsic condition from touch, holder and position", () => {
+  const bd = addContextContracts(twoSegFixture());
+  bd.segments.push({
+    ...bd.segments[1]!,
+    segment_number: 3,
+    title: "Minh lifts the glass",
+  });
+  bd.total_duration_seconds = 30;
+  for (const [index, segment] of bd.segments.entries()) {
+    segment.location_id = "office";
+    segment.transition_in = {
+      mode: index === 0 ? "opening" : "continuous",
+      ...(index > 0 ? { from_location_id: "office" } : {}),
+      to_location_id: "office",
+      time_relation: index === 0 ? "opening" : "immediately",
+      preserve: index === 0 ? [] : ["all physical state"],
+      reset: [],
+      reason: index === 0 ? "opening" : "same action",
+    };
+    segment.continuity_mode = segment.transition_in.mode;
+  }
+  bd.segments[0]!.state_ledger = {
+    start: [{ entity_id: "glass", state: "warm", position: "on coffee table", holder: "" }],
+    changes: [],
+    end: [{ entity_id: "glass", state: "warm", position: "on coffee table", holder: "" }],
+  };
+  bd.segments[1]!.motion_prompt =
+    "Minh reaches toward the glass and visibly touches its side.";
+  bd.segments[1]!.state_ledger = {
+    start: [{ entity_id: "glass", state: "on table", position: "on coffee table", holder: "" }],
+    changes: [{
+      entity_id: "glass",
+      from: "on table",
+      action: "Minh reaches and touches the side of the glass",
+      to: "touched by Minh",
+      caused_by: "Minh's right hand",
+    }],
+    end: [{ entity_id: "glass", state: "touched by Minh", position: "on coffee table", holder: "" }],
+  };
+  bd.segments[2]!.motion_prompt =
+    "Minh closes his fingers around the glass and lifts it from the table.";
+  bd.segments[2]!.state_ledger = {
+    start: [{ entity_id: "glass", state: "touched by Minh", position: "on coffee table", holder: "" }],
+    changes: [{
+      entity_id: "glass",
+      from: "touched by Minh",
+      action: "Minh grips the glass and lifts it from the table",
+      to: "held by Minh",
+      caused_by: "Minh's right hand",
+    }],
+    end: [{ entity_id: "glass", state: "held by Minh", position: "in Minh's hand", holder: "Minh" }],
+  };
+
+  const normalized = normalizeProductionContracts(bd);
+  const touch = bd.segments[1]!.state_ledger!.changes[0]!;
+  const lift = bd.segments[2]!.state_ledger!.changes[0]!;
+  assert.ok(normalized.state_ledger_dimensions_normalized > 0);
+  assert.equal(touch.from, "warm");
+  assert.equal(touch.to, "warm");
+  assert.equal(touch.from_position, "on coffee table");
+  assert.equal(touch.to_position, "on coffee table");
+  assert.equal(touch.to_holder, "");
+  assert.equal(lift.from, "warm");
+  assert.equal(lift.to, "warm");
+  assert.equal(lift.from_position, "on coffee table");
+  assert.equal(lift.to_position, "in Minh's hand");
+  assert.equal(lift.to_holder, "Minh");
+  assert.equal(bd.segments[2]!.state_ledger!.end[0]!.state, "warm");
+
+  const report = validateStoryboardSemantics(bd);
+  assert.equal(
+    report.findings.some((finding) =>
+      ["STATE-003", "STATE-004", "STATE-005", "STATE-007", "STATE-008", "CAUSE-001"].includes(
+        finding.code
+      )
+    ),
+    false,
+    formatSemanticReport(report)
+  );
+});
+
+test("critic cannot deny a visible touch/lift cause but still keeps real transformation defects", () => {
+  const bd = addContextContracts(cleanFixture());
+  bd.segments[0]!.motion_prompt =
+    "Minh reaches, grips the glass and lifts it from the table.";
+  bd.segments[0]!.state_ledger = {
+    start: [
+      { entity_id: "glass", state: "warm", position: "on table", holder: "" },
+      { entity_id: "water", state: "warm", position: "inside glass", holder: "" },
+    ],
+    changes: [
+      {
+        entity_id: "glass",
+        from: "warm",
+        from_position: "on table",
+        from_holder: "",
+        action: "Minh reaches, grips and lifts the glass",
+        to: "warm",
+        to_position: "in Minh's hand",
+        to_holder: "Minh",
+        caused_by: "Minh's right hand",
+      },
+      {
+        entity_id: "water",
+        from: "warm",
+        from_position: "inside glass",
+        from_holder: "",
+        action: "temperature changes without any visible cooling source",
+        to: "frozen",
+        to_position: "inside glass",
+        to_holder: "",
+        caused_by: "unknown",
+      },
+    ],
+    end: [
+      { entity_id: "glass", state: "warm", position: "in Minh's hand", holder: "Minh" },
+      { entity_id: "water", state: "frozen", position: "inside glass", holder: "" },
+    ],
+  };
+  const findings = [
+    {
+      code: "CRITIC-001",
+      severity: "critical",
+      scope: "segment",
+      segment_number: 1,
+      message: "State change of the glass without a visible cause or contact.",
+      evidence: "Minh grips and lifts the glass from the table.",
+    },
+    {
+      code: "CRITIC-002",
+      severity: "critical",
+      scope: "segment",
+      segment_number: 1,
+      message: "The water changes from warm to frozen without a visible cause.",
+      evidence: "No cooling source is shown.",
+    },
+  ] as const;
+
+  const filtered = filterContradictoryCriticFindings(
+    findings as unknown as Parameters<typeof filterContradictoryCriticFindings>[0],
+    bd
+  );
+  assert.deepEqual(filtered.map((finding) => finding.code), ["CRITIC-002"]);
 });
 
 test("Schema 4.0 rejects a continuity_mode that disagrees with transition_in", () => {

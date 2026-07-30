@@ -1053,10 +1053,10 @@ ${beatExample}
         "reason": "short story-grounded justification"
       },
       "state_ledger": {
-        "_note": "Track only real hero/interacted entities that matter to causality, up to the project's configured 3-6 entity budget. Never invent filler entities. Empty arrays are allowed only when nothing is touched, moved or transformed.",
-        "start": [{ "entity_id": "stable id", "state": "compact physical state", "position": "zone + anchor", "holder": "character id or empty", "traces": ["existing persistent traces"] }],
-        "changes": [{ "entity_id": "same stable id", "from": "must match start", "action": "visible contact/action", "to": "result state", "caused_by": "named character/body part/tool/force", "trace": "persistent mark or empty" }],
-        "end": [{ "entity_id": "same stable id", "state": "must match the final change", "position": "final zone + anchor", "holder": "final holder or empty", "traces": ["all persistent traces"] }]
+        "_note": "Track only real hero/interacted entities that matter to causality, up to the project's configured 3-6 entity budget. state/from/to mean INTRINSIC physical condition only (temperature, fullness, integrity, wet/dry, open/closed); NEVER put location, 'on table', 'touched by X', 'held by X' or 'in X hand' there. Location belongs only in position; possession belongs only in holder. A touch with no persistent result keeps the same intrinsic condition, position and holder. Never invent filler entities.",
+        "start": [{ "entity_id": "stable id", "state": "intrinsic physical condition only", "position": "zone + anchor", "holder": "exact character name or empty", "traces": ["existing persistent traces"] }],
+        "changes": [{ "entity_id": "same stable id", "from": "current intrinsic condition", "from_position": "current zone + anchor", "from_holder": "current exact holder or empty", "action": "visible reach/contact/grip/move/release chain", "to": "result intrinsic condition; may equal from for movement/contact", "to_position": "result zone + anchor", "to_holder": "result exact holder or empty", "caused_by": "named character/body part/tool/force", "trace": "persistent mark or empty" }],
+        "end": [{ "entity_id": "same stable id", "state": "final intrinsic condition only", "position": "final zone + anchor", "holder": "final exact holder or empty", "traces": ["all persistent traces"] }]
       },
       "spatial_layout": {
         "_note": "Keep EACH field to ONE short clause (≤ 18 words) — this is a compact geometry map, not prose. OMIT the whole spatial_layout object for a simple single-zone scene with no doorway/threshold/stair/counter/railing/edge. mechanism_motion is optional and used only for moving architecture such as a revolving door.",
@@ -1283,7 +1283,7 @@ REPAIR CONTRACT:
 3. Preserve every dialogue line and its named speaker VERBATIM in ${dialogueLanguage}; only repair start_s/end_s timing when DLG-001 requires it. Never add, remove, paraphrase, translate or reassign dialogue.
 4. Fix the validator's concrete evidence, not merely its wording. Make first_frame_prompt, motion_prompt, beats, characters_in_scene, environment_ref, location_id, continuity_mode, transition_in, state_ledger, spatial_layout and continuity_note agree with one another. continuity_mode must exactly equal transition_in.mode.
 5. The locked Context IR is the authority. Use only declared location ids and allowed transition modes. A continuous boundary inherits the previous end state exactly. An editorial cut opens from its own declared start state and preserves/resets only transition_in fields.
-6. Every state change follows cause → visible action/contact → result → persistent end state. Track only the 3–6 most salient real entities; never invent filler entities.
+6. Every state change follows cause → visible action/contact → result → persistent end state. Keep ledger dimensions separate: state/from/to are INTRINSIC condition only (temperature, fullness, integrity, wet/dry, open/closed); position/from_position/to_position own location; holder/from_holder/to_holder own possession. Never encode "on table", "touched by X", "held by X" or "in X's hand" as state. Touching without movement keeps intrinsic state, position and holder unchanged; lifting changes position/holder through the already-visible grip/lift action. Track only the 3–6 most salient real entities; never invent filler entities.
 7. Keep real body mechanics, material response, object permanence, environmental topology, time/light logic, character identity, wardrobe, voice and scene intent consistent with the project's locked 10 layers.
 8. Do not hide an error with vague phrases such as "same as before", "continues naturally" or "consistent setting". Write the actual physical state.
 9. For a target character, repair only gender, costume/wardrobe materials or voice fields named by the report. Keep the exact name and never reinterpret face, body, ethnicity, age, hair or reference-image identity. When duplicate locks share one name, return one repaired lock for that name.
@@ -1339,6 +1339,8 @@ Do NOT report:
 - photoreal requirements for animation/stylized projects;
 - background details that are not salient or not visible;
 - defects already absent from the supplied JSON.
+- a missing cause/contact when state_ledger.action + caused_by or motion_prompt already explicitly shows reach, touch, grip, lift, place, release or another physically sufficient cause. "Touches the glass" is valid visible contact; "grips then lifts the glass from the table" is a valid cause and visible path. Do not demand a second duplicate action.
+- a same-intrinsic-state relation change whose position/holder dimensions correctly record a visible touch, pickup, hold or placement. state is intrinsic condition; position and holder are separate authorities.
 
 Every finding must identify the exact segment_number or character name whenever possible. Use scope="project" only when no local target can fix it. Severity must be "critical" or "high".
 
@@ -2047,7 +2049,7 @@ export function buildSegmentVeoPrompt(params: {
     ? ` EDIT BOUNDARY: ${params.transitionIn.mode} into location ${params.locationId || params.transitionIn.to_location_id}; time relation: ${clean(params.transitionIn.time_relation)}. Preserve only: ${params.transitionIn.preserve.map(clean).filter(Boolean).join(", ") || "none"}. Reset: ${params.transitionIn.reset.map(clean).filter(Boolean).join(", ") || "none"}.`
     : "";
   const stateLock = params.stateLedger
-    ? ` STATE LEDGER: start [${params.stateLedger.start.map((item) => `${clean(item.entity_id)}=${clean(item.state)} at ${clean(item.position)}`).join("; ")}]; caused changes [${params.stateLedger.changes.map((item) => `${clean(item.entity_id)}: ${clean(item.from)} -> ${clean(item.to)} because ${clean(item.caused_by)} ${clean(item.action)}`).join("; ")}]; end [${params.stateLedger.end.map((item) => `${clean(item.entity_id)}=${clean(item.state)} at ${clean(item.position)}`).join("; ")}].`
+    ? ` STATE LEDGER: start [${params.stateLedger.start.map((item) => `${clean(item.entity_id)}=${clean(item.state)} at ${clean(item.position)}, holder=${clean(item.holder ?? undefined) || "none"}`).join("; ")}]; caused changes [${params.stateLedger.changes.map((item) => `${clean(item.entity_id)}: condition ${clean(item.from)} -> ${clean(item.to)}, position ${clean(item.from_position) || "unchanged"} -> ${clean(item.to_position) || "unchanged"}, holder ${clean(item.from_holder ?? undefined) || "none"} -> ${clean(item.to_holder ?? undefined) || "none"}, because ${clean(item.caused_by)} ${clean(item.action)}`).join("; ")}]; end [${params.stateLedger.end.map((item) => `${clean(item.entity_id)}=${clean(item.state)} at ${clean(item.position)}, holder=${clean(item.holder ?? undefined) || "none"}`).join("; ")}].`
     : "";
   // Locked world spec (materials/Kelvin+Lux/atmosphere/imperfections) — the
   // veoflow-web environment payload that makes the SETTING render real.

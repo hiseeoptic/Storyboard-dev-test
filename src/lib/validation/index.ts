@@ -17,6 +17,7 @@ export {
   stampValidationCache,
 } from "./validation-fingerprint";
 export { runStoryboardRepairLoop } from "./repair-loop";
+export { filterContradictoryCriticFindings } from "./critic-filter";
 export type {
   StoryboardRepairBatch,
   StoryboardRepairLoopOptions,

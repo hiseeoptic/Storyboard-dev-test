@@ -26,6 +26,7 @@ import type {
   CharacterLock,
   StoryboardGenerationOutput,
 } from "@/types";
+import { relationalEntityState } from "../storyboard/state-ledger.ts";
 
 export type SemanticSeverity = "critical" | "high" | "medium";
 
@@ -612,18 +613,66 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
     const start = new Map(startEntries.map((entry) => [entry.entity_id, entry]));
     const end = new Map(endEntries.map((entry) => [entry.entity_id, entry]));
     const current = new Map(
-      startEntries.map((entry) => [entry.entity_id, entry.state])
+      startEntries.map((entry) => [
+        entry.entity_id,
+        {
+          state: entry.state,
+          position: entry.position,
+          holder: norm(entry.holder),
+        },
+      ])
     );
+    for (const entry of [...startEntries, ...endEntries]) {
+      if (relationalEntityState(entry.state)) {
+        push({
+          code: "STATE-007",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: `Tracked entity "${entry.entity_id}" puts location/contact/possession inside intrinsic state.`,
+          evidence: `state=${entry.state}; use position/holder instead`,
+        });
+      }
+    }
     for (const change of changeEntries) {
       const before = current.get(change.entity_id);
-      if (!before || !sameState(before, change.from)) {
+      if (!before || !sameState(before.state, change.from)) {
         push({
           code: "STATE-003",
           severity: "high",
           scope: "segment",
           segment_number: seg.segment_number,
           message: `State change for "${change.entity_id}" does not start from its current state.`,
-          evidence: `ledger=${before ?? "missing"} vs change.from=${change.from}`,
+          evidence: `ledger=${before?.state ?? "missing"} vs change.from=${change.from}`,
+        });
+      }
+      if (
+        relationalEntityState(change.from) ||
+        relationalEntityState(change.to)
+      ) {
+        push({
+          code: "STATE-007",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: `State change for "${change.entity_id}" mixes position/contact/holder into from/to.`,
+          evidence: `${change.from} -> ${change.to}`,
+        });
+      }
+      if (
+        before &&
+        ((norm(change.from_position) &&
+          !sameState(before.position, change.from_position)) ||
+          (change.from_holder !== undefined &&
+            norm(change.from_holder) !== before.holder))
+      ) {
+        push({
+          code: "STATE-008",
+          severity: "high",
+          scope: "segment",
+          segment_number: seg.segment_number,
+          message: `Relational change for "${change.entity_id}" does not start from its current position/holder.`,
+          evidence: `ledger=${before.position}@${before.holder || "none"} vs change=${change.from_position ?? "missing"}@${norm(change.from_holder) || "none"}`,
         });
       }
       if (!norm(change.caused_by) || !norm(change.action)) {
@@ -635,7 +684,14 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
           message: `State change for "${change.entity_id}" has no visible cause/action.`,
         });
       }
-      current.set(change.entity_id, change.to);
+      current.set(change.entity_id, {
+        state: change.to,
+        position: norm(change.to_position) || before?.position || "",
+        holder:
+          change.to_holder !== undefined
+            ? norm(change.to_holder)
+            : before?.holder || "",
+      });
     }
     for (const entityId of ids) {
       const startEntry = start.get(entityId);
@@ -651,14 +707,19 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
         continue;
       }
       const expectedEnd = current.get(entityId);
-      if (expectedEnd && !sameState(expectedEnd, endEntry.state)) {
+      if (
+        expectedEnd &&
+        (!sameState(expectedEnd.state, endEntry.state) ||
+          !sameState(expectedEnd.position, endEntry.position) ||
+          expectedEnd.holder !== norm(endEntry.holder))
+      ) {
         push({
           code: "STATE-004",
           severity: "high",
           scope: "segment",
           segment_number: seg.segment_number,
-          message: `End state for "${entityId}" does not match its final caused change.`,
-          evidence: `expected=${expectedEnd} vs end=${endEntry.state}`,
+          message: `End snapshot for "${entityId}" does not match its final caused state/position/holder change.`,
+          evidence: `expected=${expectedEnd.state}@${expectedEnd.position}@${expectedEnd.holder || "none"} vs end=${endEntry.state}@${endEntry.position}@${norm(endEntry.holder) || "none"}`,
         });
       }
     }
