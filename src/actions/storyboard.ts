@@ -1914,6 +1914,22 @@ function flagUnresolvedScenes(
   );
 }
 
+/** Run a content normalisation/validation step that MAY throw. On failure, record
+ * a NON-BLOCKING warning and continue — a single scene's defect must never abort
+ * the whole project (user's explicit request: "ra bản preview + báo scene nào
+ * lỗi, đừng chặn"). Genuine infrastructure failures (API/quota/context lock) are
+ * handled separately and still stop, so only CONTENT checks are softened here. */
+function softStep(label: string, warnings: string[], step: () => void): void {
+  try {
+    step();
+  } catch (e) {
+    warnings.push(
+      `⚠️ ${label}: ${e instanceof Error ? e.message : String(e)} — đã bỏ qua để ` +
+        "vẫn xuất bản xem; xem lại/chạy lại cảnh liên quan trong trình chỉnh sửa."
+    );
+  }
+}
+
 /**
  * Full Lớp C: deterministic A+B → semantic critic → targeted repair → repeat.
  * A maximum of two mutation rounds means the critic runs at most three audits
@@ -2306,22 +2322,22 @@ export async function generateStoryboardPlan(
 
     // Deterministic post-model guard: menu names/photo groups win over any
     // invented, omitted or renamed cast returned by the storyboard model.
-    enforceMenuCharacterContract(input, breakdown, analysis);
-    sanitizeUploadedCharacterSceneText(input, breakdown);
-
-    // TẦNG 9 turn-taking normalisation + safety clamp. Reconcile the two dialogue
-    // forms so downstream code (and the editor) is always consistent, and hard-
-    // cap the multi-speaker feature so it can never over-constrain a Veo clip.
-    // Pass the approved script so every line is credited to the speaker the
-    // script itself labelled, instead of whoever the model guessed.
-    normalizeDialogue(breakdown, sourceScript);
-    enforceSingleDialogueClock(breakdown);
-    enforceSceneCastContract(breakdown);
-    sanitizeContinuityNotes(breakdown);
-    enforceCookingContract(input, breakdown);
-    enforceSpatialTopology(breakdown);
-    synchronizeContinuityContracts(breakdown);
-    normalizeProductionContracts(breakdown);
+    // NON-BLOCKING content normalisation/validation. Each step may find a defect,
+    // but a defect must NEVER abort the whole project — the user always gets the
+    // preview + prompts, and a flawed scene is only flagged (per their request:
+    // "ra bản preview và báo scene nào lỗi, đừng chặn"). Any throw here (character
+    // menu, dialogue clock/wpm, cast, spatial…) becomes a warning via softStep.
+    // TẦNG 9 turn-taking + speaker credit still run first so the export is clean.
+    softStep("Nhân vật / menu", warnings, () => enforceMenuCharacterContract(input, breakdown, analysis));
+    softStep("Làm sạch mô tả nhân vật", warnings, () => sanitizeUploadedCharacterSceneText(input, breakdown));
+    softStep("Chuẩn hoá thoại", warnings, () => normalizeDialogue(breakdown, sourceScript));
+    softStep("Nhịp thoại (wpm)", warnings, () => enforceSingleDialogueClock(breakdown));
+    softStep("Cast từng cảnh", warnings, () => enforceSceneCastContract(breakdown));
+    softStep("Continuity notes", warnings, () => sanitizeContinuityNotes(breakdown));
+    softStep("Cooking", warnings, () => enforceCookingContract(input, breakdown));
+    softStep("Bố cục không gian", warnings, () => enforceSpatialTopology(breakdown));
+    softStep("Đồng bộ continuity", warnings, () => synchronizeContinuityContracts(breakdown));
+    softStep("Production contracts", warnings, () => normalizeProductionContracts(breakdown));
 
     const referencedCharacterNames = uploadedCharacterNameSet(input);
     for (const lock of breakdown.character_locks) {
@@ -2637,7 +2653,13 @@ export async function finalizeScript(params: {
     // No script index here on purpose: at the approval boundary the user's own
     // speaker edits in the preview are authoritative and must not be rewritten.
     let breakdown = params.breakdown;
-    normalizeRepairCandidate(params.input, breakdown, params.analysis);
+    // NON-BLOCKING: normalise the user-approved script, but a content check must
+    // never fail the finalize — the user already saw + accepted this preview.
+    try {
+      normalizeRepairCandidate(params.input, breakdown, params.analysis);
+    } catch (e) {
+      console.warn("[Storyboard] finalize normalise skipped:", e);
+    }
 
     // The paid Lớp C loop is OFF by default (it đốt token và chặn cả finalize chỉ
     // vì 1 cảnh lỗi). The user-approved script now ALWAYS finalizes; the bounded
