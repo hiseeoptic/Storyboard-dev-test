@@ -10,6 +10,8 @@ import {
 } from "@/lib/cooking";
 import { geminiGenerateText } from "@/lib/gemini/client";
 import { getOpenAIClient } from "@/lib/openai/client";
+import { shouldRetryAiError } from "@/lib/ai/retry-policy";
+import { logOpenAiUsage } from "@/lib/ai/usage";
 import type { AIProvider, StoryboardGenerationInput } from "@/types";
 
 function unique(values: string[]): string[] {
@@ -209,8 +211,10 @@ async function generateOnce(
     });
   }
 
+  const model =
+    process.env.OPENAI_COOKING_PLANNER_MODEL || "gpt-4.1-mini";
   const response = await getOpenAIClient().chat.completions.create({
-    model: "gpt-4o",
+    model,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
@@ -219,6 +223,13 @@ async function generateOnce(
     temperature: attempt === 0 ? 0.2 : 0.05,
     max_tokens: compactTokenCap,
   }, { timeout: 45_000 });
+  logOpenAiUsage({
+    stage: "cooking_scene_plan",
+    model,
+    attempt: attempt + 1,
+    usage: response.usage,
+    promptParts: [systemPrompt, userPrompt],
+  });
   return response.choices[0]?.message?.content?.trim() ?? "";
 }
 
@@ -327,6 +338,7 @@ export async function generateCompactCookingScenePlan(
         `[Cooking Planner] Attempt ${attempt + 1}/2 failed:`,
         lastError.message
       );
+      if (!shouldRetryAiError(error)) break;
     }
   }
   console.error(

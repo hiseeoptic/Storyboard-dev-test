@@ -1,5 +1,7 @@
 import { getOpenAIClient } from "@/lib/openai/client";
 import { geminiGenerateText } from "@/lib/gemini/client";
+import { shouldAbortAiPipeline } from "@/lib/ai/retry-policy";
+import { logOpenAiUsage } from "@/lib/ai/usage";
 import type { AIProvider, ImageReference } from "@/types";
 
 /** Analyzes non-character visual references into prompt text. Character photos
@@ -28,28 +30,41 @@ async function analyzeWithVision(params: {
 
   const openai = getOpenAIClient();
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: params.prompt },
-            ...params.images.map((base64) => ({
-              type: "image_url" as const,
-              image_url: {
-                url: `data:image/jpeg;base64,${base64}`,
-                detail: "high" as const,
-              },
-            })),
-          ],
-        },
-      ],
-      max_tokens: params.maxTokens,
+    const visionModel =
+      process.env.OPENAI_VISION_MODEL || "gpt-4.1-mini";
+    const response = await openai.chat.completions.create(
+      {
+        model: visionModel,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: params.prompt },
+              ...params.images.map((base64) => ({
+                type: "image_url" as const,
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64}`,
+                  detail: "high" as const,
+                },
+              })),
+            ],
+          },
+        ],
+        max_tokens: params.maxTokens,
+      },
+      { timeout: 45_000 }
+    );
+    logOpenAiUsage({
+      stage: "reference_vision",
+      model: visionModel,
+      usage: response.usage,
+      promptParts: [params.prompt],
+      imageCount: params.images.length,
     });
     return response.choices[0]?.message?.content?.trim() ?? null;
   } catch (err) {
     console.error("[Image Analyzer] OpenAI vision failed:", err);
+    if (shouldAbortAiPipeline(err)) throw err;
     return null;
   }
 }

@@ -30,6 +30,8 @@ import {
   type SemanticFinding,
   type StoryboardRepairBatch,
 } from "@/lib/validation";
+import { shouldRetryAiError } from "@/lib/ai/retry-policy";
+import { logOpenAiUsage } from "@/lib/ai/usage";
 import type {
   AIProvider,
   CharacterLock,
@@ -723,9 +725,11 @@ export async function analyzeVideoContext(
   const systemPrompt = buildContextAnalysisSystemPrompt();
   const userPrompt = buildContextAnalysisUserPrompt(input);
   let lastError: Error | null = null;
+  let attemptsMade = 0;
 
   const maxAttempts = attemptLimit(2, timing);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    attemptsMade = attempt + 1;
     try {
       let rawContent: string | null = null;
 
@@ -748,9 +752,11 @@ export async function analyzeVideoContext(
         });
       } else {
         const openai = getOpenAIClient();
+        const contextModel =
+          process.env.OPENAI_CONTEXT_MODEL || "gpt-4o-mini";
         const completion = await openai.chat.completions.create(
           {
-            model: "gpt-4o",
+            model: contextModel,
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: userPrompt },
@@ -770,6 +776,13 @@ export async function analyzeVideoContext(
           },
           { timeout: boundedTimeoutMs(timing, 45_000, "OpenAI context analysis") }
         );
+        logOpenAiUsage({
+          stage: "context_ir",
+          model: contextModel,
+          attempt: attempt + 1,
+          usage: completion.usage,
+          promptParts: [systemPrompt, userPrompt],
+        });
         rawContent = completion.choices[0]?.message?.content ?? null;
       }
 
@@ -842,11 +855,18 @@ export async function analyzeVideoContext(
         `[AI Engine] Context analysis attempt ${attempt + 1}/${maxAttempts} failed:`,
         lastError.message
       );
-      if (attempt < maxAttempts - 1) await sleep(RETRY_DELAY_MS);
+      if (
+        attempt < maxAttempts - 1 &&
+        shouldRetryAiError(err)
+      ) {
+        await sleep(RETRY_DELAY_MS);
+      } else {
+        break;
+      }
     }
   }
 
-  throw new Error(`Context analysis failed after ${maxAttempts} attempts: ${lastError?.message}`);
+  throw new Error(`Context analysis failed after ${attemptsMade} attempt${attemptsMade === 1 ? "" : "s"}: ${lastError?.message}`);
 }
 
 /**
@@ -862,9 +882,11 @@ export async function generateScript(
   const systemPrompt = buildScriptWriterSystemPrompt();
   const userPrompt = buildScriptWriterUserPrompt(input);
   let lastError: Error | null = null;
+  let attemptsMade = 0;
 
   const maxAttempts = attemptLimit(MAX_RETRIES, timing);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    attemptsMade = attempt + 1;
     try {
       let text: string | null = null;
 
@@ -884,12 +906,14 @@ export async function generateScript(
           timeoutMs: boundedTimeoutMs(timing, 45_000, "Gemini script generation"),
         });
       } else {
-        // GPT-5.6 Sol handles the quality-first creative script-writing stage.
+        // The script stage is high-volume structured creative work. Keep the
+        // default on gpt-5-mini: production UI already advertises this tier and
+        // it is dramatically cheaper than the former gpt-5.6-sol default.
         // GPT-5-series models take `max_completion_tokens` (NOT `max_tokens`)
         // and only support the default temperature — sending either legacy
         // param 400s the request. Overridable via OPENAI_SCRIPT_MODEL.
         const openai = getOpenAIClient();
-        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5.6-sol";
+        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5-mini";
         const isGpt5 = scriptModel.startsWith("gpt-5") || scriptModel.startsWith("o");
         const completion = await openai.chat.completions.create(
           {
@@ -904,6 +928,13 @@ export async function generateScript(
           },
           { timeout: boundedTimeoutMs(timing, 60_000, "OpenAI script generation") }
         );
+        logOpenAiUsage({
+          stage: "script",
+          model: scriptModel,
+          attempt: attempt + 1,
+          usage: completion.usage,
+          promptParts: [systemPrompt, userPrompt],
+        });
         text = completion.choices[0]?.message?.content ?? null;
       }
 
@@ -918,14 +949,19 @@ export async function generateScript(
         `[AI Engine] Script attempt ${attempt + 1}/${maxAttempts} failed:`,
         lastError.message
       );
-      if (attempt < maxAttempts - 1) {
+      if (
+        attempt < maxAttempts - 1 &&
+        shouldRetryAiError(err)
+      ) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
+      } else {
+        break;
       }
     }
   }
 
   throw new Error(
-    `Script generation failed after ${maxAttempts} attempts: ${lastError?.message}`
+    `Script generation failed after ${attemptsMade} attempt${attemptsMade === 1 ? "" : "s"}: ${lastError?.message}`
   );
 }
 
@@ -935,9 +971,11 @@ export async function generateStoryboardBreakdown(
   timing?: GenerationTimingOptions
 ): Promise<StoryboardGenerationOutput> {
   let lastError: Error | null = null;
+  let attemptsMade = 0;
   const maxAttempts = attemptLimit(STORYBOARD_MAX_RETRIES, timing);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    attemptsMade = attempt + 1;
     try {
       let rawContent: string | null = null;
 
@@ -999,18 +1037,23 @@ export async function generateStoryboardBreakdown(
         });
       } else {
         const openai = getOpenAIClient();
+        const storyboardModel =
+          process.env.OPENAI_STORYBOARD_MODEL || "gpt-4.1-mini";
+        const storyboardSystemPrompt =
+          buildStoryboardSystemPrompt(hasUploadedCharacterReferences(input));
+        const storyboardUserPrompt = buildStoryboardUserPrompt(input);
         const completion = await openai.chat.completions.create(
           {
-            // Default gpt-4o: reliable at the strict, large storyboard JSON at
-            // $2.50/$10 per 1M tokens. Override with OPENAI_STORYBOARD_MODEL to
-            // trade cost/quality (e.g. gpt-5-mini ≈ $0.75/$4.50, cheaper + newer).
-            model: process.env.OPENAI_STORYBOARD_MODEL || "gpt-4o",
+            // gpt-4.1-mini is reliable for the strict large JSON while costing
+            // far less than gpt-4o. Override only when a project explicitly
+            // accepts the additional spend.
+            model: storyboardModel,
             messages: [
               {
                 role: "system",
-                content: buildStoryboardSystemPrompt(hasUploadedCharacterReferences(input)),
+                content: storyboardSystemPrompt,
               },
-              { role: "user", content: buildStoryboardUserPrompt(input) },
+              { role: "user", content: storyboardUserPrompt },
             ],
             temperature: 0.7,
             // Richer segments need more room — 8k truncated tails into stubs
@@ -1025,6 +1068,13 @@ export async function generateStoryboardBreakdown(
           // still clamps it to whatever budget actually remains.
           { timeout: boundedTimeoutMs(timing, 180_000, "OpenAI storyboard generation") }
         );
+        logOpenAiUsage({
+          stage: "storyboard",
+          model: storyboardModel,
+          attempt: attempt + 1,
+          usage: completion.usage,
+          promptParts: [storyboardSystemPrompt, storyboardUserPrompt],
+        });
         rawContent = completion.choices[0]?.message?.content ?? null;
       }
 
@@ -1271,14 +1321,19 @@ export async function generateStoryboardBreakdown(
         `[AI Engine] Attempt ${attempt + 1}/${maxAttempts} failed:`,
         lastError.message
       );
-      if (attempt < maxAttempts - 1) {
+      if (
+        attempt < maxAttempts - 1 &&
+        shouldRetryAiError(err)
+      ) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
+      } else {
+        break;
       }
     }
   }
 
   throw new Error(
-    `Storyboard generation failed after ${maxAttempts} attempts: ${lastError?.message}`
+    `Storyboard generation failed after ${attemptsMade} attempt${attemptsMade === 1 ? "" : "s"}: ${lastError?.message}`
   );
 }
 
@@ -1317,8 +1372,10 @@ export async function rewriteStoryboardSegment(params: {
     segmentIndex: params.segmentIndex,
   });
   let lastError: Error | null = null;
+  let attemptsMade = 0;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    attemptsMade = attempt + 1;
     try {
       let rawContent: string | null = null;
 
@@ -1346,8 +1403,10 @@ export async function rewriteStoryboardSegment(params: {
         });
       } else {
         const openai = getOpenAIClient();
+        const rewriteModel =
+          process.env.OPENAI_STORYBOARD_REWRITE_MODEL || "gpt-4.1-mini";
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: rewriteModel,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
@@ -1355,6 +1414,13 @@ export async function rewriteStoryboardSegment(params: {
           temperature: 0.7,
           max_tokens: 2500,
           response_format: { type: "json_object" },
+        });
+        logOpenAiUsage({
+          stage: "segment_rewrite",
+          model: rewriteModel,
+          attempt: attempt + 1,
+          usage: completion.usage,
+          promptParts: [systemPrompt, userPrompt],
         });
         rawContent = completion.choices[0]?.message?.content ?? null;
       }
@@ -1405,14 +1471,19 @@ export async function rewriteStoryboardSegment(params: {
         `[AI Engine] Segment rewrite attempt ${attempt + 1}/${MAX_RETRIES} failed:`,
         lastError.message
       );
-      if (attempt < MAX_RETRIES - 1) {
+      if (
+        attempt < MAX_RETRIES - 1 &&
+        shouldRetryAiError(err)
+      ) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
+      } else {
+        break;
       }
     }
   }
 
   throw new Error(
-    `Segment rewrite failed after ${MAX_RETRIES} attempts: ${lastError?.message}`
+    `Segment rewrite failed after ${attemptsMade} attempt${attemptsMade === 1 ? "" : "s"}: ${lastError?.message}`
   );
 }
 
@@ -1438,8 +1509,10 @@ export async function critiqueStoryboard(params: {
   });
   const maxAttempts = attemptLimit(2, params.timing);
   let lastError: Error | null = null;
+  let attemptsMade = 0;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    attemptsMade = attempt + 1;
     try {
       let rawContent: string | null = null;
       if (provider === "claude") {
@@ -1474,10 +1547,11 @@ export async function critiqueStoryboard(params: {
         });
       } else {
         const openai = getOpenAIClient();
+        const criticModel =
+          process.env.OPENAI_STORYBOARD_CRITIC_MODEL || "gpt-4o-mini";
         const completion = await openai.chat.completions.create(
           {
-            model:
-              process.env.OPENAI_STORYBOARD_CRITIC_MODEL || "gpt-4o-mini",
+            model: criticModel,
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: userPrompt },
@@ -1494,6 +1568,13 @@ export async function critiqueStoryboard(params: {
             ),
           }
         );
+        logOpenAiUsage({
+          stage: "storyboard_critic",
+          model: criticModel,
+          attempt: attempt + 1,
+          usage: completion.usage,
+          promptParts: [systemPrompt, userPrompt],
+        });
         rawContent = completion.choices[0]?.message?.content ?? null;
       }
 
@@ -1577,14 +1658,19 @@ export async function critiqueStoryboard(params: {
         `[AI Engine] Storyboard critic audit ${params.round}, transport attempt ${attempt + 1}/${maxAttempts} failed:`,
         lastError.message
       );
-      if (attempt < maxAttempts - 1) {
+      if (
+        attempt < maxAttempts - 1 &&
+        shouldRetryAiError(err)
+      ) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
+      } else {
+        break;
       }
     }
   }
 
   throw new Error(
-    `Storyboard critic failed after ${maxAttempts} transport attempts: ${lastError?.message}`
+    `Storyboard critic failed after ${attemptsMade} transport attempt${attemptsMade === 1 ? "" : "s"}: ${lastError?.message}`
   );
 }
 
@@ -1626,8 +1712,10 @@ export async function repairStoryboardSegments(params: {
   });
   const maxAttempts = attemptLimit(2, params.timing);
   let lastError: Error | null = null;
+  let attemptsMade = 0;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    attemptsMade = attempt + 1;
     try {
       let rawContent: string | null = null;
 
@@ -1675,12 +1763,13 @@ export async function repairStoryboardSegments(params: {
         });
       } else {
         const openai = getOpenAIClient();
+        const repairModel =
+          process.env.OPENAI_STORYBOARD_REPAIR_MODEL ||
+          process.env.OPENAI_STORYBOARD_MODEL ||
+          "gpt-4.1-mini";
         const completion = await openai.chat.completions.create(
           {
-            model:
-              process.env.OPENAI_STORYBOARD_REPAIR_MODEL ||
-              process.env.OPENAI_STORYBOARD_MODEL ||
-              "gpt-4o",
+            model: repairModel,
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: userPrompt },
@@ -1703,6 +1792,13 @@ export async function repairStoryboardSegments(params: {
             ),
           }
         );
+        logOpenAiUsage({
+          stage: "storyboard_repair",
+          model: repairModel,
+          attempt: attempt + 1,
+          usage: completion.usage,
+          promptParts: [systemPrompt, userPrompt],
+        });
         rawContent = completion.choices[0]?.message?.content ?? null;
       }
 
@@ -1779,13 +1875,18 @@ export async function repairStoryboardSegments(params: {
         `[AI Engine] Storyboard repair round ${params.round}, transport attempt ${attempt + 1}/${maxAttempts} failed:`,
         lastError.message
       );
-      if (attempt < maxAttempts - 1) {
+      if (
+        attempt < maxAttempts - 1 &&
+        shouldRetryAiError(err)
+      ) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
+      } else {
+        break;
       }
     }
   }
 
   throw new Error(
-    `Storyboard repair failed after ${maxAttempts} transport attempts: ${lastError?.message}`
+    `Storyboard repair failed after ${attemptsMade} transport attempt${attemptsMade === 1 ? "" : "s"}: ${lastError?.message}`
   );
 }

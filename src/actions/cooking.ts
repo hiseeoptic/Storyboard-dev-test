@@ -2,6 +2,7 @@
 
 import { geminiGenerateText } from "@/lib/gemini/client";
 import { getOpenAIClient } from "@/lib/openai/client";
+import { logOpenAiUsage } from "@/lib/ai/usage";
 import {
   buildCookingAnalysisPrompt,
   cookingRecipeSchema,
@@ -79,18 +80,22 @@ async function analyzeWithGemini(input: CookingRecipeAnalysisInput): Promise<str
 }
 
 async function analyzeWithOpenAIFallback(input: CookingRecipeAnalysisInput): Promise<string> {
+  const systemPrompt =
+    "You extract exact recipe facts from text and cookbook images. Never invent missing culinary data. Return JSON only.";
+  const userPrompt = buildCookingAnalysisPrompt(input);
+  const model =
+    process.env.OPENAI_COOKING_ANALYSIS_MODEL || "gpt-4.1-mini";
   const response = await getOpenAIClient().chat.completions.create({
-    model: "gpt-4o",
+    model,
     messages: [
       {
         role: "system",
-        content:
-          "You extract exact recipe facts from text and cookbook images. Never invent missing culinary data. Return JSON only.",
+        content: systemPrompt,
       },
       {
         role: "user",
         content: [
-          { type: "text", text: buildCookingAnalysisPrompt(input) },
+          { type: "text", text: userPrompt },
           ...(input.images ?? []).map((base64) => ({
             type: "image_url" as const,
             image_url: { url: `data:image/jpeg;base64,${base64}`, detail: "high" as const },
@@ -101,6 +106,13 @@ async function analyzeWithOpenAIFallback(input: CookingRecipeAnalysisInput): Pro
     response_format: { type: "json_object" },
     temperature: 0.1,
     max_tokens: 8192,
+  });
+  logOpenAiUsage({
+    stage: "cooking_recipe_analysis",
+    model,
+    usage: response.usage,
+    promptParts: [systemPrompt, userPrompt],
+    imageCount: input.images?.length ?? 0,
   });
   return response.choices[0]?.message?.content?.trim() ?? "";
 }
@@ -130,11 +142,11 @@ export async function analyzeCookingRecipe(
   try {
     raw = await analyzeWithGemini(input);
   } catch (geminiError) {
-    console.error("[Cooking OCR] Gemini failed; trying GPT-4o fallback:", geminiError);
+    console.error("[Cooking OCR] Gemini failed; trying OpenAI fallback:", geminiError);
     try {
       raw = await analyzeWithOpenAIFallback(input);
     } catch (openAIError) {
-      console.error("[Cooking OCR] GPT-4o fallback failed:", openAIError);
+      console.error("[Cooking OCR] OpenAI fallback failed:", openAIError);
       return {
         success: false,
         error: `Không đọc được công thức từ ảnh/văn bản. Gemini: ${geminiError instanceof Error ? geminiError.message : String(geminiError)}`,

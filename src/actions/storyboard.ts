@@ -18,6 +18,11 @@ import { analyzeReferenceImages } from "@/services/image-analyzer";
 import { generateCompactCookingScenePlan } from "@/services/cooking-planner";
 import { compileCookingStoryboard } from "@/lib/cooking";
 import {
+  isAiBillingError,
+  shouldAbortAiPipeline,
+} from "@/lib/ai/retry-policy";
+import { approvedScriptFromStoryIdea } from "@/lib/storyboard/source-script";
+import {
   resolveSpatialLayout,
   renderSpatialTopologyBoardHint,
   renderSpatialTopologyLock,
@@ -792,6 +797,7 @@ async function runAnalysis(
       analysis.ingredientDescriptions = a.ingredientDescriptions;
       analysis.backgroundDescription = a.backgroundDescription;
     } catch (err) {
+      if (shouldAbortAiPipeline(err)) throw err;
       const msg = err instanceof Error ? err.message : "Unknown error";
       warnings.push(`Image analysis failed: ${msg}`);
       console.error("[Storyboard] Image analysis failed:", err);
@@ -2121,14 +2127,21 @@ export async function generateStoryboardPlan(
       enhanced.genre === "cooking" && !!enhanced.cooking_recipe;
     const scriptProvider = input.script_provider ?? provider;
 
-    let sourceScript: string | null = null;
+    let sourceScript: string | null = compiledCooking
+      ? null
+      : approvedScriptFromStoryIdea(enhanced.story_idea);
+    if (sourceScript) {
+      warnings.push(
+        "Đã nhận diện nội dung nhập là kịch bản hoàn chỉnh và dùng trực tiếp; không gọi API viết lại kịch bản."
+      );
+    }
     // Always run a dedicated creative SCRIPT stage (except cooking, which uses
     // its own Recipe-IR path). The script writer's dialogue-density rules
     // (PACING AUDIT + LOAD BUDGET: 8-22 spoken words per clip, short exchanges
     // packed into one clip) ONLY run in this stage — a single storyboard call
     // that also improvises the story produces thin, one-line-per-clip dialogue.
-    // On OpenAI the script is written by gpt-5-mini, then gpt-4o expands it.
-    if (!compiledCooking) {
+    // On OpenAI the script is written by gpt-5-mini, then gpt-4.1-mini expands it.
+    if (!compiledCooking && !sourceScript) {
       // Script fallback chain — NEVER Claude (this deployment has no Anthropic
       // credit): if the chosen writer fails, try the other OpenAI/Gemini writer.
       const scriptChain: AIProvider[] = [
@@ -2151,6 +2164,7 @@ export async function generateStoryboardPlan(
           }
           break;
         } catch (e) {
+          if (shouldAbortAiPipeline(e)) throw e;
           warnings.push(
             `Không viết được kịch bản bằng ${sp}. (${e instanceof Error ? e.message : String(e)})`
           );
@@ -2216,6 +2230,7 @@ export async function generateStoryboardPlan(
           deadlineMs: generationDeadlineMs,
         });
       } catch (e) {
+        if (shouldAbortAiPipeline(e)) throw e;
         // Stage 2 failed (usually a provider timeout). ALWAYS give it one
         // bounded rescue attempt on a DIFFERENT provider — retrying the same
         // stalled provider tends to time out again, while the other one
@@ -2387,7 +2402,9 @@ export async function generateStoryboardPlan(
     const raw = err instanceof Error ? err.message : "AI generation failed";
     // In production Next.js hides the real message behind a generic
     // "Server Components render" digest — show a clear, actionable message.
-    const friendly = /time budget|server timeout/i.test(raw)
+    const friendly = isAiBillingError(err)
+      ? "Tài khoản OpenAI đã hết credit hoặc đã chạm giới hạn chi tiêu. Hệ thống đã dừng ngay tại lời gọi bị từ chối, không retry và không chuyển sang bước AI tiếp theo. Hãy nạp credit hoặc tăng giới hạn Billing/Project rồi thử lại."
+      : /time budget|server timeout/i.test(raw)
       ? "AI phản hồi quá lâu nên hệ thống đã dừng an toàn trước giới hạn Vercel. JSON và cấu trúc storyboard không bị chuyển sang định dạng khác; vui lòng bấm Tạo Storyboard lại."
       : /aborted due to timeout|timed out/i.test(raw)
         ? "Nhà cung cấp AI không trả lời trong thời gian cho phép. Đây không phải lỗi giới hạn 300 giây của Vercel; vui lòng thử lại, hệ thống sẽ tiếp tục giữ nguyên cấu trúc JSON storyboard."

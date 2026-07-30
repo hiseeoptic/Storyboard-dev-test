@@ -1,5 +1,6 @@
 import { getOpenAIClient } from "@/lib/openai/client";
 import { geminiGenerateImage } from "@/lib/gemini/client";
+import { shouldRetryAiError } from "@/lib/ai/retry-policy";
 import {
   buildCharacterRefSheetPrompt,
   buildSegmentFirstFramePrompt,
@@ -80,8 +81,13 @@ async function generateImage(
         `[Image Pipeline] Attempt ${attempt + 1}/${MAX_RETRIES} (${provider}):`,
         lastError.message
       );
-      if (attempt < MAX_RETRIES - 1) {
+      if (
+        attempt < MAX_RETRIES - 1 &&
+        shouldRetryAiError(err)
+      ) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
+      } else {
+        break;
       }
     }
   }
