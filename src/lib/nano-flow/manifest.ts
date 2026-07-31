@@ -72,7 +72,10 @@ const KEYFRAME_REFERENCE_AUTHORITY =
   "must EXACTLY match that character's ATTACHED full-body character reference image " +
   "(the wardrobe sheet) — copy the exact garments, colours and footwear; do NOT invent, " +
   "restyle or swap clothing, and do NOT copy the reference's plain studio background. " +
-  "If a location photo is attached, stage the scene inside that real place. If a previous " +
+  "If a LOCATION photo is attached, it is the STRICT setting authority: stage the scene " +
+  "INSIDE that exact real place and faithfully reproduce its layout, furniture, landmarks, " +
+  "materials, colours and lighting — never invent a different room, relocate the scene or " +
+  "restyle the set; only pick the camera angle that best fits the described framing. If a previous " +
   "shot's keyframe is attached, use it ONLY for LOCATION continuity — the same background, " +
   "furniture, props and lighting — while FACE and OUTFIT still come from each character's " +
   "wardrobe sheet, NOT from the previous keyframe (if the keyframe shows a slightly " +
