@@ -86,6 +86,54 @@ function isNum(v: unknown): v is number {
 function sameState(a: unknown, b: unknown): boolean {
   return lc(a).replace(/\s+/g, " ") === lc(b).replace(/\s+/g, " ");
 }
+
+// ── Tolerant descriptor matching (STATE-003 / STATE-004 / STATE-008) ─────────
+// A ledger's state/position/orientation is FREE TEXT the model writes twice —
+// once as a change's to_* field, once in the end snapshot — so pure wording
+// drift is normal ("facing into room" vs "facing room", "gaze lowered" vs "head
+// lowered", "warm, steaming" vs "warm, slowly steaming", "sofa" vs "sofa beside
+// Minh"). Exact-string equality reported all of that as a causality error and
+// buried the real ones. We compare by SIGNIFICANT-TOKEN overlap instead: two
+// descriptors are compatible when one merely adds detail (containment) or they
+// share most core words. A genuine teleport ("doorway" → "kitchen") shares no
+// tokens and is STILL flagged, so real causality breaks survive untouched.
+const DESCRIPTOR_STOPWORDS = new Set([
+  "a", "an", "the", "and", "of", "to", "into", "in", "on", "at", "near", "by",
+  "with", "from", "her", "his", "its", "their", "him", "she", "he", "them",
+  "slightly", "slowly", "gently", "softly", "carefully", "deliberately",
+  "smoothly", "quietly", "calmly", "visibly", "gradually", "further", "still",
+  "now", "then", "little", "bit", "very", "somewhat", "almost", "controlled",
+  "measured", "steady", "steadily", "tender", "tenderly", "slight", "small",
+]);
+function descriptorTokens(v: unknown): Set<string> {
+  return new Set(
+    lc(v)
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .split(/\s+/)
+      .filter((t) => t && !DESCRIPTOR_STOPWORDS.has(t))
+  );
+}
+/** True when two free-text descriptors mean the same place/pose modulo wording:
+ * exact match, one contains the other's core tokens, or ≥50% shared core tokens. */
+function compatibleDescriptor(a: unknown, b: unknown): boolean {
+  if (sameState(a, b)) return true;
+  const A = descriptorTokens(a);
+  const B = descriptorTokens(b);
+  if (A.size === 0 || B.size === 0) return true; // one side unspecified → no conflict
+  let inter = 0;
+  for (const t of A) if (B.has(t)) inter++;
+  if (inter === A.size || inter === B.size) return true; // containment (one adds detail)
+  return inter / Math.min(A.size, B.size) >= 0.5; // strong overlap
+}
+/** Holder conflicts ONLY when both name a real, DIFFERENT holder. Picking up or
+ * putting down (none ↔ someone) is a natural transition prose routinely omits,
+ * so it must not be reported as an end-snapshot contradiction. */
+function holderConflict(expected: unknown, actual: unknown): boolean {
+  const e = lc(expected);
+  const a = lc(actual);
+  if (!e || !a || e === "none" || a === "none") return false;
+  return !compatibleDescriptor(e, a);
+}
 function mentionsExactName(value: unknown, name: string): boolean {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   try {
@@ -637,7 +685,7 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
     }
     for (const change of changeEntries) {
       const before = current.get(change.entity_id);
-      if (!before || !sameState(before.state, change.from)) {
+      if (!before || !compatibleDescriptor(before.state, change.from)) {
         push({
           code: "STATE-003",
           severity: "high",
@@ -663,11 +711,12 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
       if (
         before &&
         ((norm(change.from_position) &&
-          !sameState(before.position, change.from_position)) ||
+          !compatibleDescriptor(before.position, change.from_position)) ||
           (change.from_holder !== undefined &&
-            norm(change.from_holder) !== before.holder) ||
+            holderConflict(before.holder, change.from_holder)) ||
           (change.from_orientation !== undefined &&
-            norm(change.from_orientation) !== before.orientation))
+            norm(change.from_orientation) &&
+            !compatibleDescriptor(before.orientation, change.from_orientation)))
       ) {
         push({
           code: "STATE-008",
@@ -678,7 +727,10 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
           evidence: `ledger=${before.position}@${before.holder || "none"}@${before.orientation || "none"} vs change=${change.from_position ?? "missing"}@${norm(change.from_holder) || "none"}@${norm(change.from_orientation) || "none"}`,
         });
       }
-      if (!norm(change.caused_by) || !norm(change.action)) {
+      // A change is "uncaused" only when it names NEITHER an action verb NOR an
+      // agent. A visible action alone (or a named cause alone) is enough — the
+      // old ||-rule flagged every subtle emotional beat that omitted one field.
+      if (!norm(change.caused_by) && !norm(change.action)) {
         push({
           code: "CAUSE-001",
           severity: "high",
@@ -714,12 +766,16 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
         continue;
       }
       const expectedEnd = current.get(entityId);
+      // Compare only the PHYSICAL causality facts — where the entity ends
+      // (position), who holds it (holder) and which way it faces (orientation) —
+      // each matched tolerantly. The intrinsic `state` prose ("smile fading",
+      // "hand dry") is descriptive mood the model words freely and is NOT a
+      // causality fact, so it no longer drives a false STATE-004.
       if (
         expectedEnd &&
-        (!sameState(expectedEnd.state, endEntry.state) ||
-          !sameState(expectedEnd.position, endEntry.position) ||
-          expectedEnd.holder !== norm(endEntry.holder) ||
-          expectedEnd.orientation !== norm(endEntry.orientation))
+        (!compatibleDescriptor(expectedEnd.position, endEntry.position) ||
+          holderConflict(expectedEnd.holder, endEntry.holder) ||
+          !compatibleDescriptor(expectedEnd.orientation, endEntry.orientation))
       ) {
         push({
           code: "STATE-004",
@@ -1161,7 +1217,9 @@ function checkDialogue(out: StoryboardGenerationOutput, push: Push): void {
             message: `Dialogue turn ${idx + 1} is too fast for natural speech.`,
             evidence: `${words} words / ${seconds.toFixed(1)}s = ${Math.round(wpm)} wpm`,
           });
-        } else if (wpm > 170) {
+        } else if (wpm > 185) {
+          // Vietnamese conversational lines run a touch faster than English; only
+          // flag once a line is clearly rushed (>185 wpm), not merely brisk.
           push({
             code: "DLG-006",
             severity: "medium",

@@ -484,6 +484,78 @@ test("state ledger separates intrinsic condition from touch, holder and position
   );
 });
 
+test("STATE ledger tolerates wording drift (synonyms, extra adjectives, none↔holder) — no false STATE-003/004/008/CAUSE-001", () => {
+  const bd = cleanFixture();
+  bd.segments[0]!.state_ledger = {
+    start: [
+      { entity_id: "Lan", state: "standing", position: "living room near tea table", holder: "", orientation: "facing tea table" },
+      { entity_id: "glass", state: "warm", position: "tea table center", holder: "", orientation: "upright" },
+    ],
+    changes: [
+      { entity_id: "Lan", from: "standing", to: "standing, hand wet",
+        from_position: "living room near tea table", to_position: "living room near tea table",
+        from_orientation: "facing tea table", to_orientation: "facing Minh",
+        action: "sets the glass down then turns to Minh", caused_by: "Lan" },
+      { entity_id: "glass", from: "warm", to: "warm",
+        from_position: "tea table center", to_position: "tea table center",
+        action: "steam keeps rising", caused_by: "residual heat" },
+    ],
+    // End snapshot uses synonyms + extra adjectives vs the caused change, but the
+    // PLACE/POSE are the same — this used to raise 3 false STATE-004s per clip.
+    end: [
+      { entity_id: "Lan", state: "standing, smile fading", position: "living room near tea table", holder: "", orientation: "facing Minh" },
+      { entity_id: "glass", state: "warm, slowly steaming", position: "tea table center", holder: "", orientation: "upright" },
+    ],
+  };
+  const r = validateStoryboardSemantics(bd);
+  assert.equal(
+    r.findings.some((f) => ["STATE-003", "STATE-004", "STATE-008", "CAUSE-001"].includes(f.code)),
+    false,
+    formatSemanticReport(r)
+  );
+});
+
+test("STATE-008 tolerates 'facing into room' vs 'facing room'; none↔holder is not a conflict", () => {
+  const bd = cleanFixture();
+  bd.segments[0]!.state_ledger = {
+    start: [{ entity_id: "glass", state: "warm", position: "tea table center", holder: "Minh", orientation: "upright" }],
+    changes: [
+      { entity_id: "glass", from: "warm", to: "cool",
+        from_position: "tea table center", to_position: "tea table surface",
+        from_holder: "Minh", to_holder: "",
+        from_orientation: "upright", to_orientation: "upright",
+        action: "Minh sets it down; it cools", caused_by: "Minh then ambient air" },
+    ],
+    // holder goes someone→none (put down) and position is re-worded — both benign.
+    end: [{ entity_id: "glass", state: "cool, no steam", position: "tea table surface", holder: "", orientation: "upright" }],
+  };
+  const r = validateStoryboardSemantics(bd);
+  assert.equal(
+    r.findings.some((f) => ["STATE-004", "STATE-008"].includes(f.code)),
+    false,
+    formatSemanticReport(r)
+  );
+});
+
+test("STATE-004 still flags a genuine teleport (non-overlapping position tokens)", () => {
+  const bd = cleanFixture();
+  bd.segments[0]!.state_ledger = {
+    start: [{ entity_id: "Minh", state: "standing", position: "doorway zone", holder: "", orientation: "facing room" }],
+    changes: [
+      { entity_id: "Minh", from: "standing", to: "standing",
+        from_position: "doorway zone", to_position: "doorway zone",
+        action: "listens on the phone", caused_by: "Minh" },
+    ],
+    // End teleports to the kitchen with NO change recorded → real causality break.
+    end: [{ entity_id: "Minh", state: "standing", position: "kitchen counter far side", holder: "", orientation: "facing room" }],
+  };
+  const r = validateStoryboardSemantics(bd);
+  assert.ok(
+    r.findings.some((f) => f.code === "STATE-004"),
+    "a doorway→kitchen teleport must still be caught:\n" + formatSemanticReport(r)
+  );
+});
+
 test("contact-only holder cleanup uses the project cast instead of a default name", () => {
   const actorName = "SUBJECT_9";
   const bd = {

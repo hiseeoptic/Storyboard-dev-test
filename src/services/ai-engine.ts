@@ -1157,11 +1157,14 @@ export async function generateStoryboardBreakdown(
         if (!seg.first_frame_prompt) seg.first_frame_prompt = seg.title;
         if (!seg.motion_prompt) seg.motion_prompt = seg.title;
         if (seg.dialogue === undefined) seg.dialogue = null;
-        // When dialogue is required, never leave it empty — fall back to the
-        // segment title so the UI/assembly guide always carries a spoken line.
-        if (input.force_dialogue !== false) {
+        // NEVER echo the scene TITLE as a spoken line: that produced the bland
+        // "voiceover reads the title" clips (e.g. a VO literally saying "Lan pulls
+        // the chair, her smile fading"). A real line must come from the script/
+        // model per the DIALOGUE QUALITY DOCTRINE; a clip that genuinely has none
+        // stays a wordless beat (null) instead of a fabricated title-echo VO.
+        {
           const line = typeof seg.dialogue === "string" ? seg.dialogue.trim() : "";
-          if (!line) seg.dialogue = seg.title;
+          if (!line) seg.dialogue = null;
         }
         // Do not invent a speaker when the model omits one. An empty speaker is
         // an explicit voiceover/unspecified owner and is resolved only from
