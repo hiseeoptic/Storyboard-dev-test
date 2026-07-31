@@ -72,8 +72,11 @@ const KEYFRAME_REFERENCE_AUTHORITY =
   "(the wardrobe sheet) — copy the exact garments, colours and footwear; do NOT invent, " +
   "restyle or swap clothing, and do NOT copy the reference's plain studio background. " +
   "If a location photo is attached, stage the scene inside that real place. If a previous " +
-  "shot's keyframe is attached, keep the same characters, outfits, location, furniture and " +
-  "props consistent with it — only the action, pose and camera angle change.";
+  "shot's keyframe is attached, use it ONLY for LOCATION continuity — the same background, " +
+  "furniture, props and lighting — while FACE and OUTFIT still come from each character's " +
+  "wardrobe sheet, NOT from the previous keyframe (if the keyframe shows a slightly " +
+  "different outfit, follow the wardrobe sheet and never drift the clothing). Only the " +
+  "action, pose and camera angle change.";
 
 /**
  * Compose a STRUCTURED (JSON) keyframe image prompt from the Veo clip. Nano
