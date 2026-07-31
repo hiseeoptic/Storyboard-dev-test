@@ -2188,7 +2188,7 @@ export async function generateStoryboardPlan(
     // (PACING AUDIT + LOAD BUDGET: 8-22 spoken words per clip, short exchanges
     // packed into one clip) ONLY run in this stage — a single storyboard call
     // that also improvises the story produces thin, one-line-per-clip dialogue.
-    // On OpenAI the script is written by gpt-5-mini, then gpt-4.1-mini expands it.
+    // On OpenAI the script is written by gpt-5.6-sol, then gpt-4.1-mini expands it.
     if (!compiledCooking && !sourceScript) {
       // Script fallback chain — NEVER Claude (this deployment has no Anthropic
       // credit): if the chosen writer fails, try the other OpenAI/Gemini writer.

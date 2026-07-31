@@ -969,7 +969,7 @@ export function GenerateClient() {
   };
 
   // ─── Script model (default OpenAI — the whole text pipeline is on OpenAI now:
-  // gpt-5-mini writes the script, gpt-4.1-mini builds the storyboard JSON). Claude
+  // gpt-5.6-sol writes the script, gpt-4.1-mini builds the storyboard JSON). Claude
   // Opus timed out too often on the 60s script budget. Still switchable via the
   // hidden panel (double-click the title, passcode 2502). ──
   const [scriptProvider, setScriptProvider] = useState<AIProvider>("openai");
@@ -3322,7 +3322,7 @@ export function GenerateClient() {
                 </p>
                 <div className="space-y-1.5">
                   {([
-                    { v: "openai" as AIProvider, label: "GPT-5-mini (mặc định — rẻ + kịch bản hay)" },
+                    { v: "openai" as AIProvider, label: "GPT-5.6-sol (mặc định — kịch bản hay nhất)" },
                     { v: "claude" as AIProvider, label: "Claude Opus 4.8 (chất lượng cao nhất)" },
                     { v: "gemini" as AIProvider, label: "Gemini 2.5 Flash (rẻ)" },
                   ]).map((o) => (

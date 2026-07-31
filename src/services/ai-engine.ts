@@ -906,14 +906,14 @@ export async function generateScript(
           timeoutMs: boundedTimeoutMs(timing, 45_000, "Gemini script generation"),
         });
       } else {
-        // The script stage is high-volume structured creative work. Keep the
-        // default on gpt-5-mini: production UI already advertises this tier and
-        // it is dramatically cheaper than the former gpt-5.6-sol default.
+        // The script stage is high-volume structured creative work. Default is
+        // gpt-5.6-sol (per user request — the strongest script writer for this
+        // deployment); gpt-5-mini remains a cheaper option via OPENAI_SCRIPT_MODEL.
         // GPT-5-series models take `max_completion_tokens` (NOT `max_tokens`)
         // and only support the default temperature — sending either legacy
         // param 400s the request. Overridable via OPENAI_SCRIPT_MODEL.
         const openai = getOpenAIClient();
-        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5-mini";
+        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5.6-sol";
         const isGpt5 = scriptModel.startsWith("gpt-5") || scriptModel.startsWith("o");
         const completion = await openai.chat.completions.create(
           {
