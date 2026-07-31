@@ -93,6 +93,29 @@ test("environment_ref becomes an asset except when custom", () => {
   assert.deepEqual(shot2.image_refs?.environments, []);
 });
 
+test("A2 — each environment carries 2 character-free location views (wide + alt)", () => {
+  const m = buildNanoFlowManifest(fixture(), {
+    veoClips: [
+      {
+        background_lock: { setting: "cozy northern living room", lighting: "warm afternoon" },
+        visual_style: "documentary realism",
+      },
+    ],
+  });
+  const env = (m.assets.environments ?? []).find((e) => e.id === "living_room_1");
+  assert.ok(env, "living_room_1 must be declared");
+  assert.equal(env.location_views?.length, 2, "exactly 2 views per location");
+  assert.deepEqual(env.location_views?.map((v) => v.angle), ["wide", "alt"]);
+  for (const v of env.location_views ?? []) {
+    assert.ok(v.prompt.length > 0, "each view carries a prompt");
+    // the plate must pull the scene's real setting and forbid people
+    assert.match(v.prompt, /cozy northern living room/);
+    assert.match(v.prompt, /EMPTY of people|No people/);
+  }
+  // "custom" locations declare no environment asset → no views
+  assert.equal((m.assets.environments ?? []).some((e) => e.id === "custom"), false);
+});
+
 test("video_refs default policy: keyframe on, environments/products off", () => {
   const m = buildNanoFlowManifest(fixture());
   for (const shot of m.shots) {

@@ -32,6 +32,20 @@ export type NanoFlowContinuityMode =
   | "dream"
   | "symbolic";
 
+/** Schema 4.2 (A2) — one character-free establishing view of a location. Two per
+ * location (a WIDE full establishing shot + a SECOND angle) are generated ONCE by
+ * the extension from these Storyboard-written prompts, then reused as the
+ * background reference for every scene set in this location — so the background is
+ * locked and neither Nano Banana nor Veo fabricates or drifts the set. */
+export interface NanoFlowLocationView {
+  /** Which of the two views this is: "wide" (full establishing) | "alt" (second
+   * angle of the SAME place). Labels the pair for logs/ordering. */
+  angle: "wide" | "alt" | string;
+  /** Storyboard-written prompt to generate this EMPTY location image (no people,
+   * no product) — same set, materials, furniture and lighting as the scenes. */
+  prompt: string;
+}
+
 /** A reference image declared once per project; shots reference it by `id`.
  * `image === null` means the slot is declared but the real image is attached
  * later on the extension side (e.g. a real person's / product's photo). */
@@ -45,6 +59,11 @@ export interface NanoFlowAsset {
    * then reuses it as the reference for every keyframe so face AND clothes stay
    * identical across shots. Empty ⇒ extension derives an outfit from the scene. */
   wardrobe?: string;
+  /** Environments only (A2): the two establishing views (wide + alt angle) of
+   * this location. When present (and no real `image` is attached), the extension
+   * GENERATES both once — character-free — and attaches them as the background
+   * authority for every scene here, so Veo never invents the set. */
+  location_views?: NanoFlowLocationView[];
 }
 
 /** Which declared assets to attach at a given step (STEP A — image gen). */

@@ -6,6 +6,7 @@
 import type { StoryboardGenerationOutput } from "@/types";
 import type {
   NanoFlowAsset,
+  NanoFlowLocationView,
   NanoFlowManifest,
   NanoFlowRefSelector,
   NanoFlowScene,
@@ -154,6 +155,54 @@ function buildKeyframePromptFromClip(
   return JSON.stringify(prompt);
 }
 
+/**
+ * A2 — compose a CHARACTER-FREE establishing-image prompt for a location from the
+ * same structured clip that drives its scenes, so the two location views share the
+ * scenes' exact set, materials, furniture and lighting. Two views per location:
+ *   • "wide" = a wide full establishing shot of the whole empty place;
+ *   • "alt"  = a second, clearly different camera angle of the SAME place.
+ * The extension generates both once and attaches them as the background authority
+ * for every scene here → Veo can no longer invent or drift the set. Returns a JSON
+ * string (Nano Banana obeys structured prompts more faithfully than prose).
+ */
+function buildLocationViewPrompt(
+  clip: Record<string, unknown> | undefined,
+  view: "wide" | "alt",
+  envName: string,
+  realityMode: string
+): string {
+  const bg = clipObj(clip?.background_lock);
+  const setting = clipStr(bg.setting) || envName;
+  const scenery = clipStr(bg.scenery);
+  const lighting = clipStr(bg.lighting);
+  const visualStyle = clipStr(clip?.visual_style);
+  const liveAction = ["documentary", "cinematic", "commercial"].includes(realityMode);
+  const framing =
+    view === "wide"
+      ? "Wide establishing shot: the WHOLE location visible edge to edge, taken from a neutral eye-level position that shows the overall layout, walls, floor, main furniture and every landmark."
+      : "A SECOND, clearly DIFFERENT camera angle of the SAME place (roughly a reverse / 90° angle from the wide shot), revealing the remaining walls and corners so the full geometry of the set is documented.";
+  const prompt: Record<string, unknown> = {
+    type: liveAction ? "photoreal_location_plate" : `${slugify(realityMode)}_location_plate`,
+    purpose:
+      "Empty-set reference plate that LOCKS this location so later scenes and the Veo video never fabricate or drift the background.",
+    view,
+    framing,
+    render: liveAction
+      ? KEYFRAME_RENDER_NOTE
+      : `Reality E location plate in the project's locked ${realityMode} medium — same design language, materials and lighting logic as its scenes; never convert to live-action photorealism.`,
+    visual_style: visualStyle || undefined,
+    setting,
+    scenery: scenery && scenery !== setting ? scenery : undefined,
+    lighting: lighting || undefined,
+    occupancy:
+      "COMPLETELY EMPTY of people and animals — NO characters, NO product, NO hands; only the place itself, its furniture and fixed props. Both views must depict the identical place with consistent materials, colours and lighting.",
+    negative: liveAction
+      ? "No people, no characters, no animals, no product; " + KEYFRAME_NEGATIVE
+      : "No people or characters; no visual-medium drift, no accidental photoreal conversion, no on-screen text, caption, watermark or logo.",
+  };
+  return JSON.stringify(prompt);
+}
+
 /** Turn a display name into a stable ascii slug id (Vietnamese-aware). */
 export function slugify(name: string): string {
   return (name || "")
@@ -273,15 +322,24 @@ export function buildNanoFlowManifest(
     }
   }
 
-  // ── Environment assets: unique non-custom environment_ref ids. ──
+  // ── Environment assets: unique non-custom environment_ref ids. Each carries
+  //    A2 location_views: 2 character-free establishing plates (wide + alt angle)
+  //    built from the FIRST clip set in that location, so the extension can lock
+  //    the background before rendering any scene there (Veo stops fabricating it).
   const envIdSeen = new Set<string>();
   const environments: NanoFlowAsset[] = [];
-  for (const seg of segments) {
+  segments.forEach((seg, i) => {
     const ref = (seg.location_id ?? seg.environment_ref ?? "").trim();
-    if (!ref || ref === "custom" || envIdSeen.has(ref)) continue;
+    if (!ref || ref === "custom" || envIdSeen.has(ref)) return;
     envIdSeen.add(ref);
-    environments.push({ id: ref, name: humanizeEnvId(ref), image: null });
-  }
+    const name = humanizeEnvId(ref);
+    const repClip = opts.veoClips?.[i];
+    const location_views: NanoFlowLocationView[] = [
+      { angle: "wide", prompt: buildLocationViewPrompt(repClip, "wide", name, realityMode) },
+      { angle: "alt", prompt: buildLocationViewPrompt(repClip, "alt", name, realityMode) },
+    ];
+    environments.push({ id: ref, name, image: null, location_views });
+  });
 
   // ── Product assets: from explicit names, else one slot if a product DNA
   //    was locked. Images are attached on the extension side. ──
