@@ -6,10 +6,8 @@
 import type { StoryboardGenerationOutput } from "@/types";
 import type {
   NanoFlowAsset,
-  NanoFlowLocationView,
   NanoFlowManifest,
   NanoFlowRefSelector,
-  NanoFlowScene,
   NanoFlowShot,
 } from "@/types/nano-flow";
 
@@ -83,29 +81,30 @@ const KEYFRAME_REFERENCE_AUTHORITY =
   "action, pose and camera angle change.";
 
 /**
- * Compose a STRUCTURED (JSON) keyframe image prompt from the Veo clip. Nano
- * Banana yields far better, more faithful keyframes from a compact JSON scene
- * than from a prose paragraph (user request), and JSON lets us pin the
- * identity+wardrobe reference authority as its own field. Returns a JSON string
- * ready for Flow's prompt box. Falls back to the prose style-lock only when no
- * structured clip exists (e.g. unit tests without veoClips).
+ * Compose the per-shot LOCATION BOARD image prompt (new model) from the same
+ * structured Veo clip that drives the video — so image and video share ONE
+ * setting (đồng bộ). Instead of one keyframe (or one image per beat), each 10s
+ * shot gets a SINGLE board image split into 4 panels showing that ONE location
+ * from four different camera angles. The board locks the background; the VIDEO
+ * prompt then drives the characters' action inside it, and however many "scenes"
+ * happen in the 10s is decided by the video prompt — no fixed per-beat frames.
+ * Returns a JSON string (Nano Banana obeys structured prompts more faithfully).
+ * Falls back to the prose style-lock only when no structured clip exists.
  */
-function buildKeyframePromptFromClip(
+function buildLocationBoardPrompt(
   clip: Record<string, unknown> | undefined,
   fallbackSceneText: string,
+  envName: string,
   wardrobeClause: string,
   realityMode: string
 ): string {
   if (!clip) return lockStyle(fallbackSceneText + wardrobeClause, realityMode);
 
   const bg = clipObj(clip.background_lock);
-  const setting = clipStr(bg.setting) || fallbackSceneText;
+  const setting = clipStr(bg.setting) || fallbackSceneText || envName;
   const scenery = clipStr(bg.scenery);
   const lighting = clipStr(bg.lighting);
-  const startState = clipStr(clipObj(clip.scene_action).start_state);
-  const placement = clipStr(clipObj(clip.spatial_topology).character_placement);
   const visualStyle = clipStr(clip.visual_style);
-  const cam = clipObj(clip.camera);
 
   const locks = clipObj(clip.character_lock);
   const cast: Array<Record<string, string>> = [];
@@ -128,81 +127,37 @@ function buildKeyframePromptFromClip(
     cast.push(entry);
   }
 
-  const camera: Record<string, string> = {};
-  if (clipStr(cam.framing)) camera.framing = clipStr(cam.framing);
-  if (clipStr(cam.angle)) camera.angle = clipStr(cam.angle);
-
   const liveAction = ["documentary", "cinematic", "commercial"].includes(
     realityMode
   );
   const prompt: Record<string, unknown> = {
-    type: liveAction ? "photoreal_keyframe" : `${slugify(realityMode)}_keyframe`,
+    type: liveAction ? "photoreal_location_board" : `${slugify(realityMode)}_location_board`,
+    layout:
+      "A SINGLE 16:9 image arranged as a 2x2 grid of 4 panels — FOUR different camera angles of the SAME ONE location, so the whole set geometry is documented as one location board. Thin gutters between panels.",
+    panels: [
+      "Panel 1 (top-left) — WIDE establishing: the whole location edge to edge at eye level, showing overall layout, walls, floor, main furniture and every landmark, with the cast placed naturally where the scene happens.",
+      "Panel 2 (top-right) — a clearly DIFFERENT reverse / ~90° angle of the SAME place, revealing the opposite walls and corners.",
+      "Panel 3 (bottom-left) — medium shot of the main action area where the characters interact.",
+      "Panel 4 (bottom-right) — a closer detail angle of a key part of the same set.",
+    ],
     render: liveAction
       ? KEYFRAME_RENDER_NOTE
-      : `Reality E keyframe in the project's locked ${realityMode} medium. Preserve its exact design language, materials, proportions, lighting logic and internal physics; never convert it to live-action photorealism.`,
+      : `Reality E location board in the project's locked ${realityMode} medium. Preserve its exact design language, materials, proportions, lighting logic and internal physics; never convert it to live-action photorealism.`,
     visual_style: visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
     lighting: lighting || undefined,
     cast,
-    placement: placement || undefined,
-    composition: startState || undefined,
-    camera: Object.keys(camera).length ? camera : undefined,
+    consistency:
+      "All four panels are the IDENTICAL single location with the same materials, colours, furniture and lighting; only the camera angle changes. Any character shown is the SAME person across panels, matching that character's attached wardrobe sheet (face, hair AND full outfit).",
     reference_authority: KEYFRAME_REFERENCE_AUTHORITY,
     wardrobe_note: wardrobeClause ? wardrobeClause.trim() : undefined,
     negative: liveAction
-      ? KEYFRAME_NEGATIVE
-      : "No visual-medium drift, no accidental photoreal conversion, no inconsistent character design, no on-screen text, caption, watermark or logo; no duplicated subject or broken internal physics.",
+      ? KEYFRAME_NEGATIVE +
+        " Do NOT merge the four panels into one continuous scene; keep them as four distinct framed angles of the same place."
+      : "No visual-medium drift, no accidental photoreal conversion, no inconsistent character design, no on-screen text, caption, watermark or logo; keep four distinct panels of one identical location.",
   };
   // JSON.stringify drops the undefined-valued keys, leaving a clean payload.
-  return JSON.stringify(prompt);
-}
-
-/**
- * A2 — compose a CHARACTER-FREE establishing-image prompt for a location from the
- * same structured clip that drives its scenes, so the two location views share the
- * scenes' exact set, materials, furniture and lighting. Two views per location:
- *   • "wide" = a wide full establishing shot of the whole empty place;
- *   • "alt"  = a second, clearly different camera angle of the SAME place.
- * The extension generates both once and attaches them as the background authority
- * for every scene here → Veo can no longer invent or drift the set. Returns a JSON
- * string (Nano Banana obeys structured prompts more faithfully than prose).
- */
-function buildLocationViewPrompt(
-  clip: Record<string, unknown> | undefined,
-  view: "wide" | "alt",
-  envName: string,
-  realityMode: string
-): string {
-  const bg = clipObj(clip?.background_lock);
-  const setting = clipStr(bg.setting) || envName;
-  const scenery = clipStr(bg.scenery);
-  const lighting = clipStr(bg.lighting);
-  const visualStyle = clipStr(clip?.visual_style);
-  const liveAction = ["documentary", "cinematic", "commercial"].includes(realityMode);
-  const framing =
-    view === "wide"
-      ? "Wide establishing shot: the WHOLE location visible edge to edge, taken from a neutral eye-level position that shows the overall layout, walls, floor, main furniture and every landmark."
-      : "A SECOND, clearly DIFFERENT camera angle of the SAME place (roughly a reverse / 90° angle from the wide shot), revealing the remaining walls and corners so the full geometry of the set is documented.";
-  const prompt: Record<string, unknown> = {
-    type: liveAction ? "photoreal_location_plate" : `${slugify(realityMode)}_location_plate`,
-    purpose:
-      "Empty-set reference plate that LOCKS this location so later scenes and the Veo video never fabricate or drift the background.",
-    view,
-    framing,
-    render: liveAction
-      ? KEYFRAME_RENDER_NOTE
-      : `Reality E location plate in the project's locked ${realityMode} medium — same design language, materials and lighting logic as its scenes; never convert to live-action photorealism.`,
-    visual_style: visualStyle || undefined,
-    setting,
-    scenery: scenery && scenery !== setting ? scenery : undefined,
-    lighting: lighting || undefined,
-    occupancy:
-      "COMPLETELY EMPTY of people and animals — NO characters, NO product, NO hands; only the place itself, its furniture and fixed props. Both views must depict the identical place with consistent materials, colours and lighting.",
-    negative: liveAction
-      ? "No people, no characters, no animals, no product; " + KEYFRAME_NEGATIVE
-      : "No people or characters; no visual-medium drift, no accidental photoreal conversion, no on-screen text, caption, watermark or logo.",
-  };
   return JSON.stringify(prompt);
 }
 
@@ -234,7 +189,7 @@ export function withKeyframeAuthority(
       ? { ...(clip.output_rules as Record<string, unknown>) }
       : {};
   rules.reference_priority =
-    "REFERENCE ROLES (do NOT mix them): each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop; never import a studio/grey/white background or its lighting from a wardrobe sheet. The attached KEYFRAME (the storyboard start frame) is the SINGLE source of truth for the ENVIRONMENT — background, spatial layout, furniture, props, doors, windows, lighting and camera composition — reproduce it EXACTLY. Identity and clothing come from the sheets; the entire set and its geometry come from the keyframe. Never restyle wardrobe or hair away from the sheets, and never change or invent set geometry, furniture or lighting away from the keyframe. Character face continues from both.";
+    "REFERENCE ROLES (do NOT mix them): each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop; never import a studio/grey/white background or its lighting from a wardrobe sheet. The attached LOCATION BOARD (the storyboard image showing this one place from several angles) is the SINGLE source of truth for the ENVIRONMENT — background, spatial layout, furniture, props, doors, windows, lighting and materials — reproduce that exact place. Identity and clothing come from the sheets; the entire set and its geometry come from the location board. Never restyle wardrobe or hair away from the sheets, and never invent or relocate the set away from the location board. Character face continues from both.";
   return { ...clip, output_rules: rules };
 }
 
@@ -325,23 +280,17 @@ export function buildNanoFlowManifest(
     }
   }
 
-  // ── Environment assets: unique non-custom environment_ref ids. Each carries
-  //    A2 location_views: 2 character-free establishing plates (wide + alt angle)
-  //    built from the FIRST clip set in that location, so the extension can lock
-  //    the background before rendering any scene there (Veo stops fabricating it).
+  // ── Environment assets: unique non-custom environment_ref ids. The per-shot
+  //    LOCATION BOARD (storyboard_prompt) now locks each shot's background, and
+  //    the extension exposes a per-board location upload, so we no longer emit
+  //    A2 character-free plates here (that only multiplied the image count).
   const envIdSeen = new Set<string>();
   const environments: NanoFlowAsset[] = [];
-  segments.forEach((seg, i) => {
+  segments.forEach((seg) => {
     const ref = (seg.location_id ?? seg.environment_ref ?? "").trim();
     if (!ref || ref === "custom" || envIdSeen.has(ref)) return;
     envIdSeen.add(ref);
-    const name = humanizeEnvId(ref);
-    const repClip = opts.veoClips?.[i];
-    const location_views: NanoFlowLocationView[] = [
-      { angle: "wide", prompt: buildLocationViewPrompt(repClip, "wide", name, realityMode) },
-      { angle: "alt", prompt: buildLocationViewPrompt(repClip, "alt", name, realityMode) },
-    ];
-    environments.push({ id: ref, name, image: null, location_views });
+    environments.push({ id: ref, name: humanizeEnvId(ref), image: null });
   });
 
   // ── Product assets: from explicit names, else one slot if a product DNA
@@ -432,32 +381,6 @@ export function buildNanoFlowManifest(
       seg.continuity_mode ??
       (i === 0 ? "opening" : "continuous");
 
-    // Schema 4.1 — turn each beat into a SCENE with its OWN script-accurate image
-    // prompt: the shot's locked context (cast/wardrobe/setting/look) rendered at
-    // THIS beat's moment + camera. The extension generates one image per scene
-    // instead of collapsing the 10s shot into a single keyframe (which dropped the
-    // per-beat action and made Veo guess the frame). storyboard_prompt stays as
-    // the single-image fallback for consumers that ignore scenes[].
-    const scenes: NanoFlowScene[] = (seg.beats ?? [])
-      .filter((b) => (b?.beat ?? "").trim())
-      .map((b, bi) => ({
-        scene_no: bi + 1,
-        ...(b.camera ? { camera: b.camera } : {}),
-        action: (b.beat ?? "").trim(),
-        image_prompt: buildKeyframePromptFromClip(
-          clip,
-          [b.beat, b.camera ? `Camera: ${b.camera}` : ""].filter(Boolean).join(". "),
-          wardrobeClause,
-          realityMode
-        ),
-        image_refs,
-        ...(seg.location_id ? { location_id: seg.location_id } : {}),
-        // Scene 1 inherits the shot's boundary; later scenes flow on within the
-        // same 10s unless a future per-beat continuity is authored.
-        transition_from_prev: bi === 0 ? shotContinuity : "continuous",
-        ...(bi === 0 ? { dialogue: seg.dialogue ?? null } : {}),
-      }));
-
     return {
       shot_id: `SHOT_${String(index).padStart(3, "0")}`,
       index,
@@ -465,13 +388,14 @@ export function buildNanoFlowManifest(
       duration_seconds: seg.duration_seconds || 10,
       marketing_role: seg.marketing_role,
 
-      // RICH keyframe prompt built from the structured clip (cast appearance +
-      // wardrobe + placement + setting + composition + film look), style-locked
-      // so Nano Banana yields a photoreal keyframe faithful to the scene and in
-      // sync with the video — never a one-line summary, never cartoon. See §6.
-      storyboard_prompt: buildKeyframePromptFromClip(
+      // LOCATION BOARD prompt for this 10s shot: ONE image, 4 panels of the SAME
+      // location from 4 angles, built from the SAME structured clip as the video
+      // (đồng bộ bối cảnh) and style-locked to photoreal. The board locks the set;
+      // the video prompt drives the action inside it. See §6.
+      storyboard_prompt: buildLocationBoardPrompt(
         clip,
         seg.first_frame_prompt || seg.motion_prompt || "",
+        humanizeEnvId((seg.location_id ?? seg.environment_ref ?? "").trim()),
         wardrobeClause,
         realityMode
       ),
@@ -498,7 +422,6 @@ export function buildNanoFlowManifest(
       dialogue: seg.dialogue ?? null,
       voice: null,
       beats: (seg.beats ?? []).map((b) => ({ beat: b.beat, camera: b.camera })),
-      ...(scenes.length ? { scenes } : {}),
       wardrobe_change: Object.keys(wardrobeChange).length ? wardrobeChange : null,
     };
   });

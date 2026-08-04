@@ -53,23 +53,18 @@ test("manifest has the fixed contract shape", () => {
   assert.equal(m.shots[1]?.continuity_mode, "continuous");
 });
 
-test("Schema 4.1 — beats become per-scene image prompts (scenes[]); no beats ⇒ keyframe fallback", () => {
+test("board model — one image per 10s shot; beats never explode into scenes[]", () => {
   const m = buildNanoFlowManifest(fixture());
   const [shot1, shot2] = m.shots;
   assert.ok(shot1 && shot2);
-  // shot 1 has one beat → exactly one scene, carrying THIS beat's moment + camera
-  assert.equal(shot1.scenes?.length, 1);
-  const s1 = shot1.scenes?.[0];
-  assert.ok(s1);
-  assert.equal(s1.scene_no, 1);
-  assert.equal(s1.action, "pours tea");
-  assert.equal(s1.camera, "[CU] push-in");
-  assert.ok(s1.image_prompt.length > 0, "scene must carry its own image prompt");
-  // scene 1 inherits the shot's boundary continuity
-  assert.equal(s1.transition_from_prev, "opening");
-  // shot 2 has no beats → no scenes[]; the single-keyframe fallback still stands
+  // The 10s shot no longer fans out into per-beat frames — the video prompt owns
+  // how many scenes happen. Exactly ONE location-board image per shot.
+  assert.equal(shot1.scenes, undefined);
   assert.equal(shot2.scenes, undefined);
+  assert.ok(shot1.storyboard_prompt.length > 0);
   assert.ok(shot2.storyboard_prompt.length > 0);
+  // beats[] is still carried through for downstream/audio consumers.
+  assert.equal(shot1.beats?.[0]?.beat, "pours tea");
 });
 
 test("characters become declared assets, referenced by id in shots", () => {
@@ -93,7 +88,7 @@ test("environment_ref becomes an asset except when custom", () => {
   assert.deepEqual(shot2.image_refs?.environments, []);
 });
 
-test("A2 — each environment carries 2 character-free location views (wide + alt)", () => {
+test("environments are plain assets — no auto A2 plates (board + per-board upload replace them)", () => {
   const m = buildNanoFlowManifest(fixture(), {
     veoClips: [
       {
@@ -104,15 +99,14 @@ test("A2 — each environment carries 2 character-free location views (wide + al
   });
   const env = (m.assets.environments ?? []).find((e) => e.id === "living_room_1");
   assert.ok(env, "living_room_1 must be declared");
-  assert.equal(env.location_views?.length, 2, "exactly 2 views per location");
-  assert.deepEqual(env.location_views?.map((v) => v.angle), ["wide", "alt"]);
-  for (const v of env.location_views ?? []) {
-    assert.ok(v.prompt.length > 0, "each view carries a prompt");
-    // the plate must pull the scene's real setting and forbid people
-    assert.match(v.prompt, /cozy northern living room/);
-    assert.match(v.prompt, /EMPTY of people|No people/);
-  }
-  // "custom" locations declare no environment asset → no views
+  // The per-shot location board (storyboard_prompt) now locks the setting, so we
+  // no longer emit character-free plates that only multiplied the image count.
+  assert.equal(env.location_views, undefined);
+  assert.equal(env.image, null);
+  // The setting the plates used to carry now lives in the shot's location board.
+  const board = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  assert.match(String(board.setting), /cozy northern living room/);
+  // "custom" locations declare no environment asset.
   assert.equal((m.assets.environments ?? []).some((e) => e.id === "custom"), false);
 });
 
@@ -183,7 +177,7 @@ test("structured keyframe respects a stylized Reality E context", () => {
     ],
   });
   const prompt = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
-  assert.equal(prompt.type, "stylized_keyframe");
+  assert.equal(prompt.type, "stylized_location_board");
   assert.match(String(prompt.render), /Reality E.*stylized/i);
   assert.doesNotMatch(String(prompt.render), /real photograph/i);
 });
@@ -244,19 +238,21 @@ test("embeds the structured Veo clip as video_prompt and composes a rich keyfram
   assert.equal((s1.video_prompt as Record<string, unknown>).scene_id, "1");
   assert.ok((s1.video_prompt as Record<string, unknown>).character_lock);
 
-  // storyboard_prompt is now a STRUCTURED (JSON) keyframe prompt composed from
-  // the clip: cast (appearance + wardrobe), placement, composition, a photoreal
-  // render note, the identity+wardrobe reference authority and a negative list.
+  // storyboard_prompt is now a STRUCTURED (JSON) LOCATION BOARD composed from the
+  // clip: a 4-panel layout of one setting, the cast (appearance + wardrobe), the
+  // setting pulled from background_lock, a photoreal render note, the reference
+  // authority and a negative list.
   const kf = JSON.parse(s1.storyboard_prompt) as Record<string, unknown>;
-  assert.equal(kf.type, "photoreal_keyframe");
+  assert.equal(kf.type, "photoreal_location_board");
+  assert.match(String(kf.layout), /2x2 grid of 4 panels/);
+  assert.equal((kf.panels as string[]).length, 4);
+  assert.match(String(kf.setting), /cozy kitchen at dawn/);
   const cast = kf.cast as Array<Record<string, string>>;
   const minh = cast.find((c) => c.name === "Minh");
   const lan = cast.find((c) => c.name === "Lan");
   assert.ok(minh && lan);
   assert.match(String(minh!.appearance), /Male/);
   assert.match(String(minh!.wardrobe), /grey cotton shirt/);
-  assert.equal(kf.placement, "Minh at the counter, Lan by the table");
-  assert.equal(kf.composition, "Minh pours tea while Lan watches.");
   assert.match(String(kf.render), /photorealistic/i);
   assert.match(String(kf.negative), /NOT cartoon/);
   assert.match(String(kf.reference_authority), /wardrobe sheet/i);
@@ -356,7 +352,7 @@ test("withKeyframeAuthority separates wardrobe-sheet (identity) from keyframe (s
   // Sheets own face/outfit and must NOT bring their studio backdrop…
   assert.match(rp, /wardrobe sheet/i);
   assert.match(rp, /ignore the sheet's plain studio backdrop|never import a studio/i);
-  // …and the keyframe is the single authority for the environment/set.
-  assert.match(rp, /keyframe/i);
+  // …and the location board is the single authority for the environment/set.
+  assert.match(rp, /location board/i);
   assert.match(rp, /environment|set and its geometry/i);
 });
