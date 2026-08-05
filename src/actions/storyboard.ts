@@ -14,7 +14,7 @@ import {
   generateMasterBoard,
   generateThumbnail,
 } from "@/services/image-pipeline";
-import { analyzeReferenceImages } from "@/services/image-analyzer";
+import { analyzeReferenceImages, analyzeLocationSets } from "@/services/image-analyzer";
 import { generateCompactCookingScenePlan } from "@/services/cooking-planner";
 import { compileCookingStoryboard } from "@/lib/cooking";
 import {
@@ -96,6 +96,8 @@ export interface StoryboardAnalysis {
   productDescriptions: Record<string, string>;
   ingredientDescriptions: Record<string, string>;
   backgroundDescription: string;
+  /** Cách 1 — per-set location description keyed by set name (upload mode). */
+  locationSetDescriptions?: Record<string, string>;
 }
 
 /** Phase-1 output: script + ready-to-paste prompts, NO images (small payload). */
@@ -804,6 +806,25 @@ async function runAnalysis(
     }
   }
 
+  // Cách 1 — per-scene location SETS (upload mode). Analyze each uploaded place
+  // on its own so the script can stage each assigned 10s shot inside it.
+  const locSets = (input.location_sets ?? []).filter(
+    (s) => s && s.name?.trim() && (s.images?.length ?? 0) > 0
+  );
+  if (input.location_mode === "upload" && locSets.length > 0) {
+    try {
+      analysis.locationSetDescriptions = await analyzeLocationSets({
+        sets: locSets,
+        provider,
+      });
+    } catch (err) {
+      if (shouldAbortAiPipeline(err)) throw err;
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      warnings.push(`Location analysis failed: ${msg}`);
+      console.error("[Storyboard] Location set analysis failed:", err);
+    }
+  }
+
   if (input.character_descriptions) {
     for (const char of input.character_descriptions) {
       // Uploaded character photos stay image-only. Never let the menu's
@@ -860,6 +881,16 @@ function enhanceInput(
     enhanced.setting = enhanced.setting
       ? `${enhanced.setting}. Visual reference: ${analysis.backgroundDescription}`
       : analysis.backgroundDescription;
+  }
+
+  // Cách 1 — stamp each uploaded location set with its vision description so the
+  // breakdown prompt can bind each assigned 10s shot to its real place.
+  if (analysis.locationSetDescriptions && (enhanced.location_sets?.length ?? 0) > 0) {
+    const descByName = analysis.locationSetDescriptions;
+    enhanced.location_sets = enhanced.location_sets!.map((s) => ({
+      ...s,
+      description: descByName[s.name?.trim()] || s.description || "",
+    }));
   }
 
   const extra: string[] = [];

@@ -850,6 +850,26 @@ export function buildStoryboardUserPrompt(
 
   const settingBlock = input.setting ? `\nPrimary Setting: ${input.setting}` : "";
   const toneBlock = input.tone ? `\nTone: ${input.tone}` : "";
+
+  // Cách 1 — per-shot uploaded locations. Each set was vision-analyzed upstream;
+  // tell the model which 10s shots happen in which REAL place (+ its spatial
+  // description) so it stages those shots there and writes actions that fit them,
+  // instead of inventing a set the uploaded footage can't match.
+  const locSets = (input.location_mode === "upload" ? input.location_sets ?? [] : [])
+    .filter((s) => s && (s.description ?? "").trim());
+  const shotLocationBlock = locSets.length
+    ? `\n\nSHOT-SPECIFIC LOCATIONS (AUTHORITATIVE — the user uploaded REAL places for specific 10s shots. For each listed shot: stage it INSIDE that exact place, reuse its real layout, landmarks, colours, materials and light in first_frame_prompt, and write ONLY actions that physically fit that place per its described affordances. Never relocate, "improve" or invent a different set for these shots):\n${locSets
+        .map((s) => {
+          const shots = (s.scene_indices ?? []).filter(
+            (n) => typeof n === "number" && Number.isFinite(n) && n >= 1
+          );
+          const where = shots.length
+            ? `Shot${shots.length > 1 ? "s" : ""} ${shots.join(", ")}`
+            : "Any shot not claimed by another set";
+          return `- ${where} → "${s.name}": ${s.description}`;
+        })
+        .join("\n")}\nShots not listed here use the Primary Setting. Keep each place identical across every shot assigned to it.`
+    : "";
   const customBlock = input.custom_instructions
     ? `\nAdditional Instructions: ${input.custom_instructions}`
     : "";
@@ -949,7 +969,7 @@ Video Goal: ${goal} — ${goalGuidance}
 Genre: ${input.genre}
 Visual Style: ${input.style}
 Number of 10-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 10} seconds)
-Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${toneBlock}${customBlock}
+Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${shotLocationBlock}${toneBlock}${customBlock}
 
 Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Beats preserve a clear chronological order while the subject, props and locked physics stay continuous, but beats and camera notes contain NO numeric timecodes. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" describes that ONE continuous action as an untimed ordered physical sequence using deliberate, specific verbs (body part + verb + manner) plus an explicit final state/anchor. dialogue_lines.start_s/end_s is the clip's ONLY clock. Keep ONE primary action per clip — never stack multiple actions beyond the model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. ${firstFrameIdentityRule} Inside the motion_prompt use only the exact name plus position, action and expression for an uploaded-reference character.
 

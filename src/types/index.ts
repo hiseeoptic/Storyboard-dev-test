@@ -222,6 +222,13 @@ export interface StoryboardGenerationInput {
    * Non-cooking references must never be interpreted as food ingredients. */
   ingredient_images?: ImageReference[];
   background_images?: ImageReference[];
+  /** Location source (Cách 1). "auto" (default): the app invents locations from
+   * the story/context. "upload": the user uploads location SETS which the app
+   * vision-analyzes, then stages each assigned 10s shot inside that real place. */
+  location_mode?: "auto" | "upload";
+  /** Per-scene location sets (only used when location_mode === "upload"). Each
+   * set is ONE real place shown from a few angles, assigned to specific shots. */
+  location_sets?: LocationSet[];
   /** Skip generating a character reference sheet (e.g. references already approved in the Image Studio). */
   skip_character_sheet?: boolean;
   tone?: string;
@@ -337,6 +344,22 @@ export interface ImageReference {
   /** Nano Flow: this is a declared reference whose real photo is attached in the
    * extension (so `images` may be empty here). Identity stays image-only. */
   isReference?: boolean;
+}
+
+/** Cách 1 — a per-scene location set: ONE real place shown from a few angles,
+ * assigned to specific 10s shots. The app vision-analyzes the images and stages
+ * each assigned shot inside that exact place so the script + scene actions match
+ * the real setting (không còn "mù" như khi chỉ nạp ảnh ở extension). */
+export interface LocationSet {
+  /** Display name for this place (e.g. "Bếp", "Văn phòng"). */
+  name: string;
+  /** 3–5 base64 images — the SAME place from multiple angles. */
+  images: string[];
+  /** 1-based 10s shot numbers this place is assigned to. Empty ⇒ acts as the
+   * fallback place for any shot not claimed by another set. */
+  scene_indices: number[];
+  /** Spatial description filled by vision analysis at generation time. */
+  description?: string;
 }
 
 // ─── Character Lock ─────────────────────────────────────────────────────────

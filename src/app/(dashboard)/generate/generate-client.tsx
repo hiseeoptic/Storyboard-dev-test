@@ -877,6 +877,8 @@ interface BackgroundEntry {
   name: string;
   description: string;
   images: UploadedImage[];
+  /** Cách 1 (upload mode) — 1-based 10s shot numbers this place is assigned to. */
+  sceneIndices?: number[];
 }
 
 type Phase = "input" | "generating" | "script" | "result";
@@ -1157,6 +1159,10 @@ export function GenerateClient() {
 
   // Step 4: Backgrounds
   const [backgrounds, setBackgrounds] = useState<BackgroundEntry[]>([]);
+  // Cách 1 — location source: "auto" (app invents) | "upload" (nạp & phân tích
+  // ảnh bối cảnh theo từng board). bgScenes = shot assignment for the pending set.
+  const [locationMode, setLocationMode] = useState<"auto" | "upload">("auto");
+  const [bgScenes, setBgScenes] = useState<number[]>([]);
   const [bgName, setBgName] = useState("");
   const [bgDesc, setBgDesc] = useState("");
   const [bgDescSel, setBgDescSel] = useState("");
@@ -1354,14 +1360,21 @@ export function GenerateClient() {
 
   const addBackground = () => {
     if (!bgName.trim()) return;
+    if (locationMode === "upload" && backgrounds.length >= 5) return; // tối đa 5 bộ
     setBackgrounds((prev) => [
       ...prev,
-      { name: bgName, description: effectiveBgDesc, images: bgImages },
+      {
+        name: bgName,
+        description: effectiveBgDesc,
+        images: bgImages,
+        ...(locationMode === "upload" ? { sceneIndices: [...bgScenes].sort((a, b) => a - b) } : {}),
+      },
     ]);
     setBgName("");
     setBgDesc("");
     setBgDescSel("");
     setBgImages([]);
+    setBgScenes([]);
   };
 
   // ─── Generate ────────────────────────────────────────────────────
@@ -1412,10 +1425,15 @@ export function GenerateClient() {
         ? [{ name: prodName.trim() || "Product", description: effectiveProdDesc, images: prodImages }]
         : []),
     ];
-    const effectiveBackgrounds = [
+    const effectiveBackgrounds: BackgroundEntry[] = [
       ...backgrounds,
       ...(bgImages.length > 0
-        ? [{ name: bgName.trim() || "Setting", description: effectiveBgDesc, images: bgImages }]
+        ? [{
+            name: bgName.trim() || "Setting",
+            description: effectiveBgDesc,
+            images: bgImages,
+            ...(locationMode === "upload" ? { sceneIndices: [...bgScenes].sort((a, b) => a - b) } : {}),
+          }]
         : []),
     ];
 
@@ -1550,6 +1568,20 @@ export function GenerateClient() {
     const cappedProductImages = fitRefs(productImages, false);
     const cappedBackgroundImages = fitRefs(backgroundImages, false);
     const cappedIngredientImages = fitRefs(ingredientImages, false);
+    // Cách 1 — per-shot location sets (upload mode): pair each capped background
+    // image group with its shot assignment so the script stages each 10s shot in
+    // its real place. In "auto" mode this stays empty (app invents locations).
+    const locationSetsForInput =
+      locationMode === "upload"
+        ? cappedBackgroundImages.map((bg) => ({
+            name: bg.name,
+            images: bg.images,
+            scene_indices:
+              effectiveBackgrounds.find(
+                (b) => b.name === bg.name && (b.images?.length ?? 0) > 0
+              )?.sceneIndices ?? [],
+          }))
+        : [];
     const payloadWarnings: string[] =
       droppedImages > 0
         ? [
@@ -1631,7 +1663,16 @@ export function GenerateClient() {
       character_images: finalCharacterImages.length > 0 ? finalCharacterImages : undefined,
       product_images: cappedProductImages.length > 0 ? cappedProductImages : undefined,
       ingredient_images: cappedIngredientImages.length > 0 ? cappedIngredientImages : undefined,
-      background_images: cappedBackgroundImages.length > 0 ? cappedBackgroundImages : undefined,
+      // Upload mode → per-shot location_sets drive the setting; skip the global
+      // background lock so it doesn't force ONE place on the whole video.
+      background_images:
+        locationMode === "upload"
+          ? undefined
+          : cappedBackgroundImages.length > 0
+            ? cappedBackgroundImages
+            : undefined,
+      location_mode: locationMode,
+      location_sets: locationSetsForInput.length > 0 ? locationSetsForInput : undefined,
       setting: effectiveSetting || undefined,
       tone: effectiveTone || undefined,
       // Ad genres send the product brief; narrative genres send the story brief.
@@ -4379,6 +4420,31 @@ export function GenerateClient() {
                 <span>{L("bgHint")}</span>
               </div>
 
+              {/* Cách 1 — location source: app auto vs upload & analyze per shot */}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant={locationMode === "auto" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setLocationMode("auto")}
+                >
+                  {lang === "vi" ? "App tự chọn bối cảnh" : "App picks locations"}
+                </Button>
+                <Button
+                  variant={locationMode === "upload" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setLocationMode("upload")}
+                >
+                  {lang === "vi" ? "Nạp & phân tích ảnh bối cảnh" : "Upload & analyze locations"}
+                </Button>
+              </div>
+              {locationMode === "upload" && (
+                <p className="text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Mỗi bộ = 1 địa điểm thật (3-5 ảnh nhiều góc), gán cho shot 10s nào. Tối đa 5 bộ. App phân tích ảnh để kịch bản + hành động bám ĐÚNG bối cảnh."
+                    : "Each set = one real place (3-5 angles) assigned to specific 10s shots. Up to 5 sets. The app analyzes them so the script + actions fit the real location."}
+                </p>
+              )}
+
               {backgrounds.length > 0 && (
                 <div className="space-y-2">
                   {backgrounds.map((b, i) => (
@@ -4395,6 +4461,13 @@ export function GenerateClient() {
                           <p className="font-medium">{b.name}</p>
                           <p className="text-xs text-muted-foreground">{b.description || L("noDesc")}</p>
                           <p className="text-xs text-muted-foreground">{b.images.length} {L("photos")}</p>
+                          {locationMode === "upload" && (
+                            <p className="text-xs text-primary">
+                              {b.sceneIndices && b.sceneIndices.length
+                                ? (lang === "vi" ? "Shot: " : "Shots: ") + b.sceneIndices.join(", ")
+                                : (lang === "vi" ? "Chưa gán shot (dùng làm dự phòng)" : "No shot assigned (fallback)")}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <Button variant="ghost" size="sm" onClick={() => setBackgrounds((prev) => prev.filter((_, j) => j !== i))}>
@@ -4421,18 +4494,55 @@ export function GenerateClient() {
                     <Input value={bgDesc} onChange={(e) => setBgDesc(e.target.value)} placeholder={L("bgDesc")} />
                   )}
                 </div>
-                {/* Nano Flow: real location photos are attached in the extension;
-                    the location is declared by name + description only. */}
-                {!NANO_FLOW_TEXT_ONLY && (
+
+                {/* Cách 1 (upload mode) — assign this location set to 10s shots */}
+                {locationMode === "upload" && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      {lang === "vi" ? "Gán cho shot 10s nào (bấm chọn)" : "Assign to which 10s shot(s)"}
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Array.from({ length: segmentCount }, (_, k) => k + 1).map((n) => {
+                        const on = bgScenes.includes(n);
+                        return (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() =>
+                              setBgScenes((prev) =>
+                                prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]
+                              )
+                            }
+                            className={`h-7 min-w-9 rounded border px-2 text-xs ${
+                              on
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border text-muted-foreground hover:border-primary/50"
+                            }`}
+                          >
+                            {n}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Show the uploader in upload mode even under Nano Flow (that is
+                    the whole point of Cách 1 — the app must SEE the location). */}
+                {(!NANO_FLOW_TEXT_ONLY || locationMode === "upload") && (
                   <>
                     <ImageUploader
                       images={bgImages}
                       onChange={setBgImages}
-                      maxImages={3}
+                      maxImages={locationMode === "upload" ? 5 : 3}
                       label={L("bgPhotos")}
-                      hint={L("bgPhotosHint")}
+                      hint={
+                        locationMode === "upload"
+                          ? (lang === "vi" ? "Tải 3-5 ảnh CÙNG một địa điểm ở nhiều góc" : "Upload 3-5 photos of the SAME place from several angles")
+                          : L("bgPhotosHint")
+                      }
                     />
-                    {bgImages.length > 0 && (
+                    {bgImages.length > 0 && locationMode !== "upload" && (
                       <p className="text-xs font-medium text-emerald-600">
                         {lang === "vi"
                           ? "Environment Reference Lock đang bật: storyboard bắt buộc có preview tổng thể và bám đúng bố cục, vật liệu, cửa, đồ đạc và ánh sáng của ảnh này."
@@ -4441,8 +4551,18 @@ export function GenerateClient() {
                     )}
                   </>
                 )}
-                <Button variant="outline" size="sm" onClick={addBackground} disabled={!bgName.trim()}>
-                  {L("addBackground")}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={addBackground}
+                  disabled={
+                    !bgName.trim() ||
+                    (locationMode === "upload" && (bgImages.length === 0 || backgrounds.length >= 5))
+                  }
+                >
+                  {locationMode === "upload"
+                    ? (lang === "vi" ? `➕ Thêm bộ bối cảnh (${backgrounds.length}/5)` : `➕ Add location set (${backgrounds.length}/5)`)
+                    : L("addBackground")}
                 </Button>
               </div>
             </>

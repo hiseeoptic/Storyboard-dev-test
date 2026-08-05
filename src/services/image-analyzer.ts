@@ -2,7 +2,7 @@ import { getOpenAIClient } from "@/lib/openai/client";
 import { geminiGenerateText } from "@/lib/gemini/client";
 import { shouldAbortAiPipeline } from "@/lib/ai/retry-policy";
 import { logOpenAiUsage } from "@/lib/ai/usage";
-import type { AIProvider, ImageReference } from "@/types";
+import type { AIProvider, ImageReference, LocationSet } from "@/types";
 
 /** Analyzes non-character visual references into prompt text. Character photos
  * remain image-only authorities and are deliberately never translated back
@@ -154,4 +154,32 @@ export async function analyzeReferenceImages(params: {
     ingredientDescriptions,
     backgroundDescription,
   };
+}
+
+/**
+ * Cách 1 — analyze EACH uploaded location set on its OWN (not merged), so every
+ * place gets a precise spatial description keyed by its set name. The storyboard
+ * then stages each assigned 10s shot inside its exact place and writes actions
+ * that fit it (the script is no longer "blind" to the uploaded location).
+ */
+export async function analyzeLocationSets(params: {
+  sets: LocationSet[];
+  provider?: AIProvider;
+}): Promise<Record<string, string>> {
+  const provider: AIProvider = params.provider ?? "openai";
+  const out: Record<string, string> = {};
+  await Promise.all(
+    (params.sets ?? []).map(async (set) => {
+      const imgs = (set.images ?? []).filter(Boolean);
+      if (!imgs.length || !set.name?.trim()) return;
+      const desc = await analyzeWithVision({
+        provider,
+        images: imgs,
+        maxTokens: 320,
+        prompt: `These are LOCATION reference photos of ONE single place called "${set.name}", shown from multiple angles. It may be an INDOOR room or an OUTDOOR scene. Reconstruct this ONE place precisely so an image model can rebuild it identically from ANY camera angle, including the reverse view, and so a screenwriter knows exactly what actions can happen here. In under ~180 words describe: (1) place type and overall geometry (indoor: shape/size/ceiling; outdoor: openness, depth, ground plane, sky); (2) the FIXED layout — where the major landmarks sit relative to each other and to the boundaries (indoor: furniture, doors, windows, fixtures; outdoor: buildings, trees, paths, water, terrain); (3) boundaries and surfaces with precise colours and materials; (4) light — direction, warmth and source; (5) small persistent details that must reappear; (6) the practical ACTION AFFORDANCES an actor has here (where they can sit, stand, walk, what they can interact with). State only what is visibly confirmed; do not invent. This is the authoritative setting for its assigned shots.`,
+      });
+      if (desc) out[set.name.trim()] = desc.trim();
+    })
+  );
+  return out;
 }
