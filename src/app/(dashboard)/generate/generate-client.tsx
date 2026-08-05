@@ -730,24 +730,8 @@ const PROD_DESC_PROMPT: Record<string, string> = {
   natural: "natural, rustic, authentic product presentation",
 };
 
-const BG_DESC_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
-  vi: [
-    { value: FORCE_REF, label: "🔒 Đồng bộ tuyệt đối với ảnh bối cảnh (khuyên dùng)" },
-    { value: "bright", label: "Sáng sủa, hiện đại" },
-    { value: "cozy", label: "Ấm cúng, gần gũi" },
-    { value: CUSTOM, label: "Khác (tự nhập)" },
-  ],
-  en: [
-    { value: FORCE_REF, label: "🔒 Lock to uploaded location photo (recommended)" },
-    { value: "bright", label: "Bright, modern" },
-    { value: "cozy", label: "Cozy, homely" },
-    { value: CUSTOM, label: "Other (type your own)" },
-  ],
-};
-const BG_DESC_PROMPT: Record<string, string> = {
-  bright: "bright, clean, modern interior",
-  cozy: "cozy, warm, homely interior",
-};
+// (BG_DESC_OPTIONS/BG_DESC_PROMPT removed — location is now per-segment upload,
+//  no free-text description dropdown.)
 
 // Resolve a description dropdown selection into the text fed to the AI.
 // Downscale a rendered board (data URI) to a compact JPEG base64 so it can be
@@ -1157,21 +1141,26 @@ export function GenerateClient() {
     genre === "cooking" &&
     ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle);
 
-  // Step 4: Backgrounds
+  // Bối cảnh — Cách 1 per-segment: `backgrounds` giữ MỖI ĐOẠN 1 entry
+  // (sceneIndices=[n]) là ảnh bối cảnh của đoạn 10s đó.
   const [backgrounds, setBackgrounds] = useState<BackgroundEntry[]>([]);
-  // Cách 1 — location source: "auto" (app invents) | "upload" (nạp & phân tích
-  // ảnh bối cảnh theo từng board). bgScenes = shot assignment for the pending set.
+  // Location source: "auto" (app tự chọn) | "upload" (nạp ảnh bối cảnh theo từng đoạn).
   const [locationMode, setLocationMode] = useState<"auto" | "upload">("auto");
-  const [bgScenes, setBgScenes] = useState<number[]>([]);
-  const [bgName, setBgName] = useState("");
-  const [bgDesc, setBgDesc] = useState("");
-  const [bgDescSel, setBgDescSel] = useState("");
-  const [bgImages, setBgImages] = useState<UploadedImage[]>([]);
+  // Upsert/clear ảnh bối cảnh cho MỘT đoạn 10s (theo sceneIndices=[n]).
+  const setSegmentLocation = (n: number, imgs: UploadedImage[]) => {
+    setBackgrounds((prev) => {
+      const rest = prev.filter((b) => !(b.sceneIndices?.length === 1 && b.sceneIndices[0] === n));
+      return imgs.length > 0
+        ? [...rest, { name: `Đoạn ${n}`, description: "", images: imgs, sceneIndices: [n] }]
+        : rest;
+    });
+  };
+  const segmentLocationImages = (n: number): UploadedImage[] =>
+    backgrounds.find((b) => b.sceneIndices?.length === 1 && b.sceneIndices[0] === n)?.images ?? [];
 
   // Resolved description text (dropdown selection or custom free-text).
   const effectiveCharAppearance = resolveDesc(charApprSel, charAppearance, CHAR_APPR_PROMPT, FORCE_TEXT.character);
   const effectiveProdDesc = resolveDesc(prodDescSel, prodDesc, PROD_DESC_PROMPT, FORCE_TEXT.product);
-  const effectiveBgDesc = resolveDesc(bgDescSel, bgDesc, BG_DESC_PROMPT, FORCE_TEXT.background);
 
   // Hydrate approved images handed off from the Image Studio (/studio).
   useEffect(() => {
@@ -1358,25 +1347,6 @@ export function GenerateClient() {
     }
   };
 
-  const addBackground = () => {
-    if (!bgName.trim()) return;
-    if (locationMode === "upload" && backgrounds.length >= 5) return; // tối đa 5 bộ
-    setBackgrounds((prev) => [
-      ...prev,
-      {
-        name: bgName,
-        description: effectiveBgDesc,
-        images: bgImages,
-        ...(locationMode === "upload" ? { sceneIndices: [...bgScenes].sort((a, b) => a - b) } : {}),
-      },
-    ]);
-    setBgName("");
-    setBgDesc("");
-    setBgDescSel("");
-    setBgImages([]);
-    setBgScenes([]);
-  };
-
   // ─── Generate ────────────────────────────────────────────────────
 
   const handleGenerate = async () => {
@@ -1425,17 +1395,8 @@ export function GenerateClient() {
         ? [{ name: prodName.trim() || "Product", description: effectiveProdDesc, images: prodImages }]
         : []),
     ];
-    const effectiveBackgrounds: BackgroundEntry[] = [
-      ...backgrounds,
-      ...(bgImages.length > 0
-        ? [{
-            name: bgName.trim() || "Setting",
-            description: effectiveBgDesc,
-            images: bgImages,
-            ...(locationMode === "upload" ? { sceneIndices: [...bgScenes].sort((a, b) => a - b) } : {}),
-          }]
-        : []),
-    ];
+    // Per-segment location sets are stored directly in `backgrounds` now.
+    const effectiveBackgrounds: BackgroundEntry[] = backgrounds;
 
     // Include both in-app uploads (legacy) AND Nano Flow "has real photo"
     // declarations. A declared reference has no bytes here — the extension
@@ -4439,134 +4400,42 @@ export function GenerateClient() {
                   {lang === "vi" ? "Nạp & phân tích ảnh bối cảnh" : "Upload & analyze locations"}
                 </Button>
               </div>
-              {locationMode === "upload" && (
-                <p className="text-xs text-muted-foreground">
-                  {lang === "vi"
-                    ? "Mỗi bộ = 1 địa điểm thật (3-5 ảnh nhiều góc), gán cho shot 10s nào. Tối đa 5 bộ. App phân tích ảnh để kịch bản + hành động bám ĐÚNG bối cảnh."
-                    : "Each set = one real place (3-5 angles) assigned to specific 10s shots. Up to 5 sets. The app analyzes them so the script + actions fit the real location."}
-                </p>
-              )}
+              {/* Số đoạn 10s + số cảnh nhỏ mỗi đoạn — dời về đây, gắn trực tiếp với
+                  danh sách nạp ảnh bối cảnh theo từng đoạn bên dưới. */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">{L("segmentCount")}</label>
+                  <Select value={String(segmentCount)} onChange={(e) => setSegmentCount(Number(e.target.value))} options={SEGMENT_OPTIONS} />
+                  <p className="text-xs text-muted-foreground">{L("segmentCountHint")}</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">{L("beatsLabel")}</label>
+                  <Select value={String(beatsPerSegment)} onChange={(e) => setBeatsPerSegment(Number(e.target.value))} options={BEATS_OPTIONS[lang]} />
+                  <p className="text-xs text-muted-foreground">{L("beatsHint")}</p>
+                </div>
+              </div>
 
-              {backgrounds.length > 0 && (
+              {locationMode === "upload" && (
                 <div className="space-y-2">
-                  {backgrounds.map((b, i) => (
-                    <div key={i} className="flex items-start justify-between rounded-lg border p-3">
-                      <div className="flex gap-3">
-                        {b.images.length > 0 && (
-                          <div className="flex gap-1">
-                            {b.images.map((img) => (
-                              <img key={img.id} src={img.preview} alt="" className="h-12 w-12 rounded object-cover" />
-                            ))}
-                          </div>
-                        )}
-                        <div>
-                          <p className="font-medium">{b.name}</p>
-                          <p className="text-xs text-muted-foreground">{b.description || L("noDesc")}</p>
-                          <p className="text-xs text-muted-foreground">{b.images.length} {L("photos")}</p>
-                          {locationMode === "upload" && (
-                            <p className="text-xs text-primary">
-                              {b.sceneIndices && b.sceneIndices.length
-                                ? (lang === "vi" ? "Shot: " : "Shots: ") + b.sceneIndices.join(", ")
-                                : (lang === "vi" ? "Chưa gán shot (dùng làm dự phòng)" : "No shot assigned (fallback)")}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <Button variant="ghost" size="sm" onClick={() => setBackgrounds((prev) => prev.filter((_, j) => j !== i))}>
-                        {L("remove")}
-                      </Button>
+                  <p className="text-xs text-muted-foreground">
+                    {lang === "vi"
+                      ? "Mỗi đoạn 10s tuỳ chọn nạp 1 bộ ảnh bối cảnh (3-5 ảnh CÙNG một nơi, nhiều góc). App phân tích để kịch bản + board bám ĐÚNG nơi. Bỏ trống đoạn nào = app tự chọn cho đoạn đó."
+                      : "Optionally upload a location photo set (3-5 angles of the SAME place) per 10s segment. The app analyzes it so the script + board fit that place. Leave a segment empty = app picks for it."}
+                  </p>
+                  {Array.from({ length: segmentCount }, (_, k) => k + 1).map((n) => (
+                    <div key={n} className="space-y-2 rounded-lg border p-3">
+                      <p className="text-sm font-medium">{lang === "vi" ? `Đoạn ${n}` : `Segment ${n}`}</p>
+                      <ImageUploader
+                        images={segmentLocationImages(n)}
+                        onChange={(next) => setSegmentLocation(n, next)}
+                        maxImages={5}
+                        label={lang === "vi" ? "Ảnh bối cảnh (tuỳ chọn)" : "Location photos (optional)"}
+                        hint={lang === "vi" ? "3-5 ảnh cùng một nơi, nhiều góc" : "3-5 photos, same place, several angles"}
+                      />
                     </div>
                   ))}
                 </div>
               )}
-
-              <div className="space-y-3 rounded-lg border border-dashed p-4">
-                <Input value={bgName} onChange={(e) => setBgName(e.target.value)} placeholder={L("bgName")} />
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    {lang === "vi" ? "Mô tả bối cảnh (chọn nhanh)" : "Location description (quick pick)"}
-                  </label>
-                  <Select
-                    value={bgDescSel}
-                    onChange={(e) => setBgDescSel(e.target.value)}
-                    options={BG_DESC_OPTIONS[lang]}
-                    placeholder={lang === "vi" ? "Chọn mô tả..." : "Choose..."}
-                  />
-                  {bgDescSel === CUSTOM && (
-                    <Input value={bgDesc} onChange={(e) => setBgDesc(e.target.value)} placeholder={L("bgDesc")} />
-                  )}
-                </div>
-
-                {/* Cách 1 (upload mode) — assign this location set to 10s shots */}
-                {locationMode === "upload" && (
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      {lang === "vi" ? "Gán cho shot 10s nào (bấm chọn)" : "Assign to which 10s shot(s)"}
-                    </label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {Array.from({ length: segmentCount }, (_, k) => k + 1).map((n) => {
-                        const on = bgScenes.includes(n);
-                        return (
-                          <button
-                            key={n}
-                            type="button"
-                            onClick={() =>
-                              setBgScenes((prev) =>
-                                prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]
-                              )
-                            }
-                            className={`h-7 min-w-9 rounded border px-2 text-xs ${
-                              on
-                                ? "border-primary bg-primary text-primary-foreground"
-                                : "border-border text-muted-foreground hover:border-primary/50"
-                            }`}
-                          >
-                            {n}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Show the uploader in upload mode even under Nano Flow (that is
-                    the whole point of Cách 1 — the app must SEE the location). */}
-                {(!NANO_FLOW_TEXT_ONLY || locationMode === "upload") && (
-                  <>
-                    <ImageUploader
-                      images={bgImages}
-                      onChange={setBgImages}
-                      maxImages={locationMode === "upload" ? 5 : 3}
-                      label={L("bgPhotos")}
-                      hint={
-                        locationMode === "upload"
-                          ? (lang === "vi" ? "Tải 3-5 ảnh CÙNG một địa điểm ở nhiều góc" : "Upload 3-5 photos of the SAME place from several angles")
-                          : L("bgPhotosHint")
-                      }
-                    />
-                    {bgImages.length > 0 && locationMode !== "upload" && (
-                      <p className="text-xs font-medium text-emerald-600">
-                        {lang === "vi"
-                          ? "Environment Reference Lock đang bật: storyboard bắt buộc có preview tổng thể và bám đúng bố cục, vật liệu, cửa, đồ đạc và ánh sáng của ảnh này."
-                          : "Environment Reference Lock is active: the storyboard must include an overview and preserve this layout, materials, openings, furniture and light."}
-                      </p>
-                    )}
-                  </>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={addBackground}
-                  disabled={
-                    !bgName.trim() ||
-                    (locationMode === "upload" && (bgImages.length === 0 || backgrounds.length >= 5))
-                  }
-                >
-                  {locationMode === "upload"
-                    ? (lang === "vi" ? `➕ Thêm bộ bối cảnh (${backgrounds.length}/5)` : `➕ Add location set (${backgrounds.length}/5)`)
-                    : L("addBackground")}
-                </Button>
-              </div>
             </>
           )}
 
@@ -4717,17 +4586,8 @@ export function GenerateClient() {
                     : "This legacy field remains for older data. Character uploads automatically force Photoreal."}
                 </p>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{L("segmentCount")}</label>
-                <Select value={String(segmentCount)} onChange={(e) => setSegmentCount(Number(e.target.value))} options={SEGMENT_OPTIONS} />
-                <p className="text-xs text-muted-foreground">{L("segmentCountHint")}</p>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{L("beatsLabel")}</label>
-                <Select value={String(beatsPerSegment)} onChange={(e) => setBeatsPerSegment(Number(e.target.value))} options={BEATS_OPTIONS[lang]} />
-                <p className="text-xs text-muted-foreground">{L("beatsHint")}</p>
-              </div>
+              {/* "Số đoạn 10s" + "Số cảnh nhỏ mỗi đoạn" đã dời sang bước Bối cảnh
+                  (gắn với danh sách nạp ảnh bối cảnh theo từng đoạn). */}
 
               <div className="rounded-lg border p-3">
                 <label className="flex cursor-pointer items-start gap-3">
