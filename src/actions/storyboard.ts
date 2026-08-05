@@ -1872,6 +1872,8 @@ function validatePreRenderGates(
         breakdown.context_ir?.layers.audio_validation.language ??
         "the locked project language",
       veoClips,
+      // Cách 1 — embed uploaded location photos into the manifest per shot.
+      locationSets: input.location_mode === "upload" ? input.location_sets : undefined,
     });
     findings.push(...validatePromptExports(manifest).findings);
     const promptPackage = buildStoryboardPromptPackage(breakdown, {

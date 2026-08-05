@@ -67,6 +67,26 @@ test("board model — one image per 10s shot; beats never explode into scenes[]"
   assert.equal(shot1.beats?.[0]?.beat, "pours tea");
 });
 
+test("Cách 1 — locationSets embed the uploaded photo into each assigned shot", () => {
+  const m = buildNanoFlowManifest(fixture(), {
+    locationSets: [
+      { name: "Bếp", images: ["data:image/png;base64,AAAA"], scene_indices: [1] },
+      { name: "Dự phòng", images: ["data:image/png;base64,BBBB"], scene_indices: [] },
+    ],
+  });
+  const [s1, s2] = m.shots;
+  assert.ok(s1 && s2);
+  // shot 1 is explicitly assigned → gets that set's photo…
+  assert.equal(s1.board_location_image, "data:image/png;base64,AAAA");
+  // …shot 2 is unassigned → falls back to the no-scene set's photo.
+  assert.equal(s2.board_location_image, "data:image/png;base64,BBBB");
+});
+
+test("Cách 1 — no locationSets ⇒ no embedded photo (app-auto board)", () => {
+  const m = buildNanoFlowManifest(fixture());
+  assert.equal(m.shots[0]?.board_location_image, undefined);
+});
+
 test("characters become declared assets, referenced by id in shots", () => {
   const m = buildNanoFlowManifest(fixture());
   const [shot1] = m.shots;

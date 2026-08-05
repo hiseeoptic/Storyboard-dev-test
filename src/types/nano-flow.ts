@@ -130,6 +130,12 @@ export interface NanoFlowShot {
   /** Prompt written 100% by Storyboard to create the image. */
   storyboard_prompt: string;
   image_refs?: NanoFlowRefSelector;
+  /** Cách 1 (upload mode) — a REAL location photo the user uploaded for this
+   * shot, embedded straight into the manifest as a data URL. When present the
+   * extension attaches it as the strict setting reference for this shot's board
+   * (no re-upload needed in the extension). Empty ⇒ the board is generated from
+   * storyboard_prompt alone. */
+  board_location_image?: string;
 
   // ─── STEP B: generate the video with Veo, using the STEP A image ───
   /** STEP B video payload, written 100% by Storyboard. Normally the STRUCTURED

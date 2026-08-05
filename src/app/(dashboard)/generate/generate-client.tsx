@@ -2108,6 +2108,8 @@ export function GenerateClient() {
       aspectRatio: (genInput?.aspect_ratio as "16:9" | "9:16") ?? "9:16",
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
       veoClips,
+      // Cách 1 — embed uploaded location photos into the downloadable manifest.
+      locationSets: genInput?.location_mode === "upload" ? genInput?.location_sets : undefined,
     });
     // Final client-side backup for LỚP B. The server-side Layer C already
     // validates and repairs A+B before approval; this pure check catches drift

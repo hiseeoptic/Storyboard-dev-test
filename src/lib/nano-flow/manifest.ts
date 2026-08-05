@@ -3,7 +3,7 @@
 // the AutoFlow Reel extension consumes. Pure + side-effect free so it is easy
 // to unit-test and for Codex to reason about. See DESIGN.md §4.1.
 
-import type { StoryboardGenerationOutput } from "@/types";
+import type { LocationSet, StoryboardGenerationOutput } from "@/types";
 import type {
   NanoFlowAsset,
   NanoFlowManifest,
@@ -25,6 +25,11 @@ export interface BuildNanoFlowManifestOptions {
    * keyframe prompt is composed from that same structured scene so the image
    * stays in sync with the video. */
   veoClips?: Array<Record<string, unknown>>;
+  /** Cách 1 — per-shot uploaded location sets (upload mode). Each set's first
+   * image is embedded into every assigned shot's board_location_image so the
+   * extension board uses the REAL photo without a second upload. A set with no
+   * scene_indices acts as the fallback place for any otherwise-unassigned shot. */
+  locationSets?: LocationSet[];
 }
 
 /** Extract a trimmed string field from an unknown clip sub-object. */
@@ -331,8 +336,27 @@ export function buildNanoFlowManifest(
   }
 
   // ── Shots ──
+  // Cách 1 — resolve which uploaded location photo (if any) each 1-based shot
+  // gets embedded. First image of the set wins; a set with no scene_indices is
+  // the fallback for any shot not explicitly claimed.
+  const boardImageByIndex = new Map<number, string>();
+  let fallbackBoardImage: string | undefined;
+  for (const set of opts.locationSets ?? []) {
+    const img = (set.images ?? []).find((s) => typeof s === "string" && s.length > 0);
+    if (!img) continue;
+    const idxs = (set.scene_indices ?? []).filter(
+      (n) => typeof n === "number" && Number.isFinite(n) && n >= 1
+    );
+    if (idxs.length === 0) {
+      if (!fallbackBoardImage) fallbackBoardImage = img;
+      continue;
+    }
+    for (const n of idxs) if (!boardImageByIndex.has(n)) boardImageByIndex.set(n, img);
+  }
+
   const shots: NanoFlowShot[] = segments.map((seg, i) => {
     const index = seg.segment_number || i + 1;
+    const boardLocationImage = boardImageByIndex.get(index) ?? fallbackBoardImage;
     const inScene = seg.characters_in_scene ?? [];
     // A visibly motivated change (shower, rain, change of clothes) overrides the
     // base outfit for this one shot; otherwise inherit the locked outfit.
@@ -402,6 +426,8 @@ export function buildNanoFlowManifest(
       continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
       image_refs,
+      // Cách 1 — embed the uploaded real location photo for this shot (if any).
+      ...(boardLocationImage ? { board_location_image: boardLocationImage } : {}),
 
       // STEP B video payload = the STRUCTURED Veo scene JSON (high quality);
       // falls back to the flat prose prompt only when no structured clip exists.
