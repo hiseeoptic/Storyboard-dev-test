@@ -279,43 +279,95 @@ const TEEN_MALE: ByCategory = {
   ],
 };
 
-const CHILD_UNISEX: ByCategory = {
+// Bé gái (child female) — age-appropriate, gender-specific.
+const CHILD_FEMALE: ByCategory = {
   daily: [
-    ["Áo thun + quần jeans + sneaker", "a bright t-shirt, small blue jeans and Velcro sneakers"],
-    ["Áo sơ mi + quần short kaki", "a checked short-sleeve shirt, khaki shorts and canvas shoes"],
-    ["Áo phông + yếm jeans", "a striped tee under a denim dungaree (overalls) and small sneakers"],
-    ["Bộ đồ thun in hình", "a matching printed t-shirt and shorts set with cartoon characters, and sandals"],
+    ["Váy thun in hình + legging + sneaker", "a bright printed t-shirt dress over leggings and small Velcro sneakers"],
+    ["Áo phông + chân váy jeans", "a cheerful printed tee, a little denim skirt and canvas shoes"],
+    ["Áo len + legging hoa", "a soft knit top, floral leggings and light sneakers"],
+    ["Áo phông + yếm jeans", "a striped tee under a denim pinafore dress and small sneakers"],
+  ],
+  travel: [
+    ["Váy hoa + mũ rộng vành", "a floral sundress, a wide-brim sun hat and comfy sandals"],
+    ["Áo phông + short + balo nhỏ", "a bright t-shirt, comfy shorts, a small backpack and sneakers"],
+    ["Áo chống nắng + legging", "a light long-sleeve sun shirt, leggings and trainers"],
   ],
   party: [
-    ["Đầm công chúa (bé gái)", "a puffy pastel party dress with a bow and shiny flat shoes (for a girl)"],
-    ["Sơ mi + quần âu nhỏ (bé trai)", "a little white shirt, small bow tie, dark shorts and dress shoes (for a boy)"],
-    ["Bộ đồ dự tiệc in hình", "a smart printed shirt and clean shorts with loafers"],
+    ["Đầm công chúa xòe + nơ", "a puffy pastel party dress with a bow and shiny flat shoes"],
+    ["Đầm ren + kẹp nơ tóc", "a lace party dress with a hair bow and Mary-Jane shoes"],
+    ["Váy kim tuyến + bờm", "a sparkly tulle dress with a headband and glitter flats"],
   ],
   gala: [
-    ["Sơ mi + quần âu (bé trai)", "a neat white shirt, navy trousers and small dress shoes (for a boy)"],
-    ["Đầm thắt nơ (bé gái)", "a modest navy dress with a white collar and a bow, with flat shoes (for a girl)"],
+    ["Đầm nhung cổ trắng thắt nơ", "a velvet dress with a white collar and a bow, with little dress shoes"],
     ["Áo dài nhỏ truyền thống", "a small traditional Vietnamese áo dài in a soft colour"],
+    ["Đầm satin thắt eo nơ", "a satin dress with a sash bow and flat shoes"],
   ],
   sport: [
-    ["Áo thun + quần short thể thao", "a bright sports t-shirt, small gym shorts and light running shoes"],
-    ["Bộ đồ bóng đá nhí", "a small football kit: jersey, shorts and little sports shoes"],
-    ["Áo tank + quần jogger", "a cotton tank top and soft joggers, with trainers"],
+    ["Áo thun + short thể thao", "a bright sports t-shirt, small gym shorts and light running shoes"],
+    ["Áo tank + legging + băng đô", "a tank top, patterned leggings, a hairband and trainers"],
+    ["Đồ thể dục trường", "a school PE kit: coloured polo, shorts and sports shoes"],
   ],
   home: [
-    ["Áo phông + quần short", "a colourful cartoon-print cotton t-shirt and comfy cotton shorts, with soft slippers"],
-    ["Bộ đồ ngủ dễ thương", "a soft two-piece pyjama set with a playful print, in cotton socks"],
-    ["Áo hoodie nhỏ + quần jogger", "a small bright hoodie and cotton joggers, barefoot"],
+    ["Bộ ngủ in hình dễ thương", "a soft two-piece pyjama set with a playful print and cotton socks"],
+    ["Áo hoodie + jogger + dép bông", "a small bright hoodie, cotton joggers and fuzzy slippers"],
+    ["Váy thun mặc nhà", "a comfy cotton house dress with a cartoon print and slippers"],
   ],
 };
 
-// bracket -> gender -> categories. Children share one unisex set (with a few
-// gendered items flagged in the label).
+// Bé trai (child male) — age-appropriate, gender-specific.
+const CHILD_MALE: ByCategory = {
+  daily: [
+    ["Áo phông + quần jeans + sneaker", "a bright t-shirt, small blue jeans and Velcro sneakers"],
+    ["Áo sơ mi kẻ + short kaki", "a checked short-sleeve shirt, khaki shorts and canvas shoes"],
+    ["Áo thun in hình + jogger", "a cartoon-print tee, cotton joggers and light sneakers"],
+    ["Áo khoác gió + quần thể thao", "a colourful light jacket over a tee, with sport trousers and trainers"],
+  ],
+  travel: [
+    ["Áo phông + short + mũ lưỡi trai", "a bright t-shirt, comfy shorts, a baseball cap and sneakers"],
+    ["Áo chống nắng + quần dài nhẹ", "a light long-sleeve sun shirt, thin trousers and trainers"],
+    ["Áo sơ mi + short + balo nhỏ", "a short-sleeve shirt, shorts, a small backpack and sandals"],
+  ],
+  party: [
+    ["Sơ mi + quần âu + nơ nhỏ", "a little white shirt, a small bow tie, dark shorts and dress shoes"],
+    ["Áo gile + sơ mi", "a small waistcoat over a shirt, with neat trousers and loafers"],
+    ["Áo thun in hình + blazer nhí", "a printed tee under a little blazer, with clean shorts and sneakers"],
+  ],
+  gala: [
+    ["Vest nhí + nơ", "a small suit with a bow tie, a white shirt and dress shoes"],
+    ["Sơ mi + quần âu chỉnh tề", "a neat white shirt, navy trousers and small dress shoes"],
+    ["Áo dài nhỏ truyền thống (bé trai)", "a small traditional Vietnamese áo dài (boy's version) in a soft colour"],
+  ],
+  sport: [
+    ["Áo thun + short thể thao", "a bright sports t-shirt, small gym shorts and light running shoes"],
+    ["Bộ đồ bóng đá nhí", "a small football kit: jersey, shorts and little sports shoes"],
+    ["Áo ba lỗ + jogger", "a cotton tank top, soft joggers and trainers"],
+  ],
+  home: [
+    ["Bộ đồ ngủ in hình", "a soft two-piece pyjama set with a playful print and cotton socks"],
+    ["Áo hoodie nhỏ + jogger", "a small bright hoodie, cotton joggers and slippers"],
+    ["Áo thun + short mặc nhà", "a comfy cartoon-print t-shirt and cotton shorts, with soft slippers"],
+  ],
+};
+
+// bracket -> gender -> categories. Bé gái / bé trai now have their OWN sets.
 const CATALOG: Record<WardrobeAgeBracket, Record<WardrobeGender, ByCategory>> = {
-  child: { male: CHILD_UNISEX, female: CHILD_UNISEX },
+  child: { male: CHILD_MALE, female: CHILD_FEMALE },
   teen: { male: TEEN_MALE, female: TEEN_FEMALE },
   adult: { male: ADULT_MALE, female: ADULT_FEMALE },
   senior: { male: ADULT_MALE, female: ADULT_FEMALE },
 };
+
+/** The character group (Vietnamese) whose wardrobe is being shown — surfaced in
+ * the UI so the user can see the picker adapts by age + gender:
+ * Bé gái / Bé trai / Thiếu niên (nữ|nam) / Nữ | Nam. */
+export function wardrobeGroupLabel(gender?: string, ageText?: string, isChild?: boolean): string {
+  const bracket = ageBracketOf(ageText, isChild);
+  const female = String(gender ?? "").toLowerCase().startsWith("f") || String(gender).toLowerCase() === "female";
+  if (bracket === "child") return female ? "Bé gái" : "Bé trai";
+  if (bracket === "teen") return female ? "Thiếu niên (nữ)" : "Thiếu niên (nam)";
+  if (bracket === "senior") return female ? "Nữ (lớn tuổi)" : "Nam (lớn tuổi)";
+  return female ? "Nữ" : "Nam";
+}
 
 /** Parse a free-text age ("male, ~32", "8 tuổi", "30") into an age bracket. */
 export function ageBracketOf(ageText?: string, isChild?: boolean): WardrobeAgeBracket {

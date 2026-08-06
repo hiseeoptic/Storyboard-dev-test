@@ -57,7 +57,7 @@ import {
   fingerprintStoryboardPlan,
   StoryboardPlanCache,
 } from "@/lib/storyboard/plan-cache";
-import { wardrobeOptions } from "@/lib/nano-flow/wardrobe-catalog";
+import { wardrobeOptions, wardrobeGroupLabel } from "@/lib/nano-flow/wardrobe-catalog";
 import {
   NANO_FLOW_MESSAGE_SOURCE,
   NANO_FLOW_MESSAGE_TYPE,
@@ -2459,8 +2459,13 @@ export function GenerateClient() {
                       <Input value={c.gender_age ?? ""} onChange={(e) => updateChar(i, "gender_age", e.target.value)} />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                         {lang === "vi" ? "Trang phục" : "Costume"}
+                        {c.gender ? (
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-foreground/70">
+                            {wardrobeGroupLabel(c.gender, c.gender_age, (c as { is_child?: boolean }).is_child)}
+                          </span>
+                        ) : null}
                       </label>
                       <Select
                         value=""
