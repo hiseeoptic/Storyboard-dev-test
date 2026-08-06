@@ -30,6 +30,7 @@ import {
 import {
   renderCreativeVisualDirective,
   resolveCreativeRoute,
+  CHARACTER_LAWS,
 } from "@/lib/creative-routing";
 import {
   REFERENCE_CHARACTER_ANTI_PLASTIC,
@@ -1865,12 +1866,16 @@ function validatePreRenderGates(
     )
       ? (veoJson as { clips: Array<Record<string, unknown>> }).clips
       : [];
+    const manifestCharacterRepresentation = resolveCreativeRoute(input).effective_character_representation;
     const manifest = buildNanoFlowManifest(breakdown, {
       aspectRatio: input.aspect_ratio === "16:9" ? "16:9" : "9:16",
       dialogueLanguage:
         input.dialogue_language ??
         breakdown.context_ir?.layers.audio_validation.language ??
         "the locked project language",
+      // Selected video style → lock the manifest (board + video) to that medium.
+      characterRepresentation: manifestCharacterRepresentation,
+      characterStylePrompt: CHARACTER_LAWS[manifestCharacterRepresentation].join(" "),
       veoClips,
       // Cách 1 — embed uploaded location photos into the manifest per shot.
       locationSets: input.location_mode === "upload" ? input.location_sets : undefined,

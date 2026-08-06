@@ -3,7 +3,7 @@
 // the AutoFlow Reel extension consumes. Pure + side-effect free so it is easy
 // to unit-test and for Codex to reason about. See DESIGN.md §4.1.
 
-import type { LocationSet, StoryboardGenerationOutput } from "@/types";
+import type { CharacterRepresentation, LocationSet, StoryboardGenerationOutput } from "@/types";
 import type {
   NanoFlowAsset,
   NanoFlowManifest,
@@ -19,6 +19,14 @@ export interface BuildNanoFlowManifestOptions {
   generatedAt?: string;
   /** Optional product reference names to declare as shared assets. */
   productNames?: string[];
+  /** Explicit character medium selected in the app (one of the ten locked video
+   * styles). Copied into the manifest and hard-locked into every board image +
+   * Veo video prompt. Photoreal representations (auto/uploaded/human/none) leave
+   * the board photoreal and add no style lock. */
+  characterRepresentation?: CharacterRepresentation;
+  /** Fully rendered character + environment style-lock law for the selected id
+   * (CHARACTER_LAWS[representation].join(" ")). */
+  characterStylePrompt?: string;
   /** The STRUCTURED Veo scene clips from buildVeoJson (one per segment, in
    * order). When present, each shot's video_prompt carries the full structured
    * clip (high-quality Veo input) instead of a flat prose paragraph, and the
@@ -102,9 +110,10 @@ function buildLocationBoardPrompt(
   realityMode: string,
   beats: Array<{ beat?: string; camera?: string }>,
   hasLocationPhoto: boolean,
-  projectLighting: string
+  projectLighting: string,
+  characterStyleLock = ""
 ): string {
-  if (!clip) return lockStyle(fallbackSceneText + wardrobeClause, realityMode);
+  if (!clip) return lockStyle(fallbackSceneText + wardrobeClause, realityMode, characterStyleLock);
 
   const bg = clipObj(clip.background_lock);
   const setting = clipStr(bg.setting) || fallbackSceneText || envName;
@@ -147,21 +156,24 @@ function buildLocationBoardPrompt(
   });
   const n = panels.length;
 
-  const liveAction = ["documentary", "cinematic", "commercial"].includes(
+  // A selected video style forces that locked medium (never photoreal).
+  const liveAction = !characterStyleLock && ["documentary", "cinematic", "commercial"].includes(
     realityMode
   );
   const prompt: Record<string, unknown> = {
-    type: liveAction ? "photoreal_storyboard_board" : `${slugify(realityMode)}_storyboard_board`,
+    type: characterStyleLock
+      ? "styled_storyboard_board"
+      : liveAction ? "photoreal_storyboard_board" : `${slugify(realityMode)}_storyboard_board`,
     layout:
-      `A SINGLE 16:9 STORYBOARD BOARD sheet with ${n} panel${n > 1 ? "s" : ""} in reading order (left to right, then top to bottom). Every panel is a photoreal film frame of the SAME scene at a different beat; only the action, pose and camera change. Directly UNDER each panel print a thin caption strip containing that panel's caption text.`,
+      `A SINGLE 16:9 STORYBOARD BOARD sheet with ${n} panel${n > 1 ? "s" : ""} in reading order (left to right, then top to bottom). Every panel is ${characterStyleLock ? "a frame in the locked visual style" : "a photoreal film frame"} of the SAME scene at a different beat; only the action, pose and camera change. Directly UNDER each panel print a thin caption strip containing that panel's caption text.`,
     setting_authority: hasLocationPhoto
       ? "An ATTACHED location photo is the EXACT and MANDATORY setting. Reproduce THAT real place — its layout, furniture, walls, windows, materials, colours and lighting — in EVERY panel. Never invent, relocate or substitute a different location; only the camera framing changes."
       : `Setting (no photo attached, build it from this description): ${setting}.`,
     staging:
       "Place the ATTACHED characters INTO this location and have them perform each panel's action. Each character's face, hair AND full outfit must match that character's ATTACHED wardrobe sheet exactly. The SAME people appear in every panel.",
-    render: liveAction
+    render: characterStyleLock || (liveAction
       ? KEYFRAME_RENDER_NOTE
-      : `Reality E storyboard board in the project's locked ${realityMode} medium. Preserve its exact design language, materials, proportions, lighting logic and internal physics; never convert it to live-action photorealism.`,
+      : `Reality E storyboard board in the project's locked ${realityMode} medium. Preserve its exact design language, materials, proportions, lighting logic and internal physics; never convert it to live-action photorealism.`),
     visual_style: visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
@@ -174,9 +186,11 @@ function buildLocationBoardPrompt(
       "PROJECT CONSISTENCY — every shot of this video must match: keep the SAME time-of-day and the SAME lighting in EVERY shot (do NOT switch between day and night between shots). The meal, food, dishes, bowls, chopsticks and every table prop are IDENTICAL across all shots (same dish, same plating, same amount). Furniture and layout stay identical to the attached location; only the characters' action and the camera change.",
     reference_authority: KEYFRAME_REFERENCE_AUTHORITY,
     wardrobe_note: wardrobeClause ? wardrobeClause.trim() : undefined,
-    negative: liveAction
-      ? "Photorealistic only — NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT painting, NOT drawing. No watermark or logo. The ONLY text on the image is the specified per-panel caption strips — no other subtitles, UI or lettering. No identity drift; never duplicate a character within a panel; no extra, missing or fused fingers."
-      : "No visual-medium drift, no accidental photoreal conversion, no inconsistent character design; the only text is the specified per-panel captions; consistent location across every panel.",
+    negative: characterStyleLock
+      ? "Stay strictly in the locked visual medium/style above — do NOT drift to a different style and do NOT convert to live-action photography. The ONLY text on the image is the specified per-panel caption strips. No identity drift; never duplicate a character within a panel; consistent location and consistent style across every panel."
+      : liveAction
+        ? "Photorealistic only — NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT painting, NOT drawing. No watermark or logo. The ONLY text on the image is the specified per-panel caption strips — no other subtitles, UI or lettering. No identity drift; never duplicate a character within a panel; no extra, missing or fused fingers."
+        : "No visual-medium drift, no accidental photoreal conversion, no inconsistent character design; the only text is the specified per-panel captions; consistent location across every panel.",
   };
   // JSON.stringify drops the undefined-valued keys, leaving a clean payload.
   return JSON.stringify(prompt);
@@ -235,7 +249,8 @@ export function slugify(name: string): string {
  * clip's output_rules so Veo follows the keyframe's outfit exactly.
  */
 export function withKeyframeAuthority(
-  clip: Record<string, unknown>
+  clip: Record<string, unknown>,
+  characterStyleLock = ""
 ): Record<string, unknown> {
   const rules =
     clip.output_rules && typeof clip.output_rules === "object"
@@ -243,6 +258,7 @@ export function withKeyframeAuthority(
       : {};
   rules.reference_priority =
     "REFERENCE ROLES (do NOT mix them): each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop; never import a studio/grey/white background or its lighting from a wardrobe sheet. The attached LOCATION BOARD (the storyboard image showing this one place from several angles) is the SINGLE source of truth for the ENVIRONMENT — background, spatial layout, furniture, props, doors, windows, lighting and materials — reproduce that exact place. Identity and clothing come from the sheets; the entire set and its geometry come from the location board. Never restyle wardrobe or hair away from the sheets, and never invent or relocate the set away from the location board. Character face continues from both.";
+  if (characterStyleLock) rules.character_style_lock = characterStyleLock;
   return { ...clip, output_rules: rules };
 }
 
@@ -274,8 +290,13 @@ const STYLE_SUFFIX =
  * generated keyframes never come back as cartoon. The scene text is preserved
  * verbatim in the middle; only style anchors are added, and only when missing.
  */
-export function lockStyle(rawPrompt: string, realityMode = "cinematic"): string {
+export function lockStyle(rawPrompt: string, realityMode = "cinematic", characterStyleLock = ""): string {
   const base = (rawPrompt || "").trim();
+  // A selected video style wins over the reality-mode default: render in that
+  // exact locked medium instead of forcing photoreal.
+  if (characterStyleLock) {
+    return `${characterStyleLock} ${base}${base && !/[.!?]$/.test(base) ? "." : ""} No visual-medium drift, no accidental live-action conversion, no text or watermark.`.trim();
+  }
   const liveAction = ["documentary", "cinematic", "commercial"].includes(
     realityMode
   );
@@ -309,6 +330,16 @@ export function buildNanoFlowManifest(
   const segments = breakdown.segments ?? [];
   const title = breakdown.title || "Untitled";
   const realityMode = breakdown.context_ir?.reality_profile.mode ?? "cinematic";
+  // Selected video style (one of the ten locked media). Photoreal representations
+  // (auto/uploaded/human/none) add NO lock and keep the board photoreal; any
+  // stylized medium hard-locks every board + video prompt to that style.
+  const characterRepresentation = opts.characterRepresentation;
+  const characterStyleLock = (opts.characterStylePrompt ?? "").trim();
+  const visualMediumLock =
+    characterRepresentation &&
+    !["auto", "uploaded_photoreal", "generated_human", "none"].includes(characterRepresentation)
+      ? characterStyleLock
+      : "";
 
   // ── Character assets: union of character_locks + every characters_in_scene
   //    name, so no shot can reference a character that isn't declared. ──
@@ -478,7 +509,8 @@ export function buildNanoFlowManifest(
         realityMode,
         seg.beats ?? [],
         !!boardLocationImage,
-        projectLighting
+        projectLighting,
+        visualMediumLock
       ),
       continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
@@ -491,7 +523,9 @@ export function buildNanoFlowManifest(
       // KEYFRAME AUTHORITY (Nano Flow §6): the clip is animated FROM the
       // generated keyframe, so the start frame — not any uploaded photo — is
       // the wardrobe/hair/set authority. Patch reference_priority accordingly.
-      video_prompt: clip ? withKeyframeAuthority(clip) : (seg.full_prompt || seg.motion_prompt || "").trim(),
+      video_prompt: clip
+        ? withKeyframeAuthority(clip, visualMediumLock)
+        : [visualMediumLock, (seg.full_prompt || seg.motion_prompt || "").trim()].filter(Boolean).join(" "),
       characters_in_scene: inScene,
       video_refs: {
         // DESIGN.md §6: keyframe = first frame; characters = identity ref;
@@ -520,6 +554,9 @@ export function buildNanoFlowManifest(
       dialogue_language: opts.dialogueLanguage ?? "Vietnamese",
       total_duration_seconds: breakdown.total_duration_seconds,
       thumbnail_title: breakdown.thumbnail_title,
+      ...(characterRepresentation && visualMediumLock
+        ? { character_style: { id: characterRepresentation, prompt: visualMediumLock } }
+        : {}),
       thumbnail_prompt: buildThumbnailPrompt({
         headline: breakdown.thumbnail_title || title,
         castNames: characters.map((c) => c.name).slice(0, 3),

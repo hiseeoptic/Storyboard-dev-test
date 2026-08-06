@@ -53,6 +53,31 @@ test("manifest has the fixed contract shape", () => {
   assert.equal(m.shots[1]?.continuity_mode, "continuous");
 });
 
+test("selected video style is locked into the manifest board + video prompts", () => {
+  const m = buildNanoFlowManifest(fixture(), {
+    characterRepresentation: "claymation",
+    characterStylePrompt: "CLAYMATION STYLE LOCK: tactile clay character and a matching miniature clay environment.",
+    generatedAt: "2026-08-06T00:00:00Z",
+  });
+  // project records the chosen style id + its lock prompt
+  assert.equal(m.project.character_style?.id, "claymation");
+  assert.match(m.project.character_style?.prompt ?? "", /CLAYMATION STYLE LOCK/);
+  // every board image prompt renders in that medium (not photoreal)
+  assert.match(m.shots[0]?.storyboard_prompt ?? "", /CLAYMATION STYLE LOCK/);
+  assert.doesNotMatch(m.shots[0]?.storyboard_prompt ?? "", /photoreal film frame/);
+  // and the Veo video prompt carries the same style lock
+  assert.match(String(m.shots[0]?.video_prompt ?? ""), /CLAYMATION STYLE LOCK/);
+});
+
+test("photoreal representation adds NO style lock (board stays photoreal)", () => {
+  const m = buildNanoFlowManifest(fixture(), {
+    characterRepresentation: "uploaded_photoreal",
+    characterStylePrompt: "should be ignored for photoreal media",
+  });
+  assert.equal(m.project.character_style, undefined);
+  assert.doesNotMatch(m.shots[0]?.storyboard_prompt ?? "", /should be ignored/);
+});
+
 test("project carries a viral thumbnail prompt (clickbait, headline + cast + wardrobe sheets)", () => {
   const m = buildNanoFlowManifest(fixture(), { productNames: ["Trà Bắc"] });
   const raw = m.project.thumbnail_prompt;

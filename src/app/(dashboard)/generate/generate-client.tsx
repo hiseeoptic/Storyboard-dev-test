@@ -84,6 +84,7 @@ import {
   STORY_FORMAT_OPTIONS as CREATIVE_FORMAT_OPTIONS,
   VISUAL_INTERPRETATION_OPTIONS as CREATIVE_INTERPRETATION_OPTIONS,
   CHARACTER_REPRESENTATION_OPTIONS as CREATIVE_CHARACTER_OPTIONS,
+  CHARACTER_LAWS,
   DIRECTING_PROFILE_OPTIONS as CREATIVE_DIRECTING_OPTIONS,
   type CreativeOption,
 } from "@/lib/creative-routing";
@@ -2079,6 +2080,9 @@ export function GenerateClient() {
     const manifest = buildNanoFlowManifest(result.breakdown, {
       aspectRatio: (genInput?.aspect_ratio as "16:9" | "9:16") ?? "9:16",
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+      // Selected video style → lock the manifest (board + video) to that medium.
+      characterRepresentation: effectiveCharacterRepresentation,
+      characterStylePrompt: CHARACTER_LAWS[effectiveCharacterRepresentation].join(" "),
       veoClips,
       // Cách 1 — embed uploaded location photos into the downloadable manifest.
       locationSets: genInput?.location_mode === "upload" ? genInput?.location_sets : undefined,

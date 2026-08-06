@@ -161,6 +161,16 @@ export type CharacterRepresentation =
   | "stylized_3d"
   | "anthropomorphic_animal"
   | "anthropomorphic_object"
+  | "whiteboard_stick_figure"
+  | "hand_drawn_doodle"
+  | "flat_2d_cartoon"
+  | "chibi_illustration"
+  | "cinematic_cartoon"
+  | "comic_book"
+  | "layered_paper_cut"
+  | "claymation"
+  | "low_poly_3d"
+  | "semi_realistic_3d"
   | "none";
 
 /** Directing grammar. It describes how the camera observes the world. */

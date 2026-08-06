@@ -25,6 +25,16 @@
         "social_posts": {
           "type": "object",
           "description": "Reuses the existing Storyboard SocialPosts shape verbatim (tiktok / youtube_shorts / facebook_reel)."
+        },
+        "character_style": {
+          "type": "object",
+          "required": ["id", "prompt"],
+          "additionalProperties": false,
+          "description": "Exact character and environment visual-medium lock selected in Storyboard; repeated inside image/video prompts for consumers that ignore project metadata.",
+          "properties": {
+            "id": { "type": "string" },
+            "prompt": { "type": "string" }
+          }
         }
       }
     },

@@ -177,6 +177,14 @@ export interface NanoFlowProject {
   thumbnail_prompt?: string;
   /** Reuses the existing Storyboard SocialPosts shape verbatim. */
   social_posts?: unknown;
+  /** Exact character/environment visual medium selected in Storyboard (one of
+   * the ten locked video styles). Its `prompt` (the style-lock law) is also
+   * stamped into every board image prompt and Veo video prompt so consumers
+   * that ignore project metadata still render in the chosen medium. */
+  character_style?: {
+    id: string;
+    prompt: string;
+  };
 }
 
 export interface NanoFlowAssets {
