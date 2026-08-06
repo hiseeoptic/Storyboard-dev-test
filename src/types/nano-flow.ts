@@ -166,6 +166,12 @@ export interface NanoFlowProject {
   thumbnail_title?: string;
   /** Reuses the existing Storyboard SocialPosts shape verbatim. */
   social_posts?: unknown;
+  /** Exact character/environment visual medium selected in Storyboard. The
+   * prompt is also stamped into every image and video payload. */
+  character_style?: {
+    id: string;
+    prompt: string;
+  };
 }
 
 export interface NanoFlowAssets {

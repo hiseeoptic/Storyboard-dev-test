@@ -3,7 +3,7 @@
 // the AutoFlow Reel extension consumes. Pure + side-effect free so it is easy
 // to unit-test and for Codex to reason about. See DESIGN.md §4.1.
 
-import type { StoryboardGenerationOutput } from "@/types";
+import type { CharacterRepresentation, StoryboardGenerationOutput } from "@/types";
 import type {
   NanoFlowAsset,
   NanoFlowLocationView,
@@ -21,6 +21,11 @@ export interface BuildNanoFlowManifestOptions {
   generatedAt?: string;
   /** Optional product reference names to declare as shared assets. */
   productNames?: string[];
+  /** Explicit character medium selected in the app. It is copied into the
+   * manifest and hard-locked into every image/video prompt. */
+  characterRepresentation?: CharacterRepresentation;
+  /** Fully rendered character + environment style law for the selected id. */
+  characterStylePrompt?: string;
   /** The STRUCTURED Veo scene clips from buildVeoJson (one per segment, in
    * order). When present, each shot's video_prompt carries the full structured
    * clip (high-quality Veo input) instead of a flat prose paragraph, and the
@@ -94,9 +99,10 @@ function buildKeyframePromptFromClip(
   clip: Record<string, unknown> | undefined,
   fallbackSceneText: string,
   wardrobeClause: string,
-  realityMode: string
+  realityMode: string,
+  characterStyleLock = ""
 ): string {
-  if (!clip) return lockStyle(fallbackSceneText + wardrobeClause, realityMode);
+  if (!clip) return lockStyle(fallbackSceneText + wardrobeClause, realityMode, characterStyleLock);
 
   const bg = clipObj(clip.background_lock);
   const setting = clipStr(bg.setting) || fallbackSceneText;
@@ -132,14 +138,12 @@ function buildKeyframePromptFromClip(
   if (clipStr(cam.framing)) camera.framing = clipStr(cam.framing);
   if (clipStr(cam.angle)) camera.angle = clipStr(cam.angle);
 
-  const liveAction = ["documentary", "cinematic", "commercial"].includes(
-    realityMode
-  );
+  const liveAction = !characterStyleLock && ["documentary", "cinematic", "commercial"].includes(realityMode);
   const prompt: Record<string, unknown> = {
     type: liveAction ? "photoreal_keyframe" : `${slugify(realityMode)}_keyframe`,
-    render: liveAction
+    render: characterStyleLock || (liveAction
       ? KEYFRAME_RENDER_NOTE
-      : `Reality E keyframe in the project's locked ${realityMode} medium. Preserve its exact design language, materials, proportions, lighting logic and internal physics; never convert it to live-action photorealism.`,
+      : `Reality E keyframe in the project's locked ${realityMode} medium. Preserve its exact design language, materials, proportions, lighting logic and internal physics; never convert it to live-action photorealism.`),
     visual_style: visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
@@ -172,14 +176,15 @@ function buildLocationViewPrompt(
   clip: Record<string, unknown> | undefined,
   view: "wide" | "alt",
   envName: string,
-  realityMode: string
+  realityMode: string,
+  characterStyleLock = ""
 ): string {
   const bg = clipObj(clip?.background_lock);
   const setting = clipStr(bg.setting) || envName;
   const scenery = clipStr(bg.scenery);
   const lighting = clipStr(bg.lighting);
   const visualStyle = clipStr(clip?.visual_style);
-  const liveAction = ["documentary", "cinematic", "commercial"].includes(realityMode);
+  const liveAction = !characterStyleLock && ["documentary", "cinematic", "commercial"].includes(realityMode);
   const framing =
     view === "wide"
       ? "Wide establishing shot: the WHOLE location visible edge to edge, taken from a neutral eye-level position that shows the overall layout, walls, floor, main furniture and every landmark."
@@ -190,9 +195,9 @@ function buildLocationViewPrompt(
       "Empty-set reference plate that LOCKS this location so later scenes and the Veo video never fabricate or drift the background.",
     view,
     framing,
-    render: liveAction
+    render: characterStyleLock || (liveAction
       ? KEYFRAME_RENDER_NOTE
-      : `Reality E location plate in the project's locked ${realityMode} medium — same design language, materials and lighting logic as its scenes; never convert to live-action photorealism.`,
+      : `Reality E location plate in the project's locked ${realityMode} medium — same design language, materials and lighting logic as its scenes; never convert to live-action photorealism.`),
     visual_style: visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
@@ -227,7 +232,8 @@ export function slugify(name: string): string {
  * clip's output_rules so Veo follows the keyframe's outfit exactly.
  */
 export function withKeyframeAuthority(
-  clip: Record<string, unknown>
+  clip: Record<string, unknown>,
+  characterStyleLock = ""
 ): Record<string, unknown> {
   const rules =
     clip.output_rules && typeof clip.output_rules === "object"
@@ -235,6 +241,7 @@ export function withKeyframeAuthority(
       : {};
   rules.reference_priority =
     "REFERENCE ROLES (do NOT mix them): each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop; never import a studio/grey/white background or its lighting from a wardrobe sheet. The attached KEYFRAME (the storyboard start frame) is the SINGLE source of truth for the ENVIRONMENT — background, spatial layout, furniture, props, doors, windows, lighting and camera composition — reproduce it EXACTLY. Identity and clothing come from the sheets; the entire set and its geometry come from the keyframe. Never restyle wardrobe or hair away from the sheets, and never change or invent set geometry, furniture or lighting away from the keyframe. Character face continues from both.";
+  if (characterStyleLock) rules.character_style_lock = characterStyleLock;
   return { ...clip, output_rules: rules };
 }
 
@@ -266,8 +273,11 @@ const STYLE_SUFFIX =
  * generated keyframes never come back as cartoon. The scene text is preserved
  * verbatim in the middle; only style anchors are added, and only when missing.
  */
-export function lockStyle(rawPrompt: string, realityMode = "cinematic"): string {
+export function lockStyle(rawPrompt: string, realityMode = "cinematic", characterStyleLock = ""): string {
   const base = (rawPrompt || "").trim();
+  if (characterStyleLock) {
+    return `${characterStyleLock} ${base}${base && !/[.!?]$/.test(base) ? "." : ""} No visual-medium drift, no accidental live-action conversion, no text or watermark.`.trim();
+  }
   const liveAction = ["documentary", "cinematic", "commercial"].includes(
     realityMode
   );
@@ -301,6 +311,13 @@ export function buildNanoFlowManifest(
   const segments = breakdown.segments ?? [];
   const title = breakdown.title || "Untitled";
   const realityMode = breakdown.context_ir?.reality_profile.mode ?? "cinematic";
+  const characterRepresentation = opts.characterRepresentation;
+  const characterStyleLock = (opts.characterStylePrompt ?? "").trim();
+  const visualMediumLock = characterRepresentation && ![
+    "auto", "uploaded_photoreal", "generated_human", "none",
+  ].includes(characterRepresentation)
+    ? characterStyleLock
+    : "";
 
   // ── Character assets: union of character_locks + every characters_in_scene
   //    name, so no shot can reference a character that isn't declared. ──
@@ -338,8 +355,8 @@ export function buildNanoFlowManifest(
     const name = humanizeEnvId(ref);
     const repClip = opts.veoClips?.[i];
     const location_views: NanoFlowLocationView[] = [
-      { angle: "wide", prompt: buildLocationViewPrompt(repClip, "wide", name, realityMode) },
-      { angle: "alt", prompt: buildLocationViewPrompt(repClip, "alt", name, realityMode) },
+      { angle: "wide", prompt: buildLocationViewPrompt(repClip, "wide", name, realityMode, visualMediumLock) },
+      { angle: "alt", prompt: buildLocationViewPrompt(repClip, "alt", name, realityMode, visualMediumLock) },
     ];
     environments.push({ id: ref, name, image: null, location_views });
   });
@@ -448,7 +465,8 @@ export function buildNanoFlowManifest(
           clip,
           [b.beat, b.camera ? `Camera: ${b.camera}` : ""].filter(Boolean).join(". "),
           wardrobeClause,
-          realityMode
+          realityMode,
+          visualMediumLock
         ),
         image_refs,
         ...(seg.location_id ? { location_id: seg.location_id } : {}),
@@ -473,7 +491,8 @@ export function buildNanoFlowManifest(
         clip,
         seg.first_frame_prompt || seg.motion_prompt || "",
         wardrobeClause,
-        realityMode
+        realityMode,
+        visualMediumLock
       ),
       continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
@@ -484,7 +503,9 @@ export function buildNanoFlowManifest(
       // KEYFRAME AUTHORITY (Nano Flow §6): the clip is animated FROM the
       // generated keyframe, so the start frame — not any uploaded photo — is
       // the wardrobe/hair/set authority. Patch reference_priority accordingly.
-      video_prompt: clip ? withKeyframeAuthority(clip) : (seg.full_prompt || seg.motion_prompt || "").trim(),
+      video_prompt: clip
+        ? withKeyframeAuthority(clip, characterStyleLock)
+        : [characterStyleLock, (seg.full_prompt || seg.motion_prompt || "").trim()].filter(Boolean).join(" "),
       characters_in_scene: inScene,
       video_refs: {
         // DESIGN.md §6: keyframe = first frame; characters = identity ref;
@@ -515,6 +536,9 @@ export function buildNanoFlowManifest(
       total_duration_seconds: breakdown.total_duration_seconds,
       thumbnail_title: breakdown.thumbnail_title,
       social_posts: breakdown.social_posts,
+      ...(characterRepresentation && characterRepresentation !== "auto"
+        ? { character_style: { id: characterRepresentation, prompt: characterStyleLock } }
+        : {}),
     },
     assets: {
       characters,

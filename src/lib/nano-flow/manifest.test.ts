@@ -53,6 +53,19 @@ test("manifest has the fixed contract shape", () => {
   assert.equal(m.shots[1]?.continuity_mode, "continuous");
 });
 
+test("selected character style is locked into manifest image and video prompts", () => {
+  const m = buildNanoFlowManifest(fixture(), {
+    characterRepresentation: "claymation",
+    characterStylePrompt: "CLAYMATION STYLE LOCK: tactile clay character and matching miniature clay environment.",
+    generatedAt: "2026-08-06T00:00:00Z",
+  });
+  assert.equal(m.project.character_style?.id, "claymation");
+  assert.match(m.project.character_style?.prompt ?? "", /CLAYMATION STYLE LOCK/);
+  assert.match(m.shots[0]?.storyboard_prompt ?? "", /CLAYMATION STYLE LOCK/);
+  assert.match(String(m.shots[0]?.video_prompt ?? ""), /CLAYMATION STYLE LOCK/);
+  assert.doesNotMatch(m.shots[0]?.storyboard_prompt ?? "", /Photorealistic cinematic film still/);
+});
+
 test("Schema 4.1 — beats become per-scene image prompts (scenes[]); no beats ⇒ keyframe fallback", () => {
   const m = buildNanoFlowManifest(fixture());
   const [shot1, shot2] = m.shots;
@@ -352,7 +365,7 @@ test("withKeyframeAuthority separates wardrobe-sheet (identity) from keyframe (s
   const rules = patched.output_rules as Record<string, string>;
   // Existing rules survive; the reference-role clause is (re)written.
   assert.equal(rules.audio, "keep");
-  const rp = rules.reference_priority;
+  const rp = rules.reference_priority ?? "";
   // Sheets own face/outfit and must NOT bring their studio backdrop…
   assert.match(rp, /wardrobe sheet/i);
   assert.match(rp, /ignore the sheet's plain studio backdrop|never import a studio/i);

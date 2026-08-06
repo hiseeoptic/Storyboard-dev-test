@@ -28,6 +28,7 @@ import {
   renderSpatialTopologyLock,
 } from "@/lib/spatial-topology";
 import {
+  CHARACTER_LAWS,
   renderCreativeVisualDirective,
   resolveCreativeRoute,
 } from "@/lib/creative-routing";
@@ -1834,12 +1835,15 @@ function validatePreRenderGates(
     )
       ? (veoJson as { clips: Array<Record<string, unknown>> }).clips
       : [];
+    const manifestCharacterRepresentation = resolveCreativeRoute(input).effective_character_representation;
     const manifest = buildNanoFlowManifest(breakdown, {
       aspectRatio: input.aspect_ratio === "16:9" ? "16:9" : "9:16",
       dialogueLanguage:
         input.dialogue_language ??
         breakdown.context_ir?.layers.audio_validation.language ??
         "the locked project language",
+      characterRepresentation: manifestCharacterRepresentation,
+      characterStylePrompt: CHARACTER_LAWS[manifestCharacterRepresentation].join(" "),
       veoClips,
     });
     findings.push(...validatePromptExports(manifest).findings);

@@ -84,6 +84,7 @@ import {
   STORY_FORMAT_OPTIONS as CREATIVE_FORMAT_OPTIONS,
   VISUAL_INTERPRETATION_OPTIONS as CREATIVE_INTERPRETATION_OPTIONS,
   CHARACTER_REPRESENTATION_OPTIONS as CREATIVE_CHARACTER_OPTIONS,
+  CHARACTER_LAWS,
   DIRECTING_PROFILE_OPTIONS as CREATIVE_DIRECTING_OPTIONS,
   type CreativeOption,
 } from "@/lib/creative-routing";
@@ -2066,6 +2067,8 @@ export function GenerateClient() {
     const manifest = buildNanoFlowManifest(result.breakdown, {
       aspectRatio: (genInput?.aspect_ratio as "16:9" | "9:16") ?? "9:16",
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+      characterRepresentation: effectiveCharacterRepresentation,
+      characterStylePrompt: CHARACTER_LAWS[effectiveCharacterRepresentation].join(" "),
       veoClips,
     });
     // Final client-side backup for LỚP B. The server-side Layer C already
