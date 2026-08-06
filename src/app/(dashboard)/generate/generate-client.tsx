@@ -1157,6 +1157,17 @@ export function GenerateClient() {
   };
   const segmentLocationImages = (n: number): UploadedImage[] =>
     backgrounds.find((b) => b.sceneIndices?.length === 1 && b.sceneIndices[0] === n)?.images ?? [];
+  // Nhân bản ảnh bối cảnh của đoạn `from` sang MỌI đoạn khác (các cảnh cùng 1 bối
+  // cảnh → khỏi tải nhiều lần). Chỉ ghi đè đoạn đang trống để không mất ảnh đã nạp.
+  const applyLocationToOtherSegments = (from: number) => {
+    const imgs = segmentLocationImages(from);
+    if (!imgs.length) return;
+    for (let n = 1; n <= segmentCount; n++) {
+      if (n !== from && segmentLocationImages(n).length === 0) {
+        setSegmentLocation(n, imgs.map((im) => ({ ...im })));
+      }
+    }
+  };
 
   // Resolved description text (dropdown selection or custom free-text).
   const effectiveCharAppearance = resolveDesc(charApprSel, charAppearance, CHAR_APPR_PROMPT, FORCE_TEXT.character);
@@ -4424,7 +4435,19 @@ export function GenerateClient() {
                   </p>
                   {Array.from({ length: segmentCount }, (_, k) => k + 1).map((n) => (
                     <div key={n} className="space-y-2 rounded-lg border p-3">
-                      <p className="text-sm font-medium">{lang === "vi" ? `Đoạn ${n}` : `Segment ${n}`}</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium">{lang === "vi" ? `Đoạn ${n}` : `Segment ${n}`}</p>
+                        {segmentLocationImages(n).length > 0 && segmentCount > 1 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => applyLocationToOtherSegments(n)}
+                            title={lang === "vi" ? "Áp ảnh này cho các đoạn đang trống" : "Apply to empty segments"}
+                          >
+                            {lang === "vi" ? "⧉ Dùng cho các đoạn khác" : "⧉ Use for other segments"}
+                          </Button>
+                        )}
+                      </div>
                       <ImageUploader
                         images={segmentLocationImages(n)}
                         onChange={(next) => setSegmentLocation(n, next)}

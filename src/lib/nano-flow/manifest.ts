@@ -63,10 +63,8 @@ const KEYFRAME_RENDER_NOTE =
   "natural realistic lighting, true-to-life skin and material textures, shallow " +
   "depth of field, sharp focus, high dynamic range, professional colour grading, " +
   "ultra-detailed — a real photograph.";
-const KEYFRAME_NEGATIVE =
-  "NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT CGI, NOT painting, " +
-  "NOT drawing, NOT sketch; no on-screen text, caption, watermark or logo; no extra, " +
-  "missing or fused fingers; no identity drift; the same character never duplicated in frame.";
+// (KEYFRAME_NEGATIVE removed — the storyboard board writes its own negative that
+//  ALLOWS the required per-panel caption text.)
 // IDENTITY + WARDROBE authority: the keyframe MUST follow the attached full-body
 // character reference (the wardrobe sheet) for BOTH face and outfit — this is the
 // clause the user asked for so the image obeys the reference, not a random outfit.
@@ -86,22 +84,24 @@ const KEYFRAME_REFERENCE_AUTHORITY =
   "action, pose and camera angle change.";
 
 /**
- * Compose the per-shot LOCATION BOARD image prompt (new model) from the same
- * structured Veo clip that drives the video — so image and video share ONE
- * setting (đồng bộ). Instead of one keyframe (or one image per beat), each 10s
- * shot gets a SINGLE board image split into 4 panels showing that ONE location
- * from four different camera angles. The board locks the background; the VIDEO
- * prompt then drives the characters' action inside it, and however many "scenes"
- * happen in the 10s is decided by the video prompt — no fixed per-beat frames.
- * Returns a JSON string (Nano Banana obeys structured prompts more faithfully).
- * Falls back to the prose style-lock only when no structured clip exists.
+ * Compose the per-shot STORYBOARD BOARD image prompt from the structured Veo
+ * clip + the shot's script beats. Each 10s shot → ONE board image with N panels
+ * (N = number of beats / "số cảnh nhỏ"), each panel showing the ATTACHED
+ * characters performing that beat INSIDE the shot's location (the ATTACHED
+ * location photo when the user uploaded one, else the scripted setting). A
+ * caption strip under every panel carries "N. [camera] action" so the order +
+ * action are legible and the extension/Veo follow the same beats when the board
+ * drives the video. Returns a JSON string. Falls back to the prose style-lock
+ * only when no structured clip exists.
  */
 function buildLocationBoardPrompt(
   clip: Record<string, unknown> | undefined,
   fallbackSceneText: string,
   envName: string,
   wardrobeClause: string,
-  realityMode: string
+  realityMode: string,
+  beats: Array<{ beat?: string; camera?: string }>,
+  hasLocationPhoto: boolean
 ): string {
   if (!clip) return lockStyle(fallbackSceneText + wardrobeClause, realityMode);
 
@@ -132,35 +132,48 @@ function buildLocationBoardPrompt(
     cast.push(entry);
   }
 
+  // Action panels straight from the script beats (≤5). Each panel = one beat,
+  // with a caption "N. [camera] action" printed under it.
+  const beatList = (Array.isArray(beats) ? beats : []).filter((b) => clipStr(b?.beat));
+  const usePanels = beatList.length ? beatList : [{ beat: fallbackSceneText || setting }];
+  const panels = usePanels.slice(0, 5).map((b, i) => {
+    const cam = clipStr(b.camera);
+    const act = clipStr(b.beat);
+    const entry: Record<string, unknown> = { panel: i + 1, action: act };
+    if (cam) entry.camera = cam;
+    entry.caption = `${i + 1}. ${cam ? cam + " " : ""}${act}`;
+    return entry;
+  });
+  const n = panels.length;
+
   const liveAction = ["documentary", "cinematic", "commercial"].includes(
     realityMode
   );
   const prompt: Record<string, unknown> = {
-    type: liveAction ? "photoreal_location_board" : `${slugify(realityMode)}_location_board`,
+    type: liveAction ? "photoreal_storyboard_board" : `${slugify(realityMode)}_storyboard_board`,
     layout:
-      "A SINGLE 16:9 image arranged as a 2x2 grid of 4 panels — FOUR different camera angles of the SAME ONE location, so the whole set geometry is documented as one location board. Thin gutters between panels.",
-    panels: [
-      "Panel 1 (top-left) — WIDE establishing: the whole location edge to edge at eye level, showing overall layout, walls, floor, main furniture and every landmark, with the cast placed naturally where the scene happens.",
-      "Panel 2 (top-right) — a clearly DIFFERENT reverse / ~90° angle of the SAME place, revealing the opposite walls and corners.",
-      "Panel 3 (bottom-left) — medium shot of the main action area where the characters interact.",
-      "Panel 4 (bottom-right) — a closer detail angle of a key part of the same set.",
-    ],
+      `A SINGLE 16:9 STORYBOARD BOARD sheet with ${n} panel${n > 1 ? "s" : ""} in reading order (left to right, then top to bottom). Every panel is a photoreal film frame of the SAME scene at a different beat; only the action, pose and camera change. Directly UNDER each panel print a thin caption strip containing that panel's caption text.`,
+    setting_authority: hasLocationPhoto
+      ? "An ATTACHED location photo is the EXACT and MANDATORY setting. Reproduce THAT real place — its layout, furniture, walls, windows, materials, colours and lighting — in EVERY panel. Never invent, relocate or substitute a different location; only the camera framing changes."
+      : `Setting (no photo attached, build it from this description): ${setting}.`,
+    staging:
+      "Place the ATTACHED characters INTO this location and have them perform each panel's action. Each character's face, hair AND full outfit must match that character's ATTACHED wardrobe sheet exactly. The SAME people appear in every panel.",
     render: liveAction
       ? KEYFRAME_RENDER_NOTE
-      : `Reality E location board in the project's locked ${realityMode} medium. Preserve its exact design language, materials, proportions, lighting logic and internal physics; never convert it to live-action photorealism.`,
+      : `Reality E storyboard board in the project's locked ${realityMode} medium. Preserve its exact design language, materials, proportions, lighting logic and internal physics; never convert it to live-action photorealism.`,
     visual_style: visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
     lighting: lighting || undefined,
     cast,
-    consistency:
-      "All four panels are the IDENTICAL single location with the same materials, colours, furniture and lighting; only the camera angle changes. Any character shown is the SAME person across panels, matching that character's attached wardrobe sheet (face, hair AND full outfit).",
+    panels,
+    captions:
+      "REQUIRED: print each panel's `caption` text in a small strip directly under its own panel (number + camera + action). These per-panel captions are the ONLY text allowed on the image.",
     reference_authority: KEYFRAME_REFERENCE_AUTHORITY,
     wardrobe_note: wardrobeClause ? wardrobeClause.trim() : undefined,
     negative: liveAction
-      ? KEYFRAME_NEGATIVE +
-        " Do NOT merge the four panels into one continuous scene; keep them as four distinct framed angles of the same place."
-      : "No visual-medium drift, no accidental photoreal conversion, no inconsistent character design, no on-screen text, caption, watermark or logo; keep four distinct panels of one identical location.",
+      ? "Photorealistic only — NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT painting, NOT drawing. No watermark or logo. The ONLY text on the image is the specified per-panel caption strips — no other subtitles, UI or lettering. No identity drift; never duplicate a character within a panel; no extra, missing or fused fingers."
+      : "No visual-medium drift, no accidental photoreal conversion, no inconsistent character design; the only text is the specified per-panel captions; consistent location across every panel.",
   };
   // JSON.stringify drops the undefined-valued keys, leaving a clean payload.
   return JSON.stringify(prompt);
@@ -421,7 +434,9 @@ export function buildNanoFlowManifest(
         seg.first_frame_prompt || seg.motion_prompt || "",
         humanizeEnvId((seg.location_id ?? seg.environment_ref ?? "").trim()),
         wardrobeClause,
-        realityMode
+        realityMode,
+        seg.beats ?? [],
+        !!boardLocationImage
       ),
       continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),

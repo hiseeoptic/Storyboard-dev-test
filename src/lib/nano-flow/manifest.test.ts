@@ -87,6 +87,38 @@ test("Cách 1 — no locationSets ⇒ no embedded photo (app-auto board)", () =>
   assert.equal(m.shots[0]?.board_location_image, undefined);
 });
 
+test("board panels come from beats with captions; uploaded photo ⇒ strict setting_authority", () => {
+  const bd = {
+    title: "Board",
+    character_locks: [{ name: "Minh" }],
+    segments: [{
+      segment_number: 1,
+      characters_in_scene: ["Minh"],
+      environment_ref: "bep",
+      first_frame_prompt: "kitchen",
+      motion_prompt: "m",
+      full_prompt: "v",
+      beats: [
+        { beat: "Minh looks worried", camera: "[EYE]" },
+        { beat: "close on Minh's face", camera: "[CLOSE]" },
+      ],
+    }],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const veoClips = [{ background_lock: { setting: "family kitchen" }, character_lock: { A: { name: "Minh" } } }];
+  const m = buildNanoFlowManifest(bd, {
+    veoClips,
+    locationSets: [{ name: "Đoạn 1", images: ["data:image/png;base64,AAAA"], scene_indices: [1] }],
+  });
+  const kf = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  const panels = kf.panels as Array<Record<string, unknown>>;
+  assert.equal(panels.length, 2, "one panel per beat");
+  assert.match(String(panels[0]!.caption), /1\. \[EYE\] Minh looks worried/);
+  assert.match(String(panels[1]!.caption), /2\. \[CLOSE\]/);
+  // an uploaded photo was embedded for this shot → board treats it as mandatory
+  assert.match(String(kf.setting_authority), /ATTACHED location photo/);
+  assert.match(String(kf.captions), /REQUIRED/);
+});
+
 test("characters become declared assets, referenced by id in shots", () => {
   const m = buildNanoFlowManifest(fixture());
   const [shot1] = m.shots;
@@ -197,7 +229,7 @@ test("structured keyframe respects a stylized Reality E context", () => {
     ],
   });
   const prompt = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
-  assert.equal(prompt.type, "stylized_location_board");
+  assert.equal(prompt.type, "stylized_storyboard_board");
   assert.match(String(prompt.render), /Reality E.*stylized/i);
   assert.doesNotMatch(String(prompt.render), /real photograph/i);
 });
@@ -263,9 +295,9 @@ test("embeds the structured Veo clip as video_prompt and composes a rich keyfram
   // setting pulled from background_lock, a photoreal render note, the reference
   // authority and a negative list.
   const kf = JSON.parse(s1.storyboard_prompt) as Record<string, unknown>;
-  assert.equal(kf.type, "photoreal_location_board");
-  assert.match(String(kf.layout), /2x2 grid of 4 panels/);
-  assert.equal((kf.panels as string[]).length, 4);
+  assert.equal(kf.type, "photoreal_storyboard_board");
+  assert.match(String(kf.layout), /STORYBOARD BOARD/);
+  assert.ok(Array.isArray(kf.panels) && (kf.panels as unknown[]).length >= 1);
   assert.match(String(kf.setting), /cozy kitchen at dawn/);
   const cast = kf.cast as Array<Record<string, string>>;
   const minh = cast.find((c) => c.name === "Minh");
