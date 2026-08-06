@@ -135,6 +135,37 @@ test("board panels come from beats with captions; uploaded photo ⇒ strict sett
   assert.match(String(kf.captions), /REQUIRED/);
 });
 
+test("no end→start chaining: a later board never says 'continue from previous / do not re-establish'", () => {
+  // Two same-location shots — the old continue_from made shot 2 ignore the
+  // uploaded location and drift. Boards must now each build independently.
+  const bd = {
+    title: "NoChain",
+    character_locks: [{ name: "Minh" }, { name: "Lan" }],
+    segments: [
+      { segment_number: 1, characters_in_scene: ["Minh"], environment_ref: "bep",
+        first_frame_prompt: "kitchen", motion_prompt: "m1", full_prompt: "v1",
+        beats: [{ beat: "Minh sits", camera: "[WIDE]" }] },
+      { segment_number: 2, characters_in_scene: ["Lan"], environment_ref: "bep",
+        first_frame_prompt: "kitchen", motion_prompt: "m2", full_prompt: "v2",
+        beats: [{ beat: "Lan replies", camera: "[CLOSE]" }] },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    veoClips: [
+      { background_lock: { setting: "kitchen" }, character_lock: { A: { name: "Minh" } } },
+      { background_lock: { setting: "kitchen" }, character_lock: { A: { name: "Lan" } } },
+    ],
+    locationSets: [{ name: "Đoạn", images: ["data:image/png;base64,AAAA"], scene_indices: [1, 2] }],
+  });
+  for (const s of m.shots) {
+    const kf = JSON.parse(s.storyboard_prompt) as Record<string, unknown>;
+    assert.equal(kf.continue_from, undefined, "board must not carry a continue_from chaining clause");
+    assert.doesNotMatch(s.storyboard_prompt, /re-establish|continuation of the previous shot/i);
+    // and the uploaded location stays the strict authority on every board
+    assert.match(String(kf.setting_authority), /ATTACHED location photo/);
+  }
+});
+
 test("characters become declared assets, referenced by id in shots", () => {
   const m = buildNanoFlowManifest(fixture());
   const [shot1] = m.shots;

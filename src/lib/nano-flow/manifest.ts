@@ -102,7 +102,6 @@ function buildLocationBoardPrompt(
   realityMode: string,
   beats: Array<{ beat?: string; camera?: string }>,
   hasLocationPhoto: boolean,
-  continueFrom: string,
   projectLighting: string
 ): string {
   if (!clip) return lockStyle(fallbackSceneText + wardrobeClause, realityMode);
@@ -173,9 +172,6 @@ function buildLocationBoardPrompt(
       "REQUIRED on EVERY panel: print that panel's `caption` text (number + camera + action) in a thin strip directly under its own panel. Every panel gets a caption; these per-panel captions are the ONLY text allowed on the image.",
     consistency:
       "PROJECT CONSISTENCY — every shot of this video must match: keep the SAME time-of-day and the SAME lighting in EVERY shot (do NOT switch between day and night between shots). The meal, food, dishes, bowls, chopsticks and every table prop are IDENTICAL across all shots (same dish, same plating, same amount). Furniture and layout stay identical to the attached location; only the characters' action and the camera change.",
-    continue_from: continueFrom
-      ? `PANEL 1 is a direct CONTINUATION of the previous shot's final moment (${continueFrom}) — same room, same character positions and props, same lighting, as if the camera picked up an instant later. The action then progresses across the remaining panels; do NOT reset or re-establish the scene.`
-      : undefined,
     reference_authority: KEYFRAME_REFERENCE_AUTHORITY,
     wardrobe_note: wardrobeClause ? wardrobeClause.trim() : undefined,
     negative: liveAction
@@ -411,7 +407,6 @@ export function buildNanoFlowManifest(
   const projectLighting = opts.veoClips?.[0]
     ? clipStr(clipObj(opts.veoClips[0].background_lock).lighting)
     : "";
-  const CUT_MODES = ["scene_cut", "location_cut", "time_jump", "match_cut", "montage", "flashback", "dream", "symbolic"];
 
   const shots: NanoFlowShot[] = segments.map((seg, i) => {
     const index = seg.segment_number || i + 1;
@@ -464,21 +459,6 @@ export function buildNanoFlowManifest(
       seg.continuity_mode ??
       (i === 0 ? "opening" : "continuous");
 
-    // End→start chaining: this board's panel 1 continues from the PREVIOUS shot's
-    // last beat — ONLY when the previous shot is the SAME location and the boundary
-    // is not a deliberate cut. Different place / cut ⇒ fresh start (empty string).
-    const prevSeg = i > 0 ? segments[i - 1] : undefined;
-    const thisLoc = String(seg.location_id ?? seg.environment_ref ?? "").trim();
-    const prevLoc = String(prevSeg?.location_id ?? prevSeg?.environment_ref ?? "").trim();
-    const prevLastBeat = (prevSeg?.beats ?? [])
-      .filter((b) => (b?.beat ?? "").trim())
-      .slice(-1)[0]?.beat ?? "";
-    const continueFrom =
-      prevSeg && thisLoc && thisLoc === prevLoc &&
-      !CUT_MODES.includes(String(shotContinuity).toLowerCase()) && prevLastBeat
-        ? String(prevLastBeat).trim()
-        : "";
-
     return {
       shot_id: `SHOT_${String(index).padStart(3, "0")}`,
       index,
@@ -498,7 +478,6 @@ export function buildNanoFlowManifest(
         realityMode,
         seg.beats ?? [],
         !!boardLocationImage,
-        continueFrom,
         projectLighting
       ),
       continuity_mode: shotContinuity,
