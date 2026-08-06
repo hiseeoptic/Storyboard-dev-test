@@ -186,6 +186,38 @@ function buildLocationBoardPrompt(
   return JSON.stringify(prompt);
 }
 
+/**
+ * Viral 9:16 thumbnail image prompt in the high-CTR "clickbait" style: the cast
+ * cut out as glowing-outline stickers with EXAGGERATED reactions, a hero item, a
+ * punchy bokeh/confetti background, and the big stylized headline. Character
+ * identity is locked by the attached wardrobe sheets. Returns a JSON string.
+ */
+function buildThumbnailPrompt(params: {
+  headline: string;
+  castNames: string[];
+  hero: string;
+  aspect: "16:9" | "9:16";
+  realityMode: string;
+}): string {
+  const cast = params.castNames.length ? params.castNames.join(" and ") : "the main character(s)";
+  const liveAction = ["documentary", "cinematic", "commercial"].includes(params.realityMode);
+  const prompt: Record<string, unknown> = {
+    type: liveAction ? "photoreal_viral_thumbnail" : `${slugify(params.realityMode)}_viral_thumbnail`,
+    aspect: params.aspect === "9:16" ? "9:16 vertical" : "16:9 horizontal",
+    goal: "A high-energy, high-click-through YouTube/TikTok thumbnail — instantly readable at a glance, hyper-saturated and punchy.",
+    subjects: `The cast (${cast}) cut out as stickers with a THICK glowing white + neon outline, leaning in with EXAGGERATED excited/shocked reactions — wide eyes, big open-mouth smiles — reacting to the hero item. Each person's face, hair and build come EXACTLY from that character's ATTACHED wardrobe sheet (identity source of truth); do NOT restyle their face.`,
+    hero_item: `${params.hero} as the centred hero — glistening, appetising, larger-than-life, with a subtle glow.`,
+    headline: `Big bold 3D headline "${params.headline}" across the TOP third — thick multi-colour gradient letters (warm yellow → pink → blue), heavy dark outline + drop shadow + soft glow, plus one playful emoji. The text MUST be spelled EXACTLY as given, crisp and fully legible.`,
+    background: "warm, festive setting with blurred bokeh string lights, floating confetti and sparkles, and a bright radial light-burst behind the subjects; deep saturated colours.",
+    composition: "subjects fill the lower two-thirds, headline in the top third, hero item centred between/below them; strong depth, punchy vignette.",
+    render: liveAction
+      ? "Photoreal characters composited with graphic overlays; ultra-saturated, high contrast, tack-sharp — a scroll-stopping thumbnail."
+      : `Reality E thumbnail in the project's locked ${params.realityMode} medium; keep the design language, just push saturation and energy.`,
+    negative: "no extra, missing or fused fingers; no distorted or duplicated faces; NO gibberish or misspelled text (the headline must read exactly as given); no watermark, no logo.",
+  };
+  return JSON.stringify(prompt);
+}
+
 /** Turn a display name into a stable ascii slug id (Vietnamese-aware). */
 export function slugify(name: string): string {
   return (name || "")
@@ -509,6 +541,17 @@ export function buildNanoFlowManifest(
       dialogue_language: opts.dialogueLanguage ?? "Vietnamese",
       total_duration_seconds: breakdown.total_duration_seconds,
       thumbnail_title: breakdown.thumbnail_title,
+      thumbnail_prompt: buildThumbnailPrompt({
+        headline: breakdown.thumbnail_title || title,
+        castNames: characters.map((c) => c.name).slice(0, 3),
+        hero:
+          opts.productNames?.[0] ||
+          (breakdown.product_dna
+            ? "the hero product featured in the video (match the attached product reference exactly)"
+            : "the standout dish, food or key object of the video"),
+        aspect: opts.aspectRatio ?? "9:16",
+        realityMode,
+      }),
       social_posts: breakdown.social_posts,
     },
     assets: {

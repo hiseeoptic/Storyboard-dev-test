@@ -53,6 +53,22 @@ test("manifest has the fixed contract shape", () => {
   assert.equal(m.shots[1]?.continuity_mode, "continuous");
 });
 
+test("project carries a viral thumbnail prompt (clickbait, headline + cast + wardrobe sheets)", () => {
+  const m = buildNanoFlowManifest(fixture(), { productNames: ["Trà Bắc"] });
+  const raw = m.project.thumbnail_prompt;
+  assert.ok(typeof raw === "string" && raw.length > 0);
+  const t = JSON.parse(raw as string);
+  // viral thumbnail contract
+  assert.equal(t.type, "photoreal_viral_thumbnail");
+  assert.equal(t.aspect, "9:16 vertical");
+  // exact headline text must be carried through for the big 3D title
+  assert.match(t.headline, /TRÀ BẮC CHÍNH GỐC/);
+  // cast comes from the wardrobe sheets (identity-locked), reacting to the hero
+  assert.match(t.subjects, /Lan and Minh/);
+  assert.match(t.subjects, /wardrobe sheet/i);
+  assert.match(t.hero_item, /Trà Bắc/);
+});
+
 test("board model — one image per 10s shot; beats never explode into scenes[]", () => {
   const m = buildNanoFlowManifest(fixture());
   const [shot1, shot2] = m.shots;

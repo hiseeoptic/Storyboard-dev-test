@@ -170,6 +170,11 @@ export interface NanoFlowProject {
   dialogue_language?: string;
   total_duration_seconds?: number;
   thumbnail_title?: string;
+  /** Viral 9:16 thumbnail image prompt (high-CTR clickbait style): cut-out cast
+   * with a neon outline + exaggerated reactions, a hero item, and the big
+   * stylized `thumbnail_title` headline. The extension generates it from this
+   * prompt with the character wardrobe sheets attached (identity-locked). */
+  thumbnail_prompt?: string;
   /** Reuses the existing Storyboard SocialPosts shape verbatim. */
   social_posts?: unknown;
 }
