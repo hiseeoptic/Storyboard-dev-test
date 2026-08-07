@@ -113,27 +113,45 @@ export function validateSpatialState(state: ProductionState): ProductionFinding[
   const findings: ProductionFinding[] = [];
   for (const shot of state.shots) {
     if (shot.spatial_graph) findings.push(...graphErrors(shot, shot.spatial_graph));
-    for (const [boundary, snapshot] of [
-      ["start", shot.start_snapshot],
-      ["end", shot.end_snapshot],
-    ] as const) {
-      const visibleCharacters = snapshot.entities.filter((entity) => entity.kind === "character");
-      const placed = new Set(snapshot.placements.map((placement) => placement.entity_id));
-      if (visibleCharacters.length >= 2) {
-        const missing = visibleCharacters.filter((entity) => !placed.has(entity.entity_id));
-        if (missing.length > 0 || !shot.spatial_graph) {
-          findings.push(
-            finding({
-              code: "SPATIAL_MULTI_CHARACTER_PLACEMENT_MISSING",
-              severity: "high",
-              message: "Every character in a multi-character shot needs canonical placement.",
-              shot_id: shot.shot_id,
-              entity_ids: missing.map((entity) => entity.entity_id),
-              evidence: { boundary, has_spatial_graph: Boolean(shot.spatial_graph) },
-              suggested_patch: { op: "declare_character_placements" },
-            })
-          );
-        }
+    // Multi-character placement — ONE finding per shot (the old per-boundary loop
+    // only reported the identical note twice). When the shot HAS a spatial graph
+    // but a character is unplaced in it, that is a genuine structured gap → high.
+    // When the shot has NO compiled graph at all (legacy prose without a
+    // spatial_layout), the source-level SPAT-001 already owns the hard blocking
+    // requirement, so this stays advisory (medium) instead of stacking a second,
+    // non-deduplicated, and often unrepairable blocker onto the export gate.
+    const startCharacters = shot.start_snapshot.entities.filter(
+      (entity) => entity.kind === "character"
+    );
+    if (startCharacters.length >= 2) {
+      const placed = new Set(
+        shot.start_snapshot.placements.map((placement) => placement.entity_id)
+      );
+      const missing = startCharacters.filter((entity) => !placed.has(entity.entity_id));
+      if (shot.spatial_graph && missing.length > 0) {
+        findings.push(
+          finding({
+            code: "SPATIAL_MULTI_CHARACTER_PLACEMENT_MISSING",
+            severity: "high",
+            message: "Every character in a multi-character shot needs canonical placement in the shot's spatial graph.",
+            shot_id: shot.shot_id,
+            entity_ids: missing.map((entity) => entity.entity_id),
+            evidence: { has_spatial_graph: true, unplaced_entity_ids: missing.map((entity) => entity.entity_id) },
+            suggested_patch: { op: "declare_character_placements" },
+          })
+        );
+      } else if (!shot.spatial_graph) {
+        findings.push(
+          finding({
+            code: "SPATIAL_MULTI_CHARACTER_PLACEMENT_MISSING",
+            severity: "medium",
+            message: "Multi-character shot has no compiled spatial map; add spatial_layout.character_placement to lock left/right positions.",
+            shot_id: shot.shot_id,
+            entity_ids: startCharacters.map((entity) => entity.entity_id),
+            evidence: { has_spatial_graph: false },
+            suggested_patch: { op: "declare_character_placements" },
+          })
+        );
       }
     }
   }

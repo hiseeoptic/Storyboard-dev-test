@@ -290,3 +290,38 @@ test("atomic state chain detects a mismatched intermediate object state", () => 
   const findings = validateAtomicActions(compiled);
   assert.ok(findings.some((item) => item.code === "ACTION_STATE_CHAIN_BROKEN"));
 });
+
+// Regression: a 2-character shot whose segment legitimately omits spatial_layout
+// (the breakdown prompt tells the model to omit it for simple single-zone scenes)
+// must NOT emit an export-blocking high — that produced an unrepairable gate. It
+// stays advisory (medium) and fires ONCE per shot, not once per start/end boundary.
+test("multi-character shot without spatial_layout is advisory medium, once per shot", () => {
+  const state = buildProductionState(
+    breakdown([segment(1, { characters_in_scene: ["Lan", "Minh"] })])
+  );
+  const placement = validateSpatialState(state).filter(
+    (item) => item.code === "SPATIAL_MULTI_CHARACTER_PLACEMENT_MISSING"
+  );
+  assert.equal(placement.length, 1);
+  assert.equal(placement[0]?.severity, "medium");
+});
+
+// Regression: when a spatial graph DOES exist but a character is unplaced in it,
+// that is a genuine structured gap and must still block (high).
+test("multi-character shot with a graph but an unplaced character still blocks (high)", () => {
+  const state = buildProductionState(
+    breakdown([
+      segment(1, {
+        characters_in_scene: ["Lan", "Minh"],
+        spatial_layout: twoPersonLayout("Lan on the left in lobby floor."),
+      }),
+    ])
+  );
+  // Drop one compiled placement to simulate an unplaced character in a real graph.
+  state.shots[0]!.start_snapshot.placements = state.shots[0]!.start_snapshot.placements.slice(0, 1);
+  const placement = validateSpatialState(state).filter(
+    (item) => item.code === "SPATIAL_MULTI_CHARACTER_PLACEMENT_MISSING"
+  );
+  assert.equal(placement.length, 1);
+  assert.equal(placement[0]?.severity, "high");
+});

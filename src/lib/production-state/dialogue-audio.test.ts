@@ -152,3 +152,26 @@ test("Foley cues are generated only from visible canonical actions", () => {
   assert.equal(cue?.kind, "prop_contact");
   assert.ok(state.shots[0]!.actions.some((action) => action.action_id === cue?.action_id));
 });
+
+// Regression: a missing voice profile lives on the character lock, not the
+// segment, so the targeted segment repair cannot clear it. It must be advisory
+// (medium, matching the source CHAR-003), never an export-blocking high that
+// would strand the export with no in-place fix. VOICE_PROFILE_DRIFT stays critical.
+test("a speaker with no locked voice is advisory medium, not an export-blocking high", () => {
+  const state = buildProductionState({
+    character_locks: [character("Lan", ""), character("Minh", "")],
+    segments: [
+      segment(1, {
+        dialogue_lines: [
+          { speaker: "Lan", text: "Anh ăn cơm chưa?", start_s: 0, end_s: 2, camera_beat: 1 },
+          { speaker: "Minh", text: "Rồi anh ăn rồi.", start_s: 2.2, end_s: 4, camera_beat: 1 },
+        ],
+      }),
+    ],
+    total_duration_seconds: 10,
+    context_ir: context(),
+  });
+  const voice = state.findings.filter((item) => item.code === "SPEAKER_VOICE_PROFILE_MISSING");
+  assert.ok(voice.length > 0);
+  assert.ok(voice.every((item) => item.severity === "medium"));
+});

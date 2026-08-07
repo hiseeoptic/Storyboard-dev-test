@@ -119,9 +119,13 @@ function compileSnapshot(
     if (entry.kind === "character") {
       entry.character_physics = characterPhysics(entry);
       const pose = entry.character_physics.pose.pose;
-      const text = lower(`${entry.state} ${entry.position}`);
       let support: SupportRelation | null = null;
-      if (pose === "standing" && /\b(?:floor|ground|pavement)\b|\b(?:sàn|đất)\b/iu.test(text)) {
+      if (pose === "standing") {
+        // A standing human is, by physics, always carried by the ground/floor —
+        // even when the prose omits the word "floor/sàn". Asserting the necessary
+        // support here means SUPPORT_MISSING_FOR_STANDING only fires on a
+        // genuinely declared floating/unsupported STRUCTURED state, never on
+        // ordinary free text such as "stands at the door".
         support = {
           supported_entity_id: entry.entity_id,
           support_entity_id: null,
@@ -129,7 +133,10 @@ function compileSnapshot(
           contact_part: null,
           active: true,
         };
-      } else if (pose === "sitting" && /\b(?:chair|seat|bench|sofa|stool)\b|\b(?:ghế)\b/iu.test(text)) {
+      } else if (pose === "sitting") {
+        // Likewise a sitting human always rests on a seat/surface. Bind the seat
+        // entity when the prose names one; otherwise record the support without a
+        // specific entity rather than reporting a false "sitting on nothing".
         support = {
           supported_entity_id: entry.entity_id,
           support_entity_id: findSupportEntity(entry.position, snapshot.entities, entry.entity_id),

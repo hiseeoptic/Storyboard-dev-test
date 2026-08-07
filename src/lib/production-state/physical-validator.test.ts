@@ -377,3 +377,43 @@ test("legacy compiler infers an explicit right-hand hold without mutating input"
     )
   );
 });
+
+// Regression: a standing/sitting pose inferred from bare prose ("stands at the
+// door", "sits on the steps") has no floor/chair keyword, but a standing or
+// sitting human is ALWAYS physically supported. The compiler must assert that
+// support so SUPPORT_MISSING_FOR_STANDING/SITTING never fires as a false
+// export-blocking high on ordinary legacy text.
+test("standing/sitting compiled from bare prose gets physical support, no false SUPPORT_MISSING", () => {
+  const lan = {
+    name: "Lan", gender_age: "adult woman", build: "average", skin_tone: "warm",
+    hair: "black", eyes: "brown", costume: "blue shirt", signature_features: "none",
+    default_expression: "calm", render_style: "cinematic",
+  } satisfies CharacterLock;
+  const minh = { ...lan, name: "Minh", gender_age: "adult man" } satisfies CharacterLock;
+  const legacySegment = {
+    segment_number: 1, duration_seconds: 10, title: "Door", marketing_role: "body",
+    beats: [], first_frame_prompt: "Lan at the door, Minh on the steps",
+    motion_prompt: "", dialogue: null, continuity_note: "",
+    characters_in_scene: ["Lan", "Minh"],
+    state_ledger: {
+      start: [
+        { entity_id: "Lan", state: "standing at the doorway", position: "by the door" },
+        { entity_id: "Minh", state: "sitting on the steps", position: "on the steps" },
+      ],
+      changes: [],
+      end: [
+        { entity_id: "Lan", state: "standing at the doorway", position: "by the door" },
+        { entity_id: "Minh", state: "sitting on the steps", position: "on the steps" },
+      ],
+    },
+  } satisfies VideoSegment;
+  const compiled = buildProductionState({
+    character_locks: [lan, minh], segments: [legacySegment], total_duration_seconds: 10,
+  });
+  const findings = validatePhysicalState(compiled);
+  assert.equal(findings.some((item) => item.code === "SUPPORT_MISSING_FOR_STANDING"), false);
+  assert.equal(findings.some((item) => item.code === "SUPPORT_MISSING_FOR_SITTING"), false);
+  const start = compiled.shots[0]!.start_snapshot;
+  assert.ok(start.supports.some((s) => s.supported_entity_id === "char_lan" && s.kind === "ground" && s.active));
+  assert.ok(start.supports.some((s) => s.supported_entity_id === "char_minh" && s.kind === "seat" && s.active));
+});

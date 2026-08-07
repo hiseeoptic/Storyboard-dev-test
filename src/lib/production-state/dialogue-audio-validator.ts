@@ -108,9 +108,15 @@ function validateTurn(shot: ShotState, turn: DialogueTurnState, previousEnd: num
 
   if (turn.delivery !== "voiceover" && turn.speaker_entity_id && !turn.voice_profile) {
     findings.push(finding({
+      // Advisory, NOT export-blocking: a missing voice profile lives on the
+      // character lock (not the segment), so the targeted segment repair cannot
+      // clear it — hard-blocking here would strand the export with no in-place
+      // fix. The source validator already reports the same gap as CHAR-003 at
+      // medium; VOICE_PROFILE_DRIFT below stays critical and catches the real
+      // continuity bug (a locked voice changing between clips).
       code: "SPEAKER_VOICE_PROFILE_MISSING",
-      severity: "high",
-      message: "A named speaker must be bound to one stable voice profile.",
+      severity: "medium",
+      message: "A named speaker should be bound to one stable voice profile.",
       shot_id: shot.shot_id,
       entity_ids: [turn.speaker_entity_id],
       evidence: { turn_id: turn.turn_id, speaker_display_name: turn.speaker_display_name },
