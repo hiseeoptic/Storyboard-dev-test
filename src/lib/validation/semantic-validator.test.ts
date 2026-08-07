@@ -236,6 +236,32 @@ test("SPAT-001: a single-character scene needs no topology", () => {
   assert.ok(!r.findings.some((x) => x.code === "SPAT-001"));
 });
 
+// Regression: a single-zone 2-character scene (the breakdown prompt intentionally
+// omits spatial_layout for these) must NOT stay export-blocked. normalizeProduction-
+// Contracts synthesizes a deterministic screen-left/right placement — no AI, no
+// tokens — so the SPAT-001 gate clears while a stable left/right order is locked.
+test("SPAT-001: deterministic placement synthesis clears the gate for a single-zone 2-char scene", () => {
+  const bd = cleanFixture();
+  bd.segments[0]!.spatial_layout = undefined;
+  assert.ok(
+    validateStoryboardSemantics(bd).findings.some((x) => x.code === "SPAT-001"),
+    "pre-condition: raw breakdown trips SPAT-001"
+  );
+
+  const result = normalizeProductionContracts(bd);
+  assert.equal(result.multi_character_placements_synthesized, 1);
+  // normalizeProductionContracts mutates spatial_layout back in; read it through a
+  // fresh binding so the earlier `= undefined` narrowing does not hide it.
+  const segment = bd.segments[0] as unknown as { spatial_layout?: { character_placement?: string } };
+  const placement = segment.spatial_layout?.character_placement ?? "";
+  assert.match(placement, /screen-left/);
+  assert.match(placement, /screen-right/);
+  assert.ok(
+    !validateStoryboardSemantics(bd).findings.some((x) => x.code === "SPAT-001"),
+    "gate clears after deterministic synthesis"
+  );
+});
+
 test("CONT-001: a chained clip with no continuity_note is an advisory", () => {
   const bd = twoSegFixture();
   bd.segments[1]!.continuity_note = "";

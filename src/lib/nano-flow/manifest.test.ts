@@ -556,8 +556,12 @@ test("Production State authority flows script -> video prompt -> storyboard boar
   assert.equal(video.scene_id, "1", "original structured video fields survive");
   assert.equal(videoAuthority.authority_fingerprint, authority.authority_fingerprint);
   assert.equal(dialogueAudio.authority_fingerprint, authority.authority_fingerprint);
-  assert.deepEqual(dialogueAudio.dialogue_state, authority.dialogue_state);
-  assert.deepEqual(dialogueAudio.audio_state, authority.audio_state);
+  // dialogue/audio now live once on the canonical production_state (the slim
+  // per-shot state_authority no longer duplicates them); the video contract
+  // must still project them verbatim.
+  const canonicalShot = m.production_state!.shots[0]!;
+  assert.deepEqual(dialogueAudio.dialogue_state, canonicalShot.dialogue_state);
+  assert.deepEqual(dialogueAudio.audio_state, canonicalShot.audio_state);
   assert.equal(board.authority_fingerprint, authority.authority_fingerprint);
   assert.match(String(board.semantic_authority), /STATIC VISUAL PROJECTION/);
   assert.match(String((video.output_rules as Record<string, unknown>).semantic_priority), /storyboard image is downstream/i);
@@ -608,4 +612,59 @@ test("authority validator detects a storyboard/video fingerprint mismatch", () =
   m.shots[0]!.storyboard_prompt = JSON.stringify(board);
   const actionReport = validateProductionPromptAuthority(m);
   assert.ok(actionReport.findings.some((finding) => finding.code === "AUTH-010"));
+});
+
+// Regression: manifest payload is deduplicated (see state-authority.ts).
+// B2 — the per-shot state_authority is SLIM: it keeps the authority essentials
+// but drops the heavy canonical snapshots (they live once at production_state).
+// B1 — the IMAGE board drops dialogue/audio (a still frame never uses them),
+// while the VIDEO prompt keeps them for lip-sync/timing.
+test("manifest deduplicates per-shot authority and strips audio from the image board", () => {
+  const bd = {
+    title: "Payload",
+    total_duration_seconds: 10,
+    character_locks: [{ name: "Minh" }],
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      characters_in_scene: ["Minh"],
+      environment_ref: "office",
+      first_frame_prompt: "Minh sits at a desk.",
+      motion_prompt: "Minh opens the notebook.",
+      full_prompt: "Minh opens the notebook and reads.",
+      dialogue_lines: [{ speaker: "Minh", text: "Bắt đầu thôi.", start_s: 0, end_s: 2 }],
+    }],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    veoClips: [{
+      character_lock: { MINH: { name: "Minh" } },
+      background_lock: { setting: "quiet office" },
+      scene_action: { start_state: "Minh sits at a desk", end_state: "the notebook is open" },
+    }],
+  });
+  const shot = m.shots[0]!;
+  const authority = shot.state_authority as Record<string, unknown>;
+
+  // B2: slim per-shot authority keeps the essentials…
+  assert.ok(authority.authority_fingerprint);
+  assert.ok(authority.script_contract);
+  assert.ok(Array.isArray(authority.actions));
+  // …and drops the heavy canonical fields (no per-shot duplication).
+  assert.equal(authority.start_snapshot, undefined);
+  assert.equal(authority.end_snapshot, undefined);
+  assert.equal(authority.dialogue_state, undefined);
+  // The full canonical shot state still lives once at production_state.shots[i].
+  assert.ok(m.production_state!.shots[0]!.start_snapshot);
+  assert.ok(m.production_state!.shots[0]!.dialogue_state);
+
+  // B1: the image board carries the state projection but WITHOUT dialogue/audio…
+  const board = JSON.parse(shot.storyboard_prompt) as Record<string, unknown>;
+  const boardAuthority = board.production_state_authority as Record<string, unknown>;
+  assert.ok(boardAuthority.start_snapshot, "board keeps the physical projection");
+  assert.equal(boardAuthority.dialogue_state, undefined);
+  assert.equal(boardAuthority.audio_state, undefined);
+  // …while the video prompt keeps dialogue for lip-sync/timing.
+  const video = shot.video_prompt as Record<string, unknown>;
+  const videoAuthority = video.production_state_authority as Record<string, unknown>;
+  assert.ok(videoAuthority.dialogue_state, "video keeps dialogue_state");
 });

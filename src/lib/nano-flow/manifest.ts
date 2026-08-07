@@ -14,7 +14,9 @@ import type {
 import { buildProductionState } from "../production-state/normalizer.ts";
 import {
   buildNanoFlowShotStateAuthority,
+  compactBoardAuthority,
   compactPromptAuthority,
+  slimStateAuthorityForManifest,
 } from "./state-authority.ts";
 
 export interface BuildNanoFlowManifestOptions {
@@ -225,7 +227,7 @@ function buildLocationBoardPrompt(
     authority_order: stateAuthority.authority_order,
     semantic_authority:
       "This storyboard board is a STATIC VISUAL PROJECTION of the script-derived primary video prompt. It may not add, remove, reinterpret or override any video action, camera intent, state transition or ending.",
-    production_state_authority: compactPromptAuthority(stateAuthority),
+    production_state_authority: compactBoardAuthority(stateAuthority),
     video_prompt_projection: clip
       ? {
           scene_action: clip.scene_action,
@@ -693,7 +695,9 @@ export function buildNanoFlowManifest(
       voice: null,
       beats: (seg.beats ?? []).map((b) => ({ beat: b.beat, camera: b.camera })),
       wardrobe_change: Object.keys(wardrobeChange).length ? wardrobeChange : null,
-      state_authority: stateAuthority,
+      // Store the SLIM authority; the full canonical shot state is available once
+      // at manifest.production_state.shots[index] (no per-shot duplication).
+      state_authority: slimStateAuthorityForManifest(stateAuthority),
     };
   });
 

@@ -123,6 +123,20 @@ export interface NanoFlowShotStateAuthority {
   findings: ProductionFinding[];
 }
 
+/** The SLIM per-shot authority actually stored on each manifest shot. The heavy
+ * canonical snapshots/graph/camera/lighting/dialogue/audio already live once at
+ * manifest.production_state.shots[i]; duplicating them onto every shot roughly
+ * doubled the manifest. Only the authority essentials that downstream validators
+ * read (fingerprint, order, script contract, ordered actions) are kept here. */
+export type NanoFlowShotStateAuthorityRef = Pick<
+  NanoFlowShotStateAuthority,
+  | "production_shot_id"
+  | "authority_fingerprint"
+  | "authority_order"
+  | "script_contract"
+  | "actions"
+>;
+
 /** Schema 4.1 — a single SCENE inside a shot. Each scene is generated as its OWN
  * Nano Banana image from `image_prompt` (written 100% by Storyboard, script-
  * accurate), REPLACING the old "one keyframe per 10s shot" model that lost the
@@ -199,8 +213,9 @@ export interface NanoFlowShot {
    * regenerates that character's full-body wardrobe sheet with the new outfit
    * and uses it from this shot onward. Omit when the outfit is unchanged. */
   wardrobe_change?: Record<string, string> | null;
-  /** Production State contract used to compile both prompts for this shot. */
-  state_authority?: NanoFlowShotStateAuthority;
+  /** Slim Production State authority used to compile both prompts for this shot.
+   * The full canonical shot state is at manifest.production_state.shots[index]. */
+  state_authority?: NanoFlowShotStateAuthorityRef;
 }
 
 export interface NanoFlowProject {

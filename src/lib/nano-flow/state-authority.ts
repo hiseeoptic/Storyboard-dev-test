@@ -1,6 +1,7 @@
 import type { VideoSegment } from "@/types";
 import type {
   NanoFlowShotStateAuthority,
+  NanoFlowShotStateAuthorityRef,
   NanoFlowScriptAuthority,
 } from "@/types/nano-flow";
 import type { ProductionState, ShotState } from "../production-state/types.ts";
@@ -85,8 +86,9 @@ export function buildNanoFlowShotStateAuthority(params: {
   };
 }
 
-/** Compact prompt payload. The full canonical state remains available on shot.state_authority. */
-export function compactPromptAuthority(authority: NanoFlowShotStateAuthority) {
+/** Shared spatial/action/camera/light projection used by BOTH the video prompt
+ * and the image board. Excludes dialogue/audio, which only the video needs. */
+function compactAuthorityBase(authority: NanoFlowShotStateAuthority) {
   const compactSnapshot = (snapshot: NanoFlowShotStateAuthority["start_snapshot"]) => ({
     entities: snapshot.entities.map((entity) => ({
       entity_id: entity.entity_id,
@@ -134,7 +136,38 @@ export function compactPromptAuthority(authority: NanoFlowShotStateAuthority) {
     spatial_graph: authority.spatial_graph,
     camera_state: authority.camera_state,
     lighting_state: authority.lighting_state,
+  };
+}
+
+/** Compact prompt payload for the VIDEO. The full canonical state remains
+ * available on manifest.production_state.shots[i]. */
+export function compactPromptAuthority(authority: NanoFlowShotStateAuthority) {
+  return {
+    ...compactAuthorityBase(authority),
     dialogue_state: authority.dialogue_state,
     audio_state: authority.audio_state,
+  };
+}
+
+/** Compact payload for the IMAGE board. A still frame never lip-syncs or plays
+ * audio, so dialogue_state/audio_state/foley are dropped — a smaller board
+ * prompt (fewer image-gen tokens) with zero loss for a static projection. */
+export function compactBoardAuthority(authority: NanoFlowShotStateAuthority) {
+  return compactAuthorityBase(authority);
+}
+
+/** Slim the per-shot authority for STORAGE in the manifest. The heavy canonical
+ * snapshots/graph/camera/lighting/dialogue/audio remain available once at
+ * manifest.production_state.shots[i]; only the authority essentials that
+ * downstream validators read are kept per shot, roughly halving the manifest. */
+export function slimStateAuthorityForManifest(
+  authority: NanoFlowShotStateAuthority
+): NanoFlowShotStateAuthorityRef {
+  return {
+    production_shot_id: authority.production_shot_id,
+    authority_fingerprint: authority.authority_fingerprint,
+    authority_order: authority.authority_order,
+    script_contract: authority.script_contract,
+    actions: authority.actions,
   };
 }
