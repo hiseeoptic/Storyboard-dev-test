@@ -2079,6 +2079,8 @@ export function GenerateClient() {
       : [];
     const manifest = buildNanoFlowManifest(result.breakdown, {
       aspectRatio: (genInput?.aspect_ratio as "16:9" | "9:16") ?? "9:16",
+      // Board vẽ ĐÚNG số cảnh người dùng chọn (3 cảnh ⇒ 3 frame).
+      beatsPerSegment: genInput?.beats_per_segment ?? beatsPerSegment,
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
       // Selected video style → lock the manifest (board + video) to that medium.
       characterRepresentation: effectiveCharacterRepresentation,

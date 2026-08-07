@@ -1869,6 +1869,8 @@ function validatePreRenderGates(
     const manifestCharacterRepresentation = resolveCreativeRoute(input).effective_character_representation;
     const manifest = buildNanoFlowManifest(breakdown, {
       aspectRatio: input.aspect_ratio === "16:9" ? "16:9" : "9:16",
+      // Board vẽ ĐÚNG số cảnh người dùng chọn (3 cảnh ⇒ 3 frame).
+      beatsPerSegment: input.beats_per_segment,
       dialogueLanguage:
         input.dialogue_language ??
         breakdown.context_ir?.layers.audio_validation.language ??

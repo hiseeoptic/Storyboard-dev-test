@@ -15,6 +15,9 @@ export interface BuildNanoFlowManifestOptions {
   aspectRatio?: "16:9" | "9:16";
   dialogueLanguage?: string;
   projectId?: string;
+  /** Số cảnh nhỏ mỗi đoạn (beats_per_segment) người dùng chọn. Board vẽ ĐÚNG
+   * bấy nhiêu ô — 3 cảnh ⇒ 3 frame, không thừa. Trống ⇒ tối đa 5. */
+  beatsPerSegment?: number;
   /** ISO timestamp; defaults to now. Injectable for deterministic tests. */
   generatedAt?: string;
   /** Optional product reference names to declare as shared assets. */
@@ -111,7 +114,8 @@ function buildLocationBoardPrompt(
   beats: Array<{ beat?: string; camera?: string }>,
   hasLocationPhoto: boolean,
   projectLighting: string,
-  characterStyleLock = ""
+  characterStyleLock = "",
+  maxPanels = 5
 ): string {
   if (!clip) return lockStyle(fallbackSceneText + wardrobeClause, realityMode, characterStyleLock);
 
@@ -146,7 +150,9 @@ function buildLocationBoardPrompt(
   // with a caption "N. [camera] action" printed under it.
   const beatList = (Array.isArray(beats) ? beats : []).filter((b) => clipStr(b?.beat));
   const usePanels = beatList.length ? beatList : [{ beat: fallbackSceneText || setting }];
-  const panels = usePanels.slice(0, 5).map((b, i) => {
+  // Board vẽ ĐÚNG số cảnh người dùng chọn — không thừa ô (3 cảnh ⇒ 3 frame).
+  const panelCap = Math.max(1, Math.min(5, Math.round(maxPanels) || 5));
+  const panels = usePanels.slice(0, panelCap).map((b, i) => {
     const cam = clipStr(b.camera);
     const act = clipStr(b.beat);
     const entry: Record<string, unknown> = { panel: i + 1, action: act };
@@ -165,7 +171,7 @@ function buildLocationBoardPrompt(
       ? "styled_storyboard_board"
       : liveAction ? "photoreal_storyboard_board" : `${slugify(realityMode)}_storyboard_board`,
     layout:
-      `A SINGLE 16:9 STORYBOARD BOARD sheet with ${n} panel${n > 1 ? "s" : ""} in reading order (left to right, then top to bottom). Every panel is ${characterStyleLock ? "a frame in the locked visual style" : "a photoreal film frame"} of the SAME scene at a different beat; only the action, pose and camera change. Directly UNDER each panel print a thin caption strip containing that panel's caption text.`,
+      `A SINGLE 16:9 STORYBOARD BOARD sheet holding EXACTLY ${n} panel${n > 1 ? "s" : ""} — no more, no fewer, and NO empty, blank or filler cells. ${n === 1 ? "One frame filling the sheet." : n <= 3 ? `Arrange the ${n} panels side by side in ONE horizontal row of equal size, filling the whole sheet.` : `Arrange the ${n} panels in a tidy grid in reading order (left to right, then top to bottom), every cell filled, none left blank.`} Every panel is ${characterStyleLock ? "a frame in the locked visual style" : "a photoreal film frame"} of the SAME scene at a different beat; only the action, pose and camera change. Directly UNDER each panel print a thin caption strip containing that panel's caption text.`,
     setting_authority: hasLocationPhoto
       ? "An ATTACHED location photo is the EXACT and MANDATORY setting. Reproduce THAT real place — its layout, furniture, walls, windows, materials, colours and lighting — in EVERY panel. Never invent, relocate or substitute a different location; only the camera framing changes."
       : `Setting (no photo attached, build it from this description): ${setting}.`,
@@ -510,7 +516,8 @@ export function buildNanoFlowManifest(
         seg.beats ?? [],
         !!boardLocationImage,
         projectLighting,
-        visualMediumLock
+        visualMediumLock,
+        opts.beatsPerSegment ?? 5
       ),
       continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
