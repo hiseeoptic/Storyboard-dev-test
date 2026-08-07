@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildNanoFlowManifest, lockStyle, slugify, withKeyframeAuthority } from "./manifest.ts";
+import { validateProductionPromptAuthority } from "../validation/production-authority-validator.ts";
 
 // Minimal breakdown fixture — only the fields buildNanoFlowManifest reads.
 function fixture() {
@@ -202,6 +203,31 @@ test("characters become declared assets, referenced by id in shots", () => {
   assert.deepEqual(shot1.video_refs?.characters, ["char_lan"]);
 });
 
+test("manifest character assets reuse stable registry IDs when display names share one slug", () => {
+  const bd = {
+    title: "Stable IDs",
+    total_duration_seconds: 10,
+    character_locks: [
+      { name: "Đặng", display_name: "Đặng" },
+      { name: "Dang", display_name: "Dang" },
+    ],
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      characters_in_scene: ["Đặng", "Dang"],
+      environment_ref: "studio",
+      first_frame_prompt: "Đặng and Dang stand apart in the studio.",
+      motion_prompt: "They exchange a greeting.",
+      full_prompt: "Đặng and Dang exchange a greeting.",
+    }],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd);
+  const ids = (m.assets.characters ?? []).map((character) => character.id);
+  assert.equal(new Set(ids).size, 2);
+  assert.deepEqual(ids, ["char_dang", "char_dang_2"]);
+  assert.deepEqual(m.shots[0]!.image_refs?.characters, ids);
+});
+
 test("environment_ref becomes an asset except when custom", () => {
   const m = buildNanoFlowManifest(fixture());
   const [shot1, shot2] = m.shots;
@@ -252,7 +278,8 @@ test("shot ids and storyboard names are ordered", () => {
   assert.equal(shot1.storyboard_name, "Making Trà Bắc 1");
   // storyboard_prompt is style-locked (photoreal) but preserves the scene text.
   assert.ok(shot1.storyboard_prompt.includes("keyframe prompt 1"));
-  assert.equal(shot1.video_prompt, "veo prompt 1");
+  assert.match(String(shot1.video_prompt), /^veo prompt 1/);
+  assert.match(String(shot1.video_prompt), /PRODUCTION_STATE_AUTHORITY/);
 });
 
 test("style lock forces photoreal and bans cartoon, keeps the scene", () => {
@@ -473,10 +500,112 @@ test("withKeyframeAuthority separates wardrobe-sheet (identity) from keyframe (s
   // Existing rules survive; the reference-role clause is (re)written.
   assert.equal(rules.audio, "keep");
   const rp = rules.reference_priority;
+  assert.ok(rp);
   // Sheets own face/outfit and must NOT bring their studio backdrop…
   assert.match(rp, /wardrobe sheet/i);
   assert.match(rp, /ignore the sheet's plain studio backdrop|never import a studio/i);
   // …and the location board is the single authority for the environment/set.
   assert.match(rp, /location board/i);
   assert.match(rp, /environment|set and its geometry/i);
+});
+
+test("Production State authority flows script -> video prompt -> storyboard board", () => {
+  const bd = {
+    title: "Authority",
+    total_duration_seconds: 10,
+    character_locks: [{ name: "Lan", costume: "cream blouse" }],
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      characters_in_scene: ["Lan"],
+      environment_ref: "kitchen",
+      first_frame_prompt: "Lan stands beside the tea table at dawn.",
+      motion_prompt: "Lan lifts the teapot and pours one cup.",
+      full_prompt: "Lan pours tea, then returns the teapot to the table.",
+      beats: [{ beat: "Lan lifts the teapot", camera: "[MEDIUM]" }],
+    }],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    beatsPerSegment: 3,
+    veoClips: [{
+      scene_id: "1",
+      character_lock: { LAN: { name: "Lan", outfit_top: "cream blouse" } },
+      background_lock: { setting: "tea kitchen at dawn", lighting: "soft dawn light" },
+      scene_action: {
+        start_state: "Lan stands beside the tea table with the teapot resting on it.",
+        ordered_action: "Lan lifts the teapot and pours one cup.",
+        end_state: "Lan returns the teapot to its original place on the table.",
+      },
+      camera: { framing: "medium", movement: "slow push-in" },
+    }],
+  });
+  const shot = m.shots[0]!;
+  const authority = shot.state_authority!;
+  const video = shot.video_prompt as Record<string, unknown>;
+  const board = JSON.parse(shot.storyboard_prompt) as Record<string, unknown>;
+  const videoAuthority = video.production_state_authority as Record<string, unknown>;
+  const dialogueAudio = video.dialogue_audio_contract as Record<string, unknown>;
+
+  assert.ok(m.production_state);
+  assert.deepEqual(authority.authority_order, [
+    "script",
+    "production_state",
+    "video_prompt",
+    "storyboard_board",
+  ]);
+  assert.equal(video.scene_id, "1", "original structured video fields survive");
+  assert.equal(videoAuthority.authority_fingerprint, authority.authority_fingerprint);
+  assert.equal(dialogueAudio.authority_fingerprint, authority.authority_fingerprint);
+  assert.deepEqual(dialogueAudio.dialogue_state, authority.dialogue_state);
+  assert.deepEqual(dialogueAudio.audio_state, authority.audio_state);
+  assert.equal(board.authority_fingerprint, authority.authority_fingerprint);
+  assert.match(String(board.semantic_authority), /STATIC VISUAL PROJECTION/);
+  assert.match(String((video.output_rules as Record<string, unknown>).semantic_priority), /storyboard image is downstream/i);
+  assert.equal((board.panels as unknown[]).length, 3, "selected panel count is exact");
+  assert.deepEqual(
+    (board.video_prompt_projection as Record<string, unknown>).scene_action,
+    video.scene_action,
+    "board projects the primary video action contract verbatim"
+  );
+});
+
+test("authority validator detects a storyboard/video fingerprint mismatch", () => {
+  const bd = {
+    title: "Mismatch",
+    total_duration_seconds: 10,
+    character_locks: [{ name: "Minh" }],
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      characters_in_scene: ["Minh"],
+      environment_ref: "office",
+      first_frame_prompt: "Minh sits at a desk.",
+      motion_prompt: "Minh opens the notebook.",
+      full_prompt: "Minh opens the notebook and reads the first page.",
+    }],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    veoClips: [{
+      character_lock: { MINH: { name: "Minh" } },
+      background_lock: { setting: "quiet office" },
+      scene_action: { start_state: "Minh sits at a desk", end_state: "the notebook is open" },
+    }],
+  });
+  assert.equal(
+    validateProductionPromptAuthority(m).findings.length,
+    0,
+    "freshly compiled manifest has one consistent authority"
+  );
+
+  const board = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  board.authority_fingerprint = "psa_tampered";
+  m.shots[0]!.storyboard_prompt = JSON.stringify(board);
+  const report = validateProductionPromptAuthority(m);
+  assert.ok(report.findings.some((finding) => finding.code === "AUTH-004"));
+
+  board.authority_fingerprint = m.shots[0]!.state_authority!.authority_fingerprint;
+  (board.panels as Array<Record<string, unknown>>)[0]!.action = "Minh suddenly flies away";
+  m.shots[0]!.storyboard_prompt = JSON.stringify(board);
+  const actionReport = validateProductionPromptAuthority(m);
+  assert.ok(actionReport.findings.some((finding) => finding.code === "AUTH-010"));
 });

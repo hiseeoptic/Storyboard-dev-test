@@ -54,6 +54,19 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/definitions/shot" }
+    },
+    "production_state": {
+      "type": "object",
+      "description": "Additive canonical Production State. Legacy consumers may ignore it; prompt compilers use it as script-derived state authority.",
+      "required": ["version", "registry", "shots", "boundaries", "findings"],
+      "additionalProperties": true,
+      "properties": {
+        "version": { "type": "string" },
+        "registry": { "type": "array" },
+        "shots": { "type": "array" },
+        "boundaries": { "type": "array" },
+        "findings": { "type": "array" }
+      }
     }
   },
 
@@ -160,7 +173,31 @@
         "dialogue": { "type": ["string", "null"] },
         "voice":    { "type": ["string", "null"], "description": "Maps to the extension voice list (auto/achernar/achird/...)." },
         "beats":    { "type": "array", "items": { "$ref": "#/definitions/beat" } },
-        "wardrobe_change": { "type": ["object", "null"], "additionalProperties": { "type": "string" }, "description": "A visibly motivated change of clothes starting at this shot: { \"CharacterName\": \"new outfit\" }. The extension regenerates that character's full-body wardrobe sheet with the new outfit and uses it from this shot onward. Omit/null when unchanged." }
+        "wardrobe_change": { "type": ["object", "null"], "additionalProperties": { "type": "string" }, "description": "A visibly motivated change of clothes starting at this shot: { \"CharacterName\": \"new outfit\" }. The extension regenerates that character's full-body wardrobe sheet with the new outfit and uses it from this shot onward. Omit/null when unchanged." },
+        "state_authority": {
+          "type": "object",
+          "description": "Canonical script/state contract embedded into both prompts. Authority flows script -> Production State -> video prompt -> storyboard board; never in reverse.",
+          "required": ["production_shot_id", "authority_fingerprint", "authority_order", "script_contract", "start_snapshot", "end_snapshot", "camera_state", "lighting_state", "actions", "findings"],
+          "additionalProperties": false,
+          "properties": {
+            "production_shot_id": { "type": "string" },
+            "authority_fingerprint": { "type": "string" },
+            "authority_order": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            "script_contract": { "type": "object", "additionalProperties": true },
+            "start_snapshot": { "type": "object", "additionalProperties": true },
+            "end_snapshot": { "type": "object", "additionalProperties": true },
+            "spatial_graph": { "type": ["object", "null"], "additionalProperties": true },
+            "camera_state": { "type": "object", "additionalProperties": true },
+            "lighting_state": { "type": "object", "additionalProperties": true },
+            "actions": { "type": "array" },
+            "findings": { "type": "array" }
+          }
+        }
       }
     }
   }

@@ -6,6 +6,18 @@
 // identical copy of that schema lives in BOTH repos. See
 // docs/nano-flow-pipeline/DESIGN.md for the full design.
 
+import type {
+  AudioState,
+  AtomicAction,
+  CameraState,
+  DialogueState,
+  LightingState,
+  ProductionFinding,
+  ProductionSnapshot,
+  ProductionState,
+  SpatialGraphState,
+} from "@/lib/production-state/types";
+
 export const NANO_FLOW_MANIFEST_VERSION = "1.0" as const;
 
 export type NanoFlowMarketingRole =
@@ -85,6 +97,32 @@ export interface NanoFlowBeat {
   camera?: string;
 }
 
+export interface NanoFlowScriptAuthority {
+  first_frame_prompt: string;
+  motion_prompt: string;
+  full_prompt: string;
+  dialogue: string | null;
+  beats: NanoFlowBeat[];
+}
+
+/** Additive state authority shared verbatim by STEP A (board) and STEP B (video). */
+export interface NanoFlowShotStateAuthority {
+  production_shot_id: string;
+  authority_fingerprint: string;
+  /** Semantic authority always flows left-to-right; the image never rewrites video intent. */
+  authority_order: ["script", "production_state", "video_prompt", "storyboard_board"];
+  script_contract: NanoFlowScriptAuthority;
+  start_snapshot: ProductionSnapshot;
+  end_snapshot: ProductionSnapshot;
+  spatial_graph: SpatialGraphState | null;
+  camera_state: CameraState;
+  lighting_state: LightingState;
+  dialogue_state: DialogueState;
+  audio_state: AudioState;
+  actions: AtomicAction[];
+  findings: ProductionFinding[];
+}
+
 /** Schema 4.1 — a single SCENE inside a shot. Each scene is generated as its OWN
  * Nano Banana image from `image_prompt` (written 100% by Storyboard, script-
  * accurate), REPLACING the old "one keyframe per 10s shot" model that lost the
@@ -161,6 +199,8 @@ export interface NanoFlowShot {
    * regenerates that character's full-body wardrobe sheet with the new outfit
    * and uses it from this shot onward. Omit when the outfit is unchanged. */
   wardrobe_change?: Record<string, string> | null;
+  /** Production State contract used to compile both prompts for this shot. */
+  state_authority?: NanoFlowShotStateAuthority;
 }
 
 export interface NanoFlowProject {
@@ -200,6 +240,8 @@ export interface NanoFlowManifest {
   project: NanoFlowProject;
   assets: NanoFlowAssets;
   shots: NanoFlowShot[];
+  /** Full additive canonical state. Legacy extension versions may ignore it. */
+  production_state?: ProductionState;
 }
 
 /** postMessage envelope used for the direct Storyboard(iframe) → Extension push.

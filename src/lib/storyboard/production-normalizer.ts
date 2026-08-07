@@ -1,6 +1,7 @@
 import type { StoryboardGenerationOutput } from "../../types/index.ts";
 import { completeVoiceProfile } from "../laws/audioLaws.ts";
 import { normalizeStateLedgerDimensions } from "./state-ledger.ts";
+import { buildProductionState } from "../production-state/normalizer.ts";
 
 export interface ProductionNormalizationResult {
   voice_profiles_completed: number;
@@ -21,7 +22,15 @@ function key(value: string): string {
  * This never edits dialogue text, scene action, locations or creative intent.
  */
 export function normalizeProductionContracts(
-  breakdown: Pick<StoryboardGenerationOutput, "character_locks" | "segments">
+  breakdown: Pick<
+    StoryboardGenerationOutput,
+    | "character_locks"
+    | "segments"
+    | "total_duration_seconds"
+    | "production_state"
+    | "scene_bible"
+    | "context_ir"
+  >
 ): ProductionNormalizationResult {
   let voiceProfilesCompleted = 0;
   let continuousStartsInherited = 0;
@@ -112,6 +121,10 @@ export function normalizeProductionContracts(
       });
     }
   }
+
+  // Additive compatibility output. Legacy fields above remain intact and are
+  // still the source consumed by existing UI/prompt code during Phase 1.
+  breakdown.production_state = buildProductionState(breakdown);
 
   return {
     voice_profiles_completed: voiceProfilesCompleted,

@@ -29,6 +29,7 @@ import {
   type SemanticFinding,
   type SemanticValidationReport,
 } from "./semantic-validator.ts";
+import { validateProductionPromptAuthority } from "./production-authority-validator.ts";
 
 type Push = (f: SemanticFinding) => void;
 
@@ -617,6 +618,7 @@ export function validatePromptExports(manifest: NanoFlowManifest): SemanticValid
   const findings: SemanticFinding[] = [];
   const push: Push = (f) => findings.push(f);
   for (const shot of manifest.shots ?? []) checkShot(shot, push);
+  findings.push(...validateProductionPromptAuthority(manifest).findings);
   const shots = manifest.shots ?? [];
   const firstBible =
     shots.length > 0 ? obj(obj(shots[0]!.video_prompt).scene_bible_tokens) : {};

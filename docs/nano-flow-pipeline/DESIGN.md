@@ -225,11 +225,41 @@
 
 Nếu bạn nạp bối cảnh như một **ảnh thứ hai** ngang hàng keyframe, Veo dễ cố "hòa" 2 khung → sai. Nhưng nếu route đúng kênh thì **không xung đột**.
 
+### 6.0. Thứ tự quyền điều khiển nội dung (không được đảo chiều)
+
+`Kịch bản → Production State → video_prompt → storyboard_prompt → ảnh storyboard`
+
+- `video_prompt` là **nguồn điều khiển ngữ nghĩa chính**: hành động, thứ tự, nhịp, camera, thoại và trạng thái kết thúc.
+- `storyboard_prompt` được biên dịch **sau** từ cùng fingerprint và chiếu tĩnh các dữ kiện trong `video_prompt`; không được tự thêm hành động hoặc đổi kết thúc.
+- Ảnh storyboard/keyframe chỉ khóa **hình ảnh ở điểm bắt đầu** (nhận diện, trang phục, bố cục và hình học bối cảnh đã được video prompt khai báo). Ảnh không có quyền viết lại chuyển động hay nội dung video.
+- Nếu chi tiết ảnh mâu thuẫn với structured `video_prompt`, executor phải theo `video_prompt` về ngữ nghĩa; ảnh chỉ tiếp tục làm tham chiếu thị giác.
+
+Manifest ghi quy tắc này tại `shot.state_authority.authority_order` và nhúng cùng `authority_fingerprint` vào cả hai prompt để validator phát hiện lệch nguồn.
+
+### Dialogue và audio authority
+
+Mỗi `ProductionState.shots[]` còn giữ hai hợp đồng chuẩn, bổ sung và không thay thế dữ liệu cũ:
+
+- `dialogue_state`: một dialogue clock duy nhất theo shot và theo timeline tuyệt đối, speaker ID ổn định, voice profile, delivery on/off-screen, lip-sync target và listener reaction.
+- `audio_state`: sound bed, reverb, chiến lược ambience/music, chính sách chuyển cảnh và Foley gắn với một canonical action có thật.
+
+Hai hợp đồng này được đưa vào `shot.state_authority`, tham gia `authority_fingerprint`, rồi đi vào `video_prompt.dialogue_audio_contract`. Storyboard board chỉ nhận cùng fingerprint để kiểm tra đồng bộ; ảnh không được sửa thoại, giọng, timing hoặc môi trường âm thanh của video.
+
+### 6.0.1. Export Readiness và sửa tại chỗ
+
+- Validator **không chặn preview** kịch bản, prompt hoặc ảnh đã tạo.
+- `Critical`/`High` chỉ khóa ba thao tác phát hành: tải manifest JSON, gửi sang extension và tải ZIP. `Medium` là cảnh báo, không khóa.
+- Findings của source, Production State vật lý và prompt/manifest được gộp thành một báo cáo theo cảnh.
+- “Kiểm tra lại miễn phí” chỉ biên dịch/validate deterministic, không gọi API.
+- “Sửa tại chỗ cảnh N” chỉ chạy sau khi người dùng bấm. Hệ thống chuẩn hóa miễn phí trước; nếu vẫn cần AI thì gửi đúng cảnh lỗi trong **tối đa một batch call cho lần bấm**, không critic và không tự lặp.
+- Sau sửa: biên dịch lại video prompt → board prompt → manifest, validate lại; chỉ khi sạch mới mở export.
+- Thumbnail/ảnh đã tạo là artifact review độc lập, không tự sinh lại và việc thiếu thumbnail không khóa manifest/ZIP.
+
 **Quy tắc khuyến nghị (đưa vào `video_refs` mặc định):**
 
 | Loại ref ở bước VIDEO | Mặc định | Lý do |
 |---|---|---|
-| **Ảnh Nano vừa tạo (keyframe)** | ✅ **first frame** | Đã chứa bố cục + bối cảnh + nhân vật + sản phẩm. Đây là mỏ neo chính. |
+| **Ảnh Nano vừa tạo (keyframe)** | ✅ **first frame** | Mỏ neo **thị giác của frame đầu**; không thay thế quyền điều khiển hành động/camera/kết thúc của `video_prompt`. |
 | **Nhân vật** | ✅ attach làm **reference-entity** | Giữ mặt nhất quán suốt 10s chuyển động (keyframe có thể không rõ mặt). Khác kênh với first frame → không đánh nhau. |
 | **Bối cảnh** | ❌ **KHÔNG** attach lại | Đã nằm trong keyframe. Nạp lại = rủi ro trộn 2 bối cảnh → đúng nỗi lo của bạn. |
 | **Sản phẩm** | ❌ mặc định KHÔNG (bật khi cần) | Chỉ bật nếu cần **độ nét logo/nhãn tuyệt đối**; khi bật thì attach làm **reference-entity**, KHÔNG phải frame thứ hai. |

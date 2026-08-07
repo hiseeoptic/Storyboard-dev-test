@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Sparkles,
   Loader2,
@@ -38,6 +38,7 @@ import {
   analyzeCookingRecipe,
   generateBoardImage,
   finalizeScript,
+  repairExportFindings,
   rewriteSegment,
   getTopicLibrary,
   type StoryboardResult,
@@ -49,9 +50,10 @@ import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
 import {
-  validatePromptExports,
+  validateExportReadiness,
   validateStoryboardSemantics,
   formatSemanticReport,
+  type SemanticValidationReport,
 } from "@/lib/validation";
 import {
   fingerprintStoryboardPlan,
@@ -900,7 +902,9 @@ export function GenerateClient() {
   // Script-review phase: the editable breakdown + carried plan data.
   const [draft, setDraft] = useState<StoryboardGenerationOutput | null>(null);
   const [planWarnings, setPlanWarnings] = useState<string[]>([]);
-  const [exportGateReport, setExportGateReport] = useState<string | null>(null);
+  const [exportAttempted, setExportAttempted] = useState(false);
+  const [exportCheckVersion, setExportCheckVersion] = useState(0);
+  const [exportRepairTarget, setExportRepairTarget] = useState<number | "all" | null>(null);
   // Browser-page-only cache: identical inputs reuse the finished text plan
   // instead of paying for the script + Context IR + storyboard calls again.
   const planCacheRef = useRef(new StoryboardPlanCache<CachedStoryboardPlan>(3));
@@ -1364,7 +1368,7 @@ export function GenerateClient() {
   const handleGenerate = async () => {
     setPhase("generating");
     setError(null);
-    setExportGateReport(null);
+    setExportAttempted(false);
     setProgressPercent(5);
     setProgressMessage(L("preparing"));
 
@@ -2089,43 +2093,100 @@ export function GenerateClient() {
       // Cách 1 — embed uploaded location photos into the downloadable manifest.
       locationSets: genInput?.location_mode === "upload" ? genInput?.location_sets : undefined,
     });
-    // Final client-side backup for LỚP B. The server-side Layer C already
-    // validates and repairs A+B before approval; this pure check catches drift
-    // introduced while assembling the downloadable manifest.
-    // NON-BLOCKING backup (user request): flag any remaining Critical/High but
-    // STILL export — the user re-runs only the flagged scenes (Flow-Veo style)
-    // and never loses the whole export.
-    try {
-      const gate = validatePromptExports(manifest);
-      if (!gate.ok) {
-        const report = formatSemanticReport(gate);
-        console.warn(`[prompt-gate] "${manifest.project.title}" — ${gate.summary}\n${report}`);
-        setExportGateReport(
-          `${
-            lang === "vi"
-              ? "⚠️ Một số prompt còn lỗi Critical/High — VẪN xuất/gửi được; xem lại hoặc chạy lại RIÊNG cảnh liên quan."
-              : "⚠️ Some Nano Banana/Veo prompts still have Critical/High findings — exported anyway; review or re-run just those scenes."
-          }\n\n${report}`
-        );
-      } else {
-        setExportGateReport(null);
-      }
-    } catch (gateErr) {
-      const message = gateErr instanceof Error ? gateErr.message : String(gateErr);
-      console.error("[prompt-gate] validator error:", gateErr);
-      setExportGateReport(
-        lang === "vi"
-          ? `⚠️ Không kiểm tra được prompt (vẫn xuất bình thường): ${message}`
-          : `⚠️ Prompt validation could not complete (exporting anyway): ${message}`
-      );
-    }
     return manifest;
+  };
+
+  // Preview is always available. This memo is the separate export-readiness
+  // state used only by manifest download, extension push and ZIP.
+  const exportBundle = useMemo((): {
+    manifest: ReturnType<typeof buildNanoFlowManifest> | null;
+    report: SemanticValidationReport;
+    error: string | null;
+  } | null => {
+    if (!result) return null;
+    try {
+      const manifest = buildResultManifest();
+      if (!manifest) return null;
+      return {
+        manifest,
+        report: validateExportReadiness(result.breakdown, manifest),
+        error: null,
+      };
+    } catch (gateError) {
+      const message = gateError instanceof Error ? gateError.message : String(gateError);
+      return {
+        manifest: null,
+        report: {
+          ok: false,
+          findings: [{
+            code: "EXPORT-000",
+            severity: "critical",
+            scope: "project",
+            message: "Không thể biên dịch dữ liệu export để kiểm tra.",
+            evidence: message,
+          }],
+          counts: { critical: 1, high: 0, medium: 0, total: 1 },
+          summary: "export readiness gate: 1 critical, 0 high, 0 medium",
+        },
+        error: message,
+      };
+    }
+    // exportCheckVersion intentionally forces a free deterministic re-check.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, genInput, beatsPerSegment, effectiveCharacterRepresentation, exportCheckVersion]);
+
+  const cleanManifestForExport = () => {
+    if (!exportBundle?.manifest || !exportBundle.report.ok) {
+      setExportAttempted(true);
+      return null;
+    }
+    setExportAttempted(false);
+    return exportBundle.manifest;
+  };
+
+  const repairExportAtSource = async (segmentNumber?: number) => {
+    if (!genInput || !genAnalysis || !result || exportRepairTarget !== null) return;
+    setExportRepairTarget(segmentNumber ?? "all");
+    setError(null);
+    try {
+      const repaired = await repairExportFindings({
+        input: genInput,
+        breakdown: result.breakdown,
+        analysis: genAnalysis,
+        provider,
+        ...(segmentNumber !== undefined ? { segmentNumber } : {}),
+      });
+      if (!repaired.success) {
+        setError(repaired.error);
+        return;
+      }
+      const repairedLabel = repaired.data.repaired_segment_numbers.length
+        ? repaired.data.repaired_segment_numbers.join(", ")
+        : segmentNumber !== undefined ? String(segmentNumber) : "";
+      setResult((current) => current ? {
+        ...current,
+        breakdown: repaired.data.breakdown,
+        videoPrompt: repaired.data.videoPrompt,
+        warnings: [
+          ...current.warnings,
+          repaired.data.used_ai
+            ? `Đã dùng đúng 1 lượt AI để sửa tại chỗ${repairedLabel ? ` cảnh ${repairedLabel}` : ""}; các cảnh sạch, ảnh và thumbnail không được tạo lại.`
+            : "Đã đồng bộ/sửa deterministic tại chỗ, không gọi API và không tốn token.",
+        ],
+      } : current);
+      setExportAttempted(false);
+      setExportCheckVersion((version) => version + 1);
+    } catch (repairError) {
+      setError(repairError instanceof Error ? repairError.message : "Export repair failed");
+    } finally {
+      setExportRepairTarget(null);
+    }
   };
 
   // Download the manifest as a .nanoflow.json file the user can drop into the
   // extension's "Nạp manifest" import.
   const downloadNanoManifest = () => {
-    const manifest = buildResultManifest();
+    const manifest = cleanManifestForExport();
     if (!manifest) return;
     const safeTitle = toAsciiSlug(manifest.project.title).slice(0, 40) || "storyboard";
     const blob = new Blob([JSON.stringify(manifest, null, 2)], {
@@ -2145,7 +2206,7 @@ export function GenerateClient() {
   // for NANO_FLOW_MESSAGE_SOURCE/TYPE on window). Falls back to download if the
   // extension isn't listening.
   const pushNanoToExtension = () => {
-    const manifest = buildResultManifest();
+    const manifest = cleanManifestForExport();
     if (!manifest) return;
     try {
       // Envelope must match NanoFlowPushMessage / the extension's listener
@@ -2170,11 +2231,18 @@ export function GenerateClient() {
   // Download all segment frames + prompts as a single ZIP.
   const downloadAllFrames = async () => {
     if (!result) return;
+    const cleanManifest = cleanManifestForExport();
+    if (!cleanManifest) return;
     setZipping(true);
     try {
       const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       const safeTitle = toAsciiSlug(result.breakdown.title).slice(0, 40);
+      // ZIP and standalone JSON share exactly the same clean manifest gate.
+      zip.file(
+        `${safeTitle || "storyboard"}.nanoflow.json`,
+        JSON.stringify(cleanManifest, null, 2)
+      );
 
       // Frames (board) + clean keyframes (Veo first-frame)
       for (const seg of result.breakdown.segments) {
@@ -2716,6 +2784,18 @@ export function GenerateClient() {
     const resultJsonBlocks = resultJsonClips
       .map((clip) => JSON.stringify(clip, null, 2))
       .join("\n\n");
+    const exportReport = exportBundle?.report ?? null;
+    const blockingExportFindings = (exportReport?.findings ?? []).filter(
+      (finding) => finding.severity === "critical" || finding.severity === "high"
+    );
+    const blockingSceneNumbers = [
+      ...new Set(
+        blockingExportFindings
+          .map((finding) => finding.segment_number)
+          .filter((value): value is number => typeof value === "number")
+      ),
+    ].sort((a, b) => a - b);
+    const exportReady = exportReport?.ok === true && !!exportBundle?.manifest;
     const copyJson = (key: string, text: string) => {
       navigator.clipboard.writeText(text);
       setCopiedJson(key);
@@ -2739,7 +2819,13 @@ export function GenerateClient() {
           </div>
           <div className="flex flex-wrap gap-2">
             <LangToggle />
-            <Button variant="outline" onClick={downloadAllFrames} disabled={zipping} className="gap-2">
+            <Button
+              variant="outline"
+              onClick={downloadAllFrames}
+              disabled={zipping || !exportReady}
+              title={!exportReady ? (lang === "vi" ? "Sửa sạch lỗi Critical/High trước khi xuất ZIP" : "Repair Critical/High findings before ZIP export") : undefined}
+              className="gap-2"
+            >
               {zipping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               {L("downloadAll")}
             </Button>
@@ -2804,19 +2890,98 @@ export function GenerateClient() {
                 ? "Gửi kịch bản + prompt sang extension AutoFlow Reel để tạo ảnh storyboard bằng nano banana miễn phí trong Google Flow. Không cần tải ảnh lên ở đây."
                 : "Send the script + prompts to the AutoFlow Reel extension to generate storyboard images with free nano banana in Google Flow. No image upload needed here."}
             </p>
-            {exportGateReport && (
-              <div className="whitespace-pre-wrap rounded-md border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-700 dark:bg-red-950/40 dark:text-red-200">
-                {exportGateReport}
+            {exportReady ? (
+              <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                {lang === "vi"
+                  ? `✓ Export sạch — JSON, Extension và ZIP đã mở.${exportReport && exportReport.counts.medium > 0 ? ` Có ${exportReport.counts.medium} cảnh báo Medium không chặn xuất.` : ""}`
+                  : `✓ Export clean — JSON, Extension and ZIP are enabled.${exportReport && exportReport.counts.medium > 0 ? ` ${exportReport.counts.medium} Medium advisories do not block export.` : ""}`}
+              </div>
+            ) : (
+              <div className={`space-y-3 rounded-md border p-3 text-xs ${exportAttempted ? "border-red-400 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-950/40 dark:text-red-100" : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"}`}>
+                <div>
+                  <p className="font-semibold">
+                    {lang === "vi"
+                      ? "Preview vẫn hoạt động. Export đang khóa cho đến khi sửa sạch Critical/High."
+                      : "Preview remains available. Export is locked until Critical/High findings are clean."}
+                  </p>
+                  <p className="mt-1 text-[11px] opacity-80">
+                    {lang === "vi"
+                      ? "Thumbnail và ảnh hiện có không bị tạo lại. Kiểm tra lại là miễn phí; nút sửa AI chỉ chạy khi bạn bấm và tối đa 1 lượt cho lần bấm đó."
+                      : "Existing thumbnail/images are not regenerated. Re-checking is free; AI repair runs only on click and at most once per click."}
+                  </p>
+                </div>
+                <div className="max-h-56 space-y-1 overflow-auto rounded border border-current/20 bg-white/40 p-2 dark:bg-black/10">
+                  {blockingExportFindings.map((finding, index) => (
+                    <div key={`${finding.code}-${finding.segment_number ?? "project"}-${index}`}>
+                      <span className="font-semibold">{finding.code}</span>
+                      {finding.segment_number ? ` · ${lang === "vi" ? "Cảnh" : "Scene"} ${finding.segment_number}` : " · Project"}
+                      {` — ${finding.message}`}
+                      {finding.evidence ? <div className="pl-3 opacity-75">↳ {finding.evidence}</div> : null}
+                    </div>
+                  ))}
+                  {blockingExportFindings.length === 0 && exportBundle?.error ? (
+                    <div>{exportBundle.error}</div>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setExportCheckVersion((version) => version + 1)}
+                    disabled={exportRepairTarget !== null}
+                    className="gap-1.5"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    {lang === "vi" ? "Kiểm tra lại miễn phí" : "Free re-check"}
+                  </Button>
+                  {blockingSceneNumbers.map((segmentNumber) => (
+                    <Button
+                      key={segmentNumber}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => repairExportAtSource(segmentNumber)}
+                      disabled={exportRepairTarget !== null}
+                      className="gap-1.5"
+                    >
+                      {exportRepairTarget === segmentNumber ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
+                      {lang === "vi" ? `Sửa tại chỗ cảnh ${segmentNumber} (tối đa 1 lượt AI)` : `Repair scene ${segmentNumber} (max 1 AI call)`}
+                    </Button>
+                  ))}
+                  {blockingExportFindings.length > 0 && (
+                    <Button
+                      size="sm"
+                      onClick={() => repairExportAtSource()}
+                      disabled={exportRepairTarget !== null}
+                      className="gap-1.5"
+                    >
+                      {exportRepairTarget === "all" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                      {lang === "vi" ? "Sửa tất cả lỗi đang chặn (1 batch AI tối đa)" : "Repair all blockers (max 1 AI batch)"}
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setDraft(result.breakdown);
+                      setPhase("script");
+                    }}
+                    disabled={exportRepairTarget !== null}
+                    className="gap-1.5"
+                  >
+                    <BookOpen className="h-3.5 w-3.5" />
+                    {lang === "vi" ? "Quay lại sửa thủ công" : "Back to manual editing"}
+                  </Button>
+                </div>
               </div>
             )}
             <div className="flex flex-wrap gap-2">
-              <Button onClick={pushNanoToExtension} className="gap-2">
+              <Button onClick={pushNanoToExtension} disabled={!exportReady || exportRepairTarget !== null} className="gap-2">
                 {nanoPushed ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />}
                 {nanoPushed
                   ? lang === "vi" ? "Đã gửi" : "Sent"
                   : lang === "vi" ? "Gửi sang Extension" : "Push to Extension"}
               </Button>
-              <Button variant="outline" onClick={downloadNanoManifest} className="gap-2">
+              <Button variant="outline" onClick={downloadNanoManifest} disabled={!exportReady || exportRepairTarget !== null} className="gap-2">
                 <Download className="h-4 w-4" />
                 {lang === "vi" ? "Tải manifest (.nanoflow.json)" : "Download manifest (.nanoflow.json)"}
               </Button>

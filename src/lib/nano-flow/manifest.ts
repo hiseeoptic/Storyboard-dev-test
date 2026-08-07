@@ -9,7 +9,13 @@ import type {
   NanoFlowManifest,
   NanoFlowRefSelector,
   NanoFlowShot,
+  NanoFlowShotStateAuthority,
 } from "@/types/nano-flow";
+import { buildProductionState } from "../production-state/normalizer.ts";
+import {
+  buildNanoFlowShotStateAuthority,
+  compactPromptAuthority,
+} from "./state-authority.ts";
 
 export interface BuildNanoFlowManifestOptions {
   aspectRatio?: "16:9" | "9:16";
@@ -102,11 +108,12 @@ const KEYFRAME_REFERENCE_AUTHORITY =
  * location photo when the user uploaded one, else the scripted setting). A
  * caption strip under every panel carries "N. [camera] action" so the order +
  * action are legible and the extension/Veo follow the same beats when the board
- * drives the video. Returns a JSON string. Falls back to the prose style-lock
- * only when no structured clip exists.
+ * drives the video. Returns a JSON string for both structured and legacy video
+ * inputs so the same authority metadata is always present.
  */
 function buildLocationBoardPrompt(
-  clip: Record<string, unknown> | undefined,
+  primaryVideoPrompt: Record<string, unknown> | string,
+  stateAuthority: NanoFlowShotStateAuthority,
   fallbackSceneText: string,
   envName: string,
   wardrobeClause: string,
@@ -115,17 +122,21 @@ function buildLocationBoardPrompt(
   hasLocationPhoto: boolean,
   projectLighting: string,
   characterStyleLock = "",
-  maxPanels = 5
+  requestedPanels?: number,
+  fallbackCast: Array<Record<string, string>> = []
 ): string {
-  if (!clip) return lockStyle(fallbackSceneText + wardrobeClause, realityMode, characterStyleLock);
+  const clip =
+    primaryVideoPrompt && typeof primaryVideoPrompt === "object"
+      ? primaryVideoPrompt
+      : undefined;
 
-  const bg = clipObj(clip.background_lock);
+  const bg = clipObj(clip?.background_lock);
   const setting = clipStr(bg.setting) || fallbackSceneText || envName;
   const scenery = clipStr(bg.scenery);
   const lighting = clipStr(bg.lighting);
-  const visualStyle = clipStr(clip.visual_style);
+  const visualStyle = clipStr(clip?.visual_style);
 
-  const locks = clipObj(clip.character_lock);
+  const locks = clipObj(clip?.character_lock);
   const cast: Array<Record<string, string>> = [];
   for (const key of Object.keys(locks)) {
     const c = clipObj(locks[key]);
@@ -145,20 +156,63 @@ function buildLocationBoardPrompt(
     if (wardrobe) entry.wardrobe = wardrobe;
     cast.push(entry);
   }
+  if (cast.length === 0) cast.push(...fallbackCast);
 
-  // Action panels straight from the script beats (≤5). Each panel = one beat,
-  // with a caption "N. [camera] action" printed under it.
+  // The board is a static projection of the PRIMARY video contract. Prefer exact
+  // script beats, then use only start/action/end facts already present in the
+  // video/state authority. Never invent a new story event to fill the sheet.
   const beatList = (Array.isArray(beats) ? beats : []).filter((b) => clipStr(b?.beat));
-  const usePanels = beatList.length ? beatList : [{ beat: fallbackSceneText || setting }];
-  // Board vẽ ĐÚNG số cảnh người dùng chọn — không thừa ô (3 cảnh ⇒ 3 frame).
-  const panelCap = Math.max(1, Math.min(5, Math.round(maxPanels) || 5));
-  const panels = usePanels.slice(0, panelCap).map((b, i) => {
-    const cam = clipStr(b.camera);
-    const act = clipStr(b.beat);
-    const entry: Record<string, unknown> = { panel: i + 1, action: act };
-    if (cam) entry.camera = cam;
-    entry.caption = `${i + 1}. ${cam ? cam + " " : ""}${act}`;
-    return entry;
+  const candidates: Array<Record<string, unknown>> = beatList.map((beat) => ({
+    source: "script_beat",
+    action: clipStr(beat.beat),
+    ...(clipStr(beat.camera) ? { camera: clipStr(beat.camera) } : {}),
+  }));
+  const sceneAction = clipObj(clip?.scene_action);
+  const addCandidate = (source: string, action: string, role?: string) => {
+    const value = clipStr(action);
+    if (!value || candidates.some((candidate) => clipStr(candidate.action) === value)) return;
+    candidates.push({ source, action: value, ...(role ? { panel_role: role } : {}) });
+  };
+  addCandidate("video_prompt", clipStr(sceneAction.start_state), "start");
+  addCandidate(
+    "video_prompt",
+    clipStr(sceneAction.ordered_action) || clipStr(sceneAction.action) || clipStr(clip?.motion_prompt),
+    "transition"
+  );
+  for (const action of stateAuthority.actions) {
+    addCandidate("production_state_action", action.evidence || action.verb, "transition");
+  }
+  addCandidate("video_prompt", clipStr(sceneAction.end_state), "end");
+  addCandidate("script", stateAuthority.script_contract.first_frame_prompt, "start");
+  addCandidate("script", stateAuthority.script_contract.motion_prompt, "transition");
+  addCandidate("script", stateAuthority.script_contract.full_prompt, "end");
+  if (candidates.length === 0) {
+    candidates.push({
+      source: "script",
+      panel_role: "start",
+      action: fallbackSceneText || setting,
+    });
+  }
+  const target = requestedPanels === undefined
+    ? Math.max(1, Math.min(5, beatList.length || candidates.length))
+    : Math.max(1, Math.min(5, Math.round(requestedPanels) || 1));
+  const selected = candidates.slice(0, target);
+  while (selected.length < target) {
+    const source = candidates[selected.length % candidates.length]!;
+    selected.push({
+      ...source,
+      source: `${String(source.source)}_coverage`,
+      coverage_note: "Alternate static coverage of the same declared moment; no new action or event.",
+    });
+  }
+  const panels = selected.map((candidate, i) => {
+    const cam = clipStr(candidate.camera);
+    const act = clipStr(candidate.action);
+    return {
+      ...candidate,
+      panel: i + 1,
+      caption: `${i + 1}. ${cam ? cam + " " : ""}${act}`,
+    };
   });
   const n = panels.length;
 
@@ -167,6 +221,20 @@ function buildLocationBoardPrompt(
     realityMode
   );
   const prompt: Record<string, unknown> = {
+    authority_fingerprint: stateAuthority.authority_fingerprint,
+    authority_order: stateAuthority.authority_order,
+    semantic_authority:
+      "This storyboard board is a STATIC VISUAL PROJECTION of the script-derived primary video prompt. It may not add, remove, reinterpret or override any video action, camera intent, state transition or ending.",
+    production_state_authority: compactPromptAuthority(stateAuthority),
+    video_prompt_projection: clip
+      ? {
+          scene_action: clip.scene_action,
+          camera: clip.camera,
+          background_lock: clip.background_lock,
+          spatial_topology: clip.spatial_topology,
+          continuity_mode: clip.continuity_mode,
+        }
+      : { exact_primary_video_prompt: primaryVideoPrompt },
     type: characterStyleLock
       ? "styled_storyboard_board"
       : liveAction ? "photoreal_storyboard_board" : `${slugify(realityMode)}_storyboard_board`,
@@ -248,11 +316,10 @@ export function slugify(name: string): string {
 }
 
 /**
- * Nano Flow runs image-to-video: the generated keyframe IS the first frame the
- * clip animates from. So for the VIDEO step the START (and END) frame image is
- * the single authority for wardrobe, hairstyle and the set — never a character
- * reference photo (those governed only the IMAGE step). Patch the structured
- * clip's output_rules so Veo follows the keyframe's outfit exactly.
+ * Nano Flow may run image-to-video, so the generated keyframe is the first
+ * visual frame. It may lock opening appearance/set geometry, but it never owns
+ * semantic action, timing, camera intent or the ending; those remain controlled
+ * by the script-derived structured video prompt.
  */
 export function withKeyframeAuthority(
   clip: Record<string, unknown>,
@@ -263,9 +330,54 @@ export function withKeyframeAuthority(
       ? { ...(clip.output_rules as Record<string, unknown>) }
       : {};
   rules.reference_priority =
-    "REFERENCE ROLES (do NOT mix them): each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop; never import a studio/grey/white background or its lighting from a wardrobe sheet. The attached LOCATION BOARD (the storyboard image showing this one place from several angles) is the SINGLE source of truth for the ENVIRONMENT — background, spatial layout, furniture, props, doors, windows, lighting and materials — reproduce that exact place. Identity and clothing come from the sheets; the entire set and its geometry come from the location board. Never restyle wardrobe or hair away from the sheets, and never invent or relocate the set away from the location board. Character face continues from both.";
+    "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT is the sole semantic authority for story action, timing, camera, state transition and ending. The generated STORYBOARD / LOCATION BOARD is only a visual continuity reference for the already-declared opening appearance and set geometry; it must never add, remove, replace or reinterpret video events. Each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop. Use the location board to keep the prompt-declared environment visually consistent (background, spatial layout, furniture, props, doors, windows, lighting and materials), but when any image detail conflicts with this structured prompt, FOLLOW THIS VIDEO PROMPT. Identity and clothing come from the sheets; semantics and motion come from the video prompt.";
+  rules.storyboard_reference_role =
+    "Visual continuity only. Do not infer new actions from the board and do not let the board override ordered actions, dialogue, camera intent, timing or end state in this video prompt.";
   if (characterStyleLock) rules.character_style_lock = characterStyleLock;
   return { ...clip, output_rules: rules };
+}
+
+/** Add the canonical script/state contract to the PRIMARY video payload. */
+export function withProductionStateAuthority(
+  clip: Record<string, unknown>,
+  authority: NanoFlowShotStateAuthority
+): Record<string, unknown> {
+  const rules = clipObj(clip.output_rules);
+  const compact = compactPromptAuthority(authority);
+  return {
+    ...clip,
+    production_state_authority: compact,
+    state_transition_contract: {
+      authority_fingerprint: authority.authority_fingerprint,
+      start_snapshot: compact.start_snapshot,
+      ordered_atomic_actions: compact.ordered_atomic_actions,
+      end_snapshot: compact.end_snapshot,
+    },
+    dialogue_audio_contract: {
+      authority_fingerprint: authority.authority_fingerprint,
+      dialogue_state: compact.dialogue_state,
+      audio_state: compact.audio_state,
+    },
+    output_rules: {
+      ...rules,
+      semantic_priority:
+        "Follow script_contract + ordered_atomic_actions + end_snapshot. The storyboard image is downstream visual reference only and cannot change the video narrative, motion, camera or ending.",
+    },
+  };
+}
+
+function buildLegacyVideoPrompt(
+  rawPrompt: string,
+  authority: NanoFlowShotStateAuthority,
+  characterStyleLock: string
+): string {
+  const primary = [characterStyleLock, rawPrompt.trim()].filter(Boolean).join(" ");
+  return [
+    primary,
+    `PRODUCTION_STATE_AUTHORITY ${authority.authority_fingerprint}:`,
+    JSON.stringify(compactPromptAuthority(authority)),
+    "AUTHORITY RULE: this video prompt controls semantics and motion; the generated storyboard is visual continuity only and must never override it.",
+  ].filter(Boolean).join("\n");
 }
 
 /** Prettify an environment archetype id ("misty_mountain_ridge_dawn") into a
@@ -334,6 +446,9 @@ export function buildNanoFlowManifest(
   opts: BuildNanoFlowManifestOptions = {}
 ): NanoFlowManifest {
   const segments = breakdown.segments ?? [];
+  // Additive compatibility path: normalized server output already carries this;
+  // saved/legacy breakdowns are compiled locally without rewriting old fields.
+  const productionState = breakdown.production_state ?? buildProductionState(breakdown);
   const title = breakdown.title || "Untitled";
   const realityMode = breakdown.context_ir?.reality_profile.mode ?? "cinematic";
   // Selected video style (one of the ten locked media). Photoreal representations
@@ -350,6 +465,7 @@ export function buildNanoFlowManifest(
   // ── Character assets: union of character_locks + every characters_in_scene
   //    name, so no shot can reference a character that isn't declared. ──
   const charIdByName = new Map<string, string>(); // lowercased name -> asset id
+  const usedCharacterAssetIds = new Set<string>();
   const characters: NanoFlowAsset[] = [];
   const referenceNames = new Set(
     (breakdown.character_locks ?? []).map((l) => l.name?.trim()).filter(Boolean) as string[]
@@ -359,7 +475,18 @@ export function buildNanoFlowManifest(
     if (!name) return;
     const key = name.toLowerCase();
     if (charIdByName.has(key)) return;
-    const id = `char_${slugify(name) || characters.length + 1}`;
+    const registryEntry = productionState.registry.find(
+      (entry) =>
+        entry.kind === "character" &&
+        [entry.display_name, entry.source_ref, ...entry.aliases]
+          .filter((value): value is string => Boolean(value))
+          .some((value) => value.trim().toLowerCase() === key)
+    );
+    const baseId = registryEntry?.entity_id ?? `char_${slugify(name) || characters.length + 1}`;
+    let id = baseId;
+    let suffix = 2;
+    while (usedCharacterAssetIds.has(id)) id = `${baseId}_${suffix++}`;
+    usedCharacterAssetIds.add(id);
     charIdByName.set(key, id);
     characters.push({ id, name, image: null, required });
   };
@@ -479,8 +606,24 @@ export function buildNanoFlowManifest(
       }
     }
     // The matching STRUCTURED Veo clip (same order as segments). Drives both the
-    // high-quality video payload and the keyframe prompt below.
+    // high-quality PRIMARY video payload and the downstream board prompt below.
     const clip = opts.veoClips?.[i];
+    const productionShot = productionState.shots[i]!;
+    const stateAuthority = buildNanoFlowShotStateAuthority({
+      productionState,
+      shot: productionShot,
+      segment: seg,
+    });
+    const primaryVideoPrompt = clip
+      ? withProductionStateAuthority(
+          withKeyframeAuthority(clip, visualMediumLock),
+          stateAuthority
+        )
+      : buildLegacyVideoPrompt(
+          (seg.full_prompt || seg.motion_prompt || "").trim(),
+          stateAuthority,
+          visualMediumLock
+        );
     const envRef = (seg.location_id ?? seg.environment_ref ?? "").trim();
     const envIds = envRef && envRef !== "custom" ? [envRef] : [];
 
@@ -505,10 +648,11 @@ export function buildNanoFlowManifest(
 
       // LOCATION BOARD prompt for this 10s shot: ONE image, 4 panels of the SAME
       // location from 4 angles, built from the SAME structured clip as the video
-      // (đồng bộ bối cảnh) and style-locked to photoreal. The board locks the set;
-      // the video prompt drives the action inside it. See §6.
+      // (đồng bộ bối cảnh) and style-locked to photoreal. The PRIMARY video
+      // prompt drives semantics; this board is its downstream static projection.
       storyboard_prompt: buildLocationBoardPrompt(
-        clip,
+        primaryVideoPrompt,
+        stateAuthority,
         seg.first_frame_prompt || seg.motion_prompt || "",
         humanizeEnvId((seg.location_id ?? seg.environment_ref ?? "").trim()),
         wardrobeClause,
@@ -517,7 +661,12 @@ export function buildNanoFlowManifest(
         !!boardLocationImage,
         projectLighting,
         visualMediumLock,
-        opts.beatsPerSegment ?? 5
+        opts.beatsPerSegment,
+        inScene.map((name) => {
+          const key = name.trim().toLowerCase();
+          const wardrobe = wardrobeOverride.get(key) ?? baseCostumeByName.get(key) ?? "";
+          return { name: name.trim(), ...(wardrobe ? { wardrobe } : {}) };
+        })
       ),
       continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
@@ -527,12 +676,9 @@ export function buildNanoFlowManifest(
 
       // STEP B video payload = the STRUCTURED Veo scene JSON (high quality);
       // falls back to the flat prose prompt only when no structured clip exists.
-      // KEYFRAME AUTHORITY (Nano Flow §6): the clip is animated FROM the
-      // generated keyframe, so the start frame — not any uploaded photo — is
-      // the wardrobe/hair/set authority. Patch reference_priority accordingly.
-      video_prompt: clip
-        ? withKeyframeAuthority(clip, visualMediumLock)
-        : [visualMediumLock, (seg.full_prompt || seg.motion_prompt || "").trim()].filter(Boolean).join(" "),
+      // The generated keyframe is a visual opening reference only. The primary
+      // video prompt remains the semantic authority for action/camera/end state.
+      video_prompt: primaryVideoPrompt,
       characters_in_scene: inScene,
       video_refs: {
         // DESIGN.md §6: keyframe = first frame; characters = identity ref;
@@ -547,6 +693,7 @@ export function buildNanoFlowManifest(
       voice: null,
       beats: (seg.beats ?? []).map((b) => ({ beat: b.beat, camera: b.camera })),
       wardrobe_change: Object.keys(wardrobeChange).length ? wardrobeChange : null,
+      state_authority: stateAuthority,
     };
   });
 
@@ -583,5 +730,6 @@ export function buildNanoFlowManifest(
       products,
     },
     shots,
+    production_state: productionState,
   };
 }

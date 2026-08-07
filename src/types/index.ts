@@ -1,6 +1,7 @@
 import type { ResolvedVideoContext } from "@/lib/video-context/types";
 import type { SceneIntentIR } from "@/lib/scene-intent/types";
 import type { CookingRecipeIR, CookingStyle } from "@/lib/cooking/types";
+import type { ProductionState } from "@/lib/production-state/types";
 
 // ─── Plans ──────────────────────────────────────────────────────────────────
 
@@ -375,6 +376,10 @@ export interface LocationSet {
 // ─── Character Lock ─────────────────────────────────────────────────────────
 
 export interface CharacterLock {
+  /** Stable technical identity. `name` remains the legacy display field. */
+  character_id?: string;
+  /** User-facing label; may change without changing character_id. */
+  display_name?: string;
   name: string;
   /** Hard gender lock (veoflow-aligned). Must match the uploaded photo. */
   gender?: "male" | "female";
@@ -670,6 +675,8 @@ export interface StoryboardGenerationOutput {
     fingerprint: string;
     validated_at: string;
   };
+  /** Additive canonical production state; legacy fields remain unchanged. */
+  production_state?: ProductionState;
   title: string;
   synopsis: string;
   total_duration_seconds: number;

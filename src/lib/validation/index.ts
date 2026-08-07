@@ -9,6 +9,7 @@ export type {
   SemanticValidationReport,
 } from "./semantic-validator";
 export { validatePromptExports } from "./prompt-validator";
+export { validateExportReadiness } from "./export-readiness";
 export { validateStoryboardInput } from "./input-validator";
 export { validateResolvedVideoContext } from "./context-validator";
 export {

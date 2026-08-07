@@ -63,8 +63,8 @@ import {
   runStoryboardRepairLoop,
   stampValidationCache,
   validateResolvedVideoContext,
+  validateExportReadiness,
   validateStoryboardInput,
-  validatePromptExports,
   validateStoryboardSemantics,
   type SemanticValidationReport,
   type StoryboardRepairStatus,
@@ -1882,7 +1882,9 @@ function validatePreRenderGates(
       // Cách 1 — embed uploaded location photos into the manifest per shot.
       locationSets: input.location_mode === "upload" ? input.location_sets : undefined,
     });
-    findings.push(...validatePromptExports(manifest).findings);
+    // Replace the source-only seed with the unified export view: source,
+    // ProductionState physical findings and compiled image/video/manifest checks.
+    findings.splice(0, findings.length, ...validateExportReadiness(breakdown, manifest).findings);
     const promptPackage = buildStoryboardPromptPackage(breakdown, {
       aspectRatio: input.aspect_ratio === "16:9" ? "16:9" : "9:16",
       veoClips,
@@ -1922,13 +1924,14 @@ interface PreRenderLayerCResult {
   repairedCharacterNames: string[];
 }
 
-// ── Token-safety + non-blocking export ──────────────────────────────────────
+// ── Token-safety + non-blocking preview ─────────────────────────────────────
 // The paid Lớp C critic + auto-repair loop below fired multiple LLM calls per
 // segment on EVERY generation (đốt token) and hard-blocked the WHOLE export on
 // any single Critical/High. It is now OFF by default: validation stays free and
-// deterministic (validatePreRenderGates), report-only and NON-BLOCKING, so the
-// user always gets the script + prompts and re-runs only the flagged scenes
-// (Flow-Veo style). Set STORYBOARD_LLM_REPAIR=1 to restore the old paid loop.
+// deterministic (validatePreRenderGates), report-only at generation time, so the
+// user always gets the preview. The separate client Export Readiness gate locks
+// JSON/PUSH/ZIP until explicit targeted repair makes it clean. Set
+// STORYBOARD_LLM_REPAIR=1 only to restore the old paid generation-time loop.
 const LLM_REPAIR_ENABLED = process.env.STORYBOARD_LLM_REPAIR === "1";
 
 /** Non-blocking flag: list the scenes still carrying a Critical/High finding so
@@ -1950,7 +1953,7 @@ function flagUnresolvedScenes(
     (bad.length
       ? `⚠️ Còn lỗi ở cảnh ${bad.join(", ")}`
       : "⚠️ Còn vài cảnh cần xem lại") +
-      " — đã xuất phần còn lại; bạn chạy lại RIÊNG cảnh đó (không chặn cả dự án, không gọi thêm API)."
+      " — preview vẫn hiển thị; export sẽ mở sau khi bạn sửa RIÊNG cảnh đó và validator xác nhận sạch."
   );
 }
 
@@ -2471,9 +2474,9 @@ export async function generateStoryboardPlan(
       // FREE deterministic gate only — no LLM critic/repair, so ZERO token burn.
       preRenderReport = validatePreRenderGates(contextBoundInput, breakdown);
     }
-    // NON-BLOCKING: never throw. The export always proceeds; any unresolved
-    // Critical/High scene is flagged per-scene so the user re-runs only those
-    // (Flow-Veo style) instead of losing the whole project.
+    // NON-BLOCKING PREVIEW: never throw here. Any unresolved Critical/High is
+    // carried to the result screen; the separate Export Readiness gate then
+    // locks JSON/PUSH/ZIP until explicit targeted repair confirms a clean state.
     if (!preRenderReport.ok) flagUnresolvedScenes(preRenderReport, warnings);
 
     // Prompt assembly is best-effort: if it fails, still return the script so
@@ -2726,6 +2729,148 @@ export async function finalizeScript(params: {
     return { success: true, data: { breakdown, videoPrompt } };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Lỗi xử lý kịch bản" };
+  }
+}
+
+export interface ExportRepairResult {
+  breakdown: StoryboardGenerationOutput;
+  videoPrompt: string;
+  report: SemanticValidationReport;
+  used_ai: boolean;
+  repaired_segment_numbers: number[];
+  repaired_character_names: string[];
+  status: StoryboardRepairStatus;
+}
+
+function findingsForExportRepairTarget(
+  report: SemanticValidationReport,
+  breakdown: StoryboardGenerationOutput,
+  segmentNumber?: number
+): SemanticValidationReport {
+  const segment = breakdown.segments.find(
+    (candidate) => candidate.segment_number === segmentNumber
+  );
+  const cast = new Set(
+    (segment?.characters_in_scene ?? []).map((name) => name.trim().toLowerCase())
+  );
+  const relevant = segmentNumber === undefined
+    ? report.findings
+    : report.findings.filter(
+        (finding) =>
+          (finding.scope === "segment" && finding.segment_number === segmentNumber) ||
+          (finding.scope === "character" &&
+            typeof finding.character === "string" &&
+            cast.has(finding.character.trim().toLowerCase()))
+      );
+  // Do not pay to send the same deterministic defect twice when it was observed
+  // at both source and compiled-prompt layers.
+  const seen = new Set<string>();
+  const findings = relevant.filter((finding) => {
+    const signature = [
+      finding.code,
+      finding.scope,
+      finding.segment_number ?? "",
+      finding.character ?? "",
+      finding.message,
+    ].join("|");
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+  return buildReport(
+    findings,
+    segmentNumber === undefined ? "export repair" : `export repair scene ${segmentNumber}`
+  );
+}
+
+/**
+ * Explicit export repair: called only after the user presses a repair button.
+ * Deterministic normalization/validation is free; if blocking findings remain,
+ * exactly one targeted repair batch is allowed for this click. No critic audit,
+ * no semantic retry loop and no image/thumbnail generation occurs here.
+ */
+export async function repairExportFindings(params: {
+  input: StoryboardGenerationInput;
+  breakdown: StoryboardGenerationOutput;
+  analysis: StoryboardAnalysis;
+  provider?: AIProvider;
+  segmentNumber?: number;
+}): Promise<ActionResult<ExportRepairResult>> {
+  const provider = params.provider ?? "gemini";
+  try {
+    let breakdown = structuredClone(params.breakdown);
+    normalizeRepairCandidate(params.input, breakdown, params.analysis);
+    let fullReport = validatePreRenderGates(params.input, breakdown);
+    const scopedReport = findingsForExportRepairTarget(
+      fullReport,
+      breakdown,
+      params.segmentNumber
+    );
+
+    if (scopedReport.ok) {
+      return {
+        success: true,
+        data: {
+          breakdown,
+          videoPrompt: assemblePlanPrompts(params.input, breakdown, params.analysis, provider),
+          report: fullReport,
+          used_ai: false,
+          repaired_segment_numbers: [],
+          repaired_character_names: [],
+          status: fullReport.ok ? "clean" : "unrepairable",
+        },
+      };
+    }
+
+    let usedAi = false;
+    const loop = await runStoryboardRepairLoop({
+      breakdown,
+      maxRounds: 1,
+      validate: (candidate) =>
+        findingsForExportRepairTarget(
+          validatePreRenderGates(params.input, candidate),
+          candidate,
+          params.segmentNumber
+        ),
+      repair: async (candidate, request) => {
+        usedAi = true;
+        return repairStoryboardSegments({
+          input: params.input,
+          breakdown: candidate,
+          segmentNumbers: request.target_segment_numbers,
+          characterNames: request.target_character_names,
+          findings: request.findings,
+          round: 1,
+          provider,
+          timing: {
+            deadlineMs: Date.now() + 90_000,
+            maxAttempts: 1,
+          },
+        });
+      },
+      afterMerge: (candidate) =>
+        normalizeRepairCandidate(params.input, candidate, params.analysis),
+    });
+    breakdown = loop.breakdown;
+    fullReport = validatePreRenderGates(params.input, breakdown);
+
+    return {
+      success: true,
+      data: {
+        breakdown,
+        videoPrompt: assemblePlanPrompts(params.input, breakdown, params.analysis, provider),
+        report: fullReport,
+        used_ai: usedAi,
+        repaired_segment_numbers: loop.repaired_segment_numbers,
+        repaired_character_names: loop.repaired_character_names,
+        status: fullReport.ok ? "clean" : loop.status,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: `Sửa lỗi export thất bại: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 }
 

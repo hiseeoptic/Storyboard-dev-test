@@ -552,5 +552,10 @@ test("ordinary step verbs do not invent stairs", () => {
     characterNames: ["Minh", "Lan"],
   });
 
-  assert.equal(layout, null);
+  // Two visible characters still need a same-level placement/topology lock so
+  // the board and video cannot swap or teleport them. The ordinary verb
+  // "steps" must not be misread as architectural stairs.
+  assert.ok(layout);
+  assert.match(layout.zone_order, /continuous declared walkable scene zone/i);
+  assert.doesNotMatch(JSON.stringify(layout), /stairs?|staircase|steps connecting/i);
 });

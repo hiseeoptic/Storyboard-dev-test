@@ -11,11 +11,12 @@
     "test:timeline": "node --experimental-strip-types --test src/lib/timeline-contract.test.ts",
     "test:veo-json": "node --test src/prompts/veo-json-structure.test.cjs",
     "test:nano-flow": "node --experimental-strip-types --test src/lib/nano-flow/manifest.test.ts",
-    "test:validate": "node --experimental-strip-types --test src/lib/validation/semantic-validator.test.ts src/lib/validation/prompt-validator.test.ts src/lib/validation/repair-loop.test.ts src/lib/validation/input-validator.test.ts src/lib/validation/context-validator.test.ts src/lib/validation/validation-fingerprint.test.ts",
+    "test:validate": "node --experimental-strip-types --test src/lib/validation/semantic-validator.test.ts src/lib/validation/prompt-validator.test.ts src/lib/validation/repair-loop.test.ts src/lib/validation/input-validator.test.ts src/lib/validation/context-validator.test.ts src/lib/validation/validation-fingerprint.test.ts src/lib/validation/export-readiness.test.ts",
     "test:ai-cost": "node --experimental-strip-types --test src/lib/ai/retry-policy.test.ts src/lib/storyboard/source-script.test.ts",
     "test:plan-cache": "node --experimental-strip-types --test src/lib/storyboard/plan-cache.test.ts",
     "test:spatial": "node --experimental-strip-types --test src/lib/spatial-topology/index.test.ts",
-    "test:storyboard-prompts": "node --experimental-strip-types --test src/lib/storyboard/prompt-package.test.ts"
+    "test:storyboard-prompts": "node --experimental-strip-types --test src/lib/storyboard/prompt-package.test.ts",
+    "test:production-state": "node --experimental-strip-types --test src/lib/production-state/normalizer.test.ts src/lib/production-state/physical-validator.test.ts src/lib/production-state/spatial-action.test.ts src/lib/production-state/cinematography.test.ts src/lib/production-state/dialogue-audio.test.ts"
   },
   "dependencies": {
     "next": "^15.1.0",
