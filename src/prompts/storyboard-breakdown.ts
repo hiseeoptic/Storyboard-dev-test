@@ -595,6 +595,25 @@ SEGMENT 2 [<PRIMARY FUNCTION>]:
 (TURN-TAKING: a short exchange — a question + reply, ~2-3 short lines total — SHOULD share ONE segment as consecutive speaker-tagged DIALOGUE lines so the 10s isn't wasted; they play in order, never overlapping. Keep each labelled line VERBATIM with its real speaker. Only push lines to the NEXT segment when they no longer fit ~9 seconds. Use "VO" as the name for a voiceover line. A single line stands alone ONLY when it is a substantial, clip-filling line (~12+ words) OR the beat is deliberately wordless — NEVER leave a bare 3-6 word one-liner alone in a 10s clip.)
 (PACING AUDIT — MANDATORY before you output: speech runs ~0.4s/word, so a lone 5-8 word line fills only ~2-3s of a 10s clip — that clip is WASTED. Re-scan every segment: if its DIALOGUE is a single line under ~10 words AND it is part of an exchange (a question, a reply, a reaction to the adjacent segment's line), MERGE those lines into ONE segment as 2-3 consecutive turns, and give the freed segment new story value (a new beat of the arc with its own line) — never leave a near-silent 10s clip unless the ACTION itself deliberately carries the moment, e.g. ASMR or a wordless reveal.)
 (FULLNESS BUDGET — the user's #1 complaint is empty/curt clips. A TALKING segment carries ~12-22 TOTAL spoken words across 2-3 natural turns that fill most of the 10s. UNDER ~10 words in a conversational beat is a DEFECT: EXPAND that beat into a fuller in-character exchange (a lead-in → the real point → a reply or reaction) or merge it with the adjacent exchange — do NOT ship a lone 3-6 word line that leaves 7-8 seconds of dead air (e.g. a bare "Anh ăn đi." must grow into a real back-and-forth). Over 22 → push the overflow into the next segment; a single line over ~22 words is that segment's ONLY line. Distribute evenly. A beat runs near-silent ONLY when the story genuinely needs reflection or a wordless visual/ASMR moment — never as a default, and never to save effort. MATCH THE SCRIPT: a talky, relationship-driven idea gets full dialogue in EVERY clip.)
+(🎯 DIALOGUE-DENSITY WORKED EXAMPLE — this is the single most important pattern; COPY this density, not the words. A two-person scene, 5 segments. Notice how EVERY clip is a real 2-3 turn exchange, and how the SAME four thin one-liners on the left are the exact failure you must never ship:
+  ❌ WRONG (one thin line per clip — the user's #1 complaint, a WASTED clip each time):
+     SEGMENT 1 → Lan: "Anh chưa ăn cơm trưa?"
+     SEGMENT 2 → Minh: "Anh bận quá nên quên."
+     SEGMENT 3 → Lan: "Cơm em nấu có chức năng tàng hình à?"
+     SEGMENT 4 → Minh: "Không, công việc của anh có chức năng làm mất trí nhớ."
+  ✅ RIGHT (each 10s clip = a full back-and-forth that fills the time; the SAME story, just written like real people talking):
+     SEGMENT 1 →
+       Lan: "Hộp cơm em để trên bàn từ trưa, anh chưa đụng tới à?"
+       Minh: "Ừ… sáng giờ họp ba cuộc liền, anh quên sạch."
+       Lan: "Quên, hay là lười? Em dậy từ năm giờ nấu đấy."
+     SEGMENT 2 →
+       Minh: "Thôi mà, tối nay anh nấu bù, món gì em cũng được."
+       Lan: "Anh mà biết nấu thì cá đã leo cây rồi."
+       Minh: "Thì để anh học. Người ta yêu nhau còn cưới được, nấu bữa cơm là mấy."
+     SEGMENT 3 →
+       Lan: "Em không cần anh nấu. Em cần anh nhớ là em có tồn tại."
+       Minh: "…Câu đó đau hơn anh tưởng đấy."
+  Every clip has 2-3 turns, speakers alternate, each line has subtext or a needle, and the story still moves. WRITE AT THIS DENSITY for every conversational video.)
 (continue for EXACTLY the requested number of segments, following the emotional arc)
 CAPTION: <ready-to-post caption + 4-6 hashtags>
 
