@@ -458,3 +458,51 @@ test("contact/cut wording compiles causal contact evidence", () => {
   assert.ok(compiled.shots[0]!.changes[0]!.contact_entity_ids?.length);
   assert.equal(validatePhysicalState(compiled).some((item) => item.code === "CONTACT_CAUSALITY_MISSING"), false);
 });
+
+test("gift box on sofa and bag inside the box compile with support", () => {
+  const legacySegment = {
+    segment_number: 1, duration_seconds: 10, title: "Gift", marketing_role: "hook",
+    beats: [], first_frame_prompt: "A gift box rests on the sofa with a bag inside",
+    motion_prompt: "Lan reaches toward the gift", dialogue: null, continuity_note: "",
+    state_ledger: {
+      start: [
+        { entity_id: "gift", state: "closed", position: "on sofa" },
+        { entity_id: "bag", state: "intact", position: "inside gift box" },
+      ],
+      changes: [],
+      end: [
+        { entity_id: "gift", state: "closed", position: "on sofa" },
+        { entity_id: "bag", state: "intact", position: "inside gift box" },
+      ],
+    },
+  } satisfies VideoSegment;
+  const compiled = buildProductionState({ character_locks: [], segments: [legacySegment], total_duration_seconds: 10 });
+  assert.equal(validatePhysicalState(compiled).some((item) => item.code === "OBJECT_SUPPORT_MISSING"), false);
+});
+
+test("holder transfer with reach/lift gets a deterministic hand and contact target", () => {
+  const legacySegment = {
+    segment_number: 1, duration_seconds: 10, title: "Lift gift", marketing_role: "body",
+    beats: [], first_frame_prompt: "Lan sits beside the gift",
+    motion_prompt: "Lan reaches, lifts the gift and holds it", dialogue: null, continuity_note: "",
+    characters_in_scene: ["Lan"],
+    state_ledger: {
+      start: [{ entity_id: "gift", state: "closed", position: "on table", holder: "" }],
+      changes: [{
+        entity_id: "gift", from: "closed", action: "Lan reaches and lifts the gift",
+        to: "closed", caused_by: "Lan", from_holder: "", to_holder: "Lan",
+        from_position: "on table", to_position: "in Lan's hand",
+      }],
+      end: [{ entity_id: "gift", state: "closed", position: "in Lan's hand", holder: "Lan" }],
+    },
+  } satisfies VideoSegment;
+  const lan = {
+    name: "Lan", gender_age: "adult", build: "average", skin_tone: "natural", hair: "black",
+    eyes: "brown", costume: "shirt", signature_features: "none", default_expression: "neutral", render_style: "cinematic",
+  } satisfies CharacterLock;
+  const compiled = buildProductionState({ character_locks: [lan], segments: [legacySegment], total_duration_seconds: 10 });
+  const change = compiled.shots[0]!.changes[0]!;
+  assert.equal(change.body_part, "right_hand");
+  assert.deepEqual(change.contact_entity_ids, ["obj_gift"]);
+  assert.equal(validatePhysicalState(compiled).some((item) => item.code === "CONTACT_CAUSALITY_MISSING"), false);
+});

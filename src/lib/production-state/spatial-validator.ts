@@ -65,6 +65,20 @@ function graphErrors(shot: ShotState, graph: SpatialGraphState): ProductionFindi
 }
 
 function changedPlacement(before: EntityPlacementState, after: EntityPlacementState): boolean {
+  const sameProsePlacement =
+    before.position_label.trim().toLocaleLowerCase() ===
+      after.position_label.trim().toLocaleLowerCase() &&
+    (before.body_orientation ?? "").trim().toLocaleLowerCase() ===
+      (after.body_orientation ?? "").trim().toLocaleLowerCase();
+  // A legacy graph may enrich an already-identical prose placement with a zone
+  // id on the next shot. Unknown→known metadata is not physical teleportation.
+  if (
+    sameProsePlacement &&
+    (!before.zone_id || !after.zone_id) &&
+    (!before.anchor_id || !after.anchor_id)
+  ) {
+    return false;
+  }
   return (
     before.zone_id !== after.zone_id ||
     before.anchor_id !== after.anchor_id ||

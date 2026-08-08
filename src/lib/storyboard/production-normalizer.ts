@@ -10,6 +10,7 @@ export interface ProductionNormalizationResult {
   multi_character_placements_synthesized: number;
   timeline_totals_synchronized: number;
   missing_state_snapshots_synthesized: number;
+  end_snapshots_synchronized_from_changes: number;
   invalid_character_holders_cleared: number;
   composite_object_holders_normalized: number;
 }
@@ -147,6 +148,57 @@ function completeMissingStateSnapshots(
   return synthesized;
 }
 
+/** A declared state change is the causal authority for the shot boundary. Keep
+ * the legacy end entry but align its four physical dimensions to the final
+ * declared change, eliminating repair loops where prose and ledger describe the
+ * same event with slightly different wording. No action is invented. */
+function synchronizeEndSnapshotsFromChanges(
+  breakdown: Pick<StoryboardGenerationOutput, "segments">
+): number {
+  let synchronized = 0;
+  for (const segment of breakdown.segments ?? []) {
+    const ledger = segment.state_ledger;
+    if (!ledger) continue;
+    const current = new Map(ledger.start.map((entry) => [key(entry.entity_id), {
+      state: clean(entry.state),
+      position: clean(entry.position),
+      holder: clean(entry.holder),
+      orientation: clean(entry.orientation),
+    }]));
+    for (const change of ledger.changes) {
+      const entityKey = key(change.entity_id);
+      const before = current.get(entityKey) ?? {
+        state: clean(change.from) || "physical condition unchanged",
+        position: clean(change.from_position),
+        holder: clean(change.from_holder),
+        orientation: clean(change.from_orientation),
+      };
+      current.set(entityKey, {
+        state: clean(change.to) || before.state,
+        position: clean(change.to_position) || before.position,
+        holder: change.to_holder === undefined ? before.holder : clean(change.to_holder),
+        orientation: change.to_orientation === undefined ? before.orientation : clean(change.to_orientation),
+      });
+    }
+    for (const entry of ledger.end) {
+      const expected = current.get(key(entry.entity_id));
+      if (!expected) continue;
+      const differs =
+        clean(entry.state) !== expected.state ||
+        clean(entry.position) !== expected.position ||
+        clean(entry.holder) !== expected.holder ||
+        clean(entry.orientation) !== expected.orientation;
+      if (!differs) continue;
+      entry.state = expected.state;
+      entry.position = expected.position;
+      entry.holder = expected.holder;
+      entry.orientation = expected.orientation;
+      synchronized += 1;
+    }
+  }
+  return synchronized;
+}
+
 function synchronizeTimelineTotal(
   breakdown: Pick<StoryboardGenerationOutput, "segments" | "total_duration_seconds">
 ): number {
@@ -240,6 +292,7 @@ export function normalizeProductionContracts(
   let voiceProfilesCompleted = 0;
   let continuousStartsInherited = 0;
   const holderRepairs = normalizeLegacyHolders(breakdown);
+  const endSnapshotsSynchronizedFromChanges = synchronizeEndSnapshotsFromChanges(breakdown);
   const stateLedgerDimensionsNormalized =
     normalizeStateLedgerDimensions(breakdown);
   const missingStateSnapshotsSynthesized = completeMissingStateSnapshots(breakdown);
@@ -294,6 +347,18 @@ export function normalizeProductionContracts(
         traces: inherited.traces ? [...inherited.traces] : undefined,
       };
     });
+    const currentStartIds = new Set(
+      current.state_ledger.start.map((entry) => key(entry.entity_id))
+    );
+    for (const inherited of previous.state_ledger.end) {
+      if (currentStartIds.has(key(inherited.entity_id))) continue;
+      current.state_ledger.start.push({
+        ...inherited,
+        traces: inherited.traces ? [...inherited.traces] : undefined,
+      });
+      currentStartIds.add(key(inherited.entity_id));
+      continuousStartsInherited += 1;
+    }
 
     const startState = new Map(
       current.state_ledger.start.map((entry) => [
@@ -346,6 +411,7 @@ export function normalizeProductionContracts(
     multi_character_placements_synthesized: multiCharacterPlacementsSynthesized,
     timeline_totals_synchronized: timelineTotalsSynchronized,
     missing_state_snapshots_synthesized: missingStateSnapshotsSynthesized,
+    end_snapshots_synchronized_from_changes: endSnapshotsSynchronizedFromChanges,
     invalid_character_holders_cleared: holderRepairs.characterHoldersCleared,
     composite_object_holders_normalized: holderRepairs.objectHoldersNormalized,
   };

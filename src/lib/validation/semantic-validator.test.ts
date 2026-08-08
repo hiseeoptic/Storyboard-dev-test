@@ -124,6 +124,41 @@ test("production normalizer repairs reported timeline, reversed holder and missi
   );
 });
 
+test("production normalizer aligns an existing end snapshot to the final declared change", () => {
+  const bd = cleanFixture();
+  bd.segments[0]!.state_ledger = {
+    start: [{ entity_id: "bag", state: "intact", position: "inside gift box", holder: "" }],
+    changes: [{
+      entity_id: "bag",
+      from: "intact",
+      action: "Lan's right hand grips and lifts the bag",
+      to: "intact",
+      caused_by: "Lan's right hand",
+      from_position: "inside gift box",
+      to_position: "in Lan's right hand",
+      from_holder: "",
+      to_holder: "Lan",
+      from_orientation: "upright",
+      to_orientation: "upright",
+    }],
+    end: [{ entity_id: "bag", state: "red bag", position: "on sofa", holder: "", orientation: "upright" }],
+  };
+
+  const normalized = normalizeProductionContracts(bd);
+  assert.equal(normalized.end_snapshots_synchronized_from_changes, 1);
+  assert.deepEqual(bd.segments[0]!.state_ledger!.end[0], {
+    entity_id: "bag",
+    state: "intact",
+    position: "in Lan's right hand",
+    holder: "Lan",
+    orientation: "upright",
+  });
+  assert.equal(
+    validateStoryboardSemantics(bd).findings.some((finding) => finding.code === "STATE-004"),
+    false
+  );
+});
+
 // ── Structure & data ────────────────────────────────────────────────────────
 test("STRUCT-001: an empty motion_prompt is a critical stub", () => {
   const bd = cleanFixture();

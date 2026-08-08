@@ -165,7 +165,7 @@ function compileSnapshot(
       };
       if (
         !entry.holder_entity_id &&
-        /^(?:on|resting on|placed on)\b|^(?:trên|đặt trên)\b|\b(?:floor|ground|basin|sink|table|counter|worktop|shelf|tray|plate|chair|seat|bench)\b|\b(?:sàn|đất|bồn rửa|chậu|bàn|kệ|khay|đĩa|ghế)\b/iu.test(text)
+        /^(?:on|in|inside|resting on|placed on)\b|^(?:trên|trong|bên trong|đặt trên)\b|\b(?:floor|ground|basin|sink|table|counter|worktop|shelf|tray|plate|chair|seat|bench|sofa|couch|box|container)\b|\b(?:sàn|đất|bồn rửa|chậu|bàn|kệ|khay|đĩa|ghế|sofa|hộp|thùng)\b/iu.test(text)
       ) {
         const isGround = /\b(?:floor|ground)\b|\b(?:sàn|đất)\b/iu.test(text);
         snapshot.supports.push({
@@ -233,11 +233,60 @@ export function compileLegacyPhysicalShot(
 
   for (const change of shot.changes) {
     const legacy = `${change.action} ${change.caused_by} ${change.from_position ?? ""} ${change.to_position ?? ""}`;
-    const limb = inferLimbId(legacy);
-    const hasContactAction = /\b(?:touch|contact|cut|grip|grasp|hold|pick|lift|place|release|push|pull)\b|\b(?:chạm|tiếp xúc|cắt|cứa|nắm|cầm|nhấc|đặt|thả|đẩy|kéo)\b/iu.test(legacy);
+    const holderChanged = change.from_holder_entity_id !== change.to_holder_entity_id;
+    const limb = inferLimbId(legacy) ?? (holderChanged ? "right_hand" : null);
+    const hasContactAction = holderChanged || /\b(?:touch|contact|cut|grip|grasp|hold|pick|lift|place|release|push|pull|reach)\b|\b(?:chạm|tiếp xúc|cắt|cứa|nắm|cầm|nhấc|đặt|thả|đẩy|kéo|đưa tay|vươn tay)\b/iu.test(legacy);
     change.body_part = limb;
     change.contact_entity_ids = hasContactAction ? [change.entity_id] : [];
     change.duration_s = null;
     change.physical_conditions = [];
+  }
+
+  // Legacy models sometimes describe a real pose/object transition in the
+  // motion prompt and snapshots but forget the matching state_ledger.changes
+  // row. Add a canonical evidence-backed change only when both boundaries prove
+  // a difference and the motion text explicitly names that entity. Legacy prose
+  // remains untouched.
+  const registryById = new Map(registry.map((entry) => [entry.entity_id, entry]));
+  const endById = new Map(shot.end_snapshot.entities.map((entry) => [entry.entity_id, entry]));
+  for (const start of shot.start_snapshot.entities) {
+    const end = endById.get(start.entity_id);
+    if (!end || shot.changes.some((change) => change.entity_id === start.entity_id)) continue;
+    const changed =
+      start.state !== end.state ||
+      start.position !== end.position ||
+      start.holder_entity_id !== end.holder_entity_id ||
+      start.orientation !== end.orientation;
+    if (!changed) continue;
+    const entry = registryById.get(start.entity_id);
+    const names = [entry?.display_name, entry?.source_ref, ...(entry?.aliases ?? [])]
+      .filter((value): value is string => Boolean(value));
+    const evidence = clean(segment.motion_prompt);
+    const named = names.some((name) =>
+      new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "iu").test(evidence)
+    );
+    if (!named) continue;
+    const sentence = evidence
+      .split(/(?<=[.!?;])\s+/)
+      .find((part) => names.some((name) => lower(part).includes(lower(name)))) ?? evidence;
+    const holderChanged = start.holder_entity_id !== end.holder_entity_id;
+    const bodyPart = inferLimbId(sentence) ?? (holderChanged ? "right_hand" : null);
+    shot.changes.push({
+      entity_id: start.entity_id,
+      from: start.state,
+      action: sentence.slice(0, 320),
+      to: end.state,
+      caused_by: entry?.kind === "character" ? start.entity_id : clean(segment.motion_prompt).slice(0, 160),
+      from_position: start.position,
+      to_position: end.position,
+      from_holder_entity_id: start.holder_entity_id,
+      to_holder_entity_id: end.holder_entity_id,
+      from_orientation: start.orientation,
+      to_orientation: end.orientation,
+      body_part: bodyPart,
+      contact_entity_ids: holderChanged ? [start.entity_id] : [],
+      duration_s: null,
+      physical_conditions: ["visible scripted transition"],
+    });
   }
 }

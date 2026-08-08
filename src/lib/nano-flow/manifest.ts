@@ -21,6 +21,7 @@ import {
 
 export interface BuildNanoFlowManifestOptions {
   aspectRatio?: "16:9" | "9:16";
+  thumbnailAspectRatio?: "16:9" | "9:16";
   dialogueLanguage?: string;
   projectId?: string;
   /** Số cảnh nhỏ mỗi đoạn (beats_per_segment) người dùng chọn. Board vẽ ĐÚNG
@@ -125,7 +126,9 @@ function buildLocationBoardPrompt(
   projectLighting: string,
   characterStyleLock = "",
   requestedPanels?: number,
-  fallbackCast: Array<Record<string, string>> = []
+  fallbackCast: Array<Record<string, string>> = [],
+  continuityId = "project_set_01",
+  persistentPropIds: string[] = []
 ): string {
   const clip =
     primaryVideoPrompt && typeof primaryVideoPrompt === "object"
@@ -208,12 +211,20 @@ function buildLocationBoardPrompt(
     });
   }
   const panels = selected.map((candidate, i) => {
-    const cam = clipStr(candidate.camera);
+    const rawCamera = clipStr(candidate.camera);
+    const cam = rawCamera
+      ? /^\[[A-Z_ -]+\]/.test(rawCamera)
+        ? rawCamera
+        : `[MEDIUM] ${rawCamera}`
+      : "[EYE] eye-level locked composition";
     const act = clipStr(candidate.action);
+    const captionAction = act.replace(/^framing\s*\d+\s*:\s*/iu, "").slice(0, 96).trim();
     return {
       ...candidate,
       panel: i + 1,
-      caption: `${i + 1}. ${cam ? cam + " " : ""}${act}`,
+      order_label: String(i + 1),
+      camera: cam,
+      caption: `${i + 1}. ${cam.match(/^\[[^\]]+\]/)?.[0] ?? "[EYE]"} ${captionAction}`,
     };
   });
   const n = panels.length;
@@ -241,7 +252,11 @@ function buildLocationBoardPrompt(
       ? "styled_storyboard_board"
       : liveAction ? "photoreal_storyboard_board" : `${slugify(realityMode)}_storyboard_board`,
     layout:
-      `A SINGLE 16:9 STORYBOARD BOARD sheet holding EXACTLY ${n} panel${n > 1 ? "s" : ""} — no more, no fewer, and NO empty, blank or filler cells. ${n === 1 ? "One frame filling the sheet." : n <= 3 ? `Arrange the ${n} panels side by side in ONE horizontal row of equal size, filling the whole sheet.` : `Arrange the ${n} panels in a tidy grid in reading order (left to right, then top to bottom), every cell filled, none left blank.`} Every panel is ${characterStyleLock ? "a frame in the locked visual style" : "a photoreal film frame"} of the SAME scene at a different beat; only the action, pose and camera change. Directly UNDER each panel print a thin caption strip containing that panel's caption text.`,
+      `A SINGLE 16:9 STORYBOARD BOARD sheet holding EXACTLY ${n} panel${n > 1 ? "s" : ""} — no more, no fewer, and NO empty, blank or filler cells. ${n === 1 ? "One frame filling the sheet." : n <= 3 ? `Arrange the ${n} panels side by side in ONE horizontal row of equal size, filling the whole sheet.` : `Arrange the ${n} panels in a tidy grid in reading order (left to right, then top to bottom), every cell filled, none left blank.`} Every panel is ${characterStyleLock ? "a frame in the locked visual style" : "a photoreal film frame"} of the SAME scene at a different beat; only the action, pose and camera change. Use ONE identical board template across the entire project: pure white outer canvas, equal gutters, uniform thin solid black dividers around every image cell, and one identical white caption strip directly below every panel. Never mix borderless, white-bordered and black-bordered panels.`,
+    frame_order_contract:
+      `MANDATORY READING ORDER: left-to-right, then top-to-bottom. Put a large solid BLACK square badge with a crisp WHITE numeral in the TOP-LEFT CORNER INSIDE EVERY panel: ${panels.map((panel) => panel.order_label).join(", ")}. Every panel must have exactly one badge; never omit, duplicate or move a number into the caption only.`,
+    camera_contract:
+      "Every panel must execute its full camera field: bracketed shot size, camera height/angle, subject, look direction and focus target. Do not shorten an OTS, MEDIUM or CLOSE instruction into an unspecified portrait.",
     setting_authority: hasLocationPhoto
       ? "An ATTACHED location photo is the EXACT and MANDATORY setting. Reproduce THAT real place — its layout, furniture, walls, windows, materials, colours and lighting — in EVERY panel. Never invent, relocate or substitute a different location; only the camera framing changes."
       : `Setting (no photo attached, build it from this description): ${setting}.`,
@@ -257,9 +272,15 @@ function buildLocationBoardPrompt(
     cast,
     panels,
     captions:
-      "REQUIRED on EVERY panel: print that panel's `caption` text (number + camera + action) in a thin strip directly under its own panel. Every panel gets a caption; these per-panel captions are the ONLY text allowed on the image.",
+      "REQUIRED on EVERY panel: print that panel's short `caption` verbatim in the identical white strip directly under its own image. The top-left number badge plus this short caption are the ONLY text allowed. Do not render the longer action/camera prose as extra text.",
     consistency:
-      "PROJECT CONSISTENCY — every shot of this video must match: keep the SAME time-of-day and the SAME lighting in EVERY shot (do NOT switch between day and night between shots). The meal, food, dishes, bowls, chopsticks and every table prop are IDENTICAL across all shots (same dish, same plating, same amount). Furniture and layout stay identical to the attached location; only the characters' action and the camera change.",
+      `PROJECT CONTINUITY LOCK ${continuityId}: every board assigned to this location is the SAME physical set. Keep the SAME time-of-day, light direction, windows, doors, walls, floor, furniture geometry, landmarks and camera-side orientation. Persistent props (${persistentPropIds.join(", ") || "every named story prop"}) keep one exact shape, dimensions, material, colour, hardware and wear across all shots; a gift box, bag, phone or other object never changes design between boards. Only script-caused position, holder, open/closed state, pose and camera may change.`,
+    persistent_prop_authority: persistentPropIds.length
+      ? persistentPropIds.map((id) => ({
+          entity_id: id,
+          rule: "The first generated/attached appearance is the immutable visual design authority for every later board.",
+        }))
+      : undefined,
     reference_authority: KEYFRAME_REFERENCE_AUTHORITY,
     wardrobe_note: wardrobeClause ? wardrobeClause.trim() : undefined,
     negative: characterStyleLock
@@ -452,6 +473,12 @@ export function buildNanoFlowManifest(
   // saved/legacy breakdowns are compiled locally without rewriting old fields.
   const productionState = breakdown.production_state ?? buildProductionState(breakdown);
   const title = breakdown.title || "Untitled";
+  const persistentPropEntries = productionState.registry.filter(
+    (entry) => entry.kind === "object" || entry.kind === "product"
+  );
+  const persistentPropIds = persistentPropEntries.map(
+    (entry) => `${entry.entity_id} (${entry.display_name})`
+  );
   const realityMode = breakdown.context_ir?.reality_profile.mode ?? "cinematic";
   // Selected video style (one of the ten locked media). Photoreal representations
   // (auto/uploaded/human/none) add NO lock and keep the board photoreal; any
@@ -668,7 +695,9 @@ export function buildNanoFlowManifest(
           const key = name.trim().toLowerCase();
           const wardrobe = wardrobeOverride.get(key) ?? baseCostumeByName.get(key) ?? "";
           return { name: name.trim(), ...(wardrobe ? { wardrobe } : {}) };
-        })
+        }),
+        `set_${slugify((seg.location_id ?? seg.environment_ref ?? "project_location").trim()) || "project_location"}`,
+        persistentPropIds
       ),
       continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
@@ -712,6 +741,7 @@ export function buildNanoFlowManifest(
       dialogue_language: opts.dialogueLanguage ?? "Vietnamese",
       total_duration_seconds: breakdown.total_duration_seconds,
       thumbnail_title: breakdown.thumbnail_title,
+      thumbnail_aspect_ratio: opts.thumbnailAspectRatio ?? opts.aspectRatio ?? "9:16",
       ...(characterRepresentation && visualMediumLock
         ? { character_style: { id: characterRepresentation, prompt: visualMediumLock } }
         : {}),
@@ -722,8 +752,10 @@ export function buildNanoFlowManifest(
           opts.productNames?.[0] ||
           (breakdown.product_dna
             ? "the hero product featured in the video (match the attached product reference exactly)"
-            : "the standout dish, food or key object of the video"),
-        aspect: opts.aspectRatio ?? "9:16",
+            : persistentPropEntries[0]
+              ? `the story's hero object "${persistentPropEntries[0].display_name}" (keep its exact established shape, material and colour)`
+              : "the single key story object established by the script"),
+        aspect: opts.thumbnailAspectRatio ?? opts.aspectRatio ?? "9:16",
         realityMode,
       }),
       social_posts: breakdown.social_posts,

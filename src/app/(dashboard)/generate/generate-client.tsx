@@ -144,6 +144,8 @@ const t = {
     vi: "VD: Quảng cáo nồi chiên không dầu — một bà mẹ bận rộn nấu bữa tối ngon lành cho con chỉ trong 15 phút...",
     en: "e.g. Air fryer ad — a busy mom cooks a delicious dinner for her kid in just 15 minutes...",
   },
+  scriptTreatment: { vi: "Cách xử lý kịch bản đã viết", en: "Pasted script treatment" },
+  thumbnailAspect: { vi: "Tỉ lệ thumbnail", en: "Thumbnail aspect ratio" },
   genre: { vi: "Thể loại", en: "Genre" },
   productBriefTitle: { vi: "Thông tin sản phẩm (cho TVC quảng cáo)", en: "Product brief (for TVC ads)" },
   productBriefHint: {
@@ -1091,6 +1093,7 @@ export function GenerateClient() {
 
   // Step 1: Story
   const [storyIdea, setStoryIdea] = useState("");
+  const [scriptTreatment, setScriptTreatment] = useState<"preserve" | "polish">("polish");
   const [genre, setGenre] = useState("advertising");
   const steps = t.steps[lang].map((label, index) =>
     genre === "cooking" && index === 2
@@ -1274,6 +1277,7 @@ export function GenerateClient() {
   // — the extension generates images for free), but the input contract keeps it.
   const [imageQuality] = useState<ImageQuality>("standard");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
+  const [thumbnailAspectRatio, setThumbnailAspectRatio] = useState<"16:9" | "9:16">("16:9");
   // Expression heads in each board's character-reference strip (0 = let Veo act
   // the emotion from the prompt; 2-3 = include a small fixed set).
   const [copiedSeg, setCopiedSeg] = useState<number | null>(null);
@@ -1620,6 +1624,7 @@ export function GenerateClient() {
         finalCharacterImages.length > 0 ? "uploaded_photoreal" : characterRepresentation,
       directing_profile: directingProfile,
       script_provider: scriptProvider,
+      script_treatment: scriptTreatment,
       numerology_style: numerologyStyle,
       numerology_hook_mode: numerologyHookMode,
       dialogue_language:
@@ -1688,6 +1693,7 @@ export function GenerateClient() {
       key_message: keyMessage || undefined,
       image_quality: imageQuality,
       aspect_ratio: aspectRatio,
+      thumbnail_aspect_ratio: thumbnailAspectRatio,
       reference_expressions: 0,
       character_render:
         finalCharacterImages.length > 0 || characterRepresentation === "generated_human"
@@ -2109,6 +2115,7 @@ export function GenerateClient() {
       : [];
     const manifest = buildNanoFlowManifest(result.breakdown, {
       aspectRatio: (genInput?.aspect_ratio as "16:9" | "9:16") ?? "9:16",
+      thumbnailAspectRatio: genInput?.thumbnail_aspect_ratio ?? thumbnailAspectRatio,
       // Board vẽ ĐÚNG số cảnh người dùng chọn (3 cảnh ⇒ 3 frame).
       beatsPerSegment: genInput?.beats_per_segment ?? beatsPerSegment,
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
@@ -2159,7 +2166,7 @@ export function GenerateClient() {
     }
     // exportCheckVersion intentionally forces a free deterministic re-check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, genInput, beatsPerSegment, effectiveCharacterRepresentation, exportCheckVersion]);
+  }, [result, genInput, beatsPerSegment, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
 
   const cleanManifestForExport = () => {
     if (!exportBundle?.manifest) {
@@ -3738,6 +3745,54 @@ export function GenerateClient() {
                   rows={4}
                   className="resize-none"
                 />
+                <div className="grid gap-3 pt-1 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      {L("scriptTreatment")}
+                    </label>
+                    <Select
+                      value={scriptTreatment}
+                      onChange={(e) => setScriptTreatment(e.target.value as "preserve" | "polish")}
+                      options={[
+                        {
+                          value: "polish",
+                          label: lang === "vi"
+                            ? "Biên tập nâng cấp hook + thoại"
+                            : "Polish hook + dialogue",
+                        },
+                        {
+                          value: "preserve",
+                          label: lang === "vi"
+                            ? "Giữ nguyên từng lời thoại"
+                            : "Preserve every line",
+                        },
+                      ]}
+                    />
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      {lang === "vi"
+                        ? "Biên tập giữ nguyên cốt truyện, nhân vật, đạo cụ và thông điệp; chỉ nâng hook 30 giây, hành động, biểu cảm và lời thoại."
+                        : "Polish preserves plot, cast, props and meaning while strengthening the first 30 seconds, performance and dialogue."}
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      {L("thumbnailAspect")}
+                    </label>
+                    <Select
+                      value={thumbnailAspectRatio}
+                      onChange={(e) => setThumbnailAspectRatio(e.target.value as "16:9" | "9:16")}
+                      options={[
+                        { value: "16:9", label: "16:9 — YouTube / ngang" },
+                        { value: "9:16", label: "9:16 — Reels / dọc" },
+                      ]}
+                    />
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      {lang === "vi"
+                        ? "Chỉ áp dụng cho thumbnail; không đổi tỉ lệ video hoặc storyboard."
+                        : "Applies only to the thumbnail; video and storyboard formats stay unchanged."}
+                    </p>
+                  </div>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">

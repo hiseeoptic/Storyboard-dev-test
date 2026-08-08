@@ -22,6 +22,7 @@
         "dialogue_language": { "type": "string" },
         "total_duration_seconds": { "type": "number" },
         "thumbnail_title": { "type": "string" },
+        "thumbnail_aspect_ratio": { "type": "string", "enum": ["16:9", "9:16"], "description": "Thumbnail delivery format; independent from the video aspect ratio." },
         "social_posts": {
           "type": "object",
           "description": "Reuses the existing Storyboard SocialPosts shape verbatim (tiktok / youtube_shorts / facebook_reel)."

@@ -1869,6 +1869,7 @@ function validatePreRenderGates(
     const manifestCharacterRepresentation = resolveCreativeRoute(input).effective_character_representation;
     const manifest = buildNanoFlowManifest(breakdown, {
       aspectRatio: input.aspect_ratio === "16:9" ? "16:9" : "9:16",
+      thumbnailAspectRatio: input.thumbnail_aspect_ratio,
       // Board vẽ ĐÚNG số cảnh người dùng chọn (3 cảnh ⇒ 3 frame).
       beatsPerSegment: input.beats_per_segment,
       dialogueLanguage:
@@ -2218,12 +2219,21 @@ export async function generateStoryboardPlan(
       enhanced.genre === "cooking" && !!enhanced.cooking_recipe;
     const scriptProvider = input.script_provider ?? provider;
 
-    let sourceScript: string | null = compiledCooking
+    const pastedScript = compiledCooking
       ? null
       : approvedScriptFromStoryIdea(enhanced.story_idea);
+    // Backward compatibility: old callers that do not send script_treatment
+    // retain the original zero-cost verbatim path. The app now exposes an
+    // explicit "polish" choice which deliberately runs the scriptwriter once.
+    let sourceScript: string | null =
+      pastedScript && input.script_treatment !== "polish" ? pastedScript : null;
     if (sourceScript) {
       warnings.push(
         "Đã nhận diện nội dung nhập là kịch bản hoàn chỉnh và dùng trực tiếp; không gọi API viết lại kịch bản."
+      );
+    } else if (pastedScript && input.script_treatment === "polish") {
+      warnings.push(
+        "Đã nhận diện kịch bản hoàn chỉnh và chuyển qua biên tập nâng cấp hook 30 giây, hành động, biểu cảm và lời thoại; giữ nguyên cốt truyện, đạo cụ, quan hệ và thông điệp kết."
       );
     }
     // Always run a dedicated creative SCRIPT stage (except cooking, which uses
@@ -2251,6 +2261,11 @@ export async function generateStoryboardPlan(
           if (chainIndex > 0) {
             warnings.push(
               `Kịch bản do ${sp} viết thay vì ${scriptProvider} (model chính không phản hồi).`
+            );
+          }
+          if (pastedScript && input.script_treatment === "polish") {
+            warnings.push(
+              `Đã biên tập kịch bản bằng ${sp}; bản đã biên tập trở thành nguồn thoại/hành động duy nhất cho storyboard.`
             );
           }
           break;

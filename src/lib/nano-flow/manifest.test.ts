@@ -668,3 +668,41 @@ test("manifest deduplicates per-shot authority and strips audio from the image b
   const videoAuthority = video.production_state_authority as Record<string, unknown>;
   assert.ok(videoAuthority.dialogue_state, "video keeps dialogue_state");
 });
+
+test("board prompt enforces numbered panels, one border system and a separate thumbnail aspect", () => {
+  const bd = {
+    title: "Gift",
+    thumbnail_title: "MÓN QUÀ NÀY?!",
+    total_duration_seconds: 10,
+    character_locks: [{ name: "Lan" }, { name: "Minh" }],
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      characters_in_scene: ["Lan", "Minh"],
+      location_id: "living_room",
+      environment_ref: "living_room",
+      first_frame_prompt: "A gift box rests on the coffee table.",
+      motion_prompt: "Lan opens the box and lifts the red bag.",
+      full_prompt: "Lan opens the box and lifts the red bag while Minh watches.",
+      beats: [
+        { beat: "Lan reaches for the box", camera: "slow push-in" },
+        { beat: "Lan lifts the red bag", camera: "[OTS] behind Minh, focus Lan and bag" },
+      ],
+      state_ledger: {
+        start: [{ entity_id: "gift", state: "closed", position: "on coffee table" }],
+        changes: [],
+        end: [{ entity_id: "gift", state: "open", position: "on coffee table" }],
+      },
+    }],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, { beatsPerSegment: 2, aspectRatio: "16:9", thumbnailAspectRatio: "9:16" });
+  const board = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  const panels = board.panels as Array<Record<string, unknown>>;
+
+  assert.equal(m.project.thumbnail_aspect_ratio, "9:16");
+  assert.match(String(board.frame_order_contract), /TOP-LEFT CORNER INSIDE EVERY panel/);
+  assert.match(String(board.layout), /uniform thin solid black dividers/);
+  assert.deepEqual(panels.map((panel) => panel.order_label), ["1", "2"]);
+  assert.match(String(panels[0]!.camera), /^\[MEDIUM\]/);
+  assert.match(String(board.consistency), /gift/i);
+});

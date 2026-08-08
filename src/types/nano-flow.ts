@@ -225,6 +225,8 @@ export interface NanoFlowProject {
   dialogue_language?: string;
   total_duration_seconds?: number;
   thumbnail_title?: string;
+  /** Explicit thumbnail delivery format, independent from the video format. */
+  thumbnail_aspect_ratio?: "16:9" | "9:16";
   /** Viral 9:16 thumbnail image prompt (high-CTR clickbait style): cut-out cast
    * with a neon outline + exaggerated reactions, a hero item, and the big
    * stylized `thumbnail_title` headline. The extension generates it from this

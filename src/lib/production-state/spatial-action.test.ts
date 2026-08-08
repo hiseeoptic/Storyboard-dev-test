@@ -127,6 +127,36 @@ test("continuous boundary catches a silent left-right seat swap", () => {
   );
 });
 
+test("continuous boundary treats null-to-known zone metadata as enrichment when prose placement is identical", () => {
+  const first = segment(1, {
+    characters_in_scene: ["Lan", "Minh"],
+    spatial_layout: twoPersonLayout("Lan screen-left facing Minh. Minh screen-right facing Lan."),
+  });
+  const second = segment(2, {
+    characters_in_scene: ["Lan", "Minh"],
+    continuity_mode: "continuous",
+    transition_in: {
+      mode: "continuous", to_location_id: "lobby", time_relation: "same moment",
+      preserve: ["placement"], reset: [], reason: "same conversation",
+    },
+    spatial_layout: twoPersonLayout("Lan screen-left facing Minh. Minh screen-right facing Lan."),
+  });
+  const state = buildProductionState(breakdown([first, second]));
+  const before = state.shots[0]!.end_snapshot.placements[0]!;
+  const after = state.shots[1]!.start_snapshot.placements[0]!;
+  before.position_label = after.position_label;
+  before.body_orientation = after.body_orientation;
+  before.zone_id = null;
+  before.anchor_id = null;
+  assert.equal(
+    validateSpatialState(state).some((item) =>
+      item.entity_ids.includes(before.entity_id) &&
+      ["SPATIAL_UNEXPLAINED_REPOSITION", "SPATIAL_TELEPORT_OR_SWAP"].includes(item.code)
+    ),
+    false
+  );
+});
+
 test("an intentional scene cut does not treat changed placement as teleport", () => {
   const first = segment(1, {
     characters_in_scene: ["Lan", "Minh"],

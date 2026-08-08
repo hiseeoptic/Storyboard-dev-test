@@ -208,6 +208,10 @@ export interface StoryboardGenerationInput {
   /** Which model writes the SCRIPT (text). Images always stay on Gemini.
    * Defaults to the main provider. Switchable from the hidden admin panel. */
   script_provider?: AIProvider;
+  /** How a pasted complete screenplay is handled. `preserve` keeps the user's
+   * wording verbatim; `polish` runs one editorial pass that preserves every
+   * story fact while strengthening the hook, action, subtext and dialogue. */
+  script_treatment?: "preserve" | "polish";
   /** Numerology (and topic) script tone: emotional/inspiring, sharp behavioral
    * analysis, or both blended. Defaults to "balanced". */
   numerology_style?: "inspirational" | "analytical" | "balanced";
@@ -266,6 +270,8 @@ export interface StoryboardGenerationInput {
   central_conflict?: string;
   image_quality?: ImageQuality;
   aspect_ratio?: AspectRatio;
+  /** Thumbnail can use a different delivery format from the video itself. */
+  thumbnail_aspect_ratio?: "16:9" | "9:16";
   /**
    * How many expression heads to add to each board's CHARACTER REFERENCE strip
    * (on top of the 3 identity angles). 0 = neutral identity only, let Veo act
