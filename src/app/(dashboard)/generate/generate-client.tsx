@@ -51,6 +51,8 @@ import { loadHandoff } from "@/lib/handoff";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
 import {
   validateExportReadiness,
+  assessSoftExportPolicy,
+  calculateRepairImprovement,
   validateStoryboardSemantics,
   formatSemanticReport,
   type SemanticValidationReport,
@@ -877,6 +879,28 @@ type CachedStoryboardPlan = {
   warnings: string[];
 };
 
+type ExportRepairProgress = {
+  before: number;
+  after: number;
+  fixed: number;
+  percent: number;
+  status: "deterministic" | "improved" | "clean" | "no_progress";
+};
+
+function blockingFindingCount(report: SemanticValidationReport | null | undefined): number {
+  return (report?.findings ?? []).filter(
+    (finding) => finding.severity === "critical" || finding.severity === "high"
+  ).length;
+}
+
+function exportRepairSignature(report: SemanticValidationReport | null | undefined): string {
+  return (report?.findings ?? [])
+    .filter((finding) => finding.severity === "critical" || finding.severity === "high")
+    .map((finding) => [finding.code, finding.scope, finding.segment_number ?? "", finding.character ?? "", finding.message, finding.evidence ?? ""].join("|"))
+    .sort()
+    .join("\n");
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export function GenerateClient() {
@@ -905,6 +929,8 @@ export function GenerateClient() {
   const [exportAttempted, setExportAttempted] = useState(false);
   const [exportCheckVersion, setExportCheckVersion] = useState(0);
   const [exportRepairTarget, setExportRepairTarget] = useState<number | "all" | null>(null);
+  const [exportRepairProgress, setExportRepairProgress] = useState<ExportRepairProgress | null>(null);
+  const [attemptedExportRepairSignatures, setAttemptedExportRepairSignatures] = useState<string[]>([]);
   // Browser-page-only cache: identical inputs reuse the finished text plan
   // instead of paying for the script + Context IR + storyboard calls again.
   const planCacheRef = useRef(new StoryboardPlanCache<CachedStoryboardPlan>(3));
@@ -2136,16 +2162,38 @@ export function GenerateClient() {
   }, [result, genInput, beatsPerSegment, effectiveCharacterRepresentation, exportCheckVersion]);
 
   const cleanManifestForExport = () => {
-    if (!exportBundle?.manifest || !exportBundle.report.ok) {
+    if (!exportBundle?.manifest) {
       setExportAttempted(true);
       return null;
     }
+    // Soft export gate: semantic/continuity findings travel with the manifest
+    // as QA evidence but never strand a valid JSON/ZIP/Extension payload.
+    // A successful warning-bearing export is an allowed amber QA state, not a
+    // failed/red attempt. Red is reserved for manifest compilation failure.
     setExportAttempted(false);
-    return exportBundle.manifest;
+    return {
+      ...exportBundle.manifest,
+      export_qa: {
+        status: exportBundle.report.ok ? "clean" as const : "exported_with_warnings" as const,
+        counts: exportBundle.report.counts,
+        findings: exportBundle.report.findings,
+      },
+    };
   };
 
   const repairExportAtSource = async (segmentNumber?: number) => {
     if (!genInput || !genAnalysis || !result || exportRepairTarget !== null) return;
+    const beforeReport = exportBundle?.report;
+    const before = blockingFindingCount(beforeReport);
+    const signature = exportRepairSignature(beforeReport);
+    if (signature && attemptedExportRepairSignatures.includes(signature)) {
+      setExportRepairProgress({ before, after: before, fixed: 0, percent: 0, status: "no_progress" });
+      setResult((current) => current ? {
+        ...current,
+        warnings: [...new Set([...current.warnings, "Bộ lỗi này đã được AI thử sửa nhưng không thay đổi đủ để chạy lại. App đã dừng gọi AI lặp để tránh tốn token; bạn vẫn có thể xuất file kèm cảnh báo."])],
+      } : current);
+      return;
+    }
     setExportRepairTarget(segmentNumber ?? "all");
     setError(null);
     try {
@@ -2160,6 +2208,17 @@ export function GenerateClient() {
         setError(repaired.error);
         return;
       }
+      const after = blockingFindingCount(repaired.data.report);
+      const { fixed, percent } = calculateRepairImprovement(before, after);
+      const status: ExportRepairProgress["status"] = after === 0
+        ? "clean"
+        : fixed > 0
+          ? "improved"
+          : repaired.data.used_ai ? "no_progress" : "deterministic";
+      setExportRepairProgress({ before, after, fixed, percent, status });
+      if (repaired.data.used_ai && signature) {
+        setAttemptedExportRepairSignatures((current) => current.includes(signature) ? current : [...current, signature]);
+      }
       const repairedLabel = repaired.data.repaired_segment_numbers.length
         ? repaired.data.repaired_segment_numbers.join(", ")
         : segmentNumber !== undefined ? String(segmentNumber) : "";
@@ -2168,10 +2227,14 @@ export function GenerateClient() {
         breakdown: repaired.data.breakdown,
         videoPrompt: repaired.data.videoPrompt,
         warnings: [
-          ...current.warnings,
-          repaired.data.used_ai
-            ? `Đã dùng đúng 1 lượt AI để sửa tại chỗ${repairedLabel ? ` cảnh ${repairedLabel}` : ""}; các cảnh sạch, ảnh và thumbnail không được tạo lại.`
-            : "Đã đồng bộ/sửa deterministic tại chỗ, không gọi API và không tốn token.",
+          ...current.warnings.filter((warning) =>
+            !/^Đã dùng đúng 1 lượt AI để sửa tại chỗ|^Đã dùng đúng 1 batch AI|^Đã sửa deterministic miễn phí|^Đã sửa được \d+\/\d+ lỗi|^AI đã thử 1 batch nhưng|^Bộ sửa deterministic/iu.test(warning)
+          ),
+          after === 0
+            ? `${repaired.data.used_ai ? "Đã dùng đúng 1 batch AI" : "Đã sửa deterministic miễn phí"} và validator xác nhận sạch 100%; ảnh và thumbnail không được tạo lại.`
+            : fixed > 0
+              ? `Đã sửa được ${fixed}/${before} lỗi đang chặn (${percent}%)${repairedLabel ? ` tại cảnh ${repairedLabel}` : ""}; còn ${after} cảnh báo. Export vẫn mở và không tạo lại ảnh/thumbnail.`
+              : `${repaired.data.used_ai ? "AI đã thử 1 batch nhưng" : "Bộ sửa deterministic"} chưa làm giảm finding (${before} → ${after}). App sẽ không gọi lặp cùng bộ lỗi; export vẫn mở kèm cảnh báo.`,
         ],
       } : current);
       setExportAttempted(false);
@@ -2795,7 +2858,12 @@ export function GenerateClient() {
           .filter((value): value is number => typeof value === "number")
       ),
     ].sort((a, b) => a - b);
-    const exportReady = exportReport?.ok === true && !!exportBundle?.manifest;
+    const softExportPolicy = assessSoftExportPolicy(exportReport, !!exportBundle?.manifest);
+    const exportReady = softExportPolicy.can_export;
+    const exportClean = softExportPolicy.status === "clean";
+    const currentRepairAlreadyAttempted = attemptedExportRepairSignatures.includes(
+      exportRepairSignature(exportReport)
+    );
     const copyJson = (key: string, text: string) => {
       navigator.clipboard.writeText(text);
       setCopiedJson(key);
@@ -2823,7 +2891,7 @@ export function GenerateClient() {
               variant="outline"
               onClick={downloadAllFrames}
               disabled={zipping || !exportReady}
-              title={!exportReady ? (lang === "vi" ? "Sửa sạch lỗi Critical/High trước khi xuất ZIP" : "Repair Critical/High findings before ZIP export") : undefined}
+              title={!exportReady ? (lang === "vi" ? "Manifest chưa biên dịch được" : "Manifest could not be compiled") : undefined}
               className="gap-2"
             >
               {zipping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -2890,7 +2958,7 @@ export function GenerateClient() {
                 ? "Gửi kịch bản + prompt sang extension AutoFlow Reel để tạo ảnh storyboard bằng nano banana miễn phí trong Google Flow. Không cần tải ảnh lên ở đây."
                 : "Send the script + prompts to the AutoFlow Reel extension to generate storyboard images with free nano banana in Google Flow. No image upload needed here."}
             </p>
-            {exportReady ? (
+            {exportClean ? (
               <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
                 {lang === "vi"
                   ? `✓ Export sạch — JSON, Extension và ZIP đã mở.${exportReport && exportReport.counts.medium > 0 ? ` Có ${exportReport.counts.medium} cảnh báo Medium không chặn xuất.` : ""}`
@@ -2901,15 +2969,29 @@ export function GenerateClient() {
                 <div>
                   <p className="font-semibold">
                     {lang === "vi"
-                      ? "Preview vẫn hoạt động. Export đang khóa cho đến khi sửa sạch Critical/High."
-                      : "Preview remains available. Export is locked until Critical/High findings are clean."}
+                      ? "Export vẫn mở. Bạn có thể sửa để tăng chất lượng hoặc xuất ngay kèm cảnh báo."
+                      : "Export remains available. Repair to improve quality or export now with warnings."}
                   </p>
                   <p className="mt-1 text-[11px] opacity-80">
                     {lang === "vi"
-                      ? "Thumbnail và ảnh hiện có không bị tạo lại. Kiểm tra lại là miễn phí; nút sửa AI chỉ chạy khi bạn bấm và tối đa 1 lượt cho lần bấm đó."
-                      : "Existing thumbnail/images are not regenerated. Re-checking is free; AI repair runs only on click and at most once per click."}
+                      ? "Thumbnail và ảnh hiện có không bị tạo lại. Kiểm tra lại miễn phí; cùng một bộ lỗi không được gọi AI lặp để tránh tốn token."
+                      : "Existing thumbnail/images are not regenerated. Re-checking is free; an unchanged finding set is never sent to AI twice."}
                   </p>
                 </div>
+                {exportRepairProgress ? (
+                  <div className="rounded border border-current/20 bg-white/50 p-2 dark:bg-black/10">
+                    <div className="mb-1 flex items-center justify-between font-medium">
+                      <span>{lang === "vi" ? "Mức cải thiện sau sửa" : "Repair improvement"}</span>
+                      <span>{exportRepairProgress.percent}%</span>
+                    </div>
+                    <Progress value={exportRepairProgress.percent} className="h-2" />
+                    <p className="mt-1 text-[11px] opacity-80">
+                      {lang === "vi"
+                        ? `Đã xử lý ${exportRepairProgress.fixed}/${exportRepairProgress.before} lỗi; còn ${exportRepairProgress.after}.`
+                        : `Resolved ${exportRepairProgress.fixed}/${exportRepairProgress.before}; ${exportRepairProgress.after} remain.`}
+                    </p>
+                  </div>
+                ) : null}
                 <div className="max-h-56 space-y-1 overflow-auto rounded border border-current/20 bg-white/40 p-2 dark:bg-black/10">
                   {blockingExportFindings.map((finding, index) => (
                     <div key={`${finding.code}-${finding.segment_number ?? "project"}-${index}`}>
@@ -2940,7 +3022,7 @@ export function GenerateClient() {
                       variant="outline"
                       size="sm"
                       onClick={() => repairExportAtSource(segmentNumber)}
-                      disabled={exportRepairTarget !== null}
+                      disabled={exportRepairTarget !== null || currentRepairAlreadyAttempted}
                       className="gap-1.5"
                     >
                       {exportRepairTarget === segmentNumber ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
@@ -2951,13 +3033,20 @@ export function GenerateClient() {
                     <Button
                       size="sm"
                       onClick={() => repairExportAtSource()}
-                      disabled={exportRepairTarget !== null}
+                      disabled={exportRepairTarget !== null || currentRepairAlreadyAttempted}
                       className="gap-1.5"
                     >
                       {exportRepairTarget === "all" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                      {lang === "vi" ? "Sửa tất cả lỗi đang chặn (1 batch AI tối đa)" : "Repair all blockers (max 1 AI batch)"}
+                      {lang === "vi" ? "Sửa tất cả để tăng chất lượng (1 batch AI tối đa)" : "Repair all to improve quality (max 1 AI batch)"}
                     </Button>
                   )}
+                  {currentRepairAlreadyAttempted ? (
+                    <span className="self-center text-[11px] opacity-75">
+                      {lang === "vi"
+                        ? "Đã thử bộ lỗi hiện tại — khóa gọi lại AI để tránh tốn token; export vẫn dùng được."
+                        : "This finding set was already attempted—repeat AI is locked; export remains available."}
+                    </span>
+                  ) : null}
                   <Button
                     variant="outline"
                     size="sm"

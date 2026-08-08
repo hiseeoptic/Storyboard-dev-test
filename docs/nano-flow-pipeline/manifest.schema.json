@@ -67,6 +67,27 @@
         "boundaries": { "type": "array" },
         "findings": { "type": "array" }
       }
+    },
+    "export_qa": {
+      "type": "object",
+      "description": "Non-blocking export QA snapshot. A valid manifest may be exported with warnings; consumers may ignore this additive field.",
+      "required": ["status", "counts", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["clean", "exported_with_warnings"] },
+        "counts": {
+          "type": "object",
+          "required": ["critical", "high", "medium", "total"],
+          "additionalProperties": false,
+          "properties": {
+            "critical": { "type": "integer", "minimum": 0 },
+            "high": { "type": "integer", "minimum": 0 },
+            "medium": { "type": "integer", "minimum": 0 },
+            "total": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "findings": { "type": "array" }
+      }
     }
   },
 

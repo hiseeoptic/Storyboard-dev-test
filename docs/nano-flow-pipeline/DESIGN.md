@@ -245,6 +245,10 @@ Mỗi `ProductionState.shots[]` còn giữ hai hợp đồng chuẩn, bổ sung 
 
 Hai hợp đồng này được đưa vào `shot.state_authority`, tham gia `authority_fingerprint`, rồi đi vào `video_prompt.dialogue_audio_contract`. Storyboard board chỉ nhận cùng fingerprint để kiểm tra đồng bộ; ảnh không được sửa thoại, giọng, timing hoặc môi trường âm thanh của video.
 
+### Soft export gate
+
+Validator luôn chạy và báo đầy đủ, nhưng finding nội dung/continuity không khóa JSON, Extension hoặc ZIP. Khi manifest biên dịch thành công, người dùng có thể sửa để tăng chất lượng hoặc xuất ngay; file xuất kèm `export_qa.status = exported_with_warnings` và toàn bộ finding. Chỉ lỗi không thể biên dịch manifest mới khóa transport export. Cùng một fingerprint finding không được gửi AI lặp; UI báo số lỗi trước/sau và phần trăm đã sửa.
+
 ### 6.0.1. Export Readiness và sửa tại chỗ
 
 - Validator **không chặn preview** kịch bản, prompt hoặc ảnh đã tạo.

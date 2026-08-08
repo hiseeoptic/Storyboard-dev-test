@@ -78,6 +78,52 @@ test("a valid 2-segment breakdown is clean too", () => {
   assert.equal(r.counts.total, 0, formatSemanticReport(r));
 });
 
+test("production normalizer repairs reported timeline, reversed holder and missing snapshot defects locally", () => {
+  const bd = cleanFixture();
+  bd.total_duration_seconds = 8;
+  bd.segments[0]!.duration_seconds = 10;
+  bd.segments[0]!.state_ledger = {
+    start: [
+      { entity_id: "Lan", state: "standing", position: "near sink", holder: "right_hand_cloth" },
+      { entity_id: "ceramic_bowl", state: "intact", position: "sink basin", holder: "Minh_right_hand" },
+    ],
+    changes: [{
+      entity_id: "Minh's right index finger",
+      from: "physical condition unchanged",
+      action: "contact with sharp shard causing cut",
+      to: "bleeding",
+      caused_by: "sharp shard contact",
+      from_position: "near bowl shards",
+      to_position: "near bowl shards",
+    }],
+    end: [
+      { entity_id: "Lan", state: "standing", position: "near sink", holder: "right_hand_lowered_cloth" },
+      { entity_id: "ceramic_bowl", state: "intact", position: "sink basin", holder: "Minh_right_hand" },
+    ],
+  };
+
+  const normalized = normalizeProductionContracts(bd);
+  const ledger = bd.segments[0]!.state_ledger!;
+  assert.equal(bd.total_duration_seconds, 10);
+  assert.equal(ledger.start.find((entry) => entry.entity_id === "Lan")?.holder, "");
+  assert.equal(ledger.start.find((entry) => entry.entity_id === "ceramic_bowl")?.holder, "Minh");
+  assert.ok(ledger.start.some((entry) => entry.entity_id === "Minh's right index finger"));
+  assert.ok(ledger.end.some((entry) => entry.entity_id === "Minh's right index finger"));
+  assert.equal(normalized.timeline_totals_synchronized, 1);
+  assert.equal(normalized.invalid_character_holders_cleared, 2);
+  assert.equal(normalized.composite_object_holders_normalized, 2);
+  assert.equal(normalized.missing_state_snapshots_synthesized, 2);
+  const report = validateStoryboardSemantics(bd);
+  assert.equal(report.findings.some((finding) => finding.code === "STRUCT-003"), false);
+  assert.equal(report.findings.some((finding) => finding.code === "STATE-003"), false);
+  assert.equal(
+    report.findings.some(
+      (finding) => finding.code === "STATE-004" && /right index finger/i.test(finding.message)
+    ),
+    false
+  );
+});
+
 // ── Structure & data ────────────────────────────────────────────────────────
 test("STRUCT-001: an empty motion_prompt is a critical stub", () => {
   const bd = cleanFixture();

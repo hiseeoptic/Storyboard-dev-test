@@ -257,6 +257,21 @@ export interface NanoFlowManifest {
   shots: NanoFlowShot[];
   /** Full additive canonical state. Legacy extension versions may ignore it. */
   production_state?: ProductionState;
+  /** Non-blocking QA snapshot attached at export time. The extension may ignore
+   * it; users can export immediately without hiding unresolved findings. */
+  export_qa?: {
+    status: "clean" | "exported_with_warnings";
+    counts: { critical: number; high: number; medium: number; total: number };
+    findings: Array<{
+      code: string;
+      severity: "critical" | "high" | "medium";
+      scope: "project" | "segment" | "character";
+      segment_number?: number;
+      character?: string;
+      message: string;
+      evidence?: string;
+    }>;
+  };
 }
 
 /** postMessage envelope used for the direct Storyboard(iframe) → Extension push.

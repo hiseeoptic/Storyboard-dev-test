@@ -417,3 +417,44 @@ test("standing/sitting compiled from bare prose gets physical support, no false 
   assert.ok(start.supports.some((s) => s.supported_entity_id === "char_lan" && s.kind === "ground" && s.active));
   assert.ok(start.supports.some((s) => s.supported_entity_id === "char_minh" && s.kind === "seat" && s.active));
 });
+
+test("objects in a sink basin or on a floor compile with support instead of false blockers", () => {
+  const legacySegment = {
+    segment_number: 1, duration_seconds: 10, title: "Broken bowl", marketing_role: "body",
+    beats: [], first_frame_prompt: "Bowl and shards by the sink", motion_prompt: "",
+    dialogue: null, continuity_note: "",
+    state_ledger: {
+      start: [
+        { entity_id: "ceramic_bowl", state: "intact", position: "sink basin" },
+        { entity_id: "ceramic_bowl_shards", state: "broken", position: "floor near dining_table" },
+      ],
+      changes: [],
+      end: [
+        { entity_id: "ceramic_bowl", state: "intact", position: "sink basin" },
+        { entity_id: "ceramic_bowl_shards", state: "broken", position: "floor near dining_table" },
+      ],
+    },
+  } satisfies VideoSegment;
+  const compiled = buildProductionState({ character_locks: [], segments: [legacySegment], total_duration_seconds: 10 });
+  const findings = validatePhysicalState(compiled);
+  assert.equal(findings.some((item) => item.code === "OBJECT_SUPPORT_MISSING"), false);
+});
+
+test("contact/cut wording compiles causal contact evidence", () => {
+  const legacySegment = {
+    segment_number: 1, duration_seconds: 10, title: "Finger cut", marketing_role: "body",
+    beats: [], first_frame_prompt: "Minh near a sharp shard", motion_prompt: "Minh contacts the shard",
+    dialogue: null, continuity_note: "", characters_in_scene: ["Minh"],
+    state_ledger: {
+      start: [{ entity_id: "Minh's right index finger", state: "intact", position: "near shard" }],
+      changes: [{ entity_id: "Minh's right index finger", from: "intact", action: "contact with sharp shard causing cut", to: "bleeding", caused_by: "Minh's right hand contacts the sharp shard" }],
+      end: [{ entity_id: "Minh's right index finger", state: "bleeding", position: "near shard" }],
+    },
+  } satisfies VideoSegment;
+  const compiled = buildProductionState({ character_locks: [{
+    name: "Minh", gender_age: "adult", build: "average", skin_tone: "natural", hair: "black",
+    eyes: "brown", costume: "shirt", signature_features: "none", default_expression: "neutral", render_style: "cinematic",
+  }], segments: [legacySegment], total_duration_seconds: 10 });
+  assert.ok(compiled.shots[0]!.changes[0]!.contact_entity_ids?.length);
+  assert.equal(validatePhysicalState(compiled).some((item) => item.code === "CONTACT_CAUSALITY_MISSING"), false);
+});

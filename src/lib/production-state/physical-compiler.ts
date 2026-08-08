@@ -163,11 +163,15 @@ function compileSnapshot(
               : "unknown",
         occupied_volume_id: null,
       };
-      if (!entry.holder_entity_id && /^(?:on|resting on|placed on)\b|^(?:trên|đặt trên)\b/iu.test(text)) {
+      if (
+        !entry.holder_entity_id &&
+        /^(?:on|resting on|placed on)\b|^(?:trên|đặt trên)\b|\b(?:floor|ground|basin|sink|table|counter|worktop|shelf|tray|plate|chair|seat|bench)\b|\b(?:sàn|đất|bồn rửa|chậu|bàn|kệ|khay|đĩa|ghế)\b/iu.test(text)
+      ) {
+        const isGround = /\b(?:floor|ground)\b|\b(?:sàn|đất)\b/iu.test(text);
         snapshot.supports.push({
           supported_entity_id: entry.entity_id,
           support_entity_id: findSupportEntity(entry.position, snapshot.entities, entry.entity_id),
-          kind: "surface",
+          kind: isGround ? "ground" : "surface",
           contact_part: "object_base",
           active: true,
         });
@@ -230,7 +234,7 @@ export function compileLegacyPhysicalShot(
   for (const change of shot.changes) {
     const legacy = `${change.action} ${change.caused_by} ${change.from_position ?? ""} ${change.to_position ?? ""}`;
     const limb = inferLimbId(legacy);
-    const hasContactAction = /\b(?:touch|grip|grasp|hold|pick|lift|place|release|push|pull)\b|\b(?:chạm|nắm|cầm|nhấc|đặt|thả|đẩy|kéo)\b/iu.test(legacy);
+    const hasContactAction = /\b(?:touch|contact|cut|grip|grasp|hold|pick|lift|place|release|push|pull)\b|\b(?:chạm|tiếp xúc|cắt|cứa|nắm|cầm|nhấc|đặt|thả|đẩy|kéo)\b/iu.test(legacy);
     change.body_part = limb;
     change.contact_entity_ids = hasContactAction ? [change.entity_id] : [];
     change.duration_s = null;

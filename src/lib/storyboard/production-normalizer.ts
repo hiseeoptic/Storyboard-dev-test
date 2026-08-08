@@ -8,10 +8,157 @@ export interface ProductionNormalizationResult {
   continuous_start_entries_inherited: number;
   state_ledger_dimensions_normalized: number;
   multi_character_placements_synthesized: number;
+  timeline_totals_synchronized: number;
+  missing_state_snapshots_synthesized: number;
+  invalid_character_holders_cleared: number;
+  composite_object_holders_normalized: number;
 }
 
 function key(value: string): string {
   return value.trim().toLocaleLowerCase();
+}
+
+function clean(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function exactCharacterName(value: string, names: string[]): string | undefined {
+  return [...names]
+    .sort((a, b) => b.length - a.length)
+    .find((name) => {
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, "iu").test(value);
+    });
+}
+
+/** Holder is the PERSON holding this entity, never a hand-pose label. Legacy
+ * model output sometimes wrote `right hand: cloth` into a character's holder
+ * field or used `Minh right hand` as a pseudo entity. Repair only that relation;
+ * the original action/state prose remains available as evidence. */
+function normalizeLegacyHolders(
+  breakdown: Pick<StoryboardGenerationOutput, "character_locks" | "segments">
+): { characterHoldersCleared: number; objectHoldersNormalized: number } {
+  const names = (breakdown.character_locks ?? []).map((lock) => clean(lock.name)).filter(Boolean);
+  const characterKeys = new Set(
+    (breakdown.character_locks ?? []).flatMap((lock) =>
+      [lock.name, lock.display_name, lock.character_id]
+        .map((value) => clean(value))
+        .filter(Boolean)
+        .map(key)
+    )
+  );
+  let characterHoldersCleared = 0;
+  let objectHoldersNormalized = 0;
+
+  for (const segment of breakdown.segments ?? []) {
+    const ledger = segment.state_ledger;
+    if (!ledger) continue;
+    for (const entry of [...ledger.start, ...ledger.end]) {
+      const holder = clean(entry.holder);
+      if (!holder) continue;
+      if (characterKeys.has(key(entry.entity_id))) {
+        // Characters may touch/support each other, but a hand-state string must
+        // never turn the whole person into an object held by a pseudo entity.
+        entry.holder = "";
+        characterHoldersCleared += 1;
+        continue;
+      }
+      const character = exactCharacterName(holder.replace(/[_-]+/g, " "), names);
+      if (character && key(holder) !== key(character)) {
+        entry.holder = character;
+        if (/\b(?:right hand|tay phải)\b/iu.test(holder) && !/\b(?:right hand|tay phải)\b/iu.test(entry.position)) {
+          entry.position = `in ${character}'s right hand`;
+        } else if (/\b(?:left hand|tay trái)\b/iu.test(holder) && !/\b(?:left hand|tay trái)\b/iu.test(entry.position)) {
+          entry.position = `in ${character}'s left hand`;
+        }
+        objectHoldersNormalized += 1;
+      }
+    }
+  }
+  return { characterHoldersCleared, objectHoldersNormalized };
+}
+
+/** Complete the state chain without inventing story action. A change that names
+ * an entity absent from start/end receives the minimum snapshots already proven
+ * by change.from/change.to. Existing end snapshots remain untouched so a true
+ * narrative mismatch can still be reported and optionally repaired by AI. */
+function completeMissingStateSnapshots(
+  breakdown: Pick<StoryboardGenerationOutput, "segments">
+): number {
+  let synthesized = 0;
+  for (const segment of breakdown.segments ?? []) {
+    const ledger = segment.state_ledger;
+    if (!ledger) continue;
+    const start = new Map(ledger.start.map((entry) => [key(entry.entity_id), entry]));
+    const end = new Map(ledger.end.map((entry) => [key(entry.entity_id), entry]));
+    const current = new Map(ledger.start.map((entry) => [key(entry.entity_id), {
+      state: clean(entry.state),
+      position: clean(entry.position),
+      holder: clean(entry.holder),
+      orientation: clean(entry.orientation),
+    }]));
+
+    for (const change of ledger.changes) {
+      const entityKey = key(change.entity_id);
+      let before = current.get(entityKey);
+      if (!before) {
+        const entry = {
+          entity_id: change.entity_id,
+          state: clean(change.from) || "physical condition unchanged",
+          position: clean(change.from_position),
+          holder: clean(change.from_holder),
+          orientation: clean(change.from_orientation),
+        };
+        ledger.start.push(entry);
+        start.set(entityKey, entry);
+        before = {
+          state: entry.state,
+          position: entry.position,
+          holder: clean(entry.holder),
+          orientation: clean(entry.orientation),
+        };
+        synthesized += 1;
+      }
+      change.from = before.state;
+      change.from_position = before.position;
+      change.from_holder = before.holder;
+      change.from_orientation = before.orientation;
+      current.set(entityKey, {
+        state: clean(change.to) || before.state,
+        position: clean(change.to_position) || before.position,
+        holder: change.to_holder === undefined ? before.holder : clean(change.to_holder),
+        orientation: change.to_orientation === undefined ? before.orientation : clean(change.to_orientation),
+      });
+    }
+
+    for (const [entityKey, after] of current) {
+      if (end.has(entityKey) || !start.has(entityKey)) continue;
+      const source = start.get(entityKey)!;
+      ledger.end.push({
+        entity_id: source.entity_id,
+        state: after.state,
+        position: after.position,
+        holder: after.holder,
+        orientation: after.orientation,
+      });
+      synthesized += 1;
+    }
+  }
+  return synthesized;
+}
+
+function synchronizeTimelineTotal(
+  breakdown: Pick<StoryboardGenerationOutput, "segments" | "total_duration_seconds">
+): number {
+  const sum = breakdown.segments.reduce(
+    (total, segment) => total + (Number.isFinite(segment.duration_seconds) ? segment.duration_seconds : 0),
+    0
+  );
+  if (Math.abs(sum - breakdown.total_duration_seconds) <= 0.001) return 0;
+  // The exported production clock must state its real duration. We do not alter
+  // any clip, dialogue or user-approved action to hide a metadata mismatch.
+  breakdown.total_duration_seconds = sum;
+  return 1;
 }
 
 /**
@@ -92,8 +239,11 @@ export function normalizeProductionContracts(
 ): ProductionNormalizationResult {
   let voiceProfilesCompleted = 0;
   let continuousStartsInherited = 0;
+  const holderRepairs = normalizeLegacyHolders(breakdown);
   const stateLedgerDimensionsNormalized =
     normalizeStateLedgerDimensions(breakdown);
+  const missingStateSnapshotsSynthesized = completeMissingStateSnapshots(breakdown);
+  const timelineTotalsSynchronized = synchronizeTimelineTotal(breakdown);
 
   for (const lock of breakdown.character_locks ?? []) {
     const before = (lock.voice ?? "").trim();
@@ -194,5 +344,9 @@ export function normalizeProductionContracts(
     continuous_start_entries_inherited: continuousStartsInherited,
     state_ledger_dimensions_normalized: stateLedgerDimensionsNormalized,
     multi_character_placements_synthesized: multiCharacterPlacementsSynthesized,
+    timeline_totals_synchronized: timelineTotalsSynchronized,
+    missing_state_snapshots_synthesized: missingStateSnapshotsSynthesized,
+    invalid_character_holders_cleared: holderRepairs.characterHoldersCleared,
+    composite_object_holders_normalized: holderRepairs.objectHoldersNormalized,
   };
 }
