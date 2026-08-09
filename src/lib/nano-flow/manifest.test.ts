@@ -238,22 +238,36 @@ test("environment_ref becomes an asset except when custom", () => {
   assert.deepEqual(shot2.image_refs?.environments, []);
 });
 
-test("environments are plain assets — no auto A2 plates (board + per-board upload replace them)", () => {
+test("environments carry a 2-angle character-free LOCATION SHEET (location_views)", () => {
   const m = buildNanoFlowManifest(fixture(), {
     veoClips: [
       {
-        background_lock: { setting: "cozy northern living room", lighting: "warm afternoon" },
+        background_lock: {
+          setting: "cozy northern living room",
+          scenery: "carved wooden furniture",
+          lighting: "warm afternoon",
+        },
         visual_style: "documentary realism",
       },
     ],
   });
   const env = (m.assets.environments ?? []).find((e) => e.id === "living_room_1");
   assert.ok(env, "living_room_1 must be declared");
-  // The per-shot location board (storyboard_prompt) now locks the setting, so we
-  // no longer emit character-free plates that only multiplied the image count.
-  assert.equal(env.location_views, undefined);
   assert.equal(env.image, null);
-  // The setting the plates used to carry now lives in the shot's location board.
+  // The app now emits a 2-angle location sheet (wide + alt), character-free, so
+  // the extension generates each set ONCE and locks every board/video to it —
+  // the user's "tạo sheet bối cảnh" approach (a reference image, not a panel).
+  assert.ok(Array.isArray(env.location_views) && env.location_views.length === 2);
+  assert.deepEqual((env.location_views ?? []).map((v) => v.angle), ["wide", "alt"]);
+  for (const v of env.location_views ?? []) {
+    assert.equal(typeof v.prompt, "string");
+    const p = JSON.parse(v.prompt) as Record<string, unknown>;
+    // The sheet uses the per-location LOCKED setting so it matches the boards.
+    assert.match(String(p.setting), /cozy northern living room/);
+    // Character-free: the negative must forbid people in the plate.
+    assert.match(String(p.negative), /no people/i);
+  }
+  // The setting also still lives in the shot's location board (unchanged).
   const board = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
   assert.match(String(board.setting), /cozy northern living room/);
   // "custom" locations declare no environment asset.

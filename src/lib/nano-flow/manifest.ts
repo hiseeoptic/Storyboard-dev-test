@@ -269,7 +269,7 @@ function buildLocationBoardPrompt(
     camera_contract:
       "Every panel must execute its full camera field: bracketed shot size, camera height/angle, subject, look direction and focus target. Do not shorten an OTS, MEDIUM or CLOSE instruction into an unspecified portrait.",
     establishing_view_contract:
-      "AT LEAST ONE panel — make it PANEL 1 — MUST be a WIDE ESTABLISHING shot that clearly shows the FULL location: walls, windows, main furniture and where the characters stand in the room, reproduced from the attached location photo. NEVER let all panels be tight face close-ups — if the room is never visible the downstream video invents a wrong set. The other panels may be medium / OTS / close, but the SAME recognizable set (same furniture geometry, same time-of-day and light) must stay visible behind the cast in every panel.",
+      "AT LEAST ONE panel — make it PANEL 1 — MUST be a WIDE ESTABLISHING shot that clearly shows the FULL location: walls, windows, main furniture and where the characters stand in the room, reproduced from the attached location reference (a real photo OR the character-free 2-angle location sheet of this set). NEVER let all panels be tight face close-ups — if the room is never visible the downstream video invents a wrong set. The other panels may be medium / OTS / close, but the SAME recognizable set (same furniture geometry, same time-of-day and light) must stay visible behind the cast in every panel.",
     ...(continueFromPrevious
       ? {
           continue_from_previous:
@@ -278,7 +278,7 @@ function buildLocationBoardPrompt(
       : {}),
     setting_authority: hasLocationPhoto
       ? "An ATTACHED location photo is the EXACT and MANDATORY setting. Reproduce THAT real place — its layout, furniture, walls, windows, materials, colours and lighting — in EVERY panel. Never invent, relocate or substitute a different location; only the camera framing changes."
-      : `Setting (no photo attached, build it from this description): ${setting}.`,
+      : `If a LOCATION REFERENCE image is attached (a real photo OR the character-free 2-angle location sheet of this set), it is the EXACT and MANDATORY setting: reproduce THAT place — its layout, furniture, walls, windows, materials, colours and lighting — in EVERY panel, and never relocate or substitute a different location; only the camera framing changes. If no location image is attached, build the setting faithfully from this description: ${setting}.`,
     staging:
       "Place the ATTACHED characters INTO this location and have them perform each panel's action. Each character's face, hair AND full outfit must match that character's ATTACHED wardrobe sheet exactly. The SAME people appear in every panel.",
     render: characterStyleLock || (liveAction
@@ -342,6 +342,73 @@ function buildThumbnailPrompt(params: {
     negative: "no extra, missing or fused fingers; no distorted or duplicated faces; NO gibberish or misspelled text (the headline must read exactly as given); no watermark, no logo.",
   };
   return JSON.stringify(prompt);
+}
+
+/**
+ * Build the 2-angle LOCATION SHEET (`location_views`) for ONE environment — the
+ * user's "tạo sheet bối cảnh" approach. Each view is a CHARACTER-FREE establishing
+ * image of the EMPTY set (a WIDE full view + a second/reverse angle of the SAME
+ * place). The extension generates BOTH once per location, then attaches them as
+ * the background authority for every board AND every Veo clip set here, so Nano
+ * Banana and Veo pin the identical set instead of inventing or drifting the
+ * location (day→night, wrong room). When the user uploaded a real location photo
+ * the extension prefers that photo and skips these; when there is NO photo the
+ * app-authored sheet is the location the whole shot is locked to — i.e. the app
+ * "tự tạo ảnh bối cảnh ra trước tạo sheet rồi mới ghép vào board". General for
+ * every project, not a per-file patch.
+ */
+function buildLocationSheetViews(params: {
+  setting: string;
+  scenery: string;
+  lighting: string;
+  visualStyle: string;
+  realityMode: string;
+  characterStyleLock: string;
+}): Array<{ angle: "wide" | "alt"; prompt: string }> {
+  const { setting, scenery, lighting, visualStyle, realityMode, characterStyleLock } = params;
+  const liveAction =
+    !characterStyleLock && ["documentary", "cinematic", "commercial"].includes(realityMode);
+  const render =
+    characterStyleLock ||
+    (liveAction
+      ? KEYFRAME_RENDER_NOTE
+      : `Reality E establishing plate in the project's locked ${realityMode} medium — keep its exact design language, materials, proportions and lighting logic; never convert to live-action photorealism.`);
+  const negative = characterStyleLock
+    ? "Stay strictly in the locked visual medium. NO people, NO characters, NO animals, NO product, NO text/caption/watermark. Do NOT convert to live-action photography."
+    : liveAction
+      ? "Empty location only — absolutely NO people, NO characters, NO animals, NO product in frame. NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT painting. No text, UI, watermark or logo."
+      : "Empty location in the locked medium — NO people, NO characters, NO product, NO text. No accidental photoreal conversion, no medium drift.";
+  const view = (angle: "wide" | "alt", framing: string) => ({
+    angle,
+    prompt: JSON.stringify({
+      type: characterStyleLock
+        ? "styled_location_plate"
+        : liveAction
+          ? "photoreal_location_plate"
+          : `${slugify(realityMode)}_location_plate`,
+      goal:
+        "A CHARACTER-FREE establishing photo of the EMPTY location — the background authority reused to keep every shot on the SAME set. No people or product; only the place.",
+      framing,
+      setting: setting || "the scripted location",
+      scenery: scenery && scenery !== setting ? scenery : undefined,
+      lighting: lighting || undefined,
+      visual_style: visualStyle || undefined,
+      consistency:
+        "The WIDE and the ALT view show the EXACT SAME place — identical walls, windows, doors, floor, furniture geometry, landmarks, materials, colours, time-of-day and light direction; ONLY the camera vantage changes. This is the immutable set every scene here must reuse.",
+      render,
+      negative,
+    }),
+  });
+  return [
+    view(
+      "wide",
+      "A WIDE ESTABLISHING shot of the whole location from a natural eye-level vantage: show the full space — walls, windows, doors, main furniture and how the room is laid out, edge to edge. Empty of people."
+    ),
+    view(
+      "alt",
+      "A SECOND angle of the SAME place — roughly the reverse / 90° vantage — revealing what the wide shot could not (the opposite wall and adjoining area), keeping the SAME furniture, materials, time-of-day and lighting. Empty of people."
+    ),
+  ];
 }
 
 /** Turn a display name into a stable ascii slug id (Vietnamese-aware). */
@@ -545,10 +612,12 @@ export function buildNanoFlowManifest(
     }
   }
 
-  // ── Environment assets: unique non-custom environment_ref ids. The per-shot
-  //    LOCATION BOARD (storyboard_prompt) now locks each shot's background, and
-  //    the extension exposes a per-board location upload, so we no longer emit
-  //    A2 character-free plates here (that only multiplied the image count).
+  // ── Environment assets: unique non-custom environment_ref ids. Each declared
+  //    environment also gets a 2-angle LOCATION SHEET (location_views, attached
+  //    below once the per-location setting is locked) — a character-free wide +
+  //    alt plate the extension generates ONCE and reuses as the background
+  //    authority for every board and Veo clip here, so the set never drifts. A
+  //    user-uploaded location photo (Cách 1) still takes priority when present.
   const envIdSeen = new Set<string>();
   const environments: NanoFlowAsset[] = [];
   segments.forEach((seg) => {
@@ -619,6 +688,11 @@ export function buildNanoFlowManifest(
   const projectLighting = opts.veoClips?.[0]
     ? clipStr(clipObj(opts.veoClips[0].background_lock).lighting)
     : "";
+  // The project's locked visual look (first clip) — stamped into the location
+  // sheet so the empty-set plates match the boards' style.
+  const projectVisualStyle = opts.veoClips?.[0]
+    ? clipStr(opts.veoClips[0].visual_style)
+    : "";
 
   // Lock ONE setting + scenery per LOCATION (the first clip seen for that place) so
   // every board of the same location describes the IDENTICAL room — same furniture,
@@ -632,6 +706,29 @@ export function buildNanoFlowManifest(
     const bg = clipObj(clip.background_lock);
     lockedBgByLocation.set(loc, { setting: clipStr(bg.setting), scenery: clipStr(bg.scenery) });
   });
+
+  // Attach the 2-angle LOCATION SHEET to every declared environment so the
+  // extension generates each set ONCE (character-free wide + alt) and locks every
+  // board AND Veo clip to it — the user's "tạo sheet bối cảnh" approach (a real
+  // reference image), NOT just a wide panel inside the board. Uses the per-
+  // location locked setting/scenery so the sheet matches the boards exactly;
+  // falls back to the humanized location name when no clip described the set. The
+  // extension prefers a user-uploaded location photo over these when one exists;
+  // with no photo the app generates the sheet first, then feeds it into the board
+  // together with the character sheets. General rule for every project.
+  for (const env of environments) {
+    const locked = lockedBgByLocation.get(env.id);
+    const setting = (locked?.setting || "").trim() || env.name;
+    const scenery = (locked?.scenery || "").trim();
+    env.location_views = buildLocationSheetViews({
+      setting,
+      scenery,
+      lighting: projectLighting,
+      visualStyle: projectVisualStyle,
+      realityMode,
+      characterStyleLock: visualMediumLock,
+    });
+  }
 
   const shots: NanoFlowShot[] = segments.map((seg, i) => {
     const index = seg.segment_number || i + 1;
