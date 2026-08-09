@@ -4963,8 +4963,8 @@ export function GenerateClient() {
                 </label>
               </div>
 
-              {/* Aspect ratio — VIDEO frame only (board is always 16:9) */}
-              <div className="space-y-2">
+              {/* Aspect ratio — VIDEO frame only (board is always 16:9). v2: 16:9/9:16/1:1 */}
+              <div className="space-y-2" data-aspect-menu="v2">
                 <label className="text-sm font-medium">{L("aspectRatio")}</label>
                 <div className="grid grid-cols-3 gap-2">
                   <button
