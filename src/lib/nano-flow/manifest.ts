@@ -129,7 +129,17 @@ function buildLocationBoardPrompt(
   requestedPanels?: number,
   fallbackCast: Array<Record<string, string>> = [],
   continuityId = "project_set_01",
-  persistentPropIds: string[] = []
+  persistentPropIds: string[] = [],
+  // Setting/scenery LOCKED per location (the first clip of this location). Applies
+  // to EVERY project/board generally: every board of the same location describes
+  // the IDENTICAL room — same furniture, same time-of-day — so no later board can
+  // drift to a different set or flip day↔night.
+  lockedSetting = "",
+  lockedScenery = "",
+  // The previous shot's END-state facts, carried in ONLY when this shot continues
+  // the same scene (continuous). The first panel opens FROM this so a dialogue
+  // that spans two boards stays visually continuous; empty for a fresh scene cut.
+  continueFromPrevious = ""
 ): string {
   const clip =
     primaryVideoPrompt && typeof primaryVideoPrompt === "object"
@@ -137,9 +147,9 @@ function buildLocationBoardPrompt(
       : undefined;
 
   const bg = clipObj(clip?.background_lock);
-  const setting = clipStr(bg.setting) || fallbackSceneText || envName;
-  const scenery = clipStr(bg.scenery);
-  const lighting = clipStr(bg.lighting);
+  const setting = lockedSetting || clipStr(bg.setting) || fallbackSceneText || envName;
+  const scenery = lockedScenery || clipStr(bg.scenery);
+  const lighting = projectLighting || clipStr(bg.lighting);
   const visualStyle = clipStr(clip?.visual_style);
 
   const locks = clipObj(clip?.character_lock);
@@ -258,6 +268,14 @@ function buildLocationBoardPrompt(
       `MANDATORY READING ORDER: left-to-right, then top-to-bottom. Put a large solid BLACK square badge with a crisp WHITE numeral in the TOP-LEFT CORNER INSIDE EVERY panel: ${panels.map((panel) => panel.order_label).join(", ")}. Every panel must have exactly one badge; never omit, duplicate or move a number into the caption only.`,
     camera_contract:
       "Every panel must execute its full camera field: bracketed shot size, camera height/angle, subject, look direction and focus target. Do not shorten an OTS, MEDIUM or CLOSE instruction into an unspecified portrait.",
+    establishing_view_contract:
+      "AT LEAST ONE panel — make it PANEL 1 — MUST be a WIDE ESTABLISHING shot that clearly shows the FULL location: walls, windows, main furniture and where the characters stand in the room, reproduced from the attached location photo. NEVER let all panels be tight face close-ups — if the room is never visible the downstream video invents a wrong set. The other panels may be medium / OTS / close, but the SAME recognizable set (same furniture geometry, same time-of-day and light) must stay visible behind the cast in every panel.",
+    ...(continueFromPrevious
+      ? {
+          continue_from_previous:
+            `SCENE CONTINUES the previous board (same conversation, NO cut): PANEL 1 opens FROM this exact end-state so the two boards are visually continuous — same character positions, same props in the same hands/places, same time-of-day and light: ${continueFromPrevious}. Do not restart, relocate or change the set/time; only advance the action forward.`,
+        }
+      : {}),
     setting_authority: hasLocationPhoto
       ? "An ATTACHED location photo is the EXACT and MANDATORY setting. Reproduce THAT real place — its layout, furniture, walls, windows, materials, colours and lighting — in EVERY panel. Never invent, relocate or substitute a different location; only the camera framing changes."
       : `Setting (no photo attached, build it from this description): ${setting}.`,
@@ -269,7 +287,7 @@ function buildLocationBoardPrompt(
     visual_style: visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
-    lighting: (projectLighting || lighting) || undefined,
+    lighting: lighting || undefined,
     cast,
     panels,
     captions:
@@ -602,6 +620,19 @@ export function buildNanoFlowManifest(
     ? clipStr(clipObj(opts.veoClips[0].background_lock).lighting)
     : "";
 
+  // Lock ONE setting + scenery per LOCATION (the first clip seen for that place) so
+  // every board of the same location describes the IDENTICAL room — same furniture,
+  // same landmarks — instead of a per-shot description that drifts to a different
+  // set on later boards. General rule for every project, not a per-file patch.
+  const lockedBgByLocation = new Map<string, { setting: string; scenery: string }>();
+  (opts.veoClips ?? []).forEach((clip, i) => {
+    const seg = segments[i];
+    const loc = (seg?.location_id ?? seg?.environment_ref ?? "").trim();
+    if (!loc || loc === "custom" || lockedBgByLocation.has(loc)) return;
+    const bg = clipObj(clip.background_lock);
+    lockedBgByLocation.set(loc, { setting: clipStr(bg.setting), scenery: clipStr(bg.scenery) });
+  });
+
   const shots: NanoFlowShot[] = segments.map((seg, i) => {
     const index = seg.segment_number || i + 1;
     const boardLocationImage = boardImageByIndex.get(index) ?? fallbackBoardImage;
@@ -669,6 +700,18 @@ export function buildNanoFlowManifest(
       seg.continuity_mode ??
       (i === 0 ? "opening" : "continuous");
 
+    // Per-location locked room description (every board of this location = one set).
+    const lockedBg = lockedBgByLocation.get((seg.location_id ?? seg.environment_ref ?? "").trim())
+      ?? { setting: "", scenery: "" };
+    // Carry the PREVIOUS board's end-state into this board ONLY when the scene
+    // continues (continuous) — so a dialogue spanning two boards stays continuous.
+    // A scene_cut / location_cut / time_jump starts a fresh board (empty carry).
+    const prevClip = i > 0 ? opts.veoClips?.[i - 1] : undefined;
+    const continueFromPrevious =
+      shotContinuity === "continuous" && prevClip
+        ? clipStr(clipObj(prevClip.scene_action).end_state)
+        : "";
+
     return {
       shot_id: `SHOT_${String(index).padStart(3, "0")}`,
       index,
@@ -698,7 +741,10 @@ export function buildNanoFlowManifest(
           return { name: name.trim(), ...(wardrobe ? { wardrobe } : {}) };
         }),
         `set_${slugify((seg.location_id ?? seg.environment_ref ?? "project_location").trim()) || "project_location"}`,
-        persistentPropIds
+        persistentPropIds,
+        lockedBg.setting,
+        lockedBg.scenery,
+        continueFromPrevious
       ),
       continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),

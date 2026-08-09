@@ -717,3 +717,47 @@ test("manifest fixes the board to 16:9 while the video aspect follows the select
     assert.equal(m.project.aspect_ratio, aspect, `video aspect is ${aspect}`);
   }
 });
+
+// Regression: boards of the SAME location must not drift set or day↔night on later
+// boards. Setting/scenery lock to the first clip of the location and lighting locks
+// project-wide; every board carries an establishing-view contract (≥1 wide panel so
+// the location is always visible); a continuous board carries the previous end-state.
+test("boards lock one set + lighting per location and add establishing/continuity contracts", () => {
+  const seg = (n: number, mode: string) => ({
+    segment_number: n, duration_seconds: 10, title: `S${n}`, marketing_role: "body",
+    beats: [{ beat: "talk", camera: "[CLOSE] face" }],
+    first_frame_prompt: "scene", motion_prompt: "talk", dialogue: null,
+    characters_in_scene: ["Lan", "Minh"], location_id: "loc1", continuity_note: "",
+    transition_in: { mode },
+  });
+  const bd = {
+    title: "T", total_duration_seconds: 30,
+    character_locks: [{ name: "Lan", costume: "sweater" }, { name: "Minh", costume: "shirt" }],
+    segments: [seg(1, "opening"), seg(2, "continuous"), seg(3, "scene_cut")],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const clip = (setting: string, lighting: string, endState: string) => ({
+    location_id: "loc1",
+    background_lock: { setting, scenery: setting, lighting },
+    scene_action: { end_state: endState },
+  });
+  const m = buildNanoFlowManifest(bd, {
+    veoClips: [
+      clip("living room with beige sofa", "warm daylight, bright", "Lan holds the red bag"),
+      clip("kitchen at night", "dim night lamp", "Minh looks at the bag"),
+      clip("dining room morning", "cool morning", "end3"),
+    ] as unknown as Array<Record<string, unknown>>,
+    generatedAt: "2026-01-01T00:00:00Z",
+  });
+  const boards = m.shots.map((s) => JSON.parse(s.storyboard_prompt) as Record<string, unknown>);
+  // All boards of loc1 use the FIRST clip's setting + the project lighting (no drift).
+  assert.equal(boards[0]!.setting, "living room with beige sofa");
+  assert.equal(boards[1]!.setting, "living room with beige sofa");
+  assert.equal(boards[2]!.setting, "living room with beige sofa");
+  assert.equal(boards[1]!.lighting, "warm daylight, bright");
+  // Establishing view contract on every board.
+  assert.ok(boards.every((b) => typeof b.establishing_view_contract === "string" && (b.establishing_view_contract as string).includes("WIDE")));
+  // Continuity carry only on the continuous board (index 1), not opening/scene_cut.
+  assert.equal(boards[0]!.continue_from_previous, undefined);
+  assert.ok(typeof boards[1]!.continue_from_previous === "string" && (boards[1]!.continue_from_previous as string).includes("red bag"));
+  assert.equal(boards[2]!.continue_from_previous, undefined);
+});
