@@ -20,7 +20,8 @@ import {
 } from "./state-authority.ts";
 
 export interface BuildNanoFlowManifestOptions {
-  aspectRatio?: "16:9" | "9:16";
+  /** VIDEO aspect ratio (the frame Veo renders). The BOARD is always 16:9. */
+  aspectRatio?: "16:9" | "9:16" | "1:1";
   thumbnailAspectRatio?: "16:9" | "9:16";
   dialogueLanguage?: string;
   projectId?: string;
@@ -737,11 +738,15 @@ export function buildNanoFlowManifest(
     project: {
       project_id: opts.projectId ?? `prj_${slugify(title)}`,
       title,
+      // VIDEO aspect (16:9 / 9:16 / 1:1) — the frame Veo must render. The BOARD
+      // image is ALWAYS 16:9 (board_aspect_ratio) because a wide sheet describes
+      // the cast and layout most faithfully, which yields the best video.
       aspect_ratio: opts.aspectRatio ?? "9:16",
+      board_aspect_ratio: "16:9",
       dialogue_language: opts.dialogueLanguage ?? "Vietnamese",
       total_duration_seconds: breakdown.total_duration_seconds,
       thumbnail_title: breakdown.thumbnail_title,
-      thumbnail_aspect_ratio: opts.thumbnailAspectRatio ?? opts.aspectRatio ?? "9:16",
+      thumbnail_aspect_ratio: opts.thumbnailAspectRatio ?? (opts.aspectRatio === "16:9" ? "16:9" : "9:16"),
       ...(characterRepresentation && visualMediumLock
         ? { character_style: { id: characterRepresentation, prompt: visualMediumLock } }
         : {}),
@@ -755,7 +760,7 @@ export function buildNanoFlowManifest(
             : persistentPropEntries[0]
               ? `the story's hero object "${persistentPropEntries[0].display_name}" (keep its exact established shape, material and colour)`
               : "the single key story object established by the script"),
-        aspect: opts.thumbnailAspectRatio ?? opts.aspectRatio ?? "9:16",
+        aspect: opts.thumbnailAspectRatio ?? (opts.aspectRatio === "16:9" ? "16:9" : "9:16"),
         realityMode,
       }),
       social_posts: breakdown.social_posts,

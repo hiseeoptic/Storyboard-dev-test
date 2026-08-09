@@ -221,7 +221,12 @@ export interface NanoFlowShot {
 export interface NanoFlowProject {
   project_id?: string;
   title: string;
-  aspect_ratio?: "16:9" | "9:16";
+  /** VIDEO aspect ratio — the frame Veo renders (extension reads this for video). */
+  aspect_ratio?: "16:9" | "9:16" | "1:1";
+  /** BOARD image aspect ratio — ALWAYS "16:9"; a wide sheet describes the cast
+   * and layout best, which produces the most faithful video. The extension
+   * generates every board at this ratio regardless of the video aspect. */
+  board_aspect_ratio?: "16:9";
   dialogue_language?: string;
   total_duration_seconds?: number;
   thumbnail_title?: string;

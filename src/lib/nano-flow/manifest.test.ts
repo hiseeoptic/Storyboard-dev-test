@@ -706,3 +706,14 @@ test("board prompt enforces numbered panels, one border system and a separate th
   assert.match(String(panels[0]!.camera), /^\[MEDIUM\]/);
   assert.match(String(board.consistency), /gift/i);
 });
+
+// Regression: the BOARD image is always 16:9 (a wide sheet describes the cast
+// best → best video), while the VIDEO aspect follows the app's selection —
+// including 1:1. The two are independent so the board never comes out portrait.
+test("manifest fixes the board to 16:9 while the video aspect follows the selection", () => {
+  for (const aspect of ["16:9", "9:16", "1:1"] as const) {
+    const m = buildNanoFlowManifest(fixture(), { aspectRatio: aspect, generatedAt: "2026-01-01T00:00:00Z" });
+    assert.equal(m.project.board_aspect_ratio, "16:9", `board stays 16:9 for video ${aspect}`);
+    assert.equal(m.project.aspect_ratio, aspect, `video aspect is ${aspect}`);
+  }
+});

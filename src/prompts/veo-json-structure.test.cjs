@@ -193,11 +193,11 @@ test("Veo JSON keeps the stable structure with contextual outfits and local voic
   assert.deepEqual(Object.keys(clip).slice(0, 7), [
     "scene_id",
     "duration_sec",
+    "aspect_ratio",
+    "output_specs",
     "continuity_mode",
     "visual_style",
     "scene_role",
-    "characters_in_scene",
-    "character_lock",
   ]);
   assert.equal(Object.hasOwn(clip.scene_action, "wardrobe_lock"), false);
   assert.equal(Object.hasOwn(clip.dialogue[0], "voice_personality"), true);
@@ -504,11 +504,11 @@ test("Veo JSON reconciles chained revolving-door exit state without changing its
   assert.deepEqual(Object.keys(clip).slice(0, 7), [
     "scene_id",
     "duration_sec",
+    "aspect_ratio",
+    "output_specs",
     "continuity_mode",
     "visual_style",
     "scene_role",
-    "characters_in_scene",
-    "character_lock",
   ]);
   assert.match(clip.scene_action.start_state, /Lan remains inside the same occupied/i);
   assert.doesNotMatch(clip.scene_action.start_state, /has just exited/i);
@@ -558,4 +558,41 @@ test("ordinary step verbs do not invent stairs", () => {
   assert.ok(layout);
   assert.match(layout.zone_order, /continuous declared walkable scene zone/i);
   assert.doesNotMatch(JSON.stringify(layout), /stairs?|staircase|steps connecting/i);
+});
+
+// Regression: the selected VIDEO aspect ratio travels INSIDE every clip (so the
+// extension/Veo renders the exact frame the app chose), and any verbatim spoken
+// line quoted in motion_prompt is stripped so the character never says it twice.
+test("Veo clip carries the chosen aspect ratio and never repeats a quoted line in motion", () => {
+  for (const aspect of ["16:9", "9:16", "1:1"]) {
+    const result = buildVeoJson({
+      title: "T",
+      total_duration_seconds: 10,
+      character_locks: [{ name: "Lan", gender: "female", gender_age: "adult", costume: "ao dai", skin_tone: "warm", hair: "black", eyes: "brown", voice: "gentle female" }],
+      segments: [{
+        segment_number: 1,
+        duration_seconds: 10,
+        title: "S1",
+        marketing_role: "hook",
+        beats: [{ beat: "Lan asks", camera: "[MS] Lan" }],
+        first_frame_prompt: "Lan in the kitchen.",
+        motion_prompt: 'Lan looks at Minh and says "Anh an com chua?" then smiles.',
+        dialogue: "",
+        speaker: "Lan",
+        characters_in_scene: ["Lan"],
+        environment_ref: "kitchen",
+        continuity_note: "",
+        dialogue_lines: [{ speaker: "Lan", delivery: "on_screen", camera_beat: 1, text: "Anh an com chua?" }],
+      }],
+    }, { aspectRatio: aspect, dialogueLanguage: "Vietnamese" });
+
+    const clip = result.clips[0];
+    assert.equal(clip.aspect_ratio, aspect);
+    assert.equal(clip.output_specs.aspect_ratio, aspect);
+    // The quoted line must NOT survive in the action prose (dialogue owns it once).
+    assert.doesNotMatch(clip.scene_action.motion || "", /Anh an com chua/i);
+    // But the line is still delivered exactly once via the dialogue row.
+    assert.equal(clip.dialogue.length, 1);
+    assert.match(clip.dialogue[0].text, /Anh an com chua/i);
+  }
 });

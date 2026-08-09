@@ -281,9 +281,14 @@ const t = {
     vi: "Cả 2 đều là Gemini Nano Banana. Board giờ chỉ để xem nên Standard là đủ đẹp mà rẻ — khuyên dùng. Pro chỉ cần khi bạn muốn giữ mặt cực gắt.",
     en: "Both are Gemini Nano Banana. Boards are review-only now, so Standard is the sweet spot (cheap + good). Use Pro only when you need the strictest face lock.",
   },
-  aspectRatio: { vi: "Tỉ lệ khung hình", en: "Aspect Ratio" },
+  aspectRatio: { vi: "Tạo video theo khung hình", en: "Generate video in aspect ratio" },
+  aspectRatioHint: {
+    vi: "Ảnh board luôn là 16:9 để tả đúng nhân vật; đây là tỉ lệ VIDEO — app đưa thẳng vào prompt để Veo dựng đúng khung.",
+    en: "The board image is always 16:9 for faithful characters; this is the VIDEO ratio — passed straight into the prompt so Veo renders the exact frame.",
+  },
   aspectLandscape: { vi: "Ngang 16:9 (YouTube)", en: "Landscape 16:9 (YouTube)" },
   aspectPortrait: { vi: "Dọc 9:16 (TikTok/Reels)", en: "Portrait 9:16 (TikTok/Reels)" },
+  aspectSquare: { vi: "Vuông 1:1 (Feed)", en: "Square 1:1 (Feed)" },
   summary: { vi: "Tóm tắt", en: "Summary" },
   scenes: { vi: "cảnh", en: "scenes" },
   style: { vi: "phong cách", en: "style" },
@@ -2102,7 +2107,7 @@ export function GenerateClient() {
     // shot's video_prompt is the high-quality structured scene JSON (not a flat
     // paragraph) and the keyframe prompt is composed from that same scene.
     const veoJson = buildVeoJson(result.breakdown, {
-      aspectRatio: (genInput?.aspect_ratio as "16:9" | "9:16") ?? "9:16",
+      aspectRatio: genInput?.aspect_ratio ?? "9:16",
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
       ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
       hasLocationRef: (genInput?.background_images?.length ?? 0) > 0,
@@ -2114,7 +2119,7 @@ export function GenerateClient() {
       ? ((veoJson as { clips: Array<Record<string, unknown>> }).clips)
       : [];
     const manifest = buildNanoFlowManifest(result.breakdown, {
-      aspectRatio: (genInput?.aspect_ratio as "16:9" | "9:16") ?? "9:16",
+      aspectRatio: genInput?.aspect_ratio ?? "9:16",
       thumbnailAspectRatio: genInput?.thumbnail_aspect_ratio ?? thumbnailAspectRatio,
       // Board vẽ ĐÚNG số cảnh người dùng chọn (3 cảnh ⇒ 3 frame).
       beatsPerSegment: genInput?.beats_per_segment ?? beatsPerSegment,
@@ -4958,10 +4963,10 @@ export function GenerateClient() {
                 </label>
               </div>
 
-              {/* Aspect ratio */}
+              {/* Aspect ratio — VIDEO frame only (board is always 16:9) */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("aspectRatio")}</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setAspectRatio("16:9")}
@@ -4986,7 +4991,20 @@ export function GenerateClient() {
                     <span className="mx-auto mb-1 block h-9 w-5 rounded-sm border-2 border-current" />
                     {L("aspectPortrait")}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setAspectRatio("1:1")}
+                    className={`rounded-lg border-2 p-3 text-center text-sm font-medium transition ${
+                      aspectRatio === "1:1"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-muted text-muted-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    <span className="mx-auto mb-1 block h-7 w-7 rounded-sm border-2 border-current" />
+                    {L("aspectSquare")}
+                  </button>
                 </div>
+                <p className="text-xs text-muted-foreground">{L("aspectRatioHint")}</p>
               </div>
 
               {/* Image quality selector removed — Nano Flow is text-only: images

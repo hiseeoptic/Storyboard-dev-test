@@ -15,7 +15,7 @@ export type AIProvider = "openai" | "gemini" | "claude";
 export type ImageQuality = "standard" | "pro";
 
 /** Output aspect ratio for generated storyboard images. */
-export type AspectRatio = "16:9" | "9:16";
+export type AspectRatio = "16:9" | "9:16" | "1:1";
 
 // ─── Storyboard ─────────────────────────────────────────────────────────────
 

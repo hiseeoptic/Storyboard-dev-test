@@ -2335,7 +2335,7 @@ const VEO_CAMERA_FOCUS_RULE =
 // same character's voice drift clip-to-clip. The per-row voice_personality is
 // the precise source of truth; this note only states the binding rules once.
 const VEO_LIP_SYNC_DIRECTOR_NOTE =
-  "HARD VOICE BINDING: resolve every line from that row's dialogue.speaker_id + dialogue.speaker_name + verbatim dialogue.voice_personality — these override character order, camera subject, visible face and reference image, and stay identical for the same named speaker in every clip. Language, region and dialect come only from the locked project context or character voice; there is no default accent. Only that speaker's lips and jaw move during their start_sec/end_sec; every listener stays silent, reacting through eyes, brows, breathing and posture. Voiceover is off-screen and moves no visible mouth. One voice at a time — each line spoken once, no swap, overlap, echo, repetition, ad-lib or accent drift.";
+  "HARD VOICE BINDING: resolve every line from that row's dialogue.speaker_id + dialogue.speaker_name + verbatim dialogue.voice_personality — these override character order, camera subject, visible face and reference image, and stay identical for the same named speaker in every clip. Language, region and dialect come only from the locked project context or character voice; there is no default accent. Only that speaker's lips and jaw move during their start_sec/end_sec; every listener stays silent, reacting through eyes, brows, breathing and posture. Voiceover is off-screen and moves no visible mouth. One voice at a time — each line spoken EXACTLY ONCE, no swap, overlap, echo, repetition, ad-lib or accent drift. CRITICAL — NO LINE LOOPING: speak each line one single time only; if the clip runs longer than the speech, hold NATURAL SILENCE with continued micro-action and reaction — NEVER repeat, re-say, echo or loop a line (or restart the exchange) to fill the remaining seconds.";
 
 interface VeoJsonOptions {
   aspectRatio: string;
@@ -2401,6 +2401,26 @@ export function agesToWords(text?: string | null): string {
 
 /** Build concise, paste-ready Flow/Veo JSON objects using the user's proven
  * scene schema. Analysis-only metadata stays out of the prompt payload. */
+/**
+ * Remove any VERBATIM spoken line from action prose. Dialogue is owned solely by
+ * dialogue_lines; when the model also quotes a line inside motion_prompt, Veo
+ * hears it twice and the character repeats it. We strip only the WHOLE line as a
+ * contiguous phrase (≥ 8 chars, optionally quote-wrapped), so ordinary action
+ * words are never touched — this deterministically kills the "said twice" loop
+ * even when the model ignores the "dialogue only in dialogue fields" rule.
+ */
+function stripSpokenLinesFromProse(prose: string, spokenTexts: string[]): string {
+  let out = prose || "";
+  for (const raw of spokenTexts) {
+    const line = (raw ?? "").trim().replace(/^["'“”«»‘’]+|["'“”«»‘’]+$/g, "").replace(/[.?!…]+$/g, "").trim();
+    if (line.length < 8) continue;
+    const esc = line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`["'“”«»‘’]?\\s*${esc}\\s*[.?!…]*\\s*["'“”«»‘’]?`, "giu");
+    out = out.replace(re, " ");
+  }
+  return out.replace(/\s{2,}/g, " ").replace(/\s+([,.;:!?])/g, "$1").trim();
+}
+
 export function buildVeoJson(
   breakdown: StoryboardGenerationOutput,
   opts: VeoJsonOptions
@@ -2827,9 +2847,22 @@ export function buildVeoJson(
     const exitState = sceneStateOnly(
       seg.scene_intent?.entry_exit?.exit_state || seg.continuity_note
     );
+    // Spoken lines belong ONLY to dialogue_lines. Strip any verbatim quote of them
+    // from the action prose so Veo never says the same line twice (the repetition
+    // the user saw in clips 1 & 3). Deterministic — does not rely on the model
+    // obeying the "dialogue only in dialogue fields" instruction.
+    const spokenTexts = [
+      ...(seg.dialogue_lines ?? []).map((turn) => oneLine(turn.text)),
+      oneLine(seg.dialogue),
+    ].filter((text): text is string => Boolean(text));
+    const motionSource = stripSpokenLinesFromProse(oneLine(seg.motion_prompt), spokenTexts);
+    const physicalBehaviorSource = stripSpokenLinesFromProse(
+      oneLine(seg.scene_intent?.performance?.physical_behavior),
+      spokenTexts
+    );
     const mainAction = softenIncidentalBagPressure(
-      scrub(compactActionText(seg.motion_prompt, visibleLocks)) ||
-        scrub(compactActionText(seg.scene_intent?.performance?.physical_behavior, visibleLocks)),
+      scrub(compactActionText(motionSource, visibleLocks)) ||
+        scrub(compactActionText(physicalBehaviorSource, visibleLocks)),
       incidentalBagPressure
     );
     // Physical inheritance is opt-in per edit boundary. Legacy projects without
@@ -3091,6 +3124,14 @@ export function buildVeoJson(
     return {
       scene_id: String(seg.segment_number),
       duration_sec: clipSeconds,
+      // Aspect ratio travels INSIDE every clip so the extension/Veo renders each
+      // video at the exact frame the app selected — never a portrait/landscape
+      // mismatch between the app and the Veo panel.
+      aspect_ratio: opts.aspectRatio,
+      output_specs: {
+        aspect_ratio: opts.aspectRatio,
+        note: `Render this video strictly in ${opts.aspectRatio} (${opts.aspectRatio === "9:16" ? "vertical portrait" : opts.aspectRatio === "1:1" ? "square" : "horizontal landscape"}). Do not crop, letterbox or switch orientation.`,
+      },
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
       continuity_mode: transitionMode,
       ...(seg.transition_in ? { transition_in: seg.transition_in } : {}),
