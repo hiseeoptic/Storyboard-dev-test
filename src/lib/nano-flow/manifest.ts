@@ -388,6 +388,8 @@ function buildLocationSheetViews(params: {
           : `${slugify(realityMode)}_location_plate`,
       goal:
         "A CHARACTER-FREE establishing photo of the EMPTY location — the background authority reused to keep every shot on the SAME set. No people or product; only the place.",
+      source_authority:
+        "If a real LOCATION PHOTO is attached as a reference, it is the EXACT place: faithfully reproduce THAT real location from this view's angle — its layout, walls, windows, doors, furniture, materials, colours and lighting — treating the attached photo as ground truth and changing ONLY the camera vantage to this angle. Remove any people or products that happen to appear in the photo (the plate stays empty). If NO photo is attached, build the location from the setting/scenery description below.",
       framing,
       setting: setting || "the scripted location",
       scenery: scenery && scenery !== setting ? scenery : undefined,
