@@ -171,11 +171,11 @@ test("board panels come from beats with captions; uploaded photo ⇒ strict sett
   assert.match(String(kf.captions), /REQUIRED/);
 });
 
-test("no end→start chaining: a later board never says 'continue from previous / do not re-establish'", () => {
-  // Two same-location shots — the old continue_from made shot 2 ignore the
-  // uploaded location and drift. Boards must now each build independently.
+test("board-to-board handoff: a same-location later board continues from the previous board's last frame, uploaded location still strict", () => {
+  // Two same-location shots. The user wants frame 1 of board 2 to be the handoff
+  // from board 1's last frame — WHILE the uploaded location stays the authority.
   const bd = {
-    title: "NoChain",
+    title: "Chain",
     character_locks: [{ name: "Minh" }, { name: "Lan" }],
     segments: [
       { segment_number: 1, characters_in_scene: ["Minh"], environment_ref: "bep",
@@ -188,16 +188,22 @@ test("no end→start chaining: a later board never says 'continue from previous 
   } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
   const m = buildNanoFlowManifest(bd, {
     veoClips: [
-      { background_lock: { setting: "kitchen" }, character_lock: { A: { name: "Minh" } } },
+      { background_lock: { setting: "kitchen" }, scene_action: { end_state: "Minh seated at the table" }, character_lock: { A: { name: "Minh" } } },
       { background_lock: { setting: "kitchen" }, character_lock: { A: { name: "Lan" } } },
     ],
     locationSets: [{ name: "Đoạn", images: ["data:image/png;base64,AAAA"], scene_indices: [1, 2] }],
   });
+  const b1 = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  const b2 = JSON.parse(m.shots[1]!.storyboard_prompt) as Record<string, unknown>;
+  // Board 1 is the opening — no handoff.
+  assert.equal(b1.continue_from_previous, undefined);
+  // Board 2 (same location) DOES hand off from board 1's last frame.
+  assert.ok(typeof b2.continue_from_previous === "string");
+  assert.match(String(b2.continue_from_previous), /BOARD-TO-BOARD HANDOFF/);
+  assert.match(String(b2.continue_from_previous), /Minh seated at the table/);
+  // The uploaded location photo stays the strict setting authority on BOTH boards.
   for (const s of m.shots) {
     const kf = JSON.parse(s.storyboard_prompt) as Record<string, unknown>;
-    assert.equal(kf.continue_from, undefined, "board must not carry a continue_from chaining clause");
-    assert.doesNotMatch(s.storyboard_prompt, /re-establish|continuation of the previous shot/i);
-    // and the uploaded location stays the strict authority on every board
     assert.match(String(kf.setting_authority), /ATTACHED location photo/);
   }
 });
@@ -270,19 +276,20 @@ test("environments carry a 2-angle character-free LOCATION SHEET (location_views
   assert.equal(locationSheet.aspect_ratio, "16:9");
   assert.match(String(locationSheet.panel_2), /90-135|opposite/i);
   assert.equal(env.image, null);
-  // The app now emits a 2-angle location sheet (wide + alt), character-free, so
-  // the extension generates each set ONCE and locks every board/video to it —
-  // the user's "tạo sheet bối cảnh" approach (a reference image, not a panel).
-  assert.ok(Array.isArray(env.location_views) && env.location_views.length === 2);
-  assert.deepEqual((env.location_views ?? []).map((v) => v.angle), ["wide", "alt"]);
-  for (const v of env.location_views ?? []) {
-    assert.equal(typeof v.prompt, "string");
-    const p = JSON.parse(v.prompt) as Record<string, unknown>;
-    // The sheet uses the per-location LOCKED setting so it matches the boards.
-    assert.match(String(p.setting), /cozy northern living room/);
-    // Character-free: the negative must forbid people in the plate.
-    assert.match(String(p.negative), /no people/i);
-  }
+  // The app now emits a SINGLE character-free location sheet image (overview +
+  // right→left + left→right), so the extension generates each set ONCE and locks
+  // every board/video to it — the user's "tạo sheet bối cảnh" approach (one image).
+  assert.ok(Array.isArray(env.location_views) && env.location_views.length === 1);
+  assert.deepEqual((env.location_views ?? []).map((v) => v.angle), ["sheet"]);
+  const sheet = JSON.parse((env.location_views ?? [])[0]!.prompt) as Record<string, unknown>;
+  // The sheet uses the per-location LOCKED setting so it matches the boards.
+  assert.match(String(sheet.setting), /cozy northern living room/);
+  // Character-free: the negative must forbid people in the sheet.
+  assert.match(String(sheet.negative), /no people/i);
+  // Three framings in ONE image (overview + right→left + left→right).
+  assert.match(String(sheet.layout), /overview/i);
+  assert.match(String(sheet.layout), /right-to-left/i);
+  assert.match(String(sheet.layout), /left-to-right/i);
   // The setting also still lives in the shot's location board (unchanged).
   const board = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
   assert.match(String(board.setting), /cozy northern living room/);
@@ -753,10 +760,10 @@ test("manifest fixes the board to 16:9 while the video aspect follows the select
 });
 
 // Regression: boards of the SAME location must not drift set or day↔night on later
-// boards. Setting/scenery lock to the first clip of the location and lighting locks
-// project-wide; every board carries an establishing-view contract (≥1 wide panel so
-// the location is always visible); a continuous board carries the previous end-state.
-test("boards lock one set + lighting per location and add establishing/continuity contracts", () => {
+// boards. Setting/scenery lock to the first clip of the location; time-of-day is
+// MONOTONIC (day→night, never oscillating); every board carries an establishing-view
+// contract (≥1 wide panel); a same-location later board hands off from the previous.
+test("boards lock one set per location; time-of-day is monotonic; same-location boards hand off", () => {
   const seg = (n: number, mode: string) => ({
     segment_number: n, duration_seconds: 10, title: `S${n}`, marketing_role: "body",
     beats: [{ beat: "talk", camera: "[CLOSE] face" }],
@@ -783,15 +790,24 @@ test("boards lock one set + lighting per location and add establishing/continuit
     generatedAt: "2026-01-01T00:00:00Z",
   });
   const boards = m.shots.map((s) => JSON.parse(s.storyboard_prompt) as Record<string, unknown>);
-  // All boards of loc1 use the FIRST clip's setting + the project lighting (no drift).
+  // All boards of loc1 lock to the FIRST clip's SETTING (same room, no drift).
   assert.equal(boards[0]!.setting, "living room with beige sofa");
   assert.equal(boards[1]!.setting, "living room with beige sofa");
   assert.equal(boards[2]!.setting, "living room with beige sofa");
-  assert.equal(boards[1]!.lighting, "warm daylight, bright");
+  // Day↔night is MONOTONIC: day → night, and the 3rd shot's "morning" is clamped
+  // FORWARD to night (never day→night→day). The clamped shot drops its stale
+  // "cool morning" lighting and shows the locked night look.
+  assert.equal(boards[0]!.time_of_day, "daytime");
+  assert.equal(boards[1]!.time_of_day, "night");
+  assert.equal(boards[2]!.time_of_day, "night");
+  assert.match(String(boards[1]!.lighting), /^night: /);
+  assert.match(String(boards[1]!.lighting), /dim night lamp/);
+  assert.doesNotMatch(String(boards[2]!.lighting), /morning/i);
   // Establishing view contract on every board.
   assert.ok(boards.every((b) => typeof b.establishing_view_contract === "string" && (b.establishing_view_contract as string).includes("WIDE")));
-  // Continuity carry only on the continuous board (index 1), not opening/scene_cut.
+  // Board-to-board handoff on every same-location later board (index 1 AND 2), not
+  // on the opening (index 0). Even a scene_cut within the same set chains now.
   assert.equal(boards[0]!.continue_from_previous, undefined);
   assert.ok(typeof boards[1]!.continue_from_previous === "string" && (boards[1]!.continue_from_previous as string).includes("red bag"));
-  assert.equal(boards[2]!.continue_from_previous, undefined);
+  assert.ok(typeof boards[2]!.continue_from_previous === "string" && (boards[2]!.continue_from_previous as string).includes("Minh looks at the bag"));
 });

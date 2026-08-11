@@ -99,6 +99,46 @@ function meaningful(v: string): string {
   return v && !GENERIC_LOCK_VALUE.test(v) ? v : "";
 }
 
+// ── Time-of-day continuity (day↔night) ──────────────────────────────────────
+// A script may legitimately move across the day (e.g. daytime early → evening
+// late), but boards must NEVER oscillate (day, then night, then day again). We
+// read a coarse time-of-day per shot from its text and force the whole sequence
+// to be NON-DECREASING (monotonic): once the story reaches evening it can never
+// jump back to morning. Shots with no time word inherit the running time; leading
+// unknowns adopt the first known time. General for every project — not a per-file
+// patch.
+const TIME_OF_DAY_STEPS: Array<{ label: string; ord: number; re: RegExp }> = [
+  { label: "dawn", ord: 0, re: /(dawn|sunrise|daybreak|first light|bình minh|rạng đông|sáng sớm)/i },
+  { label: "morning", ord: 1, re: /(morning|forenoon|buổi sáng|ban sáng)/i },
+  { label: "daytime", ord: 2, re: /(midday|noon|daytime|daylight|broad day|afternoon|ban ngày|giữa trưa|trưa|buổi chiều|ban chiều|\bday\b)/i },
+  { label: "evening", ord: 3, re: /(golden hour|sunset|dusk|twilight|evening|hoàng hôn|chạng vạng|chiều tà|buổi tối|tối)/i },
+  { label: "night", ord: 4, re: /(night|midnight|nighttime|after dark|ban đêm|đêm|khuya)/i },
+];
+function timeOfDayOrdinal(text: string): number {
+  const t = text || "";
+  let best = -1;
+  for (const step of TIME_OF_DAY_STEPS) if (step.re.test(t)) best = Math.max(best, step.ord);
+  return best;
+}
+function timeOfDayLabel(ord: number): string {
+  const s = TIME_OF_DAY_STEPS.find((x) => x.ord === ord);
+  return s ? s.label : "";
+}
+/** Resolve one monotonic (non-decreasing) time-of-day ORDINAL per shot from raw
+ *  per-shot text. -1 where nothing could be inferred anywhere; leading unknowns
+ *  adopt the first known time. */
+function resolveMonotonicOrdinals(perShotText: string[]): number[] {
+  const ords = perShotText.map((t) => timeOfDayOrdinal(t));
+  const mono: number[] = [];
+  let run = -1;
+  for (const o of ords) {
+    if (o >= 0) run = run < 0 ? o : Math.max(run, o);
+    mono.push(run);
+  }
+  const firstKnown = mono.find((o) => o >= 0);
+  return mono.map((o) => (o >= 0 ? o : firstKnown ?? -1));
+}
+
 /**
  * Compose a RICH keyframe (image) prompt from the STRUCTURED Veo clip so Nano
  * Banana renders a keyframe faithful to the whole scene — cast appearance,
@@ -153,7 +193,10 @@ function buildLocationBoardPrompt(
   realityMode: string,
   beats: Array<{ beat?: string; camera?: string }>,
   hasLocationPhoto: boolean,
-  projectLighting: string,
+  // The resolved per-shot lighting descriptor (already time-of-day aware). Empty
+  // ⇒ rely on the locked time-of-day alone (the shot's own stale lighting was
+  // dropped because its time was clamped forward).
+  resolvedLighting: string,
   characterStyleLock = "",
   requestedPanels?: number,
   fallbackCast: Array<Record<string, string>> = [],
@@ -165,10 +208,13 @@ function buildLocationBoardPrompt(
   // drift to a different set or flip day↔night.
   lockedSetting = "",
   lockedScenery = "",
-  // The previous shot's END-state facts, carried in ONLY when this shot continues
-  // the same scene (continuous). The first panel opens FROM this so a dialogue
-  // that spans two boards stays visually continuous; empty for a fresh scene cut.
-  continueFromPrevious = ""
+  // The previous board's LAST-panel / END-state facts, carried in when this shot
+  // continues the same scene/set. PANEL 1 of this board opens FROM this so frame N
+  // of the previous board hands off to frame 1 of this one; empty for a real
+  // location change.
+  continueFromPrevious = "",
+  // Monotonic time-of-day LABEL locked for this shot (day↔night never oscillates).
+  lockedTimeOfDay = ""
 ): string {
   const clip =
     primaryVideoPrompt && typeof primaryVideoPrompt === "object"
@@ -178,7 +224,10 @@ function buildLocationBoardPrompt(
   const bg = clipObj(clip?.background_lock);
   const setting = lockedSetting || clipStr(bg.setting) || fallbackSceneText || envName;
   const scenery = lockedScenery || clipStr(bg.scenery);
-  const lighting = projectLighting || clipStr(bg.lighting);
+  // Use the caller's resolved lighting directly (no bg fallback): when it is empty
+  // the shot's own lighting was intentionally dropped as stale, so the locked
+  // time-of-day drives the look instead of a contradictory raw lighting string.
+  const lighting = resolvedLighting;
   const visualStyle = clipStr(clip?.visual_style);
 
   const locks = clipObj(clip?.character_lock);
@@ -302,7 +351,7 @@ function buildLocationBoardPrompt(
     ...(continueFromPrevious
       ? {
           continue_from_previous:
-            `SCENE CONTINUES the previous board (same conversation, NO cut): PANEL 1 opens FROM this exact end-state so the two boards are visually continuous — same character positions, same props in the same hands/places, same time-of-day and light: ${continueFromPrevious}. Do not restart, relocate or change the set/time; only advance the action forward.`,
+            `BOARD-TO-BOARD HANDOFF: PANEL 1 (frame 1) of THIS board is the SAME MOMENT as the LAST panel (frame N) of the PREVIOUS board — the two boards touch there. Open panel 1 FROM this exact end-state and match it: same set, same character positions and screen sides, same props in the same hands/places, same time-of-day and light — THEN advance the action forward across the remaining panels. Do NOT restart the scene, relocate, re-establish or change the set/time at panel 1. Previous board's end-state: ${continueFromPrevious}.`,
         }
       : {}),
     setting_authority: hasLocationPhoto
@@ -316,7 +365,11 @@ function buildLocationBoardPrompt(
     visual_style: visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
-    lighting: lighting || undefined,
+    time_of_day: lockedTimeOfDay || undefined,
+    time_of_day_lock: lockedTimeOfDay
+      ? `TIME OF DAY = ${lockedTimeOfDay} (locked for this board). Every panel shows ${lockedTimeOfDay} light, sky and shadows. Across the whole project the time only moves FORWARD with the script — never flip a board back to a different time than the story's flow (no day→night→day).`
+      : undefined,
+    lighting: ((lockedTimeOfDay ? `${lockedTimeOfDay}: ` : "") + (lighting || "")) || undefined,
     cast,
     panels,
     captions:
@@ -374,17 +427,19 @@ function buildThumbnailPrompt(params: {
 }
 
 /**
- * Build the 2-angle LOCATION SHEET (`location_views`) for ONE environment — the
- * user's "tạo sheet bối cảnh" approach. Each view is a CHARACTER-FREE establishing
- * image of the EMPTY set (a WIDE full view + a second/reverse angle of the SAME
- * place). The extension generates BOTH once per location, then attaches them as
- * the background authority for every board AND every Veo clip set here, so Nano
- * Banana and Veo pin the identical set instead of inventing or drifting the
- * location (day→night, wrong room). When the user uploaded a real location photo
- * the extension prefers that photo and skips these; when there is NO photo the
- * app-authored sheet is the location the whole shot is locked to — i.e. the app
- * "tự tạo ảnh bối cảnh ra trước tạo sheet rồi mới ghép vào board". General for
- * every project, not a per-file patch.
+ * Build the LOCATION SHEET (`location_views`) for ONE environment — the user's
+ * "tạo sheet bối cảnh" approach. It is now a SINGLE character-free image holding
+ * THREE framings of the SAME empty set (a large OVERVIEW + a smaller right→left
+ * pan + a smaller left→right pan), mirroring the character sheet's one-image form
+ * (user asked for one image, not two). The extension generates it once per
+ * location and attaches it as the background authority for every board AND every
+ * Veo clip set here, so Nano Banana and Veo pin the identical set instead of
+ * inventing or drifting the location. When the user uploaded a real location
+ * photo the extension uses THAT photo as the source to scan the sheet from; with
+ * no photo the app-authored sheet is the location the shot is locked to — the app
+ * "tự tạo ảnh bối cảnh ra trước tạo sheet rồi mới ghép vào board". Returned as a
+ * one-element array so the shared NanoFlowLocationView contract is unchanged.
+ * General for every project, not a per-file patch.
  */
 function buildLocationSheetViews(params: {
   setting: string;
@@ -393,7 +448,7 @@ function buildLocationSheetViews(params: {
   visualStyle: string;
   realityMode: string;
   characterStyleLock: string;
-}): Array<{ angle: "wide" | "alt"; prompt: string }> {
+}): Array<{ angle: string; prompt: string }> {
   const { setting, scenery, lighting, visualStyle, realityMode, characterStyleLock } = params;
   const liveAction =
     !characterStyleLock && ["documentary", "cinematic", "commercial"].includes(realityMode);
@@ -407,39 +462,31 @@ function buildLocationSheetViews(params: {
     : liveAction
       ? "Empty location only — absolutely NO people, NO characters, NO animals, NO product in frame. NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT painting. No text, UI, watermark or logo."
       : "Empty location in the locked medium — NO people, NO characters, NO product, NO text. No accidental photoreal conversion, no medium drift.";
-  const view = (angle: "wide" | "alt", framing: string) => ({
-    angle,
-    prompt: JSON.stringify({
-      type: characterStyleLock
-        ? "styled_location_plate"
-        : liveAction
-          ? "photoreal_location_plate"
-          : `${slugify(realityMode)}_location_plate`,
-      goal:
-        "A CHARACTER-FREE establishing photo of the EMPTY location — the background authority reused to keep every shot on the SAME set. No people or product; only the place.",
-      source_authority:
-        "If a real LOCATION PHOTO is attached as a reference, it is the EXACT place: faithfully reproduce THAT real location from this view's angle — its layout, walls, windows, doors, furniture, materials, colours and lighting — treating the attached photo as ground truth and changing ONLY the camera vantage to this angle. Remove any people or products that happen to appear in the photo (the plate stays empty). If NO photo is attached, build the location from the setting/scenery description below.",
-      framing,
-      setting: setting || "the scripted location",
-      scenery: scenery && scenery !== setting ? scenery : undefined,
-      lighting: lighting || undefined,
-      visual_style: visualStyle || undefined,
-      consistency:
-        "The WIDE and the ALT view show the EXACT SAME place — identical walls, windows, doors, floor, furniture geometry, landmarks, materials, colours, time-of-day and light direction; ONLY the camera vantage changes. This is the immutable set every scene here must reuse.",
-      render,
-      negative,
-    }),
+  // ONE image (user request): a single location sheet holding THREE framings of
+  // the SAME empty set — a large OVERVIEW + a smaller right→left pan + a smaller
+  // left→right pan — mirroring the character sheet's one-image, three-framing form.
+  const prompt = JSON.stringify({
+    type: characterStyleLock
+      ? "styled_location_sheet"
+      : liveAction
+        ? "photoreal_location_sheet"
+        : `${slugify(realityMode)}_location_sheet`,
+    goal:
+      "ONE character-free LOCATION REFERENCE SHEET of the EMPTY place — a SINGLE image holding THREE framings of the SAME set — the background authority reused to keep every shot on the SAME location. No people or product anywhere.",
+    source_authority:
+      "If a real LOCATION PHOTO is attached as a reference, it is the EXACT place: faithfully reproduce THAT real location in ALL THREE framings — its layout, walls, windows, doors, furniture, materials, colours and lighting — treating the attached photo as ground truth and changing ONLY the camera vantage per framing. Remove any people or products that happen to appear in the photo (the sheet stays empty). If NO photo is attached, build the location from the setting/scenery description below.",
+    layout:
+      "A SINGLE 16:9 image divided into THREE framings of the SAME empty location against one clean continuous presentation: (1) a LARGE WIDE OVERVIEW establishing the whole space edge-to-edge — walls, windows, doors, main furniture and how the room is laid out; (2) a SMALLER view panning RIGHT-TO-LEFT (camera on the right side of the room looking toward the left); (3) a SMALLER view panning LEFT-TO-RIGHT (camera on the left side looking toward the right). No labels or captions — just the three empty views of the one place.",
+    setting: setting || "the scripted location",
+    scenery: scenery && scenery !== setting ? scenery : undefined,
+    lighting: lighting || undefined,
+    visual_style: visualStyle || undefined,
+    consistency:
+      "All three framings are the EXACT SAME place — identical walls, windows, doors, floor, furniture geometry, landmarks, materials, colours, time-of-day and light direction; ONLY the camera vantage differs between them. This is the immutable set every scene here must reuse.",
+    render,
+    negative,
   });
-  return [
-    view(
-      "wide",
-      "A WIDE ESTABLISHING shot of the whole location from a natural eye-level vantage: show the full space — walls, windows, doors, main furniture and how the room is laid out, edge to edge. Empty of people."
-    ),
-    view(
-      "alt",
-      "A SECOND angle of the SAME place — roughly the reverse / 90° vantage — revealing what the wide shot could not (the opposite wall and adjoining area), keeping the SAME furniture, materials, time-of-day and lighting. Empty of people."
-    ),
-  ];
+  return [{ angle: "sheet", prompt }];
 }
 
 /** Turn a display name into a stable ascii slug id (Vietnamese-aware). */
@@ -473,8 +520,16 @@ export function withKeyframeAuthority(
     "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT is the sole semantic authority for story action, timing, camera, state transition and ending. The generated STORYBOARD / LOCATION BOARD is only a visual continuity reference for the already-declared opening appearance and set geometry; it must never add, remove, replace or reinterpret video events. Each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop. Use the location board to keep the prompt-declared environment visually consistent (background, spatial layout, furniture, props, doors, windows, lighting and materials), but when any image detail conflicts with this structured prompt, FOLLOW THIS VIDEO PROMPT. Identity and clothing come from the sheets; semantics and motion come from the video prompt.";
   rules.storyboard_reference_role =
     "Visual continuity only. Do not infer new actions from the board and do not let the board override ordered actions, dialogue, camera intent, timing or end state in this video prompt.";
+  // HARD LOCK (user): the multi-panel board must NEVER be rendered into the video.
+  rules.board_is_reference_not_a_frame =
+    "The attached STORYBOARD BOARD is a MULTI-PANEL planning sheet that only DESCRIBES this scene (cast, wardrobe, location, staging and beats). It is NOT the video's frame and NOT a layout to copy. NEVER reproduce, show or animate the board itself: no split panels, no grid, no side-by-side sub-frames, no numbered badges, no caption strips, no white gutters or borders, no picture-in-picture. Render ONE single, full-bleed, continuous cinematic shot of the real scene the panels depict — one camera, one framing at a time, filling the entire frame.";
   if (characterStyleLock) rules.character_style_lock = characterStyleLock;
-  return { ...clip, output_rules: rules };
+  return {
+    ...clip,
+    board_usage:
+      "REFERENCE ONLY: the attached storyboard board is a multi-panel sheet that DESCRIBES this scene (who/what/where). Do NOT put the board — its split panels, grid, numbers, captions or borders — into the video. Produce ONE full-frame, single continuous cinematic shot of the ACTUAL scene, never a montage of panels and never a picture of the board sheet.",
+    output_rules: rules,
+  };
 }
 
 /** Add the canonical script/state contract to the PRIMARY video payload. */
@@ -756,6 +811,21 @@ export function buildNanoFlowManifest(
   const projectVisualStyle = opts.veoClips?.[0]
     ? clipStr(opts.veoClips[0].visual_style)
     : "";
+  // Monotonic day↔night per shot: read a coarse time-of-day from each shot's text
+  // and force the sequence to only move FORWARD (the script may go day→evening,
+  // but boards must never oscillate day→night→day). Empty where nothing inferable.
+  const perShotTimeText = segments.map((seg, i) => {
+    const bg = opts.veoClips?.[i] ? clipObj(opts.veoClips[i].background_lock) : {};
+    return [
+      clipStr(bg.lighting),
+      clipStr(bg.setting),
+      clipStr(bg.scenery),
+      seg?.first_frame_prompt ?? "",
+      seg?.motion_prompt ?? "",
+    ].filter(Boolean).join(" ");
+  });
+  const detectedTimeOrds = perShotTimeText.map((t) => timeOfDayOrdinal(t));
+  const monotonicTimeOrds = resolveMonotonicOrdinals(perShotTimeText);
 
   // Lock ONE setting + scenery per LOCATION (the first clip seen for that place) so
   // every board of the same location describes the IDENTICAL room — same furniture,
@@ -770,11 +840,12 @@ export function buildNanoFlowManifest(
     lockedBgByLocation.set(loc, { setting: clipStr(bg.setting), scenery: clipStr(bg.scenery) });
   });
 
-  // Attach the 2-angle LOCATION SHEET to every declared environment so the
-  // extension generates each set ONCE (character-free wide + alt) and locks every
-  // board AND Veo clip to it — the user's "tạo sheet bối cảnh" approach (a real
-  // reference image), NOT just a wide panel inside the board. Uses the per-
-  // location locked setting/scenery so the sheet matches the boards exactly;
+  // Attach the LOCATION SHEET to every declared environment so the extension
+  // generates each set ONCE as a SINGLE character-free image (overview + right→left
+  // + left→right) and locks every board AND Veo clip to it — the user's "tạo sheet
+  // bối cảnh" approach (a real reference image, one image), NOT a wide panel inside
+  // the board. Uses the per-location locked setting/scenery so the sheet matches
+  // the boards exactly;
   // falls back to the humanized location name when no clip described the set. The
   // extension prefers a user-uploaded location photo over these when one exists;
   // with no photo the app generates the sheet first, then feeds it into the board
@@ -832,7 +903,24 @@ export function buildNanoFlowManifest(
     }
     // The matching STRUCTURED Veo clip (same order as segments). Drives both the
     // high-quality PRIMARY video payload and the downstream board prompt below.
-    const clip = opts.veoClips?.[i];
+    // Stamp the monotonic time-of-day onto the clip so Veo's day/night matches the
+    // board and follows the script's forward-only flow.
+    const monOrd = monotonicTimeOrds[i] ?? -1;
+    const detOrd = detectedTimeOrds[i] ?? -1;
+    const lockedTimeOfDay = timeOfDayLabel(monOrd);
+    const rawClip = opts.veoClips?.[i];
+    // If this shot's own time was clamped FORWARD (its text implied an earlier time
+    // than the running story time), its raw lighting is stale — drop it so the
+    // locked time-of-day drives the board's look; otherwise keep the shot's own
+    // lighting. This kills day→night→day oscillation while allowing day→evening.
+    const ownLighting = clipStr(clipObj(rawClip?.background_lock).lighting);
+    const boardLighting = detOrd >= 0 && monOrd > detOrd ? "" : ownLighting;
+    const clip = rawClip && lockedTimeOfDay
+      ? {
+          ...rawClip,
+          time_of_day_lock: `TIME OF DAY = ${lockedTimeOfDay} for THIS shot (locked). Match lighting, sky and shadows to ${lockedTimeOfDay}. The project's day/night only moves FORWARD with the script — never day→night→day.`,
+        }
+      : rawClip;
     const productionShot = productionState.shots[i]!;
     const stateAuthority = buildNanoFlowShotStateAuthority({
       productionState,
@@ -867,14 +955,28 @@ export function buildNanoFlowManifest(
     // Per-location locked room description (every board of this location = one set).
     const lockedBg = lockedBgByLocation.get((seg.location_id ?? seg.environment_ref ?? "").trim())
       ?? { setting: "", scenery: "" };
-    // Carry the PREVIOUS board's end-state into this board ONLY when the scene
-    // continues (continuous) — so a dialogue spanning two boards stays continuous.
-    // A scene_cut / location_cut / time_jump starts a fresh board (empty carry).
+    // Board-to-board handoff (user): PANEL 1 of this board = the LAST panel of the
+    // previous board whenever the two boards share the SAME location (same set) and
+    // this shot is not a hard break (real location change / time jump / flashback /
+    // dream). This makes consecutive same-scene boards touch (their example boards
+    // 2→3). Carries the previous shot's end-state + last beat.
+    const prevSeg = i > 0 ? segments[i - 1] : undefined;
     const prevClip = i > 0 ? opts.veoClips?.[i - 1] : undefined;
-    const continueFromPrevious =
-      shotContinuity === "continuous" && prevClip
-        ? clipStr(clipObj(prevClip.scene_action).end_state)
-        : "";
+    const thisLoc = (seg.location_id ?? seg.environment_ref ?? "").trim();
+    const prevLoc = (prevSeg?.location_id ?? prevSeg?.environment_ref ?? "").trim();
+    const hardBreak = ["location_cut", "time_jump", "flashback", "dream"].includes(String(shotContinuity));
+    const sameSetAsPrev =
+      !!prevClip && !!thisLoc && thisLoc !== "custom" && thisLoc === prevLoc && !hardBreak;
+    const prevBeats = Array.isArray(prevSeg?.beats) ? prevSeg!.beats : [];
+    const prevLastBeat = prevBeats.length
+      ? clipStr((prevBeats[prevBeats.length - 1] as { beat?: string })?.beat)
+      : "";
+    const continueFromPrevious = sameSetAsPrev
+      ? [
+          clipStr(clipObj(prevClip!.scene_action).end_state),
+          prevLastBeat ? `(previous board's last panel: ${prevLastBeat})` : "",
+        ].filter(Boolean).join(" ")
+      : "";
 
     return {
       shot_id: `SHOT_${String(index).padStart(3, "0")}`,
@@ -896,7 +998,7 @@ export function buildNanoFlowManifest(
         realityMode,
         seg.beats ?? [],
         !!boardLocationImage,
-        projectLighting,
+        boardLighting,
         visualMediumLock,
         opts.beatsPerSegment,
         inScene.map((name) => {
@@ -908,7 +1010,8 @@ export function buildNanoFlowManifest(
         persistentPropIds,
         lockedBg.setting,
         lockedBg.scenery,
-        continueFromPrevious
+        continueFromPrevious,
+        lockedTimeOfDay
       ),
       continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
