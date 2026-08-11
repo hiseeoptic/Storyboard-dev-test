@@ -20,6 +20,10 @@ function activeSupport(snapshot: ProductionSnapshot, entityId: string, kinds: st
   );
 }
 
+function isNoHolderEntityId(value: string | null | undefined): boolean {
+  return /^(?:entity_)?(?:none|null|nil|no_holder|nobody|no_one)$/iu.test(value ?? "");
+}
+
 function validateLimb(
   limb: LimbState,
   shotId: string,
@@ -181,6 +185,7 @@ function validateSnapshot(
     }
     if (
       entity.holder_entity_id &&
+      !isNoHolderEntityId(entity.holder_entity_id) &&
       !snapshot.contacts.some(
         (contact) =>
           contact.active &&

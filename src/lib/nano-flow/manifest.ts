@@ -61,6 +61,35 @@ function clipObj(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
 }
 
+function buildLocationContinuitySheetPrompt(params: {
+  name: string;
+  setting: string;
+  scenery: string;
+  lighting: string;
+  visualMediumLock: string;
+}): string {
+  return JSON.stringify({
+    type: "location_continuity_sheet",
+    aspect_ratio: "16:9",
+    output_count: 1,
+    location_name: params.name,
+    source_authority: params.setting,
+    scenery: params.scenery || undefined,
+    lighting: params.lighting || undefined,
+    layout:
+      "ONE single 16:9 image split into EXACTLY TWO equal side-by-side panels with one thin divider; no third panel, no collage, no captions, labels, people or products.",
+    panel_1:
+      "WIDE establishing view from the primary entrance/camera side, showing the complete floor plan, fixed architecture, furniture and main spatial anchors.",
+    panel_2:
+      "A genuinely different reverse three-quarter view from the opposite connected corner, rotated roughly 90-135 degrees from panel 1, revealing the previously hidden wall and reverse relationships between the SAME immutable anchors. It must not be a crop, zoom, duplicate or tiny variation of panel 1.",
+    continuity:
+      "Both panels depict the exact same empty place at the same moment: identical architecture, doors, windows, furniture, materials, colours, prop design, time of day and light direction. Only camera position and viewing direction differ.",
+    render: params.visualMediumLock || KEYFRAME_RENDER_NOTE,
+    negative:
+      "No people, characters, hands, products, readable text, watermark, duplicated room, mirrored layout, moved furniture, changed weather/time, two separate image files or near-identical camera angles.",
+  });
+}
+
 // Generic scaffolding phrases buildVeoJson writes into empty lock fields — they
 // are instructions to Veo, not real appearance, so they must NOT leak into the
 // image prompt.
@@ -622,11 +651,25 @@ export function buildNanoFlowManifest(
   //    user-uploaded location photo (Cách 1) still takes priority when present.
   const envIdSeen = new Set<string>();
   const environments: NanoFlowAsset[] = [];
-  segments.forEach((seg) => {
+  segments.forEach((seg, segmentIndex) => {
     const ref = (seg.location_id ?? seg.environment_ref ?? "").trim();
     if (!ref || ref === "custom" || envIdSeen.has(ref)) return;
     envIdSeen.add(ref);
-    environments.push({ id: ref, name: humanizeEnvId(ref), image: null });
+    const clip = opts.veoClips?.[segmentIndex];
+    const background = clipObj(clip?.background_lock);
+    const name = humanizeEnvId(ref);
+    environments.push({
+      id: ref,
+      name,
+      image: null,
+      location_sheet_prompt: buildLocationContinuitySheetPrompt({
+        name,
+        setting: clipStr(background.setting) || seg.first_frame_prompt || name,
+        scenery: clipStr(background.scenery),
+        lighting: clipStr(background.lighting),
+        visualMediumLock,
+      }),
+    });
   });
 
   // ── Product assets: from explicit names, else one slot if a product DNA
@@ -731,6 +774,10 @@ export function buildNanoFlowManifest(
       characterStyleLock: visualMediumLock,
     });
   }
+
+  // Compute thumbnail delivery independently from the always-landscape board.
+  const thumbnailAspect = opts.thumbnailAspectRatio ??
+    (opts.aspectRatio === "16:9" ? "16:9" : "9:16");
 
   const shots: NanoFlowShot[] = segments.map((seg, i) => {
     const index = seg.segment_number || i + 1;
@@ -891,7 +938,7 @@ export function buildNanoFlowManifest(
       dialogue_language: opts.dialogueLanguage ?? "Vietnamese",
       total_duration_seconds: breakdown.total_duration_seconds,
       thumbnail_title: breakdown.thumbnail_title,
-      thumbnail_aspect_ratio: opts.thumbnailAspectRatio ?? (opts.aspectRatio === "16:9" ? "16:9" : "9:16"),
+      thumbnail_aspect_ratio: thumbnailAspect,
       ...(characterRepresentation && visualMediumLock
         ? { character_style: { id: characterRepresentation, prompt: visualMediumLock } }
         : {}),
@@ -905,7 +952,7 @@ export function buildNanoFlowManifest(
             : persistentPropEntries[0]
               ? `the story's hero object "${persistentPropEntries[0].display_name}" (keep its exact established shape, material and colour)`
               : "the single key story object established by the script"),
-        aspect: opts.thumbnailAspectRatio ?? (opts.aspectRatio === "16:9" ? "16:9" : "9:16"),
+        aspect: thumbnailAspect,
         realityMode,
       }),
       social_posts: breakdown.social_posts,

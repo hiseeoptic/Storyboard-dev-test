@@ -22,6 +22,10 @@ export interface EnvironmentReferencePrompt {
   source_clip_ids: string[];
   required_image_count: 2;
   images: [EnvironmentReferenceImagePrompt, EnvironmentReferenceImagePrompt];
+  /** Preferred additive path: one 16:9 file with two distinct panels. Legacy
+   * `images` remains available for older consumers. */
+  preferred_output_count: 1;
+  location_sheet_prompt: string;
 }
 
 export interface StoryboardClipPrompt {
@@ -48,7 +52,7 @@ export interface StoryboardPromptPackage {
   project: {
     title: string;
     storyboard_schema_version: "4.0";
-    aspect_ratio: "16:9" | "9:16";
+    aspect_ratio: "16:9" | "9:16" | "1:1";
     total_duration_seconds: number;
     reference_policy: string;
     post_render_policy: "report_only_no_auto_regeneration";
@@ -58,7 +62,7 @@ export interface StoryboardPromptPackage {
 }
 
 export interface BuildStoryboardPromptPackageOptions {
-  aspectRatio?: "16:9" | "9:16";
+  aspectRatio?: "16:9" | "9:16" | "1:1";
   generatedAt?: string;
   /** Structured Veo clips from buildVeoJson, in the same order as segments. */
   veoClips?: Array<Record<string, unknown>>;
@@ -343,9 +347,23 @@ export function buildStoryboardPromptPackage(
       source_clip_ids: sourceClipIds,
       required_image_count: 2 as const,
       images: [
-        environmentImagePrompt(info, "overview_a", aspectRatio, renderDirective),
-        environmentImagePrompt(info, "overview_b", aspectRatio, renderDirective),
+        // Environment/storyboard references stay landscape even when the final
+        // video delivery is portrait or square.
+        environmentImagePrompt(info, "overview_a", "16:9", renderDirective),
+        environmentImagePrompt(info, "overview_b", "16:9", renderDirective),
       ] as [EnvironmentReferenceImagePrompt, EnvironmentReferenceImagePrompt],
+      preferred_output_count: 1 as const,
+      location_sheet_prompt: JSON.stringify({
+        type: "location_continuity_sheet",
+        aspect_ratio: "16:9",
+        output_count: 1,
+        layout: "ONE image with exactly two equal side-by-side panels and one thin divider; no text and no people.",
+        panel_1: "Wide establishing view from the primary camera side, showing the full fixed spatial layout.",
+        panel_2: "Reverse three-quarter view from the opposite connected corner, rotated 90-135 degrees; not a crop, zoom or duplicate of panel 1.",
+        environment: info,
+        continuity: "Same immutable architecture, furniture, props, materials, scale, time and light direction in both panels; only the camera position changes.",
+        render: renderDirective,
+      }),
     })
   );
 

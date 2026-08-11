@@ -30,6 +30,15 @@ function uniqueId(base: string, used: Set<string>): string {
   return id;
 }
 
+function canonicalZoneLabel(value: string): string {
+  const normalized = lower(value)
+    .replace(/\b(?:only|declared|continuous|walkable|scene|zone|area)\b/giu, " ")
+    .replace(/\b(?:duy nhất|đã khai báo|liên tục|đi được|khu vực|vùng cảnh)\b/giu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized || lower(value);
+}
+
 function zoneKind(label: string): SpatialZoneKind {
   if (/\b(?:stair|stairs|staircase|landing)\b|\b(?:cầu thang|bậc thang|chiếu nghỉ)\b/iu.test(label)) return "stairs";
   if (/\b(?:doorway|threshold|entrance|exit)\b|\b(?:cửa|ngưỡng)\b/iu.test(label)) return "threshold";
@@ -153,8 +162,15 @@ export function compileLegacySpatialGraph(
   const usedZoneIds = new Set<string>();
   const zones: SpatialZoneState[] = labels.map((label, index) => {
     const kind = zoneKind(label);
+    // A single walkable zone inside one locked location is the same physical
+    // floor across continuous shots even when an LLM adds filler suffixes such
+    // as "only" or "continuous declared walkable scene zone".
+    const stableBase =
+      labels.length === 1 && kind === "walkable" && shot.location_id
+        ? `${shot.location_id}_walkable`
+        : canonicalZoneLabel(label);
     return {
-      zone_id: uniqueId(`zone_${stableIdSlug(label) || index + 1}`, usedZoneIds),
+      zone_id: uniqueId(`zone_${stableIdSlug(stableBase) || index + 1}`, usedZoneIds),
       label,
       kind,
       walkable: kind === "barrier" || kind === "support_surface" ? false : kind === "unknown" ? null : true,

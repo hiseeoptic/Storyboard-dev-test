@@ -76,6 +76,10 @@ export interface NanoFlowAsset {
    * GENERATES both once — character-free — and attaches them as the background
    * authority for every scene here, so Veo never invents the set. */
   location_views?: NanoFlowLocationView[];
+  /** Environments only (preferred over legacy location_views): ONE 16:9 image
+   * containing exactly two clearly different angles of the same empty set.
+   * This costs one generation and cannot return two near-duplicate files. */
+  location_sheet_prompt?: string;
 }
 
 /** Which declared assets to attach at a given step (STEP A — image gen). */

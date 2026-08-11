@@ -187,7 +187,54 @@ test("an intentional scene cut does not treat changed placement as teleport", ()
   );
 });
 
-test("compound legacy action is preserved but marked non-atomic with missing duration", () => {
+test("continuous single-zone shots reuse one stable location floor ID despite filler wording", () => {
+  const first = segment(1, {
+    location_id: "Kitchen",
+    characters_in_scene: ["Lan", "Minh"],
+    spatial_layout: {
+      zone_order: "kitchen floor only",
+      fixed_architecture: "sink and counter remain fixed",
+      character_placement: "Lan and Minh stand on the kitchen floor facing each other",
+      walkable_path: "the kitchen floor is unobstructed",
+      camera_zone: "camera beside the counter",
+    },
+  });
+  const second = segment(2, {
+    location_id: "Kitchen",
+    characters_in_scene: ["Lan", "Minh"],
+    continuity_mode: "continuous",
+    transition_in: {
+      mode: "continuous",
+      from_location_id: "Kitchen",
+      to_location_id: "Kitchen",
+      time_relation: "same moment",
+      preserve: ["placement"],
+      reset: [],
+      reason: "same confrontation",
+    },
+    spatial_layout: {
+      zone_order: "kitchen floor",
+      fixed_architecture: "sink and counter remain fixed",
+      character_placement: "Lan and Minh stand on the kitchen floor facing each other",
+      walkable_path: "the kitchen floor is unobstructed",
+      camera_zone: "camera beside the counter",
+    },
+  });
+
+  const state = buildProductionState(breakdown([first, second]));
+  const firstZone = state.shots[0]?.spatial_graph?.zones[0]?.zone_id;
+  const secondZone = state.shots[1]?.spatial_graph?.zones[0]?.zone_id;
+  const findings = validateSpatialState(state);
+
+  assert.equal(firstZone, "zone_loc_kitchen_walkable");
+  assert.equal(secondZone, firstZone);
+  assert.equal(
+    findings.some((finding) => finding.code === "SPATIAL_TELEPORT_OR_SWAP"),
+    false
+  );
+});
+
+test("compound legacy action is preserved, receives local shot timing, and remains non-atomic", () => {
   const state = buildProductionState(
     breakdown(
       [
@@ -222,9 +269,9 @@ test("compound legacy action is preserved but marked non-atomic with missing dur
   const findings = validateAtomicActions(state);
 
   assert.equal(action?.is_atomic, false);
-  assert.equal(action?.duration_s, null);
+  assert.equal(action?.duration_s, 10);
   assert.ok(findings.some((item) => item.code === "ACTION_NOT_ATOMIC"));
-  assert.ok(findings.some((item) => item.code === "ACTION_DURATION_MISSING"));
+  assert.equal(findings.some((item) => item.code === "ACTION_DURATION_MISSING"), false);
 });
 
 test("action duration validator rejects physically impossible shoe-removal timing", () => {

@@ -59,11 +59,29 @@ export function compileAtomicActions(
   shot: ShotState,
   registry: ProductionRegistryEntry[]
 ): void {
+  const declaredDurations = shot.changes.map((change) =>
+    change.duration_s ?? explicitDuration(change.action)
+  );
+  const declaredTotal = declaredDurations.reduce<number>(
+    (sum, duration) => sum + (duration ?? 0),
+    0
+  );
+  const missingCount = declaredDurations.filter((duration) => duration === null || duration === undefined).length;
+  const shotDuration = Math.max(0, shot.end_time_s - shot.start_time_s);
+  // Legacy ledgers rarely carried action duration. Allocate the unclaimed shot
+  // budget deterministically so the validator can assess feasibility without
+  // spending another AI repair call. The source ledger stays untouched.
+  const inferredShare = missingCount > 0
+    ? Math.max(0, shotDuration - declaredTotal) / missingCount
+    : 0;
   shot.actions = shot.changes.map((change, index): AtomicAction => {
     const evidence = clean(`${change.caused_by} ${change.action}`);
     const subject = resolveSubject(change.caused_by || change.action, registry);
     const fromPlacement = placementFor(shot.start_snapshot.placements, subject);
     const toPlacement = placementFor(shot.end_snapshot.placements, subject);
+    const minimum = minimumDuration(change.action);
+    const declared = declaredDurations[index];
+    const duration = declared ?? Math.max(minimum, inferredShare);
     return {
       action_id: `${shot.shot_id}_action_${String(index + 1).padStart(3, "0")}`,
       source_change_index: index,
@@ -75,8 +93,10 @@ export function compileAtomicActions(
       transition_states: [],
       end_state: clean(change.to),
       contact_entity_ids: [...(change.contact_entity_ids ?? [])],
-      duration_s: change.duration_s ?? explicitDuration(change.action),
-      minimum_duration_s: minimumDuration(change.action),
+      duration_s: Number.isFinite(duration) && duration > 0
+        ? Math.round(duration * 10) / 10
+        : null,
+      minimum_duration_s: minimum,
       physical_conditions: [...(change.physical_conditions ?? [])],
       from_zone_id: fromPlacement?.zone_id ?? null,
       to_zone_id: toPlacement?.zone_id ?? null,

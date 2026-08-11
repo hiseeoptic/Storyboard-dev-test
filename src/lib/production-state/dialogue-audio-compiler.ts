@@ -41,7 +41,7 @@ function voiceFor(entity: ProductionRegistryEntry | undefined, locks: CharacterL
 function reactionEvidence(segment: VideoSegment, listeners: ProductionRegistryEntry[]): string | null {
   if (listeners.length === 0) return null;
   const evidence = [...(segment.beats ?? []).map((beat) => beat.beat), segment.motion_prompt].map(clean);
-  const reaction = /\b(?:reacts?|listens?|nods?|smiles?|frowns?|looks?|glances?|pauses?|answers?|replies|laughs?|gasps?)\b|\b(?:phản ứng|lắng nghe|gật đầu|mỉm cười|cau mày|nhìn|liếc|dừng lại|trả lời|cười|sững lại)\b/iu;
+  const reaction = /\b(?:reacts?|listens?|nods?|smiles?|frowns?|looks?|glances?|pauses?|answers?|replies|laughs?|gasps?|flinches?|recoils?|braces?|winces?|ducks?|staggers?|freezes?|steps? back|catches? (?:his|her|their) breath)\b|\b(?:phản ứng|lắng nghe|gật đầu|mỉm cười|cau mày|nhìn|liếc|dừng lại|trả lời|cười|sững lại|giật mình|co người|né|đỡ|nhăn mặt|loạng choạng|lùi lại|nín thở|hụt hơi)\b/iu;
   return evidence.find((text) => reaction.test(text) && listeners.some((listener) =>
     [listener.display_name, listener.source_ref, ...listener.aliases]
       .filter((value): value is string => Boolean(value))

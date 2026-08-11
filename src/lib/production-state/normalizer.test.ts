@@ -161,3 +161,41 @@ test("legacy ledger and spatial layout convert without mutating legacy data", ()
   assert.equal(state.shots[0]?.start_snapshot.spatial_layout?.zone_order, "door -> table");
   assert.equal(productionStateSchema.safeParse(state).success, true);
 });
+
+test("legacy none holder remains absence and is never registered as an entity", () => {
+  const legacy = breakdown([
+    segment(1, {
+      state_ledger: {
+        start: [
+          {
+            entity_id: "Broken dish",
+            state: "broken",
+            position: "on the kitchen floor",
+            holder: "none",
+          },
+        ],
+        changes: [],
+        end: [
+          {
+            entity_id: "Broken dish",
+            state: "broken",
+            position: "on the kitchen floor",
+            holder: "none",
+          },
+        ],
+      },
+    }),
+  ]);
+
+  const state = buildProductionState(legacy);
+  const object = state.shots[0]?.start_snapshot.entities.find(
+    (entity) => entity.entity_id === "obj_broken_dish"
+  );
+
+  assert.equal(object?.holder_entity_id, null);
+  assert.equal(state.registry.some((entry) => entry.entity_id === "entity_none"), false);
+  assert.equal(
+    state.findings.some((finding) => finding.code === "HOLDER_CONTACT_MISSING"),
+    false
+  );
+});

@@ -596,3 +596,39 @@ test("Veo clip carries the chosen aspect ratio and never repeats a quoted line i
     assert.match(clip.dialogue[0].text, /Anh an com chua/i);
   }
 });
+
+test("action drama keeps a kinetic causal exchange, readable camera and exactly-once speech", () => {
+  const result = buildVeoJson({
+    world_context: { genre: "action thriller" },
+    character_locks: [
+      { name: "Minh", gender: "male", costume: "dark work clothes", voice: "low tense male voice" },
+      { name: "Thắng", gender: "male", costume: "worn street clothes", voice: "rough male voice" },
+    ],
+    scene_bible: {},
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      title: "Minh intercepts the attack",
+      marketing_role: "body",
+      characters_in_scene: ["Minh", "Thắng"],
+      first_frame_prompt: "A narrow alley; Thắng charges from screen right while Minh plants his left foot between him and the victim.",
+      motion_prompt: "Thắng drives his shoulder forward. Minh braces, redirects the forearm across his body, steps through and shoves from his hips; Thắng loses balance, hits the wall with his shoulder and drops to one knee, both men breathing hard.",
+      dialogue_lines: [{ speaker: "Minh", text: "Lùi lại!", start_s: 1, end_s: 2 }],
+      beats: [
+        { beat: "the threat closes distance", camera: "[WIDE] eye-level alley geography" },
+        { beat: "the impact lands", camera: "[CLOSE] controlled push to the consequence" },
+      ],
+      continuity_note: "Thắng is on one knee by the wall; Minh remains between him and the victim.",
+    }],
+  }, { aspectRatio: "16:9", dialogueLanguage: "Vietnamese" });
+
+  const clip = result.clips[0];
+  assert.match(clip.scene_action.action_director_profile, /attacker initiates/i);
+  assert.match(clip.camera.movement, /ACTION CAMERA|real-time speed/i);
+  assert.doesNotMatch(clip.camera.movement, /pace everything calmly/i);
+  assert.doesNotMatch(clip.camera.movement, /without a cut or shot-scale change/i);
+  assert.match(clip.foley_and_ambience.fx[0], /one distinct impact/i);
+  assert.equal(clip.dialogue[0].utterance_count, 1);
+  assert.equal(clip.dialogue[0].repeat_policy, "exactly_once");
+  assert.match(clip.dialogue[0].turn_id, /1_turn_001/);
+});

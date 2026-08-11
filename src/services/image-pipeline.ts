@@ -37,8 +37,8 @@ export interface ImageGenOptions {
 }
 
 /** Map an aspect ratio to the closest DALL-E 3 supported size. */
-function dalleSize(aspect?: AspectRatio): "1792x1024" | "1024x1792" {
-  return aspect === "9:16" ? "1024x1792" : "1792x1024";
+function dalleSize(aspect?: AspectRatio): "1792x1024" | "1024x1792" | "1024x1024" {
+  return aspect === "9:16" ? "1024x1792" : aspect === "1:1" ? "1024x1024" : "1792x1024";
 }
 
 async function generateImage(

@@ -41,6 +41,16 @@ function key(value: string): string {
   return clean(value).toLocaleLowerCase();
 }
 
+/** Legacy/model sentinels describe the absence of a holder; they are not
+ * entities and must never be registered as `entity_none`. Keep the legacy
+ * source text untouched and normalize only the additive Production State. */
+function isNoEntitySentinel(value: unknown): boolean {
+  const normalized = key(clean(value)).replace(/[._-]+/g, " ");
+  return /^(?:none|null|nil|n\/a|na|no holder|nobody|no one|unknown holder|không|không ai|không có|không người giữ)$/iu.test(
+    normalized
+  );
+}
+
 function pad(value: number): string {
   return String(value).padStart(3, "0");
 }
@@ -129,7 +139,7 @@ export function buildProductionState(breakdown: LegacyBreakdown): ProductionStat
     ];
     for (const rawEntity of ledgerValues) {
       const raw = clean(rawEntity);
-      if (!raw || sourceToEntry.has(key(raw))) continue;
+      if (!raw || isNoEntitySentinel(raw) || sourceToEntry.has(key(raw))) continue;
       const entry = registry.register({
         kind: "object",
         displayName: raw,
@@ -155,6 +165,7 @@ export function buildProductionState(breakdown: LegacyBreakdown): ProductionStat
 
   const holderId = (holder: string | null | undefined): string | null | undefined => {
     const value = clean(holder);
+    if (isNoEntitySentinel(value)) return null;
     return value ? resolveEntity(value, "unknown").entity_id : holder === null ? null : undefined;
   };
 

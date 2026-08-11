@@ -1846,7 +1846,7 @@ function validatePreRenderGates(
 
   try {
     const veoJson = buildVeoJson(breakdown, {
-      aspectRatio: input.aspect_ratio === "16:9" ? "16:9" : "9:16",
+      aspectRatio: input.aspect_ratio ?? "9:16",
       dialogueLanguage:
         input.dialogue_language ??
         breakdown.context_ir?.layers.audio_validation.language ??
@@ -1868,7 +1868,7 @@ function validatePreRenderGates(
       : [];
     const manifestCharacterRepresentation = resolveCreativeRoute(input).effective_character_representation;
     const manifest = buildNanoFlowManifest(breakdown, {
-      aspectRatio: input.aspect_ratio === "16:9" ? "16:9" : "9:16",
+      aspectRatio: input.aspect_ratio ?? "9:16",
       thumbnailAspectRatio: input.thumbnail_aspect_ratio,
       // Board vẽ ĐÚNG số cảnh người dùng chọn (3 cảnh ⇒ 3 frame).
       beatsPerSegment: input.beats_per_segment,
@@ -1887,7 +1887,7 @@ function validatePreRenderGates(
     // ProductionState physical findings and compiled image/video/manifest checks.
     findings.splice(0, findings.length, ...validateExportReadiness(breakdown, manifest).findings);
     const promptPackage = buildStoryboardPromptPackage(breakdown, {
-      aspectRatio: input.aspect_ratio === "16:9" ? "16:9" : "9:16",
+      aspectRatio: input.aspect_ratio ?? "9:16",
       veoClips,
     });
     for (const message of validateStoryboardPromptPackage(promptPackage)) {

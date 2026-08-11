@@ -88,6 +88,10 @@ test("compiler emits two environment views without changing the old manifest", (
   assert.equal(pkg.environment_references.length, 1);
   assert.equal(pkg.environment_references[0]!.required_image_count, 2);
   assert.equal(pkg.environment_references[0]!.images.length, 2);
+  assert.equal(pkg.environment_references[0]!.preferred_output_count, 1);
+  const preferredSheet = JSON.parse(pkg.environment_references[0]!.location_sheet_prompt);
+  assert.equal(preferredSheet.aspect_ratio, "16:9");
+  assert.match(preferredSheet.panel_2, /90-135|opposite/i);
   assert.equal(pkg.project.storyboard_schema_version, "4.0");
   assert.equal(pkg.project.post_render_policy, "report_only_no_auto_regeneration");
   assert.deepEqual(pkg.environment_references[0]!.source_clip_ids, [

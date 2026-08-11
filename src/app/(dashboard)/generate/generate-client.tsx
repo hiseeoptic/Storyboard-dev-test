@@ -4167,7 +4167,7 @@ export function GenerateClient() {
                 <p className="text-sm font-semibold">
                   ➕ {lang === "vi" ? `Nhân vật thứ ${characters.length + 1}` : `Character #${characters.length + 1}`}
                 </p>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <Input value={charName} onChange={(e) => setCharName(e.target.value)} placeholder={L("charName")} />
                   <Input value={charRole} onChange={(e) => setCharRole(e.target.value)} placeholder={L("charRole")} />
                 </div>

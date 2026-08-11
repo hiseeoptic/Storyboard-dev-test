@@ -54,6 +54,16 @@ test("manifest has the fixed contract shape", () => {
   assert.equal(m.shots[1]?.continuity_mode, "continuous");
 });
 
+test("square video delivery remains 1:1 while every storyboard board remains 16:9", () => {
+  const m = buildNanoFlowManifest(fixture(), { aspectRatio: "1:1" });
+  assert.equal(m.project.aspect_ratio, "1:1");
+  assert.equal(m.project.board_aspect_ratio, "16:9");
+  for (const shot of m.shots) {
+    const board = JSON.parse(shot.storyboard_prompt) as { layout?: string };
+    assert.match(board.layout ?? "", /16:9 STORYBOARD BOARD/);
+  }
+});
+
 test("selected video style is locked into the manifest board + video prompts", () => {
   const m = buildNanoFlowManifest(fixture(), {
     characterRepresentation: "claymation",
@@ -253,6 +263,12 @@ test("environments carry a 2-angle character-free LOCATION SHEET (location_views
   });
   const env = (m.assets.environments ?? []).find((e) => e.id === "living_room_1");
   assert.ok(env, "living_room_1 must be declared");
+  // New extensions prefer one 16:9 two-panel sheet. Keep the legacy two-view
+  // pair as a compatibility fallback for already-installed extension versions.
+  const locationSheet = JSON.parse(env.location_sheet_prompt ?? "{}") as Record<string, unknown>;
+  assert.equal(locationSheet.output_count, 1);
+  assert.equal(locationSheet.aspect_ratio, "16:9");
+  assert.match(String(locationSheet.panel_2), /90-135|opposite/i);
   assert.equal(env.image, null);
   // The app now emits a 2-angle location sheet (wide + alt), character-free, so
   // the extension generates each set ONCE and locks every board/video to it —
@@ -714,6 +730,7 @@ test("board prompt enforces numbered panels, one border system and a separate th
   const panels = board.panels as Array<Record<string, unknown>>;
 
   assert.equal(m.project.thumbnail_aspect_ratio, "9:16");
+  assert.equal(m.project.board_aspect_ratio, "16:9");
   assert.match(String(board.frame_order_contract), /TOP-LEFT CORNER INSIDE EVERY panel/);
   assert.match(String(board.layout), /uniform thin solid black dividers/);
   assert.deepEqual(panels.map((panel) => panel.order_label), ["1", "2"]);

@@ -537,7 +537,27 @@ export function genreAmbientAudio(genre?: string, _goal?: string): string | unde
     return "gym/workout ambience — controlled breathing, feet and light weights on the floor, subtle upbeat energy, motivating and clean";
   if (genre === "nature")
     return "location-authentic natural soundscape only — layered wind, leaves, water, insects, birds or distant weather according to the declared habitat, season, time and camera distance; no generic stock jungle bed, no music";
+  if (/\b(?:action|thriller|crime|rescue|martial|fight|combat)\b|hành động|giật gân|đánh nhau|giải cứu|tự vệ/iu.test(genre ?? ""))
+    return "location-authentic high-stakes action sound — urgent breathing, accelerating footfalls, cloth strain, body weight shifting, one sharp impact for each visible contact, nearby objects rattling from force, and a brief breathless aftermath; no generic stock punches, no triumphant superhero music, and no sound without an on-screen cause";
   return undefined;
+}
+
+const ACTION_DRAMA_DIRECTOR_PROFILE = `
+ACTION DRAMA DIRECTOR PROFILE — activate for action/thriller/crime/rescue scenes and any beat containing a real physical threat:
+- The fight MUST feel gripping, forceful and dangerous — not timid blocking and not decorative posing. Build suspense from threat distance, the vulnerable person's exposure and the defender's split-second decision, then deliver readable contact, loss of balance and an emotional/physical consequence.
+- ONE CONFRONTATION UNIT per 10s clip may contain 3-5 tightly linked movements, because a fight needs attack and response: ATTACKER INITIATES → defender evades/blocks/intercepts → a decisive counter or short 1-3-contact combination → visible result. For an actual duel, one counter-counter is allowed when it is the immediate continuation of the same exchange. Do not sanitize a requested fight into avoidance-only blocking; punches, kicks, clinches, throws and grounded struggles are allowed when the script/world justifies them and their force has a visible consequence. These movements are ONE causal exchange, never unrelated simultaneous chaos.
+- Every movement names the actor, originating limb/body weight, direction, target/contact point, force, the other person's immediate reaction and the new grounded pose/position. Nobody waits politely for a turn; the reaction begins because the preceding force reaches them.
+- Keep combat tactically believable for the character and space: foot placement, distance, momentum, obstacles, breath, fear, pain and fatigue matter. The purpose may be rescue, escape, self-defence or overpowering a threat, but the action itself remains exciting and decisive.
+- Camera preserves screen direction and geography in a supported WIDE or MEDIUM-WIDE view through the decisive exchange; a motivated continuous push/reframe may tighten only after contact or on the consequence. No music-video cutting, contradictory WIDE-to-CLOSE order with “no scale change”, orbiting glamour shot or hidden impact.
+- Sound is causal and specific: foot plant, cloth strain, breath, one impact matching each visible contact, furniture/ground response, then the stunned breath or ringing silence after it. Never use only “natural footsteps and contact sounds”.
+- FORBIDDEN: superhero victory pose, balletic showboating, beautiful technique displayed for its own sake, an enemy waiting to be hit, weightless wire-fu unless the world explicitly permits it, consequence-free strikes, or three people performing independent attack chains at once.`;
+
+function actionDramaRequested(input: StoryboardGenerationInput): boolean {
+  const genre = `${input.genre ?? ""} ${input.video_goal ?? ""}`;
+  const story = `${input.story_idea ?? ""} ${input.central_conflict ?? ""} ${input.source_script ?? ""}`;
+  return /\b(?:action|thriller|crime|rescue|martial|fight|combat)\b|hành động|giật gân|đánh nhau|ẩu đả|tấn công|giải cứu|tự vệ/iu.test(
+    `${genre} ${story}`
+  );
 }
 
 // ─── Stage 1: Script writer (Claude) — creative script ONLY ─────────────────
@@ -666,6 +686,8 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
     ? `\nBrief:\n${brief.join("\n")}${closedCastRule}${uploadedRule}`
     : `${closedCastRule}${uploadedRule}`;
 
+  const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
+
   return `Write a ${segmentCount}-segment short-video script.
 
 ${creativeRouteDirective}
@@ -676,7 +698,7 @@ Dialogue language: ${
     isCooking && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")
       ? "NONE — every segment is wordless diegetic ASMR"
       : `${lang} (when dialogue is justified, write it naturally in ${lang})`
-  }.${briefBlock}${framework ? `\n${framework}` : ""}
+  }.${briefBlock}${framework ? `\n${framework}` : ""}${actionDramaBlock}
 
 ${input.script_treatment === "polish" ? `EDITORIAL-POLISH MODE FOR A PASTED SCREENPLAY: preserve every character, relationship, location, prop identity, plot fact, causal reveal, emotional meaning and ending message from the supplied screenplay. You MAY and SHOULD restructure the first 30 seconds, merge or redistribute turns across the requested 10s segments, sharpen weak dialogue, add subtext and specify performance/action. Do not introduce a different story, product, setting, relationship or moral. The result must feel like the strongest filmed version of the same screenplay, not a summary and not a replacement premise.` : ""}
 
@@ -966,6 +988,7 @@ ${JSON.stringify(input.resolved_context, null, 2)}
   const firstFrameIdentityRule = hasUploadedCharacterReferences
     ? "For uploaded-reference characters, first_frame_prompt contains only the exact name, position, action and expression; the attached image supplies all appearance."
     : "Restate only the visually necessary character attributes in every first_frame_prompt.";
+  const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
 
   return `Create a chained-segment storyboard for this short video.
 
@@ -976,7 +999,7 @@ Video Goal: ${goal} — ${goalGuidance}
 Genre: ${input.genre}
 Visual Style: ${input.style}
 Number of 10-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 10} seconds)
-Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${shotLocationBlock}${toneBlock}${customBlock}
+Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${shotLocationBlock}${toneBlock}${customBlock}${actionDramaBlock}
 
 Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Beats preserve a clear chronological order while the subject, props and locked physics stay continuous, but beats and camera notes contain NO numeric timecodes. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" describes that ONE continuous action as an untimed ordered physical sequence using deliberate, specific verbs (body part + verb + manner) plus an explicit final state/anchor. dialogue_lines.start_s/end_s is the clip's ONLY clock. Keep ONE primary action per clip — never stack multiple actions beyond the model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. ${firstFrameIdentityRule} Inside the motion_prompt use only the exact name plus position, action and expression for an uploaded-reference character.
 
@@ -1702,7 +1725,11 @@ export function buildKeyframePrompt(params: {
           .map((c) => `${c.name}${c.isChild ? " (child — true child proportions, clearly smaller than the adults)" : ""}: ${c.description}`)
           .join(" | ")}. ${params.preserveRealFace ? "Each attached named image is the sole appearance authority for its exact character." : "Each person keeps one consistent generated appearance."} No extra people, no duplicated characters.\n`
       : "";
-  const ratioWord = params.aspectRatio === "9:16" ? "vertical 9:16 portrait" : "horizontal 16:9 landscape";
+  const ratioWord = params.aspectRatio === "9:16"
+    ? "vertical 9:16 portrait"
+    : params.aspectRatio === "1:1"
+      ? "square 1:1 composition"
+      : "horizontal 16:9 landscape";
   // Identity lock comes from a LARGE, sharp, well-lit hero — that is what lets
   // an image-to-video model read the face off one start frame (the lesson from
   // boards that animate cleanly & on-model in Veo). Push the character forward
@@ -2728,10 +2755,14 @@ export function buildVeoJson(
           .trim()
       )
       .filter(Boolean);
+    const declaredScales = cameraText.match(/\[(?:MEDIUM|CLOSE|EXTREME_CLOSE|WIDE|OTS)\]/gi) ?? [];
+    const distinctScales = new Set(declaredScales.map((scale) => scale.toUpperCase()));
     const movement = /static|locked/.test(lower)
       ? "static"
       : cameraClauses.length > 1
-        ? `One continuous ${framing === "WS" ? "wide" : framing === "CU" ? "close" : "medium"} composition begins with ${cameraClauses[0]} and gently follows the same action before settling on ${cameraClauses[cameraClauses.length - 1]}, without a cut or shot-scale change`
+        ? distinctScales.size > 1
+          ? `One continuous motivated reframe begins with ${cameraClauses[0]} and changes scale visibly in-camera before settling on ${cameraClauses[cameraClauses.length - 1]}; no cut, teleport or contradictory instruction to preserve one shot scale`
+          : `One continuous ${framing === "WS" ? "wide" : framing === "CU" ? "close" : "medium"} composition begins with ${cameraClauses[0]} and follows the same action before settling on ${cameraClauses[cameraClauses.length - 1]}, without a cut or shot-scale change`
         : cameraClauses[0] || "single slow, smooth camera move";
     return { framing, angle, movement };
   };
@@ -2739,6 +2770,9 @@ export function buildVeoJson(
   const clips = breakdown.segments.map((seg, segIndex) => {
     const beats = Array.isArray(seg.beats) ? seg.beats : [];
     const clipSeconds = Math.max(1, seg.duration_seconds || 10);
+    const actionDrama = /\b(?:action|thriller|crime|rescue|martial|fight|combat|attack|assault|strike|punch|kick|block|dodge|shove)\b|hành động|giật gân|đánh nhau|ẩu đả|tấn công|giải cứu|tự vệ|đấm|đá|đỡ đòn|né đòn/iu.test(
+      `${breakdown.world_context?.genre ?? ""} ${seg.title ?? ""} ${seg.motion_prompt ?? ""}`
+    );
     const speaker = oneLine(seg.speaker);
     const env = resolveEnvironment(seg.environment_ref, seg.first_frame_prompt);
     const contextLocation = seg.location_id
@@ -3048,13 +3082,14 @@ export function buildVeoJson(
       clipSeconds
     );
     const dialogue = canonicalTurns
-      .map((turn) => {
+      .map((turn, turnIndex) => {
         const name = oneLine(turn.speaker);
         const voicePersonality = name
           ? voiceProfilesByName.get(name.toLowerCase()) ||
             "native voice in the project's locked language and regional accent, stable voice matching the named speaker's locked gender, age, timbre, base pitch and speaking rate"
           : "off-screen narrator";
         const line = {
+          turn_id: `${String(seg.segment_number)}_turn_${String(turnIndex + 1).padStart(3, "0")}`,
           speaker_id: name ? charIds.get(name.toLowerCase()) || name : "VOICEOVER",
           speaker_name: name || "VOICEOVER",
           delivery:
@@ -3072,6 +3107,8 @@ export function buildVeoJson(
           language: lang,
           start_sec: turn.start_s ?? null,
           end_sec: turn.end_s ?? null,
+          utterance_count: 1,
+          repeat_policy: "exactly_once",
         };
         return line;
       });
@@ -3189,13 +3226,21 @@ export function buildVeoJson(
       camera: {
         framing: revolvingDoorCameraMovement ? "MS" : camera.framing,
         angle: camera.angle,
-        movement: `${scrub(cameraMovement)}. One smooth move or hold; no cuts or separate camera clock. PACING SAFETY VALVE: pace everything calmly across the FULL clip at real human speed — NEVER rush, whip, jerk or fast-forward a move or an action to catch up with the plan; if a move or beat cannot happen calmly within its time window, make it SMALLER or simply HOLD the current framing (a still, well-composed frame beats a hurried one). The camera settles and holds on whoever is speaking and only drifts during silent gaps between lines.`,
+        movement: actionDrama
+          ? `${scrub(cameraMovement)}. ACTION CAMERA: preserve screen direction and readable body geography at real-time speed; hold a supported wide or medium-wide view through attack, defence and contact, absorb force with a controlled operator reaction, then tighten only on the visible consequence. No cuts, frantic orbit, glamour pose, hidden impact or calm slow drift that weakens danger.`
+          : `${scrub(cameraMovement)}. One smooth move or hold; no cuts or separate camera clock. PACING SAFETY VALVE: pace everything calmly across the FULL clip at real human speed — NEVER rush, whip, jerk or fast-forward a move or an action to catch up with the plan; if a move or beat cannot happen calmly within its time window, make it SMALLER or simply HOLD the current framing (a still, well-composed frame beats a hurried one). The camera settles and holds on whoever is speaking and only drifts during silent gaps between lines.`,
         focus: VEO_CAMERA_FOCUS_RULE,
       },
       scene_action: {
         start_state: entryState,
         motion: mainAction,
         end_state: exitState,
+        ...(actionDrama
+          ? {
+              action_director_profile:
+                "One gripping causal confrontation unit: attacker initiates; defender immediately evades, blocks or intercepts; a decisive counter or short 1-3-contact combination lands; an immediate counter-counter is allowed in a real duel; momentum produces visible loss of balance, a grounded new position, fear/pain/fatigue and aftermath. Do not reduce a requested fight to avoidance-only blocking. Use 3-5 linked movements, never unrelated simultaneous chaos, waiting opponents, superhero poses or consequence-free showboating.",
+            }
+          : {}),
         ...(continuityFromPrev ? { continuity_from_previous: continuityFromPrev } : {}),
         continuity_lock:
           inheritsPhysicalState
@@ -3220,7 +3265,11 @@ export function buildVeoJson(
         environment_reverb: environmentReverb,
         project_ambient: scrub(opts.ambientAudio),
         ambience: [environmentSoundBed, ...ambience.map(scrub)].filter(Boolean),
-        fx: ["natural clothing, footsteps and prop-contact sounds synchronized to visible action"],
+        fx: actionDrama
+          ? [
+              "causal high-stakes action Foley synchronized exactly to visible motion: urgent breath, foot plant, cloth strain, one distinct impact per shown contact, nearby surface or furniture response, stagger/fall weight, then breathless aftermath; no stock punch without visible contact",
+            ]
+          : ["natural clothing, footsteps and prop-contact sounds synchronized to visible action"],
         music:
           opts.ambientAudio && !/no music/i.test(opts.ambientAudio)
             ? opts.ambientAudio
