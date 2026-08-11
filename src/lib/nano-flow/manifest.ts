@@ -18,6 +18,11 @@ import {
   compactPromptAuthority,
   slimStateAuthorityForManifest,
 } from "./state-authority.ts";
+import {
+  buildBoardPlacementContract,
+  normalizeBoardImagePanels,
+  type BoardPlacementContract,
+} from "./board-image-validator.ts";
 
 export interface BuildNanoFlowManifestOptions {
   /** VIDEO aspect ratio (the frame Veo renders). The BOARD is always 16:9. */
@@ -214,7 +219,8 @@ function buildLocationBoardPrompt(
   // location change.
   continueFromPrevious = "",
   // Monotonic time-of-day LABEL locked for this shot (day↔night never oscillates).
-  lockedTimeOfDay = ""
+  lockedTimeOfDay = "",
+  placementContract?: BoardPlacementContract
 ): string {
   const clip =
     primaryVideoPrompt && typeof primaryVideoPrompt === "object"
@@ -299,7 +305,7 @@ function buildLocationBoardPrompt(
       coverage_note: "Alternate static coverage of the same declared moment; no new action or event.",
     });
   }
-  const panels = selected.map((candidate, i) => {
+  const rawPanels = selected.map((candidate, i) => {
     const rawCamera = clipStr(candidate.camera);
     const cam = rawCamera
       ? /^\[[A-Z_ -]+\]/.test(rawCamera)
@@ -313,6 +319,28 @@ function buildLocationBoardPrompt(
       panel: i + 1,
       order_label: String(i + 1),
       camera: cam,
+      caption: `${i + 1}. ${cam.match(/^\[[^\]]+\]/)?.[0] ?? "[EYE]"} ${captionAction}`,
+    };
+  });
+  const normalizedBoard = normalizeBoardImagePanels({
+    panels: rawPanels,
+    castNames: cast
+      .map((entry) => entry.name)
+      .filter((name): name is string => Boolean(name)),
+    sceneAction: [
+      clipStr(sceneAction.start_state),
+      clipStr(sceneAction.motion),
+      clipStr(sceneAction.end_state),
+    ].filter((value): value is string => Boolean(value)).join(" "),
+  });
+  const panels = normalizedBoard.panels.map((panel, i) => {
+    const cam = clipStr(panel.camera);
+    const act = clipStr(panel.action);
+    const captionAction = act.replace(/^framing\s*\d+\s*:\s*/iu, "").slice(0, 96).trim();
+    return {
+      ...panel,
+      panel: i + 1,
+      order_label: String(i + 1),
       caption: `${i + 1}. ${cam.match(/^\[[^\]]+\]/)?.[0] ?? "[EYE]"} ${captionAction}`,
     };
   });
@@ -346,6 +374,27 @@ function buildLocationBoardPrompt(
       `MANDATORY READING ORDER: left-to-right, then top-to-bottom. Put a large solid BLACK square badge with a crisp WHITE numeral in the TOP-LEFT CORNER INSIDE EVERY panel: ${panels.map((panel) => panel.order_label).join(", ")}. Every panel must have exactly one badge; never omit, duplicate or move a number into the caption only.`,
     camera_contract:
       "Every panel must execute its full camera field: bracketed shot size, camera height/angle, subject, look direction and focus target. Do not shorten an OTS, MEDIUM or CLOSE instruction into an unspecified portrait.",
+    character_cardinality_contract: {
+      identities: cast.map((entry) => ({
+        name: entry.name,
+        reference_binding: `Use ONLY the attached wardrobe sheet labelled ${entry.name} for ${entry.name}.`,
+        maximum_instances_per_panel: 1,
+      })),
+      rule:
+        "For each panel, render exactly the 0-or-1 count declared in panel.expected_character_instances. Never duplicate a person, never use one identity twice, never merge two people, and never substitute one character's face/body for another. Multiple views inside a wardrobe sheet are reference views of ONE person, not extra people to copy into the scene.",
+    },
+    body_visibility_contract:
+      "A visible hand, wrist, arm or finger must remain anatomically connected to its named owner's visible face, shoulders and upper torso in the same panel. Never render a hand-only, arm-only, headless or disembodied human crop as a storyboard panel or Veo input frame.",
+    ...(placementContract
+      ? {
+          placement_continuity_contract: {
+            mode: placementContract.mode,
+            canonical_placements: placementContract.canonical_placements,
+            rule: placementContract.rule,
+            repaired_from_previous: placementContract.repaired_from_previous,
+          },
+        }
+      : {}),
     establishing_view_contract:
       "AT LEAST ONE panel — make it PANEL 1 — MUST be a WIDE ESTABLISHING shot that clearly shows the FULL location: walls, windows, main furniture and where the characters stand in the room, reproduced from the attached location reference (a real photo OR the character-free 2-angle location sheet of this set). NEVER let all panels be tight face close-ups — if the room is never visible the downstream video invents a wrong set. The other panels may be medium / OTS / close, but the SAME recognizable set (same furniture geometry, same time-of-day and light) must stay visible behind the cast in every panel.",
     ...(continueFromPrevious
@@ -358,7 +407,7 @@ function buildLocationBoardPrompt(
       ? "An ATTACHED location photo is the EXACT and MANDATORY setting. Reproduce THAT real place — its layout, furniture, walls, windows, materials, colours and lighting — in EVERY panel. Never invent, relocate or substitute a different location; only the camera framing changes."
       : `If a LOCATION REFERENCE image is attached (a real photo OR the character-free 2-angle location sheet of this set), it is the EXACT and MANDATORY setting: reproduce THAT place — its layout, furniture, walls, windows, materials, colours and lighting — in EVERY panel, and never relocate or substitute a different location; only the camera framing changes. If no location image is attached, build the setting faithfully from this description: ${setting}.`,
     staging:
-      "Place the ATTACHED characters INTO this location and have them perform each panel's action. Each character's face, hair AND full outfit must match that character's ATTACHED wardrobe sheet exactly. The SAME people appear in every panel.",
+      "Place only the characters named by each panel.visible_characters into the location and render each exactly once. A character not named for that panel remains out of frame but still exists in the scene; do not clone another person to fill the space. Each visible character's face, hair and full outfit must match only that same-named ATTACHED wardrobe sheet.",
     render: characterStyleLock || (liveAction
       ? KEYFRAME_RENDER_NOTE
       : `Reality E storyboard board in the project's locked ${realityMode} medium. Preserve its exact design language, materials, proportions, lighting logic and internal physics; never convert it to live-action photorealism.`),
@@ -383,11 +432,17 @@ function buildLocationBoardPrompt(
         }))
       : undefined,
     reference_authority: KEYFRAME_REFERENCE_AUTHORITY,
+    image_prompt_validation: {
+      status: "clean_after_deterministic_repair",
+      repairs: [...(placementContract?.findings ?? []), ...normalizedBoard.findings],
+      rule:
+        "These repairs were applied locally before export; downstream image generation must follow the repaired panels and contracts, not the rejected evidence text.",
+    },
     wardrobe_note: wardrobeClause ? wardrobeClause.trim() : undefined,
     negative: characterStyleLock
       ? "Stay strictly in the locked visual medium/style above — do NOT drift to a different style and do NOT convert to live-action photography. The ONLY text on the image is the specified per-panel caption strips. No identity drift; never duplicate a character within a panel; consistent location and consistent style across every panel."
       : liveAction
-        ? "Photorealistic only — NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT painting, NOT drawing. No watermark or logo. The ONLY text on the image is the specified per-panel caption strips — no other subtitles, UI or lettering. No identity drift; never duplicate a character within a panel; no extra, missing or fused fingers."
+        ? "Photorealistic only — NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT painting, NOT drawing. No watermark or logo. The ONLY text on the image is the specified per-panel caption strips — no other subtitles, UI or lettering. No identity drift; never duplicate a character within a panel; never render disembodied hands, arm-only crops or headless people; no extra, missing or fused fingers."
         : "No visual-medium drift, no accidental photoreal conversion, no inconsistent character design; the only text is the specified per-panel captions; consistent location across every panel.",
   };
   // JSON.stringify drops the undefined-valued keys, leaving a clean payload.
@@ -977,6 +1032,19 @@ export function buildNanoFlowManifest(
           prevLastBeat ? `(previous board's last panel: ${prevLastBeat})` : "",
         ].filter(Boolean).join(" ")
       : "";
+    const previousProductionShot = i > 0 ? productionState.shots[i - 1] : undefined;
+    const placementContract = buildBoardPlacementContract({
+      previousEndPlacements: previousProductionShot?.end_snapshot.placements,
+      currentStartPlacements: productionShot.start_snapshot.placements,
+      sameLocation:
+        i > 0 &&
+        !!thisLoc &&
+        thisLoc !== "custom" &&
+        thisLoc === prevLoc &&
+        !["location_cut", "time_jump", "flashback", "dream"].includes(String(shotContinuity)),
+      actions: productionShot.actions,
+      motionText: seg.motion_prompt,
+    });
 
     return {
       shot_id: `SHOT_${String(index).padStart(3, "0")}`,
@@ -1011,7 +1079,8 @@ export function buildNanoFlowManifest(
         lockedBg.setting,
         lockedBg.scenery,
         continueFromPrevious,
-        lockedTimeOfDay
+        lockedTimeOfDay,
+        placementContract
       ),
       continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),

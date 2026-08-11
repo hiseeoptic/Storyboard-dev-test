@@ -123,6 +123,34 @@ function mentionsExact(value: unknown, name: string): boolean {
   ).test(str(value));
 }
 
+function unsafeDisembodiedPanel(panel: unknown): boolean {
+  const value = obj(panel);
+  const text = `${str(value.action)} ${str(value.camera)}`;
+  const bodyPart = /\b(hand|hands|finger|fingers|wrist|arm|palm|bàn tay|ngón tay|cổ tay|cánh tay)\b/iu.test(text);
+  const connected = /\b(face|head|shoulder|torso|upper body|waist|chest|mặt|đầu|vai|thân trên|nửa người)\b/iu.test(text);
+  return bodyPart && !connected;
+}
+
+function canonicalPlacementSignature(value: unknown): string {
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((entry) => {
+      const placement = obj(entry);
+      return [
+        str(placement.entity_id),
+        str(placement.zone_id),
+        str(placement.anchor_id),
+        str(placement.position_label).toLocaleLowerCase(),
+        str(placement.facing_entity_id),
+        str(placement.world_side),
+        str(placement.screen_side),
+      ].join("|");
+    })
+    .filter(Boolean)
+    .sort()
+    .join("||");
+}
+
 // ── Per-shot checks ─────────────────────────────────────────────────────────
 function checkShot(shot: NanoFlowShot, push: Push): void {
   const seg = shot.index;
@@ -197,6 +225,63 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
           message: `Image prompt does not pin "${c.name}"'s wardrobe (clothes may change between shots).`,
         });
       }
+    }
+    // IMG-004 — each identity must have an explicit per-panel 0-or-1 budget.
+    const cardinality = obj(imgJson.character_cardinality_contract);
+    const identities = Array.isArray(cardinality.identities)
+      ? cardinality.identities.map(obj)
+      : [];
+    const cardinalityRule = str(cardinality.rule);
+    const cardinalityNames = new Set(identities.map((entry) => str(entry.name)).filter(Boolean));
+    const invalidCardinality =
+      imgCast.some((entry) => !cardinalityNames.has(entry.name)) ||
+      identities.some((entry) => Number(entry.maximum_instances_per_panel) !== 1) ||
+      !/0-or-1|exactly.*(?:one|1)|never duplicate/iu.test(cardinalityRule);
+    if (imgCast.length > 0 && invalidCardinality) {
+      push({
+        code: "IMG-004",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg,
+        message:
+          "Image board lacks an exact per-character 0-or-1 cardinality contract, so one reference identity can be rendered twice.",
+        evidence: `cast=${imgCast.map((entry) => entry.name).join(", ")}`,
+      });
+    }
+
+    // IMG-005 — an isolated hand/arm is not a safe Veo input frame.
+    const panels = Array.isArray(imgJson.panels) ? imgJson.panels : [];
+    const unsafePanels = panels
+      .map((panel, index) => unsafeDisembodiedPanel(panel) ? index + 1 : 0)
+      .filter(Boolean);
+    if (!str(imgJson.body_visibility_contract) || unsafePanels.length > 0) {
+      push({
+        code: "IMG-005",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg,
+        message:
+          "Image board permits a hand-only, arm-only, headless or disembodied character crop instead of a connected visible person.",
+        evidence: unsafePanels.length > 0
+          ? `unsafe_panels=${unsafePanels.join(",")}`
+          : "body_visibility_contract=missing",
+      });
+    }
+
+    // IMG-006 — board blocking must be explicit even when nobody relocates.
+    const placementContract = obj(imgJson.placement_continuity_contract);
+    if (
+      !str(placementContract.mode) ||
+      !Array.isArray(placementContract.canonical_placements)
+    ) {
+      push({
+        code: "IMG-006",
+        severity: "high",
+        scope: "segment",
+        segment_number: seg,
+        message:
+          "Image board has no canonical placement-continuity contract for chair, table side, screen side and adjacent/opposite relationships.",
+      });
     }
     // ENV-002 on the image's own setting/scenery.
     for (const field of ["setting", "scenery"] as const) {
@@ -663,6 +748,33 @@ export function validatePromptExports(manifest: NanoFlowManifest): SemanticValid
       !!currentLocation &&
       !!previousLocation &&
       currentLocation !== previousLocation;
+    const currentBoard = parseImagePrompt(str(current.storyboard_prompt));
+    const previousBoard = parseImagePrompt(str(previous.storyboard_prompt));
+    const currentPlacement = obj(currentBoard?.placement_continuity_contract);
+    const previousPlacement = obj(previousBoard?.placement_continuity_contract);
+    const currentPlacementSignature = canonicalPlacementSignature(
+      currentPlacement.canonical_placements
+    );
+    const previousPlacementSignature = canonicalPlacementSignature(
+      previousPlacement.canonical_placements
+    );
+    if (
+      !locationChanged &&
+      currentPlacementSignature &&
+      previousPlacementSignature &&
+      currentPlacementSignature !== previousPlacementSignature &&
+      str(currentPlacement.mode) !== "scripted_relocation"
+    ) {
+      push({
+        code: "IMG-007",
+        severity: "high",
+        scope: "segment",
+        segment_number: current.index,
+        message:
+          "Character placement changes between boards in the same location without a declared visible relocation.",
+        evidence: `${previousPlacementSignature} -> ${currentPlacementSignature}`,
+      });
+    }
     const expectedPolicy =
       mode === "continuous"
         ? "preserve"

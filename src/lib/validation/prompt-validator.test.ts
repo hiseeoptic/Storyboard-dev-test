@@ -15,6 +15,29 @@ function imagePrompt(over: Record<string, unknown> = {}): string {
       { name: "Lan", appearance: "female, ~30", wardrobe: "white tee, patterned apron" },
     ],
     placement: "Minh left, Lan right",
+    character_cardinality_contract: {
+      identities: [
+        { name: "Minh", maximum_instances_per_panel: 1 },
+        { name: "Lan", maximum_instances_per_panel: 1 },
+      ],
+      rule: "Render exactly the declared 0-or-1 count for each identity; never duplicate a person.",
+    },
+    body_visibility_contract:
+      "Every visible hand remains connected to its owner's visible face, shoulders and upper torso.",
+    placement_continuity_contract: {
+      mode: "initial",
+      canonical_placements: [
+        { entity_id: "char_minh", zone_id: "table_left", position_label: "left chair", screen_side: "left" },
+        { entity_id: "char_lan", zone_id: "table_right", position_label: "right chair", screen_side: "right" },
+      ],
+    },
+    panels: [
+      {
+        panel: 1,
+        action: "Minh and Lan sit across the table",
+        camera: "[MEDIUM] connected two-shot showing both faces and upper bodies",
+      },
+    ],
     negative: "NOT cartoon, NOT anime, NOT illustration.",
     ...over,
   });
@@ -143,6 +166,60 @@ test("IMG-003: an empty image setting flags", () => {
   m.shots[0]!.storyboard_prompt = imagePrompt({ setting: "" });
   const r = validatePromptExports(m);
   assert.ok(r.findings.some((f) => f.code === "IMG-003"));
+});
+
+test("IMG-004: a board without exact identity cardinality flags duplicate risk", () => {
+  const m = cleanManifest();
+  m.shots[0]!.storyboard_prompt = imagePrompt({ character_cardinality_contract: {} });
+  const r = validatePromptExports(m);
+  assert.ok(r.findings.some((f) => f.code === "IMG-004"));
+});
+
+test("IMG-005: an isolated hand close-up flags as an unsafe Veo input frame", () => {
+  const m = cleanManifest();
+  m.shots[0]!.storyboard_prompt = imagePrompt({
+    panels: [{ panel: 1, action: "close-up on Minh's hand", camera: "[CLOSE] hand gripping phone" }],
+  });
+  const r = validatePromptExports(m);
+  assert.ok(r.findings.some((f) => f.code === "IMG-005" && /unsafe_panels=1/.test(String(f.evidence))));
+});
+
+test("IMG-006: a board without canonical placement continuity flags", () => {
+  const m = cleanManifest();
+  m.shots[0]!.storyboard_prompt = imagePrompt({ placement_continuity_contract: {} });
+  const r = validatePromptExports(m);
+  assert.ok(r.findings.some((f) => f.code === "IMG-006"));
+});
+
+test("IMG-007: a same-location seat swap without visible relocation flags", () => {
+  const m = cleanManifest();
+  const second = structuredClone(m.shots[0]!);
+  second.index = 2;
+  second.shot_id = "SHOT_002";
+  second.continuity_mode = "continuous";
+  second.storyboard_prompt = imagePrompt({
+    placement_continuity_contract: {
+      mode: "initial",
+      canonical_placements: [
+        { entity_id: "char_minh", zone_id: "table_right", position_label: "right chair", screen_side: "right" },
+        { entity_id: "char_lan", zone_id: "table_left", position_label: "left chair", screen_side: "left" },
+      ],
+    },
+  });
+  second.video_prompt = videoClip({
+    scene_id: "2",
+    continuity_mode: "continuous",
+    audio_transition: {
+      policy: "preserve",
+      from_location_id: "home_kitchen",
+      to_location_id: "home_kitchen",
+      sound_bed: "quiet kitchen room tone",
+      reverb_profile: "short furnished-room decay",
+    },
+  });
+  m.shots.push(second);
+  const r = validatePromptExports(m);
+  assert.ok(r.findings.some((f) => f.code === "IMG-007" && f.segment_number === 2));
 });
 
 // ── ENV-002 action-leak (only visible on the derived prompt) ─────────────────

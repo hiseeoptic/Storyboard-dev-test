@@ -746,6 +746,17 @@ test("board prompt enforces numbered panels, one border system and a separate th
   assert.deepEqual(panels.map((panel) => panel.order_label), ["1", "2"]);
   assert.match(String(panels[0]!.camera), /^\[MEDIUM\]/);
   assert.match(String(board.consistency), /gift/i);
+  const cardinality = board.character_cardinality_contract as Record<string, unknown>;
+  assert.deepEqual(
+    (cardinality.identities as Array<Record<string, unknown>>).map((identity) => [
+      identity.name,
+      identity.maximum_instances_per_panel,
+    ]),
+    [["Lan", 1], ["Minh", 1]]
+  );
+  assert.match(String(board.body_visibility_contract), /Never render a hand-only/);
+  assert.ok(board.placement_continuity_contract);
+  assert.deepEqual(panels[0]!.expected_character_instances, { Lan: 1, Minh: 0 });
 });
 
 // Regression: the BOARD image is always 16:9 (a wide sheet describes the cast
