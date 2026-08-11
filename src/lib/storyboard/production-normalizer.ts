@@ -92,6 +92,21 @@ function completeMissingStateSnapshots(
     if (!ledger) continue;
     const start = new Map(ledger.start.map((entry) => [key(entry.entity_id), entry]));
     const end = new Map(ledger.end.map((entry) => [key(entry.entity_id), entry]));
+
+    // A visible tracked entity must exist on both boundaries. When a legacy
+    // model listed it on only one side and declared no lifecycle event, carry
+    // that exact state across unchanged. This preserves objects such as a gift
+    // box/phone/bag without inventing motion or asking AI to rewrite the scene.
+    for (const [entityKey, entry] of end) {
+      if (start.has(entityKey)) continue;
+      const clone = {
+        ...entry,
+        traces: entry.traces ? [...entry.traces] : undefined,
+      };
+      ledger.start.push(clone);
+      start.set(entityKey, clone);
+      synthesized += 1;
+    }
     const current = new Map(ledger.start.map((entry) => [key(entry.entity_id), {
       state: clean(entry.state),
       position: clean(entry.position),
@@ -289,13 +304,34 @@ export function normalizeProductionContracts(
     | "context_ir"
   >
 ): ProductionNormalizationResult {
+  // Keep a before-image for the repair report. Some legacy end snapshots are
+  // already aligned by normalizeStateLedgerDimensions before the final causal
+  // synchronizer runs; counting only that last helper made a real repair appear
+  // as zero in the UI/report even though the exported boundary was corrected.
+  const originalChangedEntityEnds = new Map<string, string>();
+  for (let segmentIndex = 0; segmentIndex < breakdown.segments.length; segmentIndex += 1) {
+    const ledger = breakdown.segments[segmentIndex]?.state_ledger;
+    if (!ledger) continue;
+    const changedIds = new Set(ledger.changes.map((change) => key(change.entity_id)));
+    for (const entry of ledger.end) {
+      if (!changedIds.has(key(entry.entity_id))) continue;
+      originalChangedEntityEnds.set(
+        `${segmentIndex}:${key(entry.entity_id)}`,
+        JSON.stringify({
+          state: clean(entry.state),
+          position: clean(entry.position),
+          holder: clean(entry.holder),
+          orientation: clean(entry.orientation),
+        })
+      );
+    }
+  }
   let voiceProfilesCompleted = 0;
   let continuousStartsInherited = 0;
   const holderRepairs = normalizeLegacyHolders(breakdown);
-  const endSnapshotsSynchronizedFromChanges = synchronizeEndSnapshotsFromChanges(breakdown);
   const stateLedgerDimensionsNormalized =
     normalizeStateLedgerDimensions(breakdown);
-  const missingStateSnapshotsSynthesized = completeMissingStateSnapshots(breakdown);
+  let missingStateSnapshotsSynthesized = completeMissingStateSnapshots(breakdown);
   const timelineTotalsSynchronized = synchronizeTimelineTotal(breakdown);
 
   for (const lock of breakdown.character_locks ?? []) {
@@ -394,6 +430,35 @@ export function normalizeProductionContracts(
       });
     }
   }
+
+  // Continuous inheritance may introduce a persistent object into the next
+  // shot's start boundary. Complete its end boundary locally, then make the
+  // final declared change authoritative over the end snapshot. Order matters:
+  // synchronizing before completion used to leave phone/bag/box mismatches.
+  missingStateSnapshotsSynthesized += completeMissingStateSnapshots(breakdown);
+  const directEndSnapshotsSynchronized = synchronizeEndSnapshotsFromChanges(breakdown);
+  let changedEndSnapshots = 0;
+  for (let segmentIndex = 0; segmentIndex < breakdown.segments.length; segmentIndex += 1) {
+    const ledger = breakdown.segments[segmentIndex]?.state_ledger;
+    if (!ledger) continue;
+    const changedIds = new Set(ledger.changes.map((change) => key(change.entity_id)));
+    for (const entry of ledger.end) {
+      if (!changedIds.has(key(entry.entity_id))) continue;
+      const before = originalChangedEntityEnds.get(`${segmentIndex}:${key(entry.entity_id)}`);
+      if (before === undefined) continue;
+      const after = JSON.stringify({
+        state: clean(entry.state),
+        position: clean(entry.position),
+        holder: clean(entry.holder),
+        orientation: clean(entry.orientation),
+      });
+      if (before !== after) changedEndSnapshots += 1;
+    }
+  }
+  const endSnapshotsSynchronizedFromChanges = Math.max(
+    directEndSnapshotsSynchronized,
+    changedEndSnapshots
+  );
 
   // Lock a deterministic left/right for any multi-character scene that shipped
   // without one, BEFORE compiling production_state so both the source placement

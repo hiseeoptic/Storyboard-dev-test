@@ -218,6 +218,27 @@ test("reflection with a declared mirror is not counted as a duplicate person", (
   assert.equal(findings.some((item) => item.code === "REFLECTION_SOURCE_MISSING"), false);
 });
 
+test("explicit mirror prose registers its reflective surface without a ledger object", () => {
+  const state = buildProductionState(
+    breakdown(
+      [segment(1, {
+        characters_in_scene: ["Lan", "Minh"],
+        first_frame_prompt: "Lan's reflection and Minh's reflection are both visible in the wall mirror",
+      })],
+      { names: ["Lan", "Minh"] }
+    )
+  );
+  const reflections = state.shots[0]!.start_snapshot.visual_instances.filter(
+    (instance) => instance.classification === "reflection"
+  );
+  assert.equal(reflections.length, 2);
+  assert.ok(reflections.every((instance) => instance.source_surface_id === "obj_mirror_surface"));
+  assert.equal(
+    validateCinematographyState(state).some((item) => item.code === "REFLECTION_SOURCE_MISSING"),
+    false
+  );
+});
+
 test("reflection without a mirror source is reported, and a background clone is critical", () => {
   const state = buildProductionState(
     breakdown(

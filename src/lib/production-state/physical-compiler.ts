@@ -165,7 +165,7 @@ function compileSnapshot(
       };
       if (
         !entry.holder_entity_id &&
-        /^(?:on|in|inside|resting on|placed on)\b|^(?:trên|trong|bên trong|đặt trên)\b|\b(?:floor|ground|basin|sink|table|counter|worktop|shelf|tray|plate|chair|seat|bench|sofa|couch|box|container)\b|\b(?:sàn|đất|bồn rửa|chậu|bàn|kệ|khay|đĩa|ghế|sofa|hộp|thùng)\b/iu.test(text)
+        /^(?:on|in|inside|resting on|placed on)\b|^(?:trên|trong|bên trong|đặt trên)\b|\b(?:floor|ground|basin|sink|table|counter|worktop|shelf|tray|plate|chair|seat|bench|sofa|couch|bed|mattress|nightstand|box|container)\b|\b(?:sàn|đất|bồn rửa|chậu|bàn|kệ|khay|đĩa|ghế|sofa|giường|nệm|tủ đầu giường|hộp|thùng)\b/iu.test(text)
       ) {
         const isGround = /\b(?:floor|ground)\b|\b(?:sàn|đất)\b/iu.test(text);
         snapshot.supports.push({
@@ -242,6 +242,27 @@ export function compileLegacyPhysicalShot(
     change.physical_conditions = [];
   }
 
+  // A boundary-proven sit→stand is not creative invention: the body must shift
+  // weight and extend its legs. Add those minimum mechanics to the canonical
+  // copy so an ordinary phrase such as "Minh stands behind her" does not create
+  // an impossible teleport or force a paid AI repair.
+  const endByEntity = new Map(shot.end_snapshot.entities.map((entry) => [entry.entity_id, entry]));
+  for (const start of shot.start_snapshot.entities) {
+    const end = endByEntity.get(start.entity_id);
+    if (
+      start.character_physics?.pose.pose !== "sitting" ||
+      end?.character_physics?.pose.pose !== "standing"
+    ) continue;
+    const mechanics = "shifts weight forward, braces on the seat, extends both legs, and stands up";
+    const existing = shot.changes.find((change) => change.entity_id === start.entity_id);
+    if (existing) {
+      existing.physical_conditions = Array.from(new Set([
+        ...(existing.physical_conditions ?? []),
+        mechanics,
+      ]));
+    }
+  }
+
   // Legacy models sometimes describe a real pose/object transition in the
   // motion prompt and snapshots but forget the matching state_ledger.changes
   // row. Add a canonical evidence-backed change only when both boundaries prove
@@ -271,10 +292,15 @@ export function compileLegacyPhysicalShot(
       .find((part) => names.some((name) => lower(part).includes(lower(name)))) ?? evidence;
     const holderChanged = start.holder_entity_id !== end.holder_entity_id;
     const bodyPart = inferLimbId(sentence) ?? (holderChanged ? "right_hand" : null);
+    const poseMechanics =
+      start.character_physics?.pose.pose === "sitting" &&
+      end.character_physics?.pose.pose === "standing"
+        ? "shifts weight forward, braces on the seat, extends both legs, and stands up"
+        : null;
     shot.changes.push({
       entity_id: start.entity_id,
       from: start.state,
-      action: sentence.slice(0, 320),
+      action: poseMechanics ?? sentence.slice(0, 320),
       to: end.state,
       caused_by: entry?.kind === "character" ? start.entity_id : clean(segment.motion_prompt).slice(0, 160),
       from_position: start.position,
@@ -286,7 +312,7 @@ export function compileLegacyPhysicalShot(
       body_part: bodyPart,
       contact_entity_ids: holderChanged ? [start.entity_id] : [],
       duration_s: null,
-      physical_conditions: ["visible scripted transition"],
+      physical_conditions: ["visible scripted transition", ...(poseMechanics ? [poseMechanics] : [])],
     });
   }
 }

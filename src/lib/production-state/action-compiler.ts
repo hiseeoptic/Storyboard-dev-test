@@ -34,6 +34,29 @@ function isAtomic(text: string): boolean {
   return explicitSequence === 0 && clauses <= 1;
 }
 
+/** Split legacy/model choreography into deterministic ordered transitions.
+ * This is deliberately syntax-led: it never invents an action, it only turns
+ * the model's own semicolon/then/comma verb chain into separate records. */
+function splitAtomicAction(text: string): string[] {
+  const primary = clean(text)
+    .split(/\s*;\s*|\s+(?:then|after that|next|sau đó|tiếp theo)\s+/iu)
+    .map(clean)
+    .filter(Boolean);
+  const verbContinuation = /^(?:turn(?:s|ed|ing)?|use(?:s|d|ing)?|reach(?:es|ed|ing)?|grip(?:s|ped|ping)?|grasp(?:s|ed|ing)?|lift(?:s|ed|ing)?|tap(?:s|ped|ping)?|smooth(?:s|ed|ing)?|place(?:s|d|ing)?|set(?:s|ting)?|release(?:s|d|ing)?|push(?:es|ed|ing)?|pull(?:s|ed|ing)?|open(?:s|ed|ing)?|close(?:s|d|ing)?|xoay|dùng|vươn|nắm|cầm|nhấc|chạm|vuốt|đặt|thả|đẩy|kéo|mở|đóng)\b/iu;
+  const parts = primary.flatMap((clause) => {
+    const chunks = clause.split(/,\s+(?=[\p{L}])/u).map(clean).filter(Boolean);
+    if (chunks.length <= 1) return [clause];
+    const out: string[] = [];
+    for (const chunk of chunks) {
+      if (out.length > 0 && verbContinuation.test(chunk)) out.push(chunk);
+      else if (out.length > 0) out[out.length - 1] = `${out[out.length - 1]}, ${chunk}`;
+      else out.push(chunk);
+    }
+    return out;
+  });
+  return parts.length ? parts : [clean(text)];
+}
+
 function resolveSubject(text: string, registry: ProductionRegistryEntry[]): string | null {
   const value = lower(text);
   const candidates = registry
@@ -54,14 +77,26 @@ function placementFor(
   return entityId ? placements.find((placement) => placement.entity_id === entityId) : undefined;
 }
 
-/** One legacy state change becomes one candidate action; compound prose is flagged, never invented/split. */
+/** Legacy state changes compile into ordered atomic actions without changing the
+ * source ledger. Compound prose is split locally, so export does not strand the
+ * user behind a repair loop for a mechanical formatting issue. */
 export function compileAtomicActions(
   shot: ShotState,
   registry: ProductionRegistryEntry[]
 ): void {
-  const declaredDurations = shot.changes.map((change) =>
-    change.duration_s ?? explicitDuration(change.action)
-  );
+  const candidates = shot.changes.flatMap((change, changeIndex) => {
+    const parts = splitAtomicAction(change.action);
+    const declared = change.duration_s ?? explicitDuration(change.action);
+    return parts.map((verb, partIndex) => ({
+      change,
+      changeIndex,
+      verb,
+      partIndex,
+      partCount: parts.length,
+      declaredDuration: declared == null ? null : declared / parts.length,
+    }));
+  });
+  const declaredDurations = candidates.map((candidate) => candidate.declaredDuration);
   const declaredTotal = declaredDurations.reduce<number>(
     (sum, duration) => sum + (duration ?? 0),
     0
@@ -74,24 +109,29 @@ export function compileAtomicActions(
   const inferredShare = missingCount > 0
     ? Math.max(0, shotDuration - declaredTotal) / missingCount
     : 0;
-  shot.actions = shot.changes.map((change, index): AtomicAction => {
-    const evidence = clean(`${change.caused_by} ${change.action}`);
-    const subject = resolveSubject(change.caused_by || change.action, registry);
+  shot.actions = candidates.map((candidate, index): AtomicAction => {
+    const { change, changeIndex, verb, partIndex, partCount } = candidate;
+    const evidence = clean(`${change.caused_by} ${verb}`);
+    const subject = resolveSubject(`${verb} ${change.caused_by}`, registry);
     const fromPlacement = placementFor(shot.start_snapshot.placements, subject);
     const toPlacement = placementFor(shot.end_snapshot.placements, subject);
-    const minimum = minimumDuration(change.action);
+    const minimum = minimumDuration(verb);
     const declared = declaredDurations[index];
     const duration = declared ?? Math.max(minimum, inferredShare);
+    const changedEntity = registry.find((entry) => entry.entity_id === change.entity_id);
+    const objectEntityId = changedEntity?.kind === "character" && change.entity_id === subject
+      ? null
+      : change.entity_id || null;
     return {
       action_id: `${shot.shot_id}_action_${String(index + 1).padStart(3, "0")}`,
-      source_change_index: index,
+      source_change_index: changeIndex,
       subject_entity_id: subject,
-      verb: clean(change.action),
-      object_entity_id: change.entity_id || null,
+      verb,
+      object_entity_id: objectEntityId,
       body_part: change.body_part ?? null,
-      start_state: clean(change.from),
+      start_state: partIndex === 0 ? clean(change.from) : "",
       transition_states: [],
-      end_state: clean(change.to),
+      end_state: partIndex === partCount - 1 ? clean(change.to) : "",
       contact_entity_ids: [...(change.contact_entity_ids ?? [])],
       duration_s: Number.isFinite(duration) && duration > 0
         ? Math.round(duration * 10) / 10
@@ -100,7 +140,7 @@ export function compileAtomicActions(
       physical_conditions: [...(change.physical_conditions ?? [])],
       from_zone_id: fromPlacement?.zone_id ?? null,
       to_zone_id: toPlacement?.zone_id ?? null,
-      is_atomic: isAtomic(change.action),
+      is_atomic: isAtomic(verb),
       evidence,
     };
   });

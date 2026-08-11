@@ -440,6 +440,44 @@ test("objects in a sink basin or on a floor compile with support instead of fals
   assert.equal(findings.some((item) => item.code === "OBJECT_SUPPORT_MISSING"), false);
 });
 
+test("wallet resting on a bed compiles as supported instead of a false blocker", () => {
+  const legacySegment = {
+    segment_number: 1, duration_seconds: 10, title: "Wallet", marketing_role: "body",
+    beats: [], first_frame_prompt: "A wallet remains on the bed behind Lan", motion_prompt: "",
+    dialogue: null, continuity_note: "",
+    state_ledger: {
+      start: [{ entity_id: "wallet", state: "closed", position: "bed north side behind Lan" }],
+      changes: [],
+      end: [{ entity_id: "wallet", state: "closed", position: "bed north side behind Lan" }],
+    },
+  } satisfies VideoSegment;
+  const compiled = buildProductionState({ character_locks: [], segments: [legacySegment], total_duration_seconds: 10 });
+  assert.equal(validatePhysicalState(compiled).some((item) => item.code === "OBJECT_SUPPORT_MISSING"), false);
+});
+
+test("legacy sitting-to-standing boundary receives deterministic body mechanics", () => {
+  const minh = {
+    name: "Minh", gender_age: "adult", build: "average", skin_tone: "natural", hair: "black",
+    eyes: "brown", costume: "shirt", signature_features: "none", default_expression: "neutral", render_style: "cinematic",
+  } satisfies CharacterLock;
+  const legacySegment = {
+    segment_number: 1, duration_seconds: 10, title: "Stand", marketing_role: "body",
+    beats: [], first_frame_prompt: "Minh is sitting on a chair",
+    motion_prompt: "Minh stands behind Lan", dialogue: null, continuity_note: "",
+    characters_in_scene: ["Minh"],
+    state_ledger: {
+      start: [{ entity_id: "Minh", state: "sitting", position: "on chair" }],
+      changes: [],
+      end: [{ entity_id: "Minh", state: "standing", position: "behind Lan" }],
+    },
+  } satisfies VideoSegment;
+  const compiled = buildProductionState({ character_locks: [minh], segments: [legacySegment], total_duration_seconds: 10 });
+  assert.ok(compiled.shots[0]!.changes.some((change) =>
+    change.physical_conditions?.some((condition) => /weight|brace|legs/iu.test(condition))
+  ));
+  assert.equal(validatePhysicalState(compiled).some((item) => item.code === "POSE_TRANSITION_UNSUPPORTED"), false);
+});
+
 test("contact/cut wording compiles causal contact evidence", () => {
   const legacySegment = {
     segment_number: 1, duration_seconds: 10, title: "Finger cut", marketing_role: "body",

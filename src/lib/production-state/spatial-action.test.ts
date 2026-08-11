@@ -234,7 +234,7 @@ test("continuous single-zone shots reuse one stable location floor ID despite fi
   );
 });
 
-test("compound legacy action is preserved, receives local shot timing, and remains non-atomic", () => {
+test("compound legacy action is preserved as ordered atomic transitions with local timing", () => {
   const state = buildProductionState(
     breakdown(
       [
@@ -265,12 +265,17 @@ test("compound legacy action is preserved, receives local shot timing, and remai
       ["Lan"]
     )
   );
-  const action = state.shots[0]?.actions[0];
+  const actions = state.shots[0]?.actions ?? [];
   const findings = validateAtomicActions(state);
 
-  assert.equal(action?.is_atomic, false);
-  assert.equal(action?.duration_s, 10);
-  assert.ok(findings.some((item) => item.code === "ACTION_NOT_ATOMIC"));
+  assert.equal(actions.length, 2);
+  assert.deepEqual(actions.map((action) => action.verb), [
+    "Lan picks up the phone",
+    "walks to the doorway",
+  ]);
+  assert.ok(actions.every((action) => action.is_atomic));
+  assert.equal(actions.reduce((sum, action) => sum + (action.duration_s ?? 0), 0), 10);
+  assert.equal(findings.some((item) => item.code === "ACTION_NOT_ATOMIC"), false);
   assert.equal(findings.some((item) => item.code === "ACTION_DURATION_MISSING"), false);
 });
 

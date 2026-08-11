@@ -132,6 +132,23 @@ export function buildProductionState(breakdown: LegacyBreakdown): ProductionStat
       });
       sourceToEntry.set(key(rawLocation), location);
     }
+    const visualText = clean(
+      `${segment.first_frame_prompt} ${segment.motion_prompt} ${segment.continuity_note}`
+    );
+    if (
+      /\b(?:mirror image|reflections?|reflected|in the mirror|mirror|reflective surface)\b|\b(?:ảnh gương|phản chiếu|trong gương|gương|bề mặt phản chiếu)\b/iu.test(visualText) &&
+      /\b(?:mirror|reflective surface)\b|\b(?:gương|bề mặt phản chiếu)\b/iu.test(visualText) &&
+      !sourceToEntry.has("mirror")
+    ) {
+      const mirror = registry.register({
+        kind: "object",
+        displayName: "mirror reflective surface",
+        preferredId: "obj_mirror_surface",
+        sourceRef: "mirror",
+      });
+      sourceToEntry.set("mirror", mirror);
+      sourceToEntry.set("mirror reflective surface", mirror);
+    }
     const ledgerValues = [
       ...(segment.state_ledger?.start ?? []).map((entry) => entry.entity_id),
       ...(segment.state_ledger?.changes ?? []).map((entry) => entry.entity_id),

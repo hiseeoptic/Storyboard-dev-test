@@ -696,7 +696,10 @@ test("manifest deduplicates per-shot authority and strips audio from the image b
   // …while the video prompt keeps dialogue for lip-sync/timing.
   const video = shot.video_prompt as Record<string, unknown>;
   const videoAuthority = video.production_state_authority as Record<string, unknown>;
-  assert.ok(videoAuthority.dialogue_state, "video keeps dialogue_state");
+  assert.equal(videoAuthority.dialogue_state, undefined, "video pointer does not duplicate dialogue_state");
+  assert.ok(videoAuthority.canonical_manifest_path);
+  assert.ok((video.dialogue_audio_contract as Record<string, unknown>).dialogue_state,
+    "video keeps dialogue once in the dedicated audio contract");
 });
 
 test("board prompt enforces numbered panels, one border system and a separate thumbnail aspect", () => {

@@ -310,9 +310,14 @@ export function normalizeStateLedgerDimensions(
         } else if (isLiftOrHold(actionText)) {
           nextHolder =
             exactName(actionText, characterNames) || nextHolder;
-          nextPosition =
-            clean(endEntry?.position) ||
-            (nextHolder ? `in ${nextHolder}'s hand` : nextPosition);
+          // An explicit caused destination is stronger than a stale end
+          // snapshot. The old order copied e.g. "on sofa" back into a declared
+          // lift to "in Lan's right hand", creating an endless STATE-004 loop.
+          if (!clean(change.to_position)) {
+            nextPosition = nextHolder
+              ? `in ${nextHolder}'s hand`
+              : nextPosition;
+          }
         } else if (isReleaseOrPlace(actionText)) {
           nextHolder = "";
           nextPosition = clean(endEntry?.position) || nextPosition;

@@ -663,7 +663,7 @@ function normalizeDialogue(
     // Bind every on-screen voice to one concrete storyboard camera beat. The
     // beat itself must name that speaker; otherwise the compiled prompt cannot
     // prove who is visible while the line is delivered.
-    turns = turns.map((turn) => {
+    turns = turns.map((turn, turnIndex) => {
       if (!turn.speaker || turn.delivery !== "on_screen") {
         return { ...turn, camera_beat: undefined };
       }
@@ -684,9 +684,27 @@ function normalizeDialogue(
           turn.speaker
         )
       );
+      if (inferredIndex >= 0) {
+        return { ...turn, camera_beat: inferredIndex + 1 };
+      }
+
+      // Mechanical compatibility repair: if the model forgot to name the
+      // on-screen speaker in any beat, bind the turn to a real beat and append
+      // a visibility clause. Dialogue text, action and camera intent remain
+      // untouched; the validator now has explicit proof for lip-sync.
+      if (!seg.beats?.length) {
+        seg.beats = [{
+          beat: `${turn.speaker} speaks on screen while the listener reacts naturally`,
+          camera: `[MEDIUM] ${turn.speaker} clearly visible and identifiable`,
+        }];
+        return { ...turn, camera_beat: 1 };
+      }
+      const fallbackIndex = Math.min(turnIndex, seg.beats.length - 1);
+      const fallbackBeat = seg.beats[fallbackIndex]!;
+      fallbackBeat.camera = `${fallbackBeat.camera ?? ""}; ${turn.speaker} clearly visible on screen while speaking`.replace(/^;\s*/, "");
       return {
         ...turn,
-        camera_beat: inferredIndex >= 0 ? inferredIndex + 1 : undefined,
+        camera_beat: fallbackIndex + 1,
       };
     });
 

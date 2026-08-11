@@ -56,7 +56,7 @@ function compileSnapshot(
     if (
       registryEntry &&
       namedInText(registryEntry, text) &&
-      /\b(?:mirror image|reflection|reflected)\b|\b(?:ảnh gương|phản chiếu|trong gương)\b/iu.test(text)
+      /\b(?:mirror image|reflections?|reflected)\b|\b(?:ảnh gương|phản chiếu|trong gương)\b/iu.test(text)
     ) {
       snapshot.visual_instances.push({
         instance_id: `${entity.entity_id}_${boundary}_reflection`,

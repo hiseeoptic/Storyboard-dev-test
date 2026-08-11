@@ -484,14 +484,32 @@ export function withProductionStateAuthority(
 ): Record<string, unknown> {
   const rules = clipObj(clip.output_rules);
   const compact = compactPromptAuthority(authority);
+  // The canonical manifest keeps contacts, supports and placements in full.
+  // Veo's per-clip transition projection only needs the ordered entity boundary
+  // facts. Avoid repeating the heavy physical graph in every video prompt.
+  const transitionSnapshot = (snapshot: typeof compact.start_snapshot) => ({
+    entities: snapshot.entities,
+  });
   return {
     ...clip,
-    production_state_authority: compact,
+    // Lightweight pointer only. The transition and audio projections below
+    // contain the exact fields Veo needs, while the full canonical copy lives
+    // once at manifest.production_state.shots[]. Previously all three copies
+    // were embedded together and pushed ordinary clips past 40k characters.
+    production_state_authority: {
+      production_shot_id: authority.production_shot_id,
+      authority_fingerprint: authority.authority_fingerprint,
+      authority_order: authority.authority_order,
+      canonical_manifest_path: `production_state.shots[${Math.max(0, Number.parseInt(authority.production_shot_id.replace(/\D+/g, ""), 10) - 1 || 0)}]`,
+    },
     state_transition_contract: {
       authority_fingerprint: authority.authority_fingerprint,
-      start_snapshot: compact.start_snapshot,
-      ordered_atomic_actions: compact.ordered_atomic_actions,
-      end_snapshot: compact.end_snapshot,
+      start_snapshot: transitionSnapshot(compact.start_snapshot),
+      ordered_atomic_actions: compact.ordered_atomic_actions.map((action) => {
+        const { evidence: _evidence, ...essential } = action;
+        return essential;
+      }),
+      end_snapshot: transitionSnapshot(compact.end_snapshot),
     },
     dialogue_audio_contract: {
       authority_fingerprint: authority.authority_fingerprint,
