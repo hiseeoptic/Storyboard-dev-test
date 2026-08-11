@@ -637,10 +637,9 @@ export function slugify(name: string): string {
 }
 
 /**
- * Nano Flow runs image-to-video from a dedicated clean opening keyframe. The
- * multi-panel storyboard remains a planning/review asset and is never attached
- * to Veo. The keyframe owns opening appearance/set geometry only; semantics,
- * timing, camera intent and ending remain controlled by the structured prompt.
+ * Nano Flow runs image-to-video from the generated storyboard board. The board
+ * locks opening appearance, staging and set continuity, while the structured
+ * prompt remains authoritative for action, timing, camera and ending.
  */
 export function withKeyframeAuthority(
   clip: Record<string, unknown>,
@@ -651,15 +650,15 @@ export function withKeyframeAuthority(
       ? { ...(clip.output_rules as Record<string, unknown>) }
       : {};
   rules.reference_priority =
-    "SEMANTICS: follow this structured video prompt. OPENING VISUALS: follow the clean full-frame keyframe. IDENTITY/WARDROBE: follow each named character sheet and ignore its studio backdrop. SET: follow the location sheet. If references conflict with action, timing, camera or end state, this prompt wins.";
+    "SEMANTICS: follow this structured video prompt. VISUAL STORY/STAGING: use the attached storyboard board as the image-to-video reference. IDENTITY/WARDROBE: follow each named character sheet and ignore its studio backdrop. SET: follow the location sheet. Animate the real scene described by the board; do not render the board grid itself. If reference imagery conflicts with action, timing, camera or end state, this prompt wins.";
   rules.storyboard_reference_role =
-    "Planning/review only; the storyboard board is not attached to Veo and cannot control the rendered clip.";
+    "Visual continuity and opening-staging reference attached to Veo. It cannot override the structured action, dialogue, camera timing or ending.";
   rules.board_is_reference_not_a_frame =
-    "Use one clean full-bleed frame only: no board, grid, panels, numbers, captions, borders or picture-in-picture.";
+    "Read the attached board panels in numbered order as staging guidance, then render ONE full-bleed continuous real scene. Never reproduce its grid, panel dividers, numbers, captions, borders or picture-in-picture in the video.";
   if (characterStyleLock) rules.character_style_lock = characterStyleLock;
   return {
     ...clip,
-    board_usage: "Planning asset only; not supplied to Veo. Animate the clean single-frame keyframe.",
+    board_usage: "ATTACHED I2V REFERENCE: use the storyboard board for cast, staging, props, environment and beat order, while rendering one full-screen continuous scene rather than the board layout.",
     output_rules: rules,
   };
 }
@@ -718,7 +717,7 @@ export function withProductionStateAuthority(
     output_rules: {
       ...rules,
       semantic_priority:
-        "Follow ordered_atomic_actions + end_snapshot. Speak text only from dialogue[] exactly once. The board is not a video input.",
+        "Follow ordered_atomic_actions + end_snapshot. Speak text only from dialogue[] exactly once. The attached storyboard board supplies visual staging but cannot alter these semantics.",
     },
   };
 }
@@ -1206,15 +1205,15 @@ export function buildNanoFlowManifest(
 
       // STEP B video payload = the STRUCTURED Veo scene JSON (high quality);
       // falls back to the flat prose prompt only when no structured clip exists.
-      // The dedicated clean keyframe is a visual opening reference only. The primary
+      // The generated storyboard board is the visual I2V reference. The primary
       // video prompt remains the semantic authority for action/camera/end state.
       video_prompt: primaryVideoPrompt,
       characters_in_scene: inScene,
       video_refs: {
-        // The multi-panel board is review-only. Extension 1.82 generates and
-        // attaches video_keyframe_prompt as the sole opening-frame reference.
-        use_generated_storyboard: false,
-        use_clean_video_keyframe: true,
+        // User workflow: attach the generated board PLUS named character and
+        // location sheets. A clean keyframe remains optional compatibility data.
+        use_generated_storyboard: true,
+        use_clean_video_keyframe: false,
         characters: charIds(inScene),
         environments: [],
         products: [],

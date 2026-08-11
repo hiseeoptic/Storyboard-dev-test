@@ -137,13 +137,13 @@
       "properties": {
         "use_generated_storyboard": {
           "type": "boolean",
-          "default": false,
-          "description": "Legacy only. Multi-panel storyboard boards must not be used as the video first frame."
+          "default": true,
+          "description": "Attach the generated storyboard board as the image-to-video visual reference."
         },
         "use_clean_video_keyframe": {
           "type": "boolean",
-          "default": true,
-          "description": "Use the dedicated full-bleed video_keyframe_prompt result as Veo's opening frame."
+          "default": false,
+          "description": "Optional compatibility mode only; the default production workflow uses the generated storyboard board."
         },
         "characters":   { "type": "array", "items": { "type": "string" } },
         "environments": { "type": "array", "items": { "type": "string" }, "description": "Default empty — background already baked into the keyframe (see DESIGN.md §6)." },
@@ -191,7 +191,7 @@
         "location_id":     { "type": "string", "description": "Environment asset id this shot's scenes default to (per-location memory/background ref)." },
 
         "storyboard_prompt": { "type": "string", "description": "STEP A — single-image FALLBACK keyframe prompt. When scenes[] is present the extension renders per-scene images instead; this is kept for consumers that ignore scenes." },
-        "video_keyframe_prompt": { "type": "string", "description": "STEP A1 — clean full-bleed SINGLE frame for Veo. No storyboard grid, panel badges, caption strips or duplicated identities." },
+        "video_keyframe_prompt": { "type": "string", "description": "Optional compatibility prompt for explicit clean-keyframe mode. Default production uses the generated storyboard board for Veo." },
         "scenes": { "type": "array", "items": { "$ref": "#/definitions/scene" }, "description": "Schema 4.1 — ordered SCENES of this shot, one generated image each (built from beats). Replaces the single-keyframe collapse; a shot may span locations." },
         "end_storyboard_prompt": { "type": "string", "description": "STEP A2 (optional) — prompt for the END keyframe of a transform shot. When present, the video uses start_end_frame mode: Veo interpolates start→end. Omit for a normal single-keyframe shot." },
         "image_refs":        { "$ref": "#/definitions/refSelector", "description": "STEP A — which assets feed the image generation (shared by start + end keyframes)." },

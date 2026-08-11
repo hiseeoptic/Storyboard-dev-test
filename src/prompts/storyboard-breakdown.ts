@@ -1660,7 +1660,7 @@ export function buildSegmentFirstFramePrompt(params: {
     ? "the attached named character image(s) only; do not synthesize alternate angles, redraw faces or translate appearance into prose"
     : "EXACTLY two portrait angles per visible character";
 
-  return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for HUMAN REVIEW and planning of ONE ~10 second video clip, presented as ONE single horizontal image. This document shows who the character${isMultiCast ? "s are" : " is"}, what the scene looks like${hasProduct ? ", the product" : ""}, and the ${target} actions across the clip. It must NEVER be used as an image-to-video start frame; use the separate clean keyframe for that. ${params.style} style.
+  return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}SHOT ${params.segmentNumber} — a complete STORYBOARD BOARD for ONE ~10 second video clip, presented as ONE single horizontal image. This board is the image-to-video visual reference: it shows who the character${isMultiCast ? "s are" : " is"}, the locked scene${hasProduct ? ", the product" : ""}, staging and the ${target} actions in numbered order. Veo must animate the real scene it describes, never reproduce the panel grid itself. ${params.style} style.
 
 THE BOARD CONTAINS THESE ZONES IN ONE IMAGE:
 

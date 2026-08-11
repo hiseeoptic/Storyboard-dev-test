@@ -114,8 +114,8 @@ export function validateProductionPromptAuthority(
       const semanticPriority = str(rules.semantic_priority).toLowerCase();
       const referenceRole = str(rules.storyboard_reference_role).toLowerCase();
       if (
-        !semanticPriority.includes("board is not a video input") ||
-        !referenceRole.includes("not attached to veo")
+        !semanticPriority.includes("board supplies visual staging") ||
+        !referenceRole.includes("attached to veo")
       ) {
         push({
           code: "AUTH-007",
@@ -169,11 +169,11 @@ export function validateProductionPromptAuthority(
         evidence: str(inventedPanel.action),
       });
     }
-    if (!str(shot.video_keyframe_prompt) || shot.video_refs?.use_clean_video_keyframe !== true) {
+    if (shot.video_refs?.use_generated_storyboard !== true) {
       push({
         code: "AUTH-008",
         severity: "high",
-        message: "Video step is missing its dedicated clean full-frame keyframe; the multi-panel storyboard must never be used as Veo input.",
+        message: "Video step must attach the generated storyboard board as its image-to-video visual reference.",
       });
     }
   }

@@ -296,11 +296,11 @@ test("environments carry one canonical 3-framing character-free LOCATION SHEET",
   assert.equal((m.assets.environments ?? []).some((e) => e.id === "custom"), false);
 });
 
-test("video_refs default policy: clean keyframe on, storyboard/environment/product refs off", () => {
+test("video_refs default policy: generated board on with character refs", () => {
   const m = buildNanoFlowManifest(fixture());
   for (const shot of m.shots) {
-    assert.equal(shot.video_refs?.use_generated_storyboard, false);
-    assert.equal(shot.video_refs?.use_clean_video_keyframe, true);
+    assert.equal(shot.video_refs?.use_generated_storyboard, true);
+    assert.equal(shot.video_refs?.use_clean_video_keyframe, false);
     assert.deepEqual(shot.video_refs?.environments, []);
     assert.deepEqual(shot.video_refs?.products, []);
   }
@@ -531,7 +531,7 @@ test("character assets carry the story-locked wardrobe; a change emits wardrobe_
   assert.deepEqual(s2.wardrobe_change, { Lan: "beige raincoat over the blouse" });
 });
 
-test("withKeyframeAuthority separates sheets, clean keyframe and semantic prompt", () => {
+test("withKeyframeAuthority uses board for staging while sheets lock identity", () => {
   const patched = withKeyframeAuthority({ scene_id: "1", output_rules: { audio: "keep" } });
   const rules = patched.output_rules as Record<string, string>;
   // Existing rules survive; the reference-role clause is (re)written.
@@ -540,9 +540,9 @@ test("withKeyframeAuthority separates sheets, clean keyframe and semantic prompt
   assert.ok(rp);
   assert.match(rp, /character sheet/i);
   assert.match(rp, /ignore its studio backdrop/i);
-  assert.match(rp, /clean full-frame keyframe/i);
+  assert.match(rp, /storyboard board/i);
   assert.match(rp, /location sheet/i);
-  assert.match(String(patched.board_usage), /not supplied to Veo/i);
+  assert.match(String(patched.board_usage), /attached i2v reference/i);
 });
 
 test("Production State authority flows script -> video prompt -> storyboard board", () => {
@@ -601,7 +601,7 @@ test("Production State authority flows script -> video prompt -> storyboard boar
   assert.deepEqual(dialogueAudio.audio_state, canonicalShot.audio_state);
   assert.equal(board.authority_fingerprint, authority.authority_fingerprint);
   assert.match(String(board.semantic_authority), /STATIC VISUAL PROJECTION/);
-  assert.match(String((video.output_rules as Record<string, unknown>).semantic_priority), /board is not a video input/i);
+  assert.match(String((video.output_rules as Record<string, unknown>).semantic_priority), /board supplies visual staging/i);
   assert.equal((board.panels as unknown[]).length, 3, "selected panel count is exact");
   assert.deepEqual(
     (board.video_prompt_projection as Record<string, unknown>).scene_action,
