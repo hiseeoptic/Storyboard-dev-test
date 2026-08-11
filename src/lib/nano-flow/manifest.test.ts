@@ -254,7 +254,7 @@ test("environment_ref becomes an asset except when custom", () => {
   assert.deepEqual(shot2.image_refs?.environments, []);
 });
 
-test("environments carry a 2-angle character-free LOCATION SHEET (location_views)", () => {
+test("environments carry one canonical 3-framing character-free LOCATION SHEET", () => {
   const m = buildNanoFlowManifest(fixture(), {
     veoClips: [
       {
@@ -269,12 +269,10 @@ test("environments carry a 2-angle character-free LOCATION SHEET (location_views
   });
   const env = (m.assets.environments ?? []).find((e) => e.id === "living_room_1");
   assert.ok(env, "living_room_1 must be declared");
-  // New extensions prefer one 16:9 two-panel sheet. Keep the legacy two-view
-  // pair as a compatibility fallback for already-installed extension versions.
+  // Both compatibility fields must contain the same canonical prompt so old and
+  // new extensions cannot generate competing 2-angle/3-framing sheets.
   const locationSheet = JSON.parse(env.location_sheet_prompt ?? "{}") as Record<string, unknown>;
-  assert.equal(locationSheet.output_count, 1);
-  assert.equal(locationSheet.aspect_ratio, "16:9");
-  assert.match(String(locationSheet.panel_2), /90-135|opposite/i);
+  assert.match(String(locationSheet.layout), /THREE framings/i);
   assert.equal(env.image, null);
   // The app now emits a SINGLE character-free location sheet image (overview +
   // right→left + left→right), so the extension generates each set ONCE and locks
@@ -282,6 +280,7 @@ test("environments carry a 2-angle character-free LOCATION SHEET (location_views
   assert.ok(Array.isArray(env.location_views) && env.location_views.length === 1);
   assert.deepEqual((env.location_views ?? []).map((v) => v.angle), ["sheet"]);
   const sheet = JSON.parse((env.location_views ?? [])[0]!.prompt) as Record<string, unknown>;
+  assert.equal(env.location_sheet_prompt, env.location_views?.[0]?.prompt);
   // The sheet uses the per-location LOCKED setting so it matches the boards.
   assert.match(String(sheet.setting), /cozy northern living room/);
   // Character-free: the negative must forbid people in the sheet.
@@ -297,10 +296,11 @@ test("environments carry a 2-angle character-free LOCATION SHEET (location_views
   assert.equal((m.assets.environments ?? []).some((e) => e.id === "custom"), false);
 });
 
-test("video_refs default policy: keyframe on, environments/products off", () => {
+test("video_refs default policy: clean keyframe on, storyboard/environment/product refs off", () => {
   const m = buildNanoFlowManifest(fixture());
   for (const shot of m.shots) {
-    assert.equal(shot.video_refs?.use_generated_storyboard, true);
+    assert.equal(shot.video_refs?.use_generated_storyboard, false);
+    assert.equal(shot.video_refs?.use_clean_video_keyframe, true);
     assert.deepEqual(shot.video_refs?.environments, []);
     assert.deepEqual(shot.video_refs?.products, []);
   }
@@ -531,19 +531,18 @@ test("character assets carry the story-locked wardrobe; a change emits wardrobe_
   assert.deepEqual(s2.wardrobe_change, { Lan: "beige raincoat over the blouse" });
 });
 
-test("withKeyframeAuthority separates wardrobe-sheet (identity) from keyframe (set)", () => {
+test("withKeyframeAuthority separates sheets, clean keyframe and semantic prompt", () => {
   const patched = withKeyframeAuthority({ scene_id: "1", output_rules: { audio: "keep" } });
   const rules = patched.output_rules as Record<string, string>;
   // Existing rules survive; the reference-role clause is (re)written.
   assert.equal(rules.audio, "keep");
   const rp = rules.reference_priority;
   assert.ok(rp);
-  // Sheets own face/outfit and must NOT bring their studio backdrop…
-  assert.match(rp, /wardrobe sheet/i);
-  assert.match(rp, /ignore the sheet's plain studio backdrop|never import a studio/i);
-  // …and the location board is the single authority for the environment/set.
-  assert.match(rp, /location board/i);
-  assert.match(rp, /environment|set and its geometry/i);
+  assert.match(rp, /character sheet/i);
+  assert.match(rp, /ignore its studio backdrop/i);
+  assert.match(rp, /clean full-frame keyframe/i);
+  assert.match(rp, /location sheet/i);
+  assert.match(String(patched.board_usage), /not supplied to Veo/i);
 });
 
 test("Production State authority flows script -> video prompt -> storyboard board", () => {
@@ -593,15 +592,16 @@ test("Production State authority flows script -> video prompt -> storyboard boar
   assert.equal(video.scene_id, "1", "original structured video fields survive");
   assert.equal(videoAuthority.authority_fingerprint, authority.authority_fingerprint);
   assert.equal(dialogueAudio.authority_fingerprint, authority.authority_fingerprint);
-  // dialogue/audio now live once on the canonical production_state (the slim
-  // per-shot state_authority no longer duplicates them); the video contract
-  // must still project them verbatim.
+  // Canonical dialogue text lives in production_state and the clip's dialogue
+  // rows. The runtime contract projects timing/binding without duplicating text.
   const canonicalShot = m.production_state!.shots[0]!;
-  assert.deepEqual(dialogueAudio.dialogue_state, canonicalShot.dialogue_state);
+  const runtimeDialogue = dialogueAudio.dialogue_state as Record<string, unknown>;
+  assert.equal((runtimeDialogue.turns as Array<Record<string, unknown>>).length, canonicalShot.dialogue_state.turns.length);
+  assert.ok((runtimeDialogue.turns as Array<Record<string, unknown>>).every((turn) => turn.text === undefined && turn.text_source));
   assert.deepEqual(dialogueAudio.audio_state, canonicalShot.audio_state);
   assert.equal(board.authority_fingerprint, authority.authority_fingerprint);
   assert.match(String(board.semantic_authority), /STATIC VISUAL PROJECTION/);
-  assert.match(String((video.output_rules as Record<string, unknown>).semantic_priority), /storyboard image is downstream/i);
+  assert.match(String((video.output_rules as Record<string, unknown>).semantic_priority), /board is not a video input/i);
   assert.equal((board.panels as unknown[]).length, 3, "selected panel count is exact");
   assert.deepEqual(
     (board.video_prompt_projection as Record<string, unknown>).scene_action,
@@ -705,8 +705,14 @@ test("manifest deduplicates per-shot authority and strips audio from the image b
   const videoAuthority = video.production_state_authority as Record<string, unknown>;
   assert.equal(videoAuthority.dialogue_state, undefined, "video pointer does not duplicate dialogue_state");
   assert.ok(videoAuthority.canonical_manifest_path);
-  assert.ok((video.dialogue_audio_contract as Record<string, unknown>).dialogue_state,
-    "video keeps dialogue once in the dedicated audio contract");
+  const dialogueContract = video.dialogue_audio_contract as Record<string, unknown>;
+  assert.ok(dialogueContract.dialogue_state, "video keeps dialogue timing/binding in the dedicated audio contract");
+  assert.match(String(dialogueContract.exact_text_source), /dialogue\[\] only/i);
+  assert.ok(
+    ((dialogueContract.dialogue_state as Record<string, unknown>).turns as Array<Record<string, unknown>>)
+      .every((turn) => turn.text === undefined),
+    "exact dialogue text is not repeated in the authority projection"
+  );
 });
 
 test("board prompt enforces numbered panels, one border system and a separate thumbnail aspect", () => {
@@ -757,6 +763,11 @@ test("board prompt enforces numbered panels, one border system and a separate th
   assert.match(String(board.body_visibility_contract), /Never render a hand-only/);
   assert.ok(board.placement_continuity_contract);
   assert.deepEqual(panels[0]!.expected_character_instances, { Lan: 1, Minh: 0 });
+  const cleanKeyframe = JSON.parse(m.shots[0]!.video_keyframe_prompt ?? "{}") as Record<string, unknown>;
+  assert.match(String(cleanKeyframe.purpose), /ONE clean full-bleed opening frame/);
+  assert.doesNotMatch(String(cleanKeyframe.purpose), /holding EXACTLY/i);
+  assert.equal(cleanKeyframe.layout, undefined);
+  assert.match(String(cleanKeyframe.negative), /storyboard board/);
 });
 
 // Regression: the BOARD image is always 16:9 (a wide sheet describes the cast
@@ -816,9 +827,40 @@ test("boards lock one set per location; time-of-day is monotonic; same-location 
   assert.doesNotMatch(String(boards[2]!.lighting), /morning/i);
   // Establishing view contract on every board.
   assert.ok(boards.every((b) => typeof b.establishing_view_contract === "string" && (b.establishing_view_contract as string).includes("WIDE")));
-  // Board-to-board handoff on every same-location later board (index 1 AND 2), not
-  // on the opening (index 0). Even a scene_cut within the same set chains now.
+  // Continuous same-location boards hand off, but scene_cut is an intentional
+  // hard break even when it remains inside the same physical set.
   assert.equal(boards[0]!.continue_from_previous, undefined);
   assert.ok(typeof boards[1]!.continue_from_previous === "string" && (boards[1]!.continue_from_previous as string).includes("red bag"));
-  assert.ok(typeof boards[2]!.continue_from_previous === "string" && (boards[2]!.continue_from_previous as string).includes("Minh looks at the bag"));
+  assert.equal(boards[2]!.continue_from_previous, undefined);
+});
+
+test("an explicit next-morning time jump is not clamped back to the previous night", () => {
+  const seg = (n: number, mode: string, motion: string) => ({
+    segment_number: n,
+    duration_seconds: 10,
+    first_frame_prompt: motion,
+    motion_prompt: motion,
+    characters_in_scene: ["Lan"],
+    location_id: "bedroom",
+    transition_in: { mode },
+  });
+  const bd = {
+    title: "Night to morning",
+    total_duration_seconds: 20,
+    character_locks: [{ name: "Lan", costume: "pyjamas" }],
+    segments: [
+      seg(1, "opening", "Lan checks the clock late at night"),
+      seg(2, "time_jump", "The next morning Lan opens the curtains"),
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    veoClips: [
+      { background_lock: { setting: "bedroom", lighting: "night lamp" } },
+      { background_lock: { setting: "bedroom", lighting: "morning sunlight" } },
+    ] as unknown as Array<Record<string, unknown>>,
+  });
+  const times = m.shots.map((shot) =>
+    (JSON.parse(shot.storyboard_prompt) as Record<string, unknown>).time_of_day
+  );
+  assert.deepEqual(times, ["night", "morning"]);
 });

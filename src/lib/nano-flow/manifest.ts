@@ -129,15 +129,24 @@ function timeOfDayLabel(ord: number): string {
   const s = TIME_OF_DAY_STEPS.find((x) => x.ord === ord);
   return s ? s.label : "";
 }
-/** Resolve one monotonic (non-decreasing) time-of-day ORDINAL per shot from raw
- *  per-shot text. -1 where nothing could be inferred anywhere; leading unknowns
- *  adopt the first known time. */
-function resolveMonotonicOrdinals(perShotText: string[]): number[] {
+const NEXT_DAY_CUE = /\b(next|following)\s+(?:day|morning)|\bday\s+after|ngày hôm sau|sáng hôm sau|hôm sau|sáng ngày kế/iu;
+/** Resolve a chronological time-of-day per shot. Accidental day↔night oscillation
+ * is clamped, but an explicit next-day/story-time rollover is preserved (night
+ * yesterday → morning next day must not be incorrectly locked to night). */
+function resolveMonotonicOrdinals(
+  perShotText: string[],
+  transitionModes: string[] = []
+): number[] {
   const ords = perShotText.map((t) => timeOfDayOrdinal(t));
   const mono: number[] = [];
   let run = -1;
-  for (const o of ords) {
-    if (o >= 0) run = run < 0 ? o : Math.max(run, o);
+  for (let index = 0; index < ords.length; index++) {
+    const o = ords[index]!;
+    if (o >= 0) {
+      const explicitRollover = NEXT_DAY_CUE.test(perShotText[index] ?? "")
+        || (transitionModes[index] === "time_jump" && o <= 1);
+      run = run < 0 || o >= run || explicitRollover ? o : run;
+    }
     mono.push(run);
   }
   const firstKnown = mono.find((o) => o >= 0);
@@ -450,6 +459,76 @@ function buildLocationBoardPrompt(
 }
 
 /**
+ * Veo must never receive the multi-panel storyboard board as visual input. This
+ * compact prompt creates one clean, full-bleed opening frame from the same video
+ * authority, cast, set and canonical blocking. It contains no board layout,
+ * captions or panel numbering and is intentionally much shorter than the board.
+ */
+function buildCleanVideoKeyframePrompt(params: {
+  primaryVideoPrompt: Record<string, unknown> | string;
+  authorityFingerprint: string;
+  fallbackAction: string;
+  cast: Array<{ name?: string; wardrobe?: string }>;
+  placementContract: BoardPlacementContract;
+  setting: string;
+  scenery: string;
+  lighting: string;
+  visualStyle: string;
+  realityMode: string;
+  characterStyleLock: string;
+}): string {
+  const clip = params.primaryVideoPrompt && typeof params.primaryVideoPrompt === "object"
+    ? params.primaryVideoPrompt
+    : undefined;
+  const action = clipObj(clip?.scene_action);
+  const camera = clipObj(clip?.camera);
+  const background = clipObj(clip?.background_lock);
+  const cast = params.cast
+    .filter((entry): entry is { name: string; wardrobe?: string } => Boolean(entry.name))
+    .map((entry) => ({
+      name: entry.name,
+      wardrobe: entry.wardrobe || undefined,
+      expected_instances: 1,
+      identity_reference: `Use only the attached sheet labelled ${entry.name} for ${entry.name}.`,
+    }));
+  const liveAction = !params.characterStyleLock
+    && ["documentary", "cinematic", "commercial"].includes(params.realityMode);
+  const prompt: Record<string, unknown> = {
+    type: params.characterStyleLock
+      ? "styled_clean_video_keyframe"
+      : liveAction ? "photoreal_clean_video_keyframe" : `${slugify(params.realityMode)}_clean_video_keyframe`,
+    authority_fingerprint: params.authorityFingerprint,
+    purpose:
+      "ONE clean full-bleed opening frame for Veo. This is NOT a storyboard board and contains no grid, no panels, no badge, no caption strip and no text.",
+    opening_moment: clipStr(action.start_state) || params.fallbackAction,
+    composition: {
+      framing: clipStr(camera.framing) || clipStr(camera.shot_size) || "medium-wide connected scene frame",
+      angle: clipStr(camera.angle) || "eye level",
+      subject: clipStr(camera.subject) || cast.map((entry) => entry.name).join(" and "),
+      focus_target: clipStr(camera.focus_target) || clipStr(camera.look_target),
+      rule: "Freeze the declared opening moment as one coherent camera exposure; do not montage, split-screen or show later beats.",
+    },
+    setting: clipStr(background.setting) || params.setting,
+    scenery: clipStr(background.scenery) || params.scenery || undefined,
+    lighting: clipStr(background.lighting) || params.lighting || undefined,
+    visual_style: params.visualStyle || clipStr(clip?.visual_style) || undefined,
+    cast,
+    canonical_placements: params.placementContract.canonical_placements,
+    placement_rule: params.placementContract.rule,
+    body_visibility:
+      "Every visible person is an anatomically connected person. If a hand acts, keep its named owner's face, shoulders, torso and acting arm visible in the same frame; never a hand-only or headless crop.",
+    identity_cardinality:
+      "Render every listed identity exactly once and no unlisted person. Never clone, merge, substitute or duplicate a face/body; multiple views in a reference sheet are one person only.",
+    render: params.characterStyleLock || (liveAction
+      ? KEYFRAME_RENDER_NOTE
+      : `Reality E single film frame in the project's locked ${params.realityMode} medium.`),
+    negative:
+      "storyboard board, contact sheet, comic grid, split screen, multiple panels, frame-number badge, caption strip, subtitles, text, duplicate person, cloned face, merged identity, disembodied hand, isolated arm, headless body, watermark, logo",
+  };
+  return JSON.stringify(prompt);
+}
+
+/**
  * Viral 9:16 thumbnail image prompt in the high-CTR "clickbait" style: the cast
  * cut out as glowing-outline stickers with EXAGGERATED reactions, a hero item, a
  * punchy bokeh/confetti background, and the big stylized headline. Character
@@ -558,10 +637,10 @@ export function slugify(name: string): string {
 }
 
 /**
- * Nano Flow may run image-to-video, so the generated keyframe is the first
- * visual frame. It may lock opening appearance/set geometry, but it never owns
- * semantic action, timing, camera intent or the ending; those remain controlled
- * by the script-derived structured video prompt.
+ * Nano Flow runs image-to-video from a dedicated clean opening keyframe. The
+ * multi-panel storyboard remains a planning/review asset and is never attached
+ * to Veo. The keyframe owns opening appearance/set geometry only; semantics,
+ * timing, camera intent and ending remain controlled by the structured prompt.
  */
 export function withKeyframeAuthority(
   clip: Record<string, unknown>,
@@ -572,17 +651,15 @@ export function withKeyframeAuthority(
       ? { ...(clip.output_rules as Record<string, unknown>) }
       : {};
   rules.reference_priority =
-    "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT is the sole semantic authority for story action, timing, camera, state transition and ending. The generated STORYBOARD / LOCATION BOARD is only a visual continuity reference for the already-declared opening appearance and set geometry; it must never add, remove, replace or reinterpret video events. Each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop. Use the location board to keep the prompt-declared environment visually consistent (background, spatial layout, furniture, props, doors, windows, lighting and materials), but when any image detail conflicts with this structured prompt, FOLLOW THIS VIDEO PROMPT. Identity and clothing come from the sheets; semantics and motion come from the video prompt.";
+    "SEMANTICS: follow this structured video prompt. OPENING VISUALS: follow the clean full-frame keyframe. IDENTITY/WARDROBE: follow each named character sheet and ignore its studio backdrop. SET: follow the location sheet. If references conflict with action, timing, camera or end state, this prompt wins.";
   rules.storyboard_reference_role =
-    "Visual continuity only. Do not infer new actions from the board and do not let the board override ordered actions, dialogue, camera intent, timing or end state in this video prompt.";
-  // HARD LOCK (user): the multi-panel board must NEVER be rendered into the video.
+    "Planning/review only; the storyboard board is not attached to Veo and cannot control the rendered clip.";
   rules.board_is_reference_not_a_frame =
-    "The attached STORYBOARD BOARD is a MULTI-PANEL planning sheet that only DESCRIBES this scene (cast, wardrobe, location, staging and beats). It is NOT the video's frame and NOT a layout to copy. NEVER reproduce, show or animate the board itself: no split panels, no grid, no side-by-side sub-frames, no numbered badges, no caption strips, no white gutters or borders, no picture-in-picture. Render ONE single, full-bleed, continuous cinematic shot of the real scene the panels depict — one camera, one framing at a time, filling the entire frame.";
+    "Use one clean full-bleed frame only: no board, grid, panels, numbers, captions, borders or picture-in-picture.";
   if (characterStyleLock) rules.character_style_lock = characterStyleLock;
   return {
     ...clip,
-    board_usage:
-      "REFERENCE ONLY: the attached storyboard board is a multi-panel sheet that DESCRIBES this scene (who/what/where). Do NOT put the board — its split panels, grid, numbers, captions or borders — into the video. Produce ONE full-frame, single continuous cinematic shot of the ACTUAL scene, never a montage of panels and never a picture of the board sheet.",
+    board_usage: "Planning asset only; not supplied to Veo. Animate the clean single-frame keyframe.",
     output_rules: rules,
   };
 }
@@ -600,6 +677,17 @@ export function withProductionStateAuthority(
   const transitionSnapshot = (snapshot: typeof compact.start_snapshot) => ({
     entities: snapshot.entities,
   });
+  // Exact spoken text already lives in clip.dialogue, the sole render source.
+  // Repeating it inside dialogue_state caused some video models to speak a line
+  // twice. Keep timing/binding/reaction metadata here, but replace text with an
+  // explicit pointer to the matching dialogue row.
+  const dialogueRuntime = {
+    ...compact.dialogue_state,
+    turns: compact.dialogue_state.turns.map(({ text: _text, ...turn }) => ({
+      ...turn,
+      text_source: `dialogue[turn_id=${turn.turn_id}]`,
+    })),
+  };
   return {
     ...clip,
     // Lightweight pointer only. The transition and audio projections below
@@ -623,13 +711,14 @@ export function withProductionStateAuthority(
     },
     dialogue_audio_contract: {
       authority_fingerprint: authority.authority_fingerprint,
-      dialogue_state: compact.dialogue_state,
+      exact_text_source: "dialogue[] only; speak every row exactly once",
+      dialogue_state: dialogueRuntime,
       audio_state: compact.audio_state,
     },
     output_rules: {
       ...rules,
       semantic_priority:
-        "Follow script_contract + ordered_atomic_actions + end_snapshot. The storyboard image is downstream visual reference only and cannot change the video narrative, motion, camera or ending.",
+        "Follow ordered_atomic_actions + end_snapshot. Speak text only from dialogue[] exactly once. The board is not a video input.",
     },
   };
 }
@@ -871,7 +960,11 @@ export function buildNanoFlowManifest(
   // but boards must never oscillate day→night→day). Empty where nothing inferable.
   const perShotTimeText = segments.map((seg, i) => {
     const bg = opts.veoClips?.[i] ? clipObj(opts.veoClips[i].background_lock) : {};
+    const productionShot = productionState.shots[i];
+    const boundary = productionState.boundaries[i];
     return [
+      productionShot?.story_time ?? "",
+      boundary?.time_relation ?? "",
       clipStr(bg.lighting),
       clipStr(bg.setting),
       clipStr(bg.scenery),
@@ -879,8 +972,11 @@ export function buildNanoFlowManifest(
       seg?.motion_prompt ?? "",
     ].filter(Boolean).join(" ");
   });
+  const timeTransitionModes = segments.map((seg, index) =>
+    seg.transition_in?.mode ?? seg.continuity_mode ?? (index === 0 ? "opening" : "continuous")
+  );
   const detectedTimeOrds = perShotTimeText.map((t) => timeOfDayOrdinal(t));
-  const monotonicTimeOrds = resolveMonotonicOrdinals(perShotTimeText);
+  const monotonicTimeOrds = resolveMonotonicOrdinals(perShotTimeText, timeTransitionModes);
 
   // Lock ONE setting + scenery per LOCATION (the first clip seen for that place) so
   // every board of the same location describes the IDENTICAL room — same furniture,
@@ -917,6 +1013,11 @@ export function buildNanoFlowManifest(
       realityMode,
       characterStyleLock: visualMediumLock,
     });
+    // Keep both compatibility fields, but make them point to the exact SAME
+    // canonical one-image/three-framing contract. Older extensions read
+    // location_sheet_prompt; newer ones read location_views. They must never
+    // generate two competing sheets for one location.
+    env.location_sheet_prompt = env.location_views[0]?.prompt;
   }
 
   // Compute thumbnail delivery independently from the always-landscape board.
@@ -1019,7 +1120,7 @@ export function buildNanoFlowManifest(
     const prevClip = i > 0 ? opts.veoClips?.[i - 1] : undefined;
     const thisLoc = (seg.location_id ?? seg.environment_ref ?? "").trim();
     const prevLoc = (prevSeg?.location_id ?? prevSeg?.environment_ref ?? "").trim();
-    const hardBreak = ["location_cut", "time_jump", "flashback", "dream"].includes(String(shotContinuity));
+    const hardBreak = ["scene_cut", "location_cut", "time_jump", "flashback", "dream"].includes(String(shotContinuity));
     const sameSetAsPrev =
       !!prevClip && !!thisLoc && thisLoc !== "custom" && thisLoc === prevLoc && !hardBreak;
     const prevBeats = Array.isArray(prevSeg?.beats) ? prevSeg!.beats : [];
@@ -1041,9 +1142,27 @@ export function buildNanoFlowManifest(
         !!thisLoc &&
         thisLoc !== "custom" &&
         thisLoc === prevLoc &&
-        !["location_cut", "time_jump", "flashback", "dream"].includes(String(shotContinuity)),
+        !["scene_cut", "location_cut", "time_jump", "flashback", "dream"].includes(String(shotContinuity)),
       actions: productionShot.actions,
       motionText: seg.motion_prompt,
+    });
+    const shotCast = inScene.map((name) => {
+      const key = name.trim().toLowerCase();
+      const wardrobe = wardrobeOverride.get(key) ?? baseCostumeByName.get(key) ?? "";
+      return { name: name.trim(), ...(wardrobe ? { wardrobe } : {}) };
+    });
+    const cleanVideoKeyframePrompt = buildCleanVideoKeyframePrompt({
+      primaryVideoPrompt,
+      authorityFingerprint: stateAuthority.authority_fingerprint,
+      fallbackAction: seg.first_frame_prompt || seg.motion_prompt || "",
+      cast: shotCast,
+      placementContract,
+      setting: lockedBg.setting,
+      scenery: lockedBg.scenery,
+      lighting: boardLighting,
+      visualStyle: clipStr(clip?.visual_style),
+      realityMode,
+      characterStyleLock: visualMediumLock,
     });
 
     return {
@@ -1069,11 +1188,7 @@ export function buildNanoFlowManifest(
         boardLighting,
         visualMediumLock,
         opts.beatsPerSegment,
-        inScene.map((name) => {
-          const key = name.trim().toLowerCase();
-          const wardrobe = wardrobeOverride.get(key) ?? baseCostumeByName.get(key) ?? "";
-          return { name: name.trim(), ...(wardrobe ? { wardrobe } : {}) };
-        }),
+        shotCast,
         `set_${slugify((seg.location_id ?? seg.environment_ref ?? "project_location").trim()) || "project_location"}`,
         persistentPropIds,
         lockedBg.setting,
@@ -1082,6 +1197,7 @@ export function buildNanoFlowManifest(
         lockedTimeOfDay,
         placementContract
       ),
+      video_keyframe_prompt: cleanVideoKeyframePrompt,
       continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
       image_refs,
@@ -1090,14 +1206,15 @@ export function buildNanoFlowManifest(
 
       // STEP B video payload = the STRUCTURED Veo scene JSON (high quality);
       // falls back to the flat prose prompt only when no structured clip exists.
-      // The generated keyframe is a visual opening reference only. The primary
+      // The dedicated clean keyframe is a visual opening reference only. The primary
       // video prompt remains the semantic authority for action/camera/end state.
       video_prompt: primaryVideoPrompt,
       characters_in_scene: inScene,
       video_refs: {
-        // DESIGN.md §6: keyframe = first frame; characters = identity ref;
-        // environments/products OFF (already baked into the keyframe).
-        use_generated_storyboard: true,
+        // The multi-panel board is review-only. Extension 1.82 generates and
+        // attaches video_keyframe_prompt as the sole opening-frame reference.
+        use_generated_storyboard: false,
+        use_clean_video_keyframe: true,
         characters: charIds(inScene),
         environments: [],
         products: [],

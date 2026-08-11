@@ -114,8 +114,8 @@ export function validateProductionPromptAuthority(
       const semanticPriority = str(rules.semantic_priority).toLowerCase();
       const referenceRole = str(rules.storyboard_reference_role).toLowerCase();
       if (
-        !semanticPriority.includes("storyboard image is downstream") ||
-        !referenceRole.includes("visual continuity only")
+        !semanticPriority.includes("board is not a video input") ||
+        !referenceRole.includes("not attached to veo")
       ) {
         push({
           code: "AUTH-007",
@@ -169,11 +169,11 @@ export function validateProductionPromptAuthority(
         evidence: str(inventedPanel.action),
       });
     }
-    if (shot.video_refs?.use_generated_storyboard !== true) {
+    if (!str(shot.video_keyframe_prompt) || shot.video_refs?.use_clean_video_keyframe !== true) {
       push({
         code: "AUTH-008",
-        severity: "medium",
-        message: "Video step does not declare its generated storyboard as a visual continuity reference.",
+        severity: "high",
+        message: "Video step is missing its dedicated clean full-frame keyframe; the multi-panel storyboard must never be used as Veo input.",
       });
     }
   }

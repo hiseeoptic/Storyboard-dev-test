@@ -95,7 +95,27 @@ test("dialogue compiler binds stable speaker, voice, lip-sync and absolute clock
   assert.equal(first?.voice_profile, "Lan stable warm voice");
   assert.equal(second?.absolute_start_time_s, 2.4);
   assert.equal(state.shots[0]!.audio_state.environment_sound_bed, "quiet kitchen room tone");
+  assert.match(first?.listener_reaction_evidence ?? "", /listens and nods/i);
+  assert.equal(
+    state.findings.some((item) => item.code === "LISTENER_REACTION_UNSPECIFIED"),
+    false,
+    "a deterministic natural listener reaction prevents frozen conversational acting"
+  );
   assert.equal(productionStateSchema.safeParse(state).success, true);
+});
+
+test("dialogue compiler supplies subtle listener acting when the script omitted it", () => {
+  const state = buildProductionState(breakdown([
+    segment(1, {
+      beats: [{ beat: "Lan delivers the difficult news", camera: "medium two-shot" }],
+      motion_prompt: "Lan speaks while both remain seated.",
+      dialogue_lines: [{ speaker: "Lan", text: "Em cần nói thật với anh.", start_s: 0, end_s: 2, camera_beat: 1 }],
+    }),
+  ]));
+  const turn = state.shots[0]!.dialogue_state.turns[0]!;
+  assert.match(turn.listener_reaction_evidence ?? "", /visibly listens/i);
+  assert.match(turn.listener_reaction_evidence ?? "", /eyes track the speaker/i);
+  assert.equal(state.findings.some((item) => item.code === "LISTENER_REACTION_UNSPECIFIED"), false);
 });
 
 test("off-screen delivery never owns an on-screen lip-sync target", () => {
