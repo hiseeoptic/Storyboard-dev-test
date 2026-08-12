@@ -22,7 +22,6 @@ import {
   Plus,
   ListPlus,
   FolderKanban,
-  PlayCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1399,7 +1398,6 @@ export function GenerateClient() {
   );
   const [projectWorkspaceReady, setProjectWorkspaceReady] = useState(false);
   const [projectWorkspaceMessage, setProjectWorkspaceMessage] = useState("");
-  const [bulkQueue, setBulkQueue] = useState<{ ids: string[]; index: number; stage: "activate" | "plan" | "finalize" | "advance" } | null>(null);
   const [pendingProjectExport, setPendingProjectExport] = useState<{ projectId: string; kind: "manifest" | "zip" } | null>(null);
   const suppressWorkspaceAutosave = useRef(false);
 
@@ -1468,17 +1466,6 @@ export function GenerateClient() {
     setBoardErrors({ ...(workflow.boardErrors ?? {}) });
     setError(workflow.error ?? null);
     setPhase(workflow.phase ?? "input");
-  };
-
-  const resetProjectWorkflow = () => {
-    setResult(null);
-    setDraft(null);
-    setGenInput(null);
-    setGenAnalysis(null);
-    setPlanWarnings([]);
-    setBoardErrors({});
-    setError(null);
-    setPhase("input");
   };
 
   const persistWorkspace = async (workspace: ProjectWorkspace<ProjectFormSnapshot, ProjectWorkflowSnapshot>) => {
@@ -1659,18 +1646,6 @@ export function GenerateClient() {
       void saveProjectWorkspace(next);
       return next;
     });
-  };
-
-  const runQueuedProjects = (projectIds?: string[]) => {
-    const ids = projectIds ?? projectWorkspace.projects
-      .filter((project) => project.status === "queued" || project.status === "needs_repair")
-      .map((project) => project.id);
-    if (!ids.length) {
-      setProjectWorkspaceMessage("Không có dự án nào trong hàng chờ.");
-      return;
-    }
-    setBulkQueue({ ids, index: 0, stage: "activate" });
-    setProjectWorkspaceMessage(`Bắt đầu xử lý tuần tự ${ids.length} dự án.`);
   };
 
   const hasCharacterUploads =
@@ -2569,67 +2544,6 @@ export function GenerateClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result, genInput, beatsPerSegment, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
 
-  // Queue orchestrator: reuse the normal plan → finalize pipeline, but only for
-  // one active slot at a time. A failed slot is marked and the next one starts.
-  useEffect(() => {
-    if (!bulkQueue) return;
-    const projectId = bulkQueue.ids[bulkQueue.index];
-    if (!projectId) {
-      setProjectWorkspaceMessage("Đã xử lý xong toàn bộ hàng chờ.");
-      setBulkQueue(null);
-      return;
-    }
-    let cancelled = false;
-    const advance = () => {
-      if (!cancelled) setBulkQueue((current) => current
-        ? { ...current, index: current.index + 1, stage: "activate" }
-        : null);
-    };
-    if (bulkQueue.stage === "activate") {
-      void (async () => {
-        try {
-          await switchProject(projectId, true);
-          if (cancelled) return;
-          // A queued rerun must start from its saved input, never from a prior
-          // script/result screen that belongs to an earlier run of this slot.
-          resetProjectWorkflow();
-          setActiveProjectStatus("building", { clearWorkflow: true, projectId });
-          setBulkQueue((current) => current ? { ...current, stage: "plan" } : null);
-        } catch (queueError) {
-          setActiveProjectStatus("needs_repair", { projectId, lastError: queueError instanceof Error ? queueError.message : String(queueError) });
-          advance();
-        }
-      })();
-    } else if (bulkQueue.stage === "plan" && phase === "input") {
-      void handleGenerate().catch((queueError) => {
-        setActiveProjectStatus("needs_repair", { projectId, lastError: queueError instanceof Error ? queueError.message : String(queueError) });
-        advance();
-      });
-      setBulkQueue((current) => current ? { ...current, stage: "finalize" } : null);
-    } else if (bulkQueue.stage === "finalize") {
-      if (phase === "script" && draft && genInput && genAnalysis) {
-        void buildStoryboardFromScript().catch((queueError) => {
-          setActiveProjectStatus("needs_repair", { projectId, lastError: queueError instanceof Error ? queueError.message : String(queueError) });
-          advance();
-        });
-        setBulkQueue((current) => current ? { ...current, stage: "advance" } : null);
-      } else if (phase === "input" && error) {
-        setActiveProjectStatus("needs_repair", { projectId, lastError: error });
-        advance();
-      }
-    } else if (bulkQueue.stage === "advance") {
-      if (phase === "result" && result) {
-        setActiveProjectStatus(blockingFindingCount(exportBundle?.report) > 0 ? "needs_repair" : "completed", { projectId });
-        advance();
-      } else if ((phase === "script" || phase === "input") && error) {
-        setActiveProjectStatus("needs_repair", { projectId, lastError: error });
-        advance();
-      }
-    }
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bulkQueue, phase, draft, result, error, exportBundle]);
-
   // Persist every settled script/result into the active slot. This is the key
   // isolation boundary that prevents the next project from overwriting it.
   useEffect(() => {
@@ -3034,7 +2948,7 @@ export function GenerateClient() {
   const activeProject = projectWorkspace.projects.find(
     (project) => project.id === projectWorkspace.active_project_id
   );
-  const queuedProjectCount = projectWorkspace.projects.filter(
+  const pendingProjectCount = projectWorkspace.projects.filter(
     (project) => project.status === "queued" || project.status === "needs_repair"
   ).length;
   const projectStatusLabel = (status: ProjectSlotStatus) => ({
@@ -3065,8 +2979,8 @@ export function GenerateClient() {
               </p>
               <p className="text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? `${queuedProjectCount} dự án đang chờ · Form, kịch bản, kết quả và file xuất được lưu độc lập`
-                  : `${queuedProjectCount} queued · Forms, scripts, results and exports stay isolated`}
+                  ? `${pendingProjectCount} dự án chờ thao tác · Chọn và bấm Tạo Storyboard từng dự án, không tự chạy hàng loạt`
+                  : `${pendingProjectCount} awaiting manual action · Select and build one project at a time`}
               </p>
             </div>
           </div>
@@ -3085,19 +2999,8 @@ export function GenerateClient() {
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              onClick={() => runQueuedProjects()}
-              disabled={!projectWorkspaceReady || bulkQueue !== null || queuedProjectCount === 0}
-              className="gap-1.5"
-            >
-              {bulkQueue ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
-              {lang === "vi" ? "Chạy toàn bộ hàng chờ" : "Run queued projects"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
               onClick={queueActiveProject}
-              disabled={!projectWorkspaceReady || bulkQueue !== null || activeProject?.status !== "draft"}
+              disabled={!projectWorkspaceReady || activeProject?.status !== "draft"}
               className="gap-1.5"
             >
               <ListPlus className="h-3.5 w-3.5" />
@@ -3129,9 +3032,9 @@ export function GenerateClient() {
               </button>
               <div className="mt-2 flex flex-wrap gap-1">
                 {(project.status === "needs_repair" || project.status === "completed") && (
-                  <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" disabled={bulkQueue !== null}
-                    onClick={() => runQueuedProjects([project.id])}>
-                    {lang === "vi" ? "Chạy lại riêng" : "Run again"}
+                  <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]"
+                    onClick={() => void switchProject(project.id, true)}>
+                    {lang === "vi" ? "Mở dự án" : "Open project"}
                   </Button>
                 )}
                 {project.workflow?.result && (
@@ -3167,7 +3070,6 @@ export function GenerateClient() {
         {activeProject && (
           <p className="mb-1 text-sm font-medium text-primary">
             {activeProject.name}
-            {bulkQueue ? ` · ${bulkQueue.index + 1}/${bulkQueue.ids.length}` : ""}
           </p>
         )}
         <p className="mb-6 text-sm text-muted-foreground">{progressMessage}</p>
