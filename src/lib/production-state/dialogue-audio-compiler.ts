@@ -42,17 +42,11 @@ function reactionEvidence(segment: VideoSegment, listeners: ProductionRegistryEn
   if (listeners.length === 0) return null;
   const evidence = [...(segment.beats ?? []).map((beat) => beat.beat), segment.motion_prompt].map(clean);
   const reaction = /\b(?:reacts?|listens?|nods?|smiles?|frowns?|looks?|glances?|pauses?|answers?|replies|laughs?|gasps?|flinches?|recoils?|braces?|winces?|ducks?|staggers?|freezes?|steps? back|catches? (?:his|her|their) breath)\b|\b(?:phản ứng|lắng nghe|gật đầu|mỉm cười|cau mày|nhìn|liếc|dừng lại|trả lời|cười|sững lại|giật mình|co người|né|đỡ|nhăn mặt|loạng choạng|lùi lại|nín thở|hụt hơi)\b/iu;
-  const explicit = evidence.find((text) => reaction.test(text) && listeners.some((listener) =>
+  return evidence.find((text) => reaction.test(text) && listeners.some((listener) =>
     [listener.display_name, listener.source_ref, ...listener.aliases]
       .filter((value): value is string => Boolean(value))
       .some((value) => lower(text).includes(lower(value)))
-  ));
-  if (explicit) return explicit;
-  // Deterministic performance fallback: a listener must never become a frozen
-  // mannequin merely because the authored beat omitted reaction prose. This is
-  // intentionally subtle and non-semantic: it adds readable human listening,
-  // not a new story event or emotional conclusion.
-  return `${listeners.map((listener) => listener.display_name).join(" and ")} visibly listens: eyes track the speaker, breath and blink remain natural, then one small context-appropriate change in brow, jaw or weight acknowledges the line; mouth stays closed until their own turn.`;
+  )) ?? null;
 }
 
 function foleyFor(shot: ShotState): FoleyCueState[] {

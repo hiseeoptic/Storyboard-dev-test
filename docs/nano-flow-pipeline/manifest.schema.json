@@ -104,18 +104,18 @@
         "image":    { "type": ["string", "null"], "description": "data: URI or null (user attaches later in extension)" },
         "required": { "type": "boolean", "default": false },
         "wardrobe": { "type": "string", "description": "Characters only — the story-locked outfit. The extension builds one full-body wardrobe sheet (identity photo + this outfit) and reuses it as the reference for every keyframe so face AND clothes stay identical. Empty ⇒ extension derives an outfit from the scene." },
-        "location_views": { "type": "array", "items": { "$ref": "#/definitions/locationView" }, "description": "Canonical environments-only A2 contract: one 16:9 sheet containing three character-free framings of the same set." },
-        "location_sheet_prompt": { "type": "string", "description": "Compatibility alias of location_views[0].prompt. It must contain the exact same one-sheet/three-framing prompt, never a competing second sheet." }
+        "location_views": { "type": "array", "items": { "$ref": "#/definitions/locationView" }, "description": "Legacy environments-only A2 pair. Kept for compatibility." },
+        "location_sheet_prompt": { "type": "string", "description": "Preferred environments-only A2 contract: generate ONE 16:9 sheet containing exactly two clearly distinct, character-free angles of the same set." }
       }
     },
 
     "locationView": {
       "type": "object",
-      "description": "A2 — one character-free location sheet containing three framings of the same place (see asset.location_views).",
+      "description": "A2 — one character-free establishing view of a location (see asset.location_views).",
       "required": ["angle", "prompt"],
       "additionalProperties": false,
       "properties": {
-        "angle":  { "type": "string", "description": "\"sheet\" for the canonical one-image/three-framing location authority; legacy values remain readable." },
+        "angle":  { "type": "string", "description": "\"wide\" (full establishing) | \"alt\" (second angle of the SAME place)." },
         "prompt": { "type": "string", "description": "Prompt (100% Storyboard) to generate this EMPTY location image — no people, no product; same set, materials, furniture and lighting as its scenes." }
       }
     },
@@ -138,12 +138,7 @@
         "use_generated_storyboard": {
           "type": "boolean",
           "default": true,
-          "description": "Attach the generated storyboard board as the image-to-video visual reference."
-        },
-        "use_clean_video_keyframe": {
-          "type": "boolean",
-          "default": false,
-          "description": "Optional compatibility mode only; the default production workflow uses the generated storyboard board."
+          "description": "Use the Nano-Banana-generated image from step A as the video FIRST FRAME."
         },
         "characters":   { "type": "array", "items": { "type": "string" } },
         "environments": { "type": "array", "items": { "type": "string" }, "description": "Default empty — background already baked into the keyframe (see DESIGN.md §6)." },
@@ -191,7 +186,6 @@
         "location_id":     { "type": "string", "description": "Environment asset id this shot's scenes default to (per-location memory/background ref)." },
 
         "storyboard_prompt": { "type": "string", "description": "STEP A — single-image FALLBACK keyframe prompt. When scenes[] is present the extension renders per-scene images instead; this is kept for consumers that ignore scenes." },
-        "video_keyframe_prompt": { "type": "string", "description": "Optional compatibility prompt for explicit clean-keyframe mode. Default production uses the generated storyboard board for Veo." },
         "scenes": { "type": "array", "items": { "$ref": "#/definitions/scene" }, "description": "Schema 4.1 — ordered SCENES of this shot, one generated image each (built from beats). Replaces the single-keyframe collapse; a shot may span locations." },
         "end_storyboard_prompt": { "type": "string", "description": "STEP A2 (optional) — prompt for the END keyframe of a transform shot. When present, the video uses start_end_frame mode: Veo interpolates start→end. Omit for a normal single-keyframe shot." },
         "image_refs":        { "$ref": "#/definitions/refSelector", "description": "STEP A — which assets feed the image generation (shared by start + end keyframes)." },

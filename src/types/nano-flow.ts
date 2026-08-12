@@ -94,8 +94,6 @@ export interface NanoFlowRefSelector {
  * default OFF because they are already baked into the keyframe. */
 export interface NanoFlowVideoRefSelector extends NanoFlowRefSelector {
   use_generated_storyboard?: boolean;
-  /** Optional compatibility mode; default production uses the generated board. */
-  use_clean_video_keyframe?: boolean;
 }
 
 export interface NanoFlowBeat {
@@ -187,9 +185,6 @@ export interface NanoFlowShot {
   // ─── STEP A: generate the storyboard/keyframe image with Nano Banana ───
   /** Prompt written 100% by Storyboard to create the image. */
   storyboard_prompt: string;
-  /** Optional clean-frame compatibility prompt. The default production path
-   * sends storyboard_prompt's generated board to Veo. */
-  video_keyframe_prompt?: string;
   image_refs?: NanoFlowRefSelector;
   /** Cách 1 (upload mode) — a REAL location photo the user uploaded for this
    * shot, embedded straight into the manifest as a data URL. When present the

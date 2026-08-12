@@ -6,7 +6,7 @@ export const actionLaws = {
   __layer: "ACTION_CONTINUITY",
   id: "action_continuity_v1",
   laws: [
-    "ONE continuous primary action per clip at story-appropriate human speed — gentle when intimate, urgent when danger demands it — never multiple unrelated simultaneous or stacked actions",
+    "ONE continuous primary action per clip, performed slowly and deliberately — never multiple simultaneous or stacked actions",
     "Every action travels state → state: an explicit START pose and an explicit END pose, connected by an unbroken physical path with real duration",
     "NO teleporting: nobody and nothing changes position, pose or state without visibly moving through the space between",
     "Motion verbs are specific: name the body part + verb + manner ('her right hand slowly lifts the pan by its handle'), never vague 'moving/doing/interacting'",

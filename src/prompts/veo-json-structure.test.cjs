@@ -624,8 +624,6 @@ test("action drama keeps a kinetic causal exchange, readable camera and exactly-
 
   const clip = result.clips[0];
   assert.match(clip.scene_action.action_director_profile, /attacker initiates/i);
-  assert.equal(clip.scene_action.performance_director.mode, "urgent_physical_stakes");
-  assert.match(clip.scene_action.performance_director.behavior, /eyes, brow, jaw, breath, hands or weight/i);
   assert.match(clip.camera.movement, /ACTION CAMERA|real-time speed/i);
   assert.doesNotMatch(clip.camera.movement, /pace everything calmly/i);
   assert.doesNotMatch(clip.camera.movement, /without a cut or shot-scale change/i);
@@ -633,32 +631,4 @@ test("action drama keeps a kinetic causal exchange, readable camera and exactly-
   assert.equal(clip.dialogue[0].utterance_count, 1);
   assert.equal(clip.dialogue[0].repeat_policy, "exactly_once");
   assert.match(clip.dialogue[0].turn_id, /1_turn_001/);
-});
-
-test("conversation clips receive a changing performance arc instead of calm mannequin acting", () => {
-  const result = buildVeoJson({
-    world_context: { genre: "family emotional drama" },
-    character_locks: [
-      { name: "Lan", gender: "female", costume: "cream blouse", voice: "warm female voice" },
-      { name: "Minh", gender: "male", costume: "blue shirt", voice: "grounded male voice" },
-    ],
-    segments: [{
-      segment_number: 1,
-      duration_seconds: 10,
-      title: "Lan realizes Minh tried hard",
-      marketing_role: "body",
-      characters_in_scene: ["Lan", "Minh"],
-      first_frame_prompt: "Lan and Minh face each other beside a gift box.",
-      motion_prompt: "Lan notices Minh's notes; her guarded expression softens while Minh waits, shoulders tense.",
-      dialogue_lines: [{ speaker: "Lan", text: "Anh tìm lâu lắm à?", start_s: 1, end_s: 3 }],
-      beats: [{ beat: "Lan studies the notes while Minh waits", camera: "[MEDIUM] connected two-shot" }],
-      continuity_note: "Lan looks up with softened eyes; Minh releases one held breath.",
-    }],
-  }, { aspectRatio: "16:9", dialogueLanguage: "Vietnamese" });
-
-  const clip = result.clips[0];
-  assert.equal(clip.scene_action.performance_director.mode, "intimate_subtext");
-  assert.match(clip.scene_action.performance_director.emotional_arc, /->/);
-  assert.match(clip.scene_action.performance_director.behavior, /listener tracks the speaker|visible listener tracks/i);
-  assert.doesNotMatch(clip.camera.movement, /pace everything calmly/i);
 });
