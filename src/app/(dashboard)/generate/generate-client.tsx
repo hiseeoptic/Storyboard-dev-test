@@ -22,6 +22,7 @@ import {
   Plus,
   ListPlus,
   FolderKanban,
+  PlayCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +77,7 @@ import {
   normalizeProjectWorkspace,
   PROJECT_WORKSPACE_LIMIT,
   saveProjectWorkspace,
+  type ProjectSlotStatus,
   type ProjectWorkspace,
 } from "@/lib/project-workspace-store";
 import type {
@@ -946,6 +948,17 @@ interface ProjectFormSnapshot {
   thumbnailAspectRatio: "16:9" | "9:16";
 }
 
+interface ProjectWorkflowSnapshot {
+  phase: "input" | "script" | "result";
+  result: StoryboardResult | null;
+  draft: StoryboardGenerationOutput | null;
+  genInput: StoryboardGenerationInput | null;
+  genAnalysis: StoryboardAnalysis | null;
+  planWarnings: string[];
+  boardErrors: Record<string, string>;
+  error: string | null;
+}
+
 function emptyProjectSnapshot(): ProjectFormSnapshot {
   return {
     step: 0, storyIdea: "", scriptTreatment: "polish", genre: "advertising",
@@ -1381,12 +1394,25 @@ export function GenerateClient() {
   // This wraps the existing form without replacing it. Every slot stores a
   // complete independent form snapshot (including uploaded image data) in
   // IndexedDB; queueing is local-only and never calls an AI API.
-  const [projectWorkspace, setProjectWorkspace] = useState<ProjectWorkspace<ProjectFormSnapshot>>(
+  const [projectWorkspace, setProjectWorkspace] = useState<ProjectWorkspace<ProjectFormSnapshot, ProjectWorkflowSnapshot>>(
     () => normalizeProjectWorkspace(null, emptyProjectSnapshot())
   );
   const [projectWorkspaceReady, setProjectWorkspaceReady] = useState(false);
   const [projectWorkspaceMessage, setProjectWorkspaceMessage] = useState("");
+  const [bulkQueue, setBulkQueue] = useState<{ ids: string[]; index: number; stage: "activate" | "plan" | "finalize" | "advance" } | null>(null);
+  const [pendingProjectExport, setPendingProjectExport] = useState<{ projectId: string; kind: "manifest" | "zip" } | null>(null);
   const suppressWorkspaceAutosave = useRef(false);
+
+  const captureProjectWorkflow = (): ProjectWorkflowSnapshot => ({
+    phase: phase === "generating" ? (draft ? "script" : result ? "result" : "input") : phase,
+    result: result ? structuredClone(result) : null,
+    draft: draft ? structuredClone(draft) : null,
+    genInput: genInput ? structuredClone(genInput) : null,
+    genAnalysis: genAnalysis ? structuredClone(genAnalysis) : null,
+    planWarnings: [...planWarnings],
+    boardErrors: { ...boardErrors },
+    error,
+  });
 
   const captureProjectSnapshot = (): ProjectFormSnapshot => ({
     step, storyIdea, scriptTreatment, genre, topicType, topicItemId, settingSel,
@@ -1428,10 +1454,34 @@ export function GenerateClient() {
     setVisualInterpretation(snapshot.visualInterpretation); setCharacterRepresentation(snapshot.characterRepresentation);
     setDirectingProfile(snapshot.directingProfile); setAspectRatio(snapshot.aspectRatio);
     setThumbnailAspectRatio(snapshot.thumbnailAspectRatio);
-    setError(null); setResult(null); setDraft(null); setPhase("input");
+    setError(null); setResult(null); setDraft(null); setGenInput(null); setGenAnalysis(null);
+    setPlanWarnings([]); setBoardErrors({}); setPhase("input");
   };
 
-  const persistWorkspace = async (workspace: ProjectWorkspace<ProjectFormSnapshot>) => {
+  const applyProjectWorkflow = (workflow?: ProjectWorkflowSnapshot) => {
+    if (!workflow) return;
+    setResult(workflow.result ? structuredClone(workflow.result) : null);
+    setDraft(workflow.draft ? structuredClone(workflow.draft) : null);
+    setGenInput(workflow.genInput ? structuredClone(workflow.genInput) : null);
+    setGenAnalysis(workflow.genAnalysis ? structuredClone(workflow.genAnalysis) : null);
+    setPlanWarnings([...(workflow.planWarnings ?? [])]);
+    setBoardErrors({ ...(workflow.boardErrors ?? {}) });
+    setError(workflow.error ?? null);
+    setPhase(workflow.phase ?? "input");
+  };
+
+  const resetProjectWorkflow = () => {
+    setResult(null);
+    setDraft(null);
+    setGenInput(null);
+    setGenAnalysis(null);
+    setPlanWarnings([]);
+    setBoardErrors({});
+    setError(null);
+    setPhase("input");
+  };
+
+  const persistWorkspace = async (workspace: ProjectWorkspace<ProjectFormSnapshot, ProjectWorkflowSnapshot>) => {
     setProjectWorkspace(workspace);
     try {
       await saveProjectWorkspace(workspace);
@@ -1444,13 +1494,14 @@ export function GenerateClient() {
 
   useEffect(() => {
     let alive = true;
-    loadProjectWorkspace<ProjectFormSnapshot>()
+    loadProjectWorkspace<ProjectFormSnapshot, ProjectWorkflowSnapshot>()
       .then((stored) => {
         if (!alive) return;
         const workspace = normalizeProjectWorkspace(stored, emptyProjectSnapshot());
         setProjectWorkspace(workspace);
         const active = workspace.projects.find((project) => project.id === workspace.active_project_id)!;
         applyProjectSnapshot({ ...emptyProjectSnapshot(), ...active.snapshot });
+        applyProjectWorkflow(active.workflow);
         setProjectWorkspaceReady(true);
       })
       .catch((workspaceError) => {
@@ -1496,9 +1547,9 @@ export function GenerateClient() {
     directingProfile, aspectRatio, thumbnailAspectRatio]);
 
   const saveActiveProjectInto = (
-    workspace: ProjectWorkspace<ProjectFormSnapshot>,
-    status?: "draft" | "queued"
-  ): ProjectWorkspace<ProjectFormSnapshot> => {
+    workspace: ProjectWorkspace<ProjectFormSnapshot, ProjectWorkflowSnapshot>,
+    status?: ProjectSlotStatus
+  ): ProjectWorkspace<ProjectFormSnapshot, ProjectWorkflowSnapshot> => {
     const now = new Date().toISOString();
     const snapshot = structuredClone(captureProjectSnapshot());
     const suggestedName = (productName || storyIdea.split(/\n|[.!?]/)[0] || "").trim().slice(0, 48);
@@ -1511,6 +1562,7 @@ export function GenerateClient() {
               name: project.name.startsWith("Dự án ") && suggestedName ? suggestedName : project.name || `Dự án ${index + 1}`,
               status: status ?? project.status,
               snapshot,
+              workflow: captureProjectWorkflow(),
               updated_at: now,
             }
           : project
@@ -1518,14 +1570,17 @@ export function GenerateClient() {
     };
   };
 
-  const switchProject = async (projectId: string) => {
-    if (projectId === projectWorkspace.active_project_id) return;
+  const switchProject = async (projectId: string, useQueuedSnapshot = false) => {
     const saved = saveActiveProjectInto(projectWorkspace);
     const target = saved.projects.find((project) => project.id === projectId);
     if (!target) return;
     const next = { ...saved, active_project_id: projectId };
     await persistWorkspace(next);
-    applyProjectSnapshot({ ...emptyProjectSnapshot(), ...structuredClone(target.snapshot) });
+    const targetSnapshot = useQueuedSnapshot && target.queued_snapshot
+      ? target.queued_snapshot
+      : target.snapshot;
+    applyProjectSnapshot({ ...emptyProjectSnapshot(), ...structuredClone(targetSnapshot) });
+    applyProjectWorkflow(target.workflow);
     setProjectWorkspaceMessage("");
   };
 
@@ -1535,7 +1590,7 @@ export function GenerateClient() {
       return;
     }
     const saved = saveActiveProjectInto(projectWorkspace);
-    const slot = makeProjectSlot(emptyProjectSnapshot(), saved.projects.length);
+    const slot = makeProjectSlot<ProjectFormSnapshot, ProjectWorkflowSnapshot>(emptyProjectSnapshot(), saved.projects.length);
     const next = { ...saved, active_project_id: slot.id, projects: [...saved.projects, slot] };
     await persistWorkspace(next);
     applyProjectSnapshot(slot.snapshot);
@@ -1555,7 +1610,7 @@ export function GenerateClient() {
         : project
     );
     if (projectsWithQueueSnapshot.length < PROJECT_WORKSPACE_LIMIT) {
-      const slot = makeProjectSlot(emptyProjectSnapshot(), projectsWithQueueSnapshot.length);
+      const slot = makeProjectSlot<ProjectFormSnapshot, ProjectWorkflowSnapshot>(emptyProjectSnapshot(), projectsWithQueueSnapshot.length);
       const next = {
         ...queued,
         active_project_id: slot.id,
@@ -1573,11 +1628,49 @@ export function GenerateClient() {
   const deleteActiveProject = async () => {
     if (!window.confirm("Xóa dự án đang chọn khỏi danh sách? Dữ liệu trong slot này sẽ bị xóa.")) return;
     const remaining = projectWorkspace.projects.filter((project) => project.id !== projectWorkspace.active_project_id);
-    const projects = remaining.length ? remaining : [makeProjectSlot(emptyProjectSnapshot(), 0)];
+    const projects = remaining.length ? remaining : [makeProjectSlot<ProjectFormSnapshot, ProjectWorkflowSnapshot>(emptyProjectSnapshot(), 0)];
     const next = { ...projectWorkspace, active_project_id: projects[0]!.id, projects };
     await persistWorkspace(next);
     applyProjectSnapshot(structuredClone(projects[0]!.snapshot));
+    applyProjectWorkflow(projects[0]!.workflow);
     setProjectWorkspaceMessage("Đã xóa dự án khỏi danh sách.");
+  };
+
+  const setActiveProjectStatus = (
+    status: ProjectSlotStatus,
+    options: { clearWorkflow?: boolean; lastError?: string } = {}
+  ) => {
+    const now = new Date().toISOString();
+    setProjectWorkspace((current) => {
+      const next = {
+        ...current,
+        projects: current.projects.map((project) =>
+          project.id === current.active_project_id
+            ? {
+                ...project,
+                status,
+                ...(options.clearWorkflow ? { workflow: undefined } : {}),
+                last_error: options.lastError,
+                updated_at: now,
+              }
+            : project
+        ),
+      };
+      void saveProjectWorkspace(next);
+      return next;
+    });
+  };
+
+  const runQueuedProjects = (projectIds?: string[]) => {
+    const ids = projectIds ?? projectWorkspace.projects
+      .filter((project) => project.status === "queued" || project.status === "needs_repair")
+      .map((project) => project.id);
+    if (!ids.length) {
+      setProjectWorkspaceMessage("Không có dự án nào trong hàng chờ.");
+      return;
+    }
+    setBulkQueue({ ids, index: 0, stage: "activate" });
+    setProjectWorkspaceMessage(`Bắt đầu xử lý tuần tự ${ids.length} dự án.`);
   };
 
   const hasCharacterUploads =
@@ -1692,6 +1785,7 @@ export function GenerateClient() {
   // ─── Generate ────────────────────────────────────────────────────
 
   const handleGenerate = async () => {
+    if (projectWorkspaceReady) setActiveProjectStatus("building");
     setPhase("generating");
     setError(null);
     setExportAttempted(false);
@@ -2464,6 +2558,89 @@ export function GenerateClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result, genInput, beatsPerSegment, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
 
+  // Queue orchestrator: reuse the normal plan → finalize pipeline, but only for
+  // one active slot at a time. A failed slot is marked and the next one starts.
+  useEffect(() => {
+    if (!bulkQueue) return;
+    const projectId = bulkQueue.ids[bulkQueue.index];
+    if (!projectId) {
+      setProjectWorkspaceMessage("Đã xử lý xong toàn bộ hàng chờ.");
+      setBulkQueue(null);
+      return;
+    }
+    let cancelled = false;
+    const advance = () => {
+      if (!cancelled) setBulkQueue((current) => current
+        ? { ...current, index: current.index + 1, stage: "activate" }
+        : null);
+    };
+    if (bulkQueue.stage === "activate") {
+      void (async () => {
+        try {
+          await switchProject(projectId, true);
+          if (cancelled) return;
+          // A queued rerun must start from its saved input, never from a prior
+          // script/result screen that belongs to an earlier run of this slot.
+          resetProjectWorkflow();
+          setActiveProjectStatus("building", { clearWorkflow: true });
+          setBulkQueue((current) => current ? { ...current, stage: "plan" } : null);
+        } catch (queueError) {
+          setActiveProjectStatus("needs_repair", { lastError: queueError instanceof Error ? queueError.message : String(queueError) });
+          advance();
+        }
+      })();
+    } else if (bulkQueue.stage === "plan" && phase === "input") {
+      void handleGenerate().catch((queueError) => {
+        setActiveProjectStatus("needs_repair", { lastError: queueError instanceof Error ? queueError.message : String(queueError) });
+        advance();
+      });
+      setBulkQueue((current) => current ? { ...current, stage: "finalize" } : null);
+    } else if (bulkQueue.stage === "finalize") {
+      if (phase === "script" && draft && genInput && genAnalysis) {
+        void buildStoryboardFromScript().catch((queueError) => {
+          setActiveProjectStatus("needs_repair", { lastError: queueError instanceof Error ? queueError.message : String(queueError) });
+          advance();
+        });
+        setBulkQueue((current) => current ? { ...current, stage: "advance" } : null);
+      } else if (phase === "input" && error) {
+        setActiveProjectStatus("needs_repair", { lastError: error });
+        advance();
+      }
+    } else if (bulkQueue.stage === "advance") {
+      if (phase === "result" && result) {
+        setActiveProjectStatus(blockingFindingCount(exportBundle?.report) > 0 ? "needs_repair" : "completed");
+        advance();
+      } else if ((phase === "script" || phase === "input") && error) {
+        setActiveProjectStatus("needs_repair", { lastError: error });
+        advance();
+      }
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bulkQueue, phase, draft, result, error, exportBundle]);
+
+  // Persist every settled script/result into the active slot. This is the key
+  // isolation boundary that prevents the next project from overwriting it.
+  useEffect(() => {
+    if (!projectWorkspaceReady || (phase !== "script" && phase !== "result")) return;
+    const workflow = captureProjectWorkflow();
+    const now = new Date().toISOString();
+    setProjectWorkspace((current) => {
+      const projects = current.projects.map((project) => {
+        if (project.id !== current.active_project_id) return project;
+        const status: ProjectSlotStatus = phase === "result"
+          ? (blockingFindingCount(exportBundle?.report) > 0 ? "needs_repair" : "completed")
+          : project.status === "queued" ? "building" : project.status;
+        return { ...project, status, workflow, last_error: error ?? undefined, updated_at: now };
+      });
+      const next = { ...current, projects };
+      void saveProjectWorkspace(next);
+      return next;
+    });
+    // Persist on settled workflow changes; capture helper is intentionally local.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectWorkspaceReady, phase, result, draft, genInput, genAnalysis, planWarnings, boardErrors, error, exportCheckVersion]);
+
   const cleanManifestForExport = () => {
     if (!exportBundle?.manifest) {
       setExportAttempted(true);
@@ -2807,6 +2984,28 @@ export function GenerateClient() {
     }
   };
 
+  // Export buttons may be clicked on an inactive slot. Activate its isolated
+  // workflow first, then call the existing trusted export function on the next
+  // settled render; no prompt or result is rebuilt.
+  useEffect(() => {
+    if (!pendingProjectExport || phase === "generating") return;
+    const target = projectWorkspace.projects.find((project) => project.id === pendingProjectExport.projectId);
+    if (!target?.workflow?.result) {
+      setPendingProjectExport(null);
+      return;
+    }
+    if (projectWorkspace.active_project_id !== target.id) {
+      void switchProject(target.id);
+      return;
+    }
+    if (!result) return;
+    const kind = pendingProjectExport.kind;
+    setPendingProjectExport(null);
+    if (kind === "manifest") downloadNanoManifest();
+    else void downloadAllFrames();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingProjectExport, projectWorkspace.active_project_id, phase, result]);
+
   // ─── Language Toggle Button ──────────────────────────────────────
 
   const LangToggle = () => (
@@ -2825,8 +3024,21 @@ export function GenerateClient() {
     (project) => project.id === projectWorkspace.active_project_id
   );
   const queuedProjectCount = projectWorkspace.projects.filter(
-    (project) => project.status === "queued"
+    (project) => project.status === "queued" || project.status === "needs_repair"
   ).length;
+  const projectStatusLabel = (status: ProjectSlotStatus) => ({
+    draft: lang === "vi" ? "Bản nháp" : "Draft",
+    queued: lang === "vi" ? "Chờ" : "Queued",
+    building: lang === "vi" ? "Đang dựng" : "Building",
+    needs_repair: lang === "vi" ? "Cần sửa" : "Needs repair",
+    completed: lang === "vi" ? "Hoàn thành" : "Completed",
+  })[status];
+  const projectStatusClass = (status: ProjectSlotStatus) =>
+    status === "completed" ? "text-emerald-600"
+      : status === "needs_repair" ? "text-amber-600"
+        : status === "building" ? "text-blue-600"
+          : status === "queued" ? "text-violet-600"
+            : "text-muted-foreground";
   const ProjectWorkspaceBar = () => (
     <Card className="mb-5 border-primary/20 bg-primary/[0.03]">
       <CardContent className="space-y-3 p-4">
@@ -2842,8 +3054,8 @@ export function GenerateClient() {
               </p>
               <p className="text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? `${queuedProjectCount} dự án đang chờ · Mỗi dự án lưu form và ảnh độc lập`
-                  : `${queuedProjectCount} queued · Each project keeps an isolated form and images`}
+                  ? `${queuedProjectCount} dự án đang chờ · Form, kịch bản, kết quả và file xuất được lưu độc lập`
+                  : `${queuedProjectCount} queued · Forms, scripts, results and exports stay isolated`}
               </p>
             </div>
           </div>
@@ -2862,14 +3074,25 @@ export function GenerateClient() {
             <Button
               type="button"
               size="sm"
+              variant="outline"
+              onClick={() => runQueuedProjects()}
+              disabled={!projectWorkspaceReady || bulkQueue !== null || queuedProjectCount === 0}
+              className="gap-1.5"
+            >
+              {bulkQueue ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
+              {lang === "vi" ? "Chạy toàn bộ hàng chờ" : "Run queued projects"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
               onClick={queueActiveProject}
-              disabled={!projectWorkspaceReady || activeProject?.status === "queued"}
+              disabled={!projectWorkspaceReady || bulkQueue !== null || activeProject?.status !== "draft"}
               className="gap-1.5"
             >
               <ListPlus className="h-3.5 w-3.5" />
-              {activeProject?.status === "queued"
-                ? (lang === "vi" ? "Đã trong hàng chờ" : "Already queued")
-                : (lang === "vi" ? "Đưa vào danh sách chờ" : "Add to queue")}
+              {activeProject?.status === "draft"
+                ? (lang === "vi" ? "Đưa vào danh sách chờ" : "Add to queue")
+                : projectStatusLabel(activeProject?.status ?? "draft")}
             </Button>
             <Button
               type="button"
@@ -2886,25 +3109,34 @@ export function GenerateClient() {
         </div>
         <div className="grid gap-2 sm:grid-cols-5">
           {projectWorkspace.projects.map((project, index) => (
-            <button
-              key={project.id}
-              type="button"
-              onClick={() => void switchProject(project.id)}
-              className={`rounded-lg border px-3 py-2 text-left transition ${
-                project.id === projectWorkspace.active_project_id
-                  ? "border-primary bg-primary/10"
-                  : "border-border bg-background hover:border-primary/40"
-              }`}
-            >
-              <span className="block truncate text-xs font-semibold">
-                {index + 1}. {project.name}
-              </span>
-              <span className={`mt-0.5 block text-[11px] ${project.status === "queued" ? "text-emerald-600" : "text-muted-foreground"}`}>
-                {project.status === "queued"
-                  ? (lang === "vi" ? "● Đang chờ" : "● Queued")
-                  : (lang === "vi" ? "○ Bản nháp" : "○ Draft")}
-              </span>
-            </button>
+            <div key={project.id} className={`rounded-lg border px-3 py-2 ${project.id === projectWorkspace.active_project_id ? "border-primary bg-primary/10" : "border-border bg-background"}`}>
+              <button type="button" onClick={() => void switchProject(project.id)} className="w-full text-left">
+                <span className="block truncate text-xs font-semibold">{index + 1}. {project.name}</span>
+                <span className={`mt-0.5 block text-[11px] ${projectStatusClass(project.status)}`}>
+                  ● {projectStatusLabel(project.status)}
+                </span>
+              </button>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {(project.status === "needs_repair" || project.status === "completed") && (
+                  <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" disabled={bulkQueue !== null}
+                    onClick={() => runQueuedProjects([project.id])}>
+                    {lang === "vi" ? "Chạy lại riêng" : "Run again"}
+                  </Button>
+                )}
+                {project.workflow?.result && (
+                  <>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]"
+                      onClick={() => setPendingProjectExport({ projectId: project.id, kind: "manifest" })}>
+                      Manifest
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]"
+                      onClick={() => setPendingProjectExport({ projectId: project.id, kind: "zip" })}>
+                      ZIP
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
           ))}
         </div>
         {projectWorkspaceMessage && (
@@ -2921,6 +3153,12 @@ export function GenerateClient() {
       <div className="mx-auto max-w-lg py-20 text-center">
         <Loader2 className="mx-auto mb-6 h-12 w-12 animate-spin text-primary" />
         <h2 className="mb-2 text-xl font-bold">{L("generating")}</h2>
+        {activeProject && (
+          <p className="mb-1 text-sm font-medium text-primary">
+            {activeProject.name}
+            {bulkQueue ? ` · ${bulkQueue.index + 1}/${bulkQueue.ids.length}` : ""}
+          </p>
+        )}
         <p className="mb-6 text-sm text-muted-foreground">{progressMessage}</p>
         <Progress value={progressPercent} showLabel className="mx-auto max-w-xs" />
       </div>
@@ -2931,6 +3169,7 @@ export function GenerateClient() {
   if (phase === "script" && draft) {
     return (
       <div className="mx-auto max-w-3xl space-y-6">
+        <ProjectWorkspaceBar />
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">
@@ -3268,6 +3507,7 @@ export function GenerateClient() {
 
     return (
       <div className="space-y-8">
+        <ProjectWorkspaceBar />
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>

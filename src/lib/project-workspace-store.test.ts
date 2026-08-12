@@ -34,3 +34,20 @@ test("queued snapshot remains immutable while the editable snapshot changes", ()
   project.snapshot.story = "later edit";
   assert.equal(project.queued_snapshot.story, "approved");
 });
+
+test("workflow results and statuses stay isolated per project", () => {
+  const workspace = normalizeProjectWorkspace<{ story: string }, { title: string }>(
+    {
+      version: 1,
+      active_project_id: "one",
+      projects: [
+        { id: "one", name: "One", status: "completed", snapshot: { story: "a" }, workflow: { title: "A" }, created_at: "x", updated_at: "x" },
+        { id: "two", name: "Two", status: "needs_repair", snapshot: { story: "b" }, workflow: { title: "B" }, created_at: "x", updated_at: "x" },
+      ],
+    },
+    { story: "" }
+  );
+  workspace.projects[0]!.workflow!.title = "changed";
+  assert.equal(workspace.projects[1]!.workflow!.title, "B");
+  assert.equal(workspace.projects[1]!.status, "needs_repair");
+});
