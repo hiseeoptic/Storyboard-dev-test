@@ -80,7 +80,6 @@ import type {
   StoryboardGenerationOutput,
   VideoSegment,
 } from "@/types";
-import type { ResolvedVideoContext } from "@/lib/video-context/types";
 
 export interface StoryboardResult {
   breakdown: StoryboardGenerationOutput;
@@ -107,18 +106,6 @@ export interface StoryboardPlan {
   breakdown: StoryboardGenerationOutput;
   analysis: StoryboardAnalysis;
   videoPrompt: string;
-  warnings: string[];
-}
-
-/**
- * Small, serializable checkpoint between the expensive analysis/script pass
- * and the storyboard-JSON pass. Image bytes deliberately stay in the browser;
- * returning them from a Server Action can exceed Vercel's response limit.
- */
-export interface StoryboardPreparation {
-  analysis: StoryboardAnalysis;
-  sourceScript: string | null;
-  resolvedContext: ResolvedVideoContext;
   warnings: string[];
 }
 
@@ -2198,166 +2185,28 @@ async function runPreRenderLayerC(params: {
   };
 }
 
-function normalizePipelineInput(
-  input: StoryboardGenerationInput
-): StoryboardGenerationInput {
-  if (input.genre !== "cooking") {
-    return { ...input, cooking_recipe: undefined, cooking_style: undefined };
-  }
-  if (["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")) {
-    return {
-      ...input,
-      character_images: undefined,
-      character_descriptions: undefined,
-      main_character: undefined,
-    };
-  }
-  return input;
-}
-
-async function prepareStoryboardPipeline(
-  rawInput: StoryboardGenerationInput,
-  provider: AIProvider,
-  generationDeadlineMs: number
-): Promise<StoryboardPreparation> {
-  const warnings: string[] = [];
-  const input = normalizePipelineInput(rawInput);
-  const inputGate = validateStoryboardInput(input);
-  if (!inputGate.ok) {
-    throw new Error(
-      "Dữ liệu đầu vào chưa hợp lệ nên đã dừng trước mọi lời gọi AI.\n" +
-        formatSemanticReport(inputGate)
-    );
-  }
-
-  const analysis = await runAnalysis(input, provider, warnings);
-  const enhanced = enhanceInput(input, analysis);
-  const compiledCooking =
-    enhanced.genre === "cooking" && !!enhanced.cooking_recipe;
-  const scriptProvider = input.script_provider ?? provider;
-  const pastedScript = compiledCooking
-    ? null
-    : approvedScriptFromStoryIdea(enhanced.story_idea);
-  let sourceScript: string | null =
-    pastedScript && input.script_treatment !== "polish" ? pastedScript : null;
-
-  if (sourceScript) {
-    warnings.push(
-      "Đã nhận diện nội dung nhập là kịch bản hoàn chỉnh và dùng trực tiếp; không gọi API viết lại kịch bản."
-    );
-  } else if (pastedScript && input.script_treatment === "polish") {
-    warnings.push(
-      "Đã nhận diện kịch bản hoàn chỉnh và chuyển qua biên tập nâng cấp hook 30 giây, hành động, biểu cảm và lời thoại; giữ nguyên cốt truyện, đạo cụ, quan hệ và thông điệp kết."
-    );
-  }
-
-  if (!compiledCooking && !sourceScript) {
-    const scriptChain: AIProvider[] = [
-      scriptProvider,
-      ...(["openai", "gemini"] as AIProvider[]).filter(
-        (candidate) => candidate !== scriptProvider && candidate !== provider
-      ),
-    ];
-    for (const [chainIndex, candidateProvider] of scriptChain.entries()) {
-      if (generationDeadlineMs - Date.now() < MIN_PROVIDER_FALLBACK_BUDGET_MS) break;
-      try {
-        sourceScript = await generateScript(enhanced, candidateProvider, {
-          deadlineMs: generationDeadlineMs,
-          maxAttempts: chainIndex === 0 ? 2 : 1,
-        });
-        if (chainIndex > 0) {
-          warnings.push(
-            `Kịch bản do ${candidateProvider} viết thay vì ${scriptProvider} (model chính không phản hồi).`
-          );
-        }
-        if (pastedScript && input.script_treatment === "polish") {
-          warnings.push(
-            `Đã biên tập kịch bản bằng ${candidateProvider}; bản đã biên tập trở thành nguồn thoại/hành động duy nhất cho storyboard.`
-          );
-        }
-        break;
-      } catch (error) {
-        if (shouldAbortAiPipeline(error)) throw error;
-        warnings.push(
-          `Không viết được kịch bản bằng ${candidateProvider}. (${error instanceof Error ? error.message : String(error)})`
-        );
-      }
-    }
-    if (!sourceScript) {
-      warnings.push(`${provider} sẽ tự viết kịch bản luôn ở bước dựng storyboard.`);
-    }
-  }
-
-  const stage2Input = sourceScript
-    ? { ...enhanced, source_script: sourceScript }
-    : enhanced;
-  const resolvedContext = await analyzeVideoContext(stage2Input, provider, {
-    deadlineMs: generationDeadlineMs,
-    maxAttempts: 2,
-  });
-  const sanitizedContext = {
-    ...sanitizeUploadedCharacterContext(input, resolvedContext),
-    state: "locked" as const,
-  };
-  const contextGate = validateResolvedVideoContext(sanitizedContext, stage2Input);
-  if (!contextGate.ok) {
-    throw new Error(
-      `Context IR không đạt khóa deterministic nên đã dừng trước API tạo storyboard.\n${formatSemanticReport(contextGate)}`
-    );
-  }
-
-  return {
-    analysis,
-    sourceScript,
-    resolvedContext: sanitizedContext,
-    warnings,
-  };
-}
-
-function friendlyPlanError(error: unknown): string {
-  const raw = error instanceof Error ? error.message : "AI generation failed";
-  if (isAiBillingError(error)) {
-    return "Tài khoản OpenAI đã hết credit hoặc đã chạm giới hạn chi tiêu. Hệ thống đã dừng ngay tại lời gọi bị từ chối, không retry và không chuyển sang bước AI tiếp theo. Hãy nạp credit hoặc tăng giới hạn Billing/Project rồi thử lại.";
-  }
-  if (/time budget|server timeout/i.test(raw)) {
-    return "AI phản hồi quá lâu nên hệ thống đã dừng an toàn trước giới hạn Vercel. JSON và cấu trúc storyboard không bị chuyển sang định dạng khác; vui lòng bấm Tạo Storyboard lại.";
-  }
-  if (/aborted due to timeout|timed out/i.test(raw)) {
-    return "Nhà cung cấp AI không trả lời trong thời gian cho phép. Vui lòng thử lại; hệ thống vẫn giữ nguyên cấu trúc JSON storyboard.";
-  }
-  if (/server components render|digest/i.test(raw)) {
-    return "Máy chủ gặp lỗi tạm thời khi tạo kịch bản (có thể do AI quá tải hoặc ảnh quá lớn). Vui lòng thử lại sau vài giây.";
-  }
-  return `Tạo kịch bản thất bại: ${raw}`;
-}
-
-/** First Vercel execution: vision, script and locked Context IR only. */
-export async function prepareStoryboardPlan(
-  input: StoryboardGenerationInput,
-  provider: AIProvider = "gemini"
-): Promise<ActionResult<StoryboardPreparation>> {
-  try {
-    const data = await prepareStoryboardPipeline(
-      input,
-      provider,
-      Date.now() + PLAN_GENERATION_BUDGET_MS
-    );
-    return { success: true, data };
-  } catch (error) {
-    console.error("[Storyboard] preparation failed:", error);
-    return { success: false, error: friendlyPlanError(error) };
-  }
-}
-
 export async function generateStoryboardPlan(
   input: StoryboardGenerationInput,
-  provider: AIProvider = "gemini",
-  prepared?: StoryboardPreparation
+  provider: AIProvider = "gemini"
 ): Promise<ActionResult<StoryboardPlan>> {
-  const warnings: string[] = [...(prepared?.warnings ?? [])];
+  const warnings: string[] = [];
   const generationDeadlineMs = Date.now() + PLAN_GENERATION_BUDGET_MS;
   try {
-    input = normalizePipelineInput(input);
+    // Defense in depth: specialist Cooking data is legal only behind the exact
+    // genre router, never merely because a stale goal/state contains cooking.
+    if (input.genre !== "cooking") {
+      input = { ...input, cooking_recipe: undefined, cooking_style: undefined };
+    } else if (["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")) {
+      // Hands/POV ASMR never needs a face identity. Drop face payloads before
+      // Vision so they cannot add latency or lure image generation into showing
+      // a presenter. This is a server-side guarantee, not only a UI convention.
+      input = {
+        ...input,
+        character_images: undefined,
+        character_descriptions: undefined,
+        main_character: undefined,
+      };
+    }
     const inputGate = validateStoryboardInput(input);
     if (!inputGate.ok) {
       return {
@@ -2367,23 +2216,128 @@ export async function generateStoryboardPlan(
           formatSemanticReport(inputGate),
       };
     }
-    const preparation =
-      prepared ??
-      (await prepareStoryboardPipeline(input, provider, generationDeadlineMs));
-    if (!prepared) warnings.push(...preparation.warnings);
-    const analysis = preparation.analysis;
+    const analysis = await runAnalysis(input, provider, warnings);
     const enhanced = enhanceInput(input, analysis);
+
+    // GENERAL TWO-STAGE PIPELINE:
+    //   Stage 1 — the SCRIPT (creative text) is written by input.script_provider
+    //     (default Claude Opus 4.8), which is the strongest at Vietnamese
+    //     numerology/health scripts.
+    //   Stage 2 — the STORYBOARD (segments + JSON) is built by the main provider
+    //     (Gemini 2.5 Flash — cheap), which expands the approved script verbatim.
+    //   Images always stay on Nano Banana.
+    // If Stage 1's model is unavailable (e.g. ANTHROPIC_API_KEY not set), we skip
+    // the script and let Stage 2 write directly. If Stage 2 fails but we have a
+    // script, we fall back to building the storyboard with the script model.
+    // Cooking deliberately bypasses the generic creative-script + giant JSON
+    // path. Recipe IR already is the approved script source; the model returns
+    // only a small scene plan and deterministic code compiles compatibility
+    // fields/laws. Other genres keep the established two-stage flow.
     const compiledCooking =
       enhanced.genre === "cooking" && !!enhanced.cooking_recipe;
     const scriptProvider = input.script_provider ?? provider;
-    const sourceScript = preparation.sourceScript;
+
+    const pastedScript = compiledCooking
+      ? null
+      : approvedScriptFromStoryIdea(enhanced.story_idea);
+    // Backward compatibility: old callers that do not send script_treatment
+    // retain the original zero-cost verbatim path. The app now exposes an
+    // explicit "polish" choice which deliberately runs the scriptwriter once.
+    let sourceScript: string | null =
+      pastedScript && input.script_treatment !== "polish" ? pastedScript : null;
+    if (sourceScript) {
+      warnings.push(
+        "Đã nhận diện nội dung nhập là kịch bản hoàn chỉnh và dùng trực tiếp; không gọi API viết lại kịch bản."
+      );
+    } else if (pastedScript && input.script_treatment === "polish") {
+      warnings.push(
+        "Đã nhận diện kịch bản hoàn chỉnh và chuyển qua biên tập nâng cấp hook 30 giây, hành động, biểu cảm và lời thoại; giữ nguyên cốt truyện, đạo cụ, quan hệ và thông điệp kết."
+      );
+    }
+    // Always run a dedicated creative SCRIPT stage (except cooking, which uses
+    // its own Recipe-IR path). The script writer's dialogue-density rules
+    // (PACING AUDIT + LOAD BUDGET: 8-22 spoken words per clip, short exchanges
+    // packed into one clip) ONLY run in this stage — a single storyboard call
+    // that also improvises the story produces thin, one-line-per-clip dialogue.
+    // On OpenAI the script is written by gpt-5.6-sol, then gpt-4.1-mini expands it.
+    if (!compiledCooking && !sourceScript) {
+      // Script fallback chain — NEVER Claude (this deployment has no Anthropic
+      // credit): if the chosen writer fails, try the other OpenAI/Gemini writer.
+      const scriptChain: AIProvider[] = [
+        scriptProvider,
+        ...(["openai", "gemini"] as AIProvider[]).filter(
+          (p) => p !== scriptProvider && p !== provider
+        ),
+      ];
+      for (const [chainIndex, sp] of scriptChain.entries()) {
+        if (generationDeadlineMs - Date.now() < MIN_PROVIDER_FALLBACK_BUDGET_MS) break;
+        try {
+          sourceScript = await generateScript(enhanced, sp, {
+            deadlineMs: generationDeadlineMs,
+            maxAttempts: chainIndex === 0 ? 2 : 1,
+          });
+          if (chainIndex > 0) {
+            warnings.push(
+              `Kịch bản do ${sp} viết thay vì ${scriptProvider} (model chính không phản hồi).`
+            );
+          }
+          if (pastedScript && input.script_treatment === "polish") {
+            warnings.push(
+              `Đã biên tập kịch bản bằng ${sp}; bản đã biên tập trở thành nguồn thoại/hành động duy nhất cho storyboard.`
+            );
+          }
+          break;
+        } catch (e) {
+          if (shouldAbortAiPipeline(e)) throw e;
+          warnings.push(
+            `Không viết được kịch bản bằng ${sp}. (${e instanceof Error ? e.message : String(e)})`
+          );
+        }
+      }
+      if (!sourceScript) {
+        warnings.push(`${provider} sẽ tự viết kịch bản luôn ở bước dựng storyboard.`);
+      }
+    }
+
     const stage2Input = sourceScript
       ? { ...enhanced, source_script: sourceScript }
       : enhanced;
-    const contextBoundInput = {
-      ...stage2Input,
-      resolved_context: preparation.resolvedContext,
-    };
+
+    // Stage 1.5: analyse the approved script/brief into the canonical neutral
+    // 10-layer Context IR. New generation fails closed here: continuing without
+    // location/transition/state authorities would spend more API credit on a
+    // storyboard that cannot pass the export gate.
+    let contextBoundInput = stage2Input;
+    try {
+      const resolvedContext = await analyzeVideoContext(stage2Input, provider, {
+        deadlineMs: generationDeadlineMs,
+        maxAttempts: 2,
+      });
+      // Context analysis deliberately returns "resolved". This server boundary
+      // is the single deterministic owner that promotes the reviewed payload to
+      // "locked"; no downstream scene may reopen or reinterpret it.
+      const sanitizedContext = {
+        ...sanitizeUploadedCharacterContext(input, resolvedContext),
+        state: "locked" as const,
+      };
+      const contextGate = validateResolvedVideoContext(
+        sanitizedContext,
+        stage2Input
+      );
+      if (!contextGate.ok) {
+        throw new Error(
+          `Context IR không đạt khóa deterministic nên đã dừng trước API tạo storyboard.\n${formatSemanticReport(contextGate)}`
+        );
+      }
+      contextBoundInput = {
+        ...stage2Input,
+        resolved_context: sanitizedContext,
+      };
+    } catch (e) {
+      throw new Error(
+        `Không khóa được Context IR 10 tầng nên đã dừng trước bước tạo storyboard; không gọi API tạo lại hoặc tiếp tục bằng dữ liệu thiếu khóa. (${e instanceof Error ? e.message : String(e)})`
+      );
+    }
 
     let breakdown: StoryboardGenerationOutput;
     let activeStoryboardProvider = provider;
