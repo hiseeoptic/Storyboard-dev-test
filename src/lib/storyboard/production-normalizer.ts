@@ -13,6 +13,7 @@ export interface ProductionNormalizationResult {
   end_snapshots_synchronized_from_changes: number;
   invalid_character_holders_cleared: number;
   composite_object_holders_normalized: number;
+  elapsed_boundaries_promoted: number;
 }
 
 function key(value: string): string {
@@ -21,6 +22,110 @@ function key(value: string): string {
 
 function clean(value: string | null | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function hasStrongElapsedStateEvidence(
+  previous: StoryboardGenerationOutput["segments"][number],
+  current: StoryboardGenerationOutput["segments"][number]
+): boolean {
+  if (!previous.state_ledger || !current.state_ledger) return false;
+  const prior = new Map(previous.state_ledger.end.map((entry) => [key(entry.entity_id), entry]));
+  const changedStartStates = current.state_ledger.start
+    .filter((entry) => {
+      const before = prior.get(key(entry.entity_id));
+      return before && (
+        clean(before.state) !== clean(entry.state) ||
+        clean(before.position) !== clean(entry.position) ||
+        clean(before.holder) !== clean(entry.holder)
+      );
+    })
+    .map((entry) => clean(entry.state))
+    .join(" ");
+  const evidence = clean([
+    current.transition_in?.time_relation,
+    current.transition_in?.reason,
+    current.title,
+    current.first_frame_prompt,
+    changedStartStates,
+  ].join(" "));
+  return /\b(?:later|minutes? later|hours? later|after waiting|after cooking|after eating|steeping|steeped|cooked|finished cooking|partly eaten|half eaten|less food|consumed)\b|\b(?:sau đó|lát sau|vài phút sau|vài giờ sau|sau khi chờ|sau khi nấu|sau khi ăn|đang ủ|đã ủ|đã chín|ăn dở|đã ăn bớt|vơi đi)\b/iu.test(evidence);
+}
+
+/** Preserve a clearly elapsed approved story state by making the edit
+ * intentional instead of erasing it through continuous-boundary inheritance.
+ * The classifier is deliberately narrow; ordinary pose/gaze drift still takes
+ * the strict inheritance path below. */
+function normalizeStrongElapsedBoundaries(
+  breakdown: Pick<StoryboardGenerationOutput, "segments">
+): number {
+  let promoted = 0;
+  for (let index = 1; index < breakdown.segments.length; index += 1) {
+    const previous = breakdown.segments[index - 1]!;
+    const current = breakdown.segments[index]!;
+    const mode = current.transition_in?.mode ?? current.continuity_mode;
+    if (mode !== "continuous" || !hasStrongElapsedStateEvidence(previous, current)) continue;
+    current.continuity_mode = "time_jump";
+    current.transition_in = {
+      mode: "time_jump",
+      from_location_id: current.transition_in?.from_location_id,
+      to_location_id:
+        current.transition_in?.to_location_id ?? current.location_id ??
+        current.environment_ref ?? previous.location_id ?? previous.environment_ref ?? "custom",
+      time_relation: "after the explicitly implied elapsed process",
+      preserve: Array.from(new Set([
+        ...(current.transition_in?.preserve ?? []), "character identity", "location identity",
+      ])),
+      reset: Array.from(new Set([
+        ...(current.transition_in?.reset ?? []),
+        "changed physical state and placement shown at the new shot start",
+      ])),
+      reason: clean(current.transition_in?.reason) ||
+        "approved start state proves elapsed off-screen action",
+    };
+    promoted += 1;
+  }
+  return promoted;
+}
+
+function physicalDimensionsDiffer(
+  before: { state: string; position: string; holder?: string | null; orientation?: string | null },
+  after: { state: string; position: string; holder?: string | null; orientation?: string | null }
+): boolean {
+  return clean(before.state) !== clean(after.state) ||
+    clean(before.position) !== clean(after.position) ||
+    clean(before.holder) !== clean(after.holder) ||
+    clean(before.orientation) !== clean(after.orientation);
+}
+
+function visibleBoundaryBridgeAction(
+  entityId: string,
+  before: { state: string; position: string; holder?: string | null; orientation?: string | null },
+  after: { state: string; position: string; holder?: string | null; orientation?: string | null }
+): { action: string; causedBy: string } {
+  const fromHolder = clean(before.holder);
+  const toHolder = clean(after.holder);
+  if (fromHolder !== toHolder) {
+    if (fromHolder && toHolder) {
+      return {
+        action: `${fromHolder} visibly releases ${entityId}; ${toHolder}'s right hand reaches, contacts, grips and receives ${entityId}`,
+        causedBy: `${fromHolder} release and ${toHolder}'s right hand contact`,
+      };
+    }
+    if (toHolder) {
+      return {
+        action: `${toHolder}'s right hand visibly reaches, contacts, grips and lifts ${entityId}`,
+        causedBy: `${toHolder}'s right hand contact`,
+      };
+    }
+    return {
+      action: `${fromHolder}'s right hand visibly lowers and releases ${entityId} onto ${clean(after.position) || "its declared support"}`,
+      causedBy: `${fromHolder}'s right hand release`,
+    };
+  }
+  return {
+    action: `${entityId} visibly transitions from ${clean(before.state) || "the inherited pose"} at ${clean(before.position) || "the inherited position"} to ${clean(after.state) || "the declared pose"} at ${clean(after.position) || "the declared position"}`,
+    causedBy: entityId,
+  };
 }
 
 function exactCharacterName(value: string, names: string[]): string | undefined {
@@ -328,6 +433,7 @@ export function normalizeProductionContracts(
   }
   let voiceProfilesCompleted = 0;
   let continuousStartsInherited = 0;
+  const elapsedBoundariesPromoted = normalizeStrongElapsedBoundaries(breakdown);
   const holderRepairs = normalizeLegacyHolders(breakdown);
   const stateLedgerDimensionsNormalized =
     normalizeStateLedgerDimensions(breakdown);
@@ -353,13 +459,19 @@ export function normalizeProductionContracts(
     if (
       !previous?.state_ledger ||
       !current?.state_ledger ||
-      current.transition_in?.mode !== "continuous"
+      (current.transition_in?.mode ?? current.continuity_mode) !== "continuous"
     ) {
       continue;
     }
 
     const previousEnd = new Map(
       previous.state_ledger.end.map((entry) => [key(entry.entity_id), entry])
+    );
+    const declaredStarts = new Map(
+      current.state_ledger.start.map((entry) => [key(entry.entity_id), {
+        ...entry,
+        traces: entry.traces ? [...entry.traces] : undefined,
+      }])
     );
     current.state_ledger.start = current.state_ledger.start.map((entry) => {
       const inherited = previousEnd.get(key(entry.entity_id));
@@ -394,6 +506,45 @@ export function normalizeProductionContracts(
       });
       currentStartIds.add(key(inherited.entity_id));
       continuousStartsInherited += 1;
+    }
+
+    // The model often puts the first visible gesture of a clip directly in its
+    // start snapshot. After inheriting the true previous end, preserve that
+    // approved gesture as an ordered visible bridge instead of silently erasing
+    // it. This is especially important for prop hand-offs: ownership changes
+    // now have an explicit release -> reach/contact/grip chain.
+    const bridgeChanges = [] as typeof current.state_ledger.changes;
+    for (const [entityKey, declared] of declaredStarts) {
+      const inherited = previousEnd.get(entityKey);
+      if (!inherited || !physicalDimensionsDiffer(inherited, declared)) continue;
+      const alreadyDeclared = current.state_ledger.changes.some((change) =>
+        key(change.entity_id) === entityKey &&
+        clean(change.from) === clean(inherited.state) &&
+        clean(change.to) === clean(declared.state) &&
+        clean(change.from_position) === clean(inherited.position) &&
+        clean(change.to_position) === clean(declared.position) &&
+        clean(change.from_holder) === clean(inherited.holder) &&
+        clean(change.to_holder) === clean(declared.holder)
+      );
+      if (alreadyDeclared) continue;
+      const bridge = visibleBoundaryBridgeAction(declared.entity_id, inherited, declared);
+      bridgeChanges.push({
+        entity_id: declared.entity_id,
+        from: inherited.state,
+        from_position: inherited.position,
+        from_holder: inherited.holder,
+        from_orientation: inherited.orientation,
+        action: bridge.action,
+        to: declared.state,
+        to_position: declared.position,
+        to_holder: declared.holder,
+        to_orientation: declared.orientation,
+        caused_by: bridge.causedBy,
+        trace: "",
+      });
+    }
+    if (bridgeChanges.length > 0) {
+      current.state_ledger.changes = [...bridgeChanges, ...current.state_ledger.changes];
     }
 
     const startState = new Map(
@@ -479,5 +630,6 @@ export function normalizeProductionContracts(
     end_snapshots_synchronized_from_changes: endSnapshotsSynchronizedFromChanges,
     invalid_character_holders_cleared: holderRepairs.characterHoldersCleared,
     composite_object_holders_normalized: holderRepairs.objectHoldersNormalized,
+    elapsed_boundaries_promoted: elapsedBoundariesPromoted,
   };
 }

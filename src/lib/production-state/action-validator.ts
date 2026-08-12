@@ -12,7 +12,7 @@ function finding(params: Omit<ProductionFinding, "suggested_patch"> & {
 }
 
 function isContactAction(text: string): boolean {
-  return /\b(?:touch|grip|grasp|hold|pick|lift|place|release|push|pull|remove|take off)\b|\b(?:chạm|nắm|cầm|nhặt|nhấc|đặt|thả|đẩy|kéo|tháo|cởi)\b/iu.test(text);
+  return /\b(?:touch(?:es|ed|ing)?|grip(?:s|ped|ping)?|grasp(?:s|ed|ing)?|hold(?:s|ing)?|held|pick(?:s|ed|ing)?|lift(?:s|ed|ing)?|place(?:s|d|ing)?|release(?:s|d|ing)?|push(?:es|ed|ing)?|pull(?:s|ed|ing)?|remove(?:s|d|ing)?|take(?:s|n|ing)? off)\b|\b(?:chạm|nắm|cầm|nhặt|nhấc|đặt|thả|đẩy|kéo|tháo|cởi)\b/iu.test(text);
 }
 
 function isMovementAction(text: string): boolean {

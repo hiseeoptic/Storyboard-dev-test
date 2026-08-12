@@ -24,6 +24,19 @@ function parseBoard(value: string): Record<string, unknown> {
   }
 }
 
+/** The board image safety normalizer may append a purely compositional clause
+ * that keeps an acting hand connected to its owner's face/torso. That clause is
+ * not a new story action and must not trip AUTH-010. Strip only these exact,
+ * app-owned suffixes; every other action word remains subject to authority. */
+function stripBoardSafetyProjection(value: unknown): string {
+  return str(value)
+    .replace(
+      /\.\s*[^.]+?'s face, shoulders, upper torso and acting limb remain visibly connected in the same frame\s*$/iu,
+      ""
+    )
+    .trim();
+}
+
 /**
  * Gate the one-way authority chain:
  * script -> Production State -> primary video prompt -> storyboard board.
@@ -158,7 +171,7 @@ export function validateProductionPromptAuthority(
     const inventedPanel = panels
       .map(obj)
       .find((panel) => {
-        const action = str(panel.action);
+        const action = stripBoardSafetyProjection(panel.action);
         return action && !allowedPanelActions.has(action);
       });
     if (inventedPanel) {
@@ -166,7 +179,7 @@ export function validateProductionPromptAuthority(
         code: "AUTH-010",
         severity: "high",
         message: "Storyboard board contains an action not declared by the script, Production State or video prompt.",
-        evidence: str(inventedPanel.action),
+        evidence: stripBoardSafetyProjection(inventedPanel.action),
       });
     }
     if (shot.video_refs?.use_generated_storyboard !== true) {

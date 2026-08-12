@@ -544,3 +544,41 @@ test("holder transfer with reach/lift gets a deterministic hand and contact targ
   assert.deepEqual(change.contact_entity_ids, ["obj_gift"]);
   assert.equal(validatePhysicalState(compiled).some((item) => item.code === "CONTACT_CAUSALITY_MISSING"), false);
 });
+
+test("actor-owned manipulation row binds contact to the named prop, never back to the actor", () => {
+  const legacySegment = {
+    segment_number: 1, duration_seconds: 10, title: "Lan handles the alarm", marketing_role: "hook",
+    beats: [], first_frame_prompt: "Lan lies beside an alarm clock",
+    motion_prompt: "Lan's right hand reaches for and grips the alarm clock", dialogue: null,
+    continuity_note: "", characters_in_scene: ["Lan"],
+    state_ledger: {
+      start: [
+        { entity_id: "Lan", state: "lying down", position: "on bed" },
+        { entity_id: "alarm clock", state: "ringing", position: "on nightstand" },
+      ],
+      changes: [{
+        entity_id: "Lan", from: "lying down", action: "Lan's right hand grips the alarm clock",
+        to: "lying down reaching right", caused_by: "Lan", from_position: "on bed",
+        to_position: "on bed", from_holder: "", to_holder: "",
+      }],
+      end: [
+        { entity_id: "Lan", state: "lying down reaching right", position: "on bed" },
+        { entity_id: "alarm clock", state: "ringing", position: "on nightstand" },
+      ],
+    },
+  } satisfies VideoSegment;
+  const lan = {
+    name: "Lan", gender_age: "adult", build: "average", skin_tone: "natural", hair: "black",
+    eyes: "brown", costume: "sleepwear", signature_features: "none", default_expression: "sleepy", render_style: "cinematic",
+  } satisfies CharacterLock;
+  const compiled = buildProductionState({ character_locks: [lan], segments: [legacySegment], total_duration_seconds: 10 });
+  const action = compiled.shots[0]!.actions[0]!;
+  assert.equal(action.subject_entity_id, "char_lan");
+  assert.equal(action.object_entity_id, "obj_alarm_clock");
+  assert.equal(action.body_part, "right_hand");
+  assert.deepEqual(action.contact_entity_ids, ["obj_alarm_clock"]);
+  assert.equal(
+    compiled.findings.some((item) => item.code === "ACTION_CONTACT_CONTRACT_INCOMPLETE"),
+    false
+  );
+});
