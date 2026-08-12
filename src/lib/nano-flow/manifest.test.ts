@@ -651,30 +651,6 @@ test("authority validator detects a storyboard/video fingerprint mismatch", () =
   assert.ok(actionReport.findings.some((finding) => finding.code === "AUTH-010"));
 });
 
-test("authority accepts the app-owned connected-body safety suffix as composition, not invented action", () => {
-  const bd = {
-    title: "Phone framing", total_duration_seconds: 10, character_locks: [{ name: "Lan" }],
-    segments: [{
-      segment_number: 1, duration_seconds: 10, characters_in_scene: ["Lan"],
-      environment_ref: "office", first_frame_prompt: "Lan holds a phone.",
-      motion_prompt: "Lan's finger hovers over the trash bin detail.",
-      beats: [{ beat: "Lan's finger hovers over the trash bin detail", camera: "[CLOSE] Lan's hand and phone" }],
-    }],
-  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
-  const m = buildNanoFlowManifest(bd, {
-    veoClips: [{
-      character_lock: { LAN: { name: "Lan" } }, background_lock: { setting: "office" },
-      scene_action: { start_state: "Lan holds a phone", ordered_action: "Lan's finger hovers over the trash bin detail", end_state: "Lan keeps holding the phone" },
-    }],
-  });
-  const board = JSON.parse(m.shots[0]!.storyboard_prompt) as { panels: Array<{ action: string }> };
-  assert.match(board.panels[0]!.action, /acting limb remain visibly connected/iu);
-  assert.equal(
-    validateProductionPromptAuthority(m).findings.some((finding) => finding.code === "AUTH-010"),
-    false
-  );
-});
-
 // Regression: manifest payload is deduplicated (see state-authority.ts).
 // B2 — the per-shot state_authority is SLIM: it keeps the authority essentials
 // but drops the heavy canonical snapshots (they live once at production_state).

@@ -70,32 +70,6 @@ function resolveSubject(text: string, registry: ProductionRegistryEntry[]): stri
   return candidates[0]?.entity_id ?? null;
 }
 
-function resolveObject(
-  text: string,
-  registry: ProductionRegistryEntry[],
-  subjectEntityId: string | null
-): string | null {
-  const value = lower(text);
-  const candidates = registry
-    .filter((entry) => entry.entity_id !== subjectEntityId && entry.kind !== "character")
-    .flatMap((entry) =>
-      [entry.display_name, entry.source_ref, ...entry.aliases]
-        .filter((name): name is string => Boolean(name))
-        .map((name) => ({ entry, name: clean(name) }))
-    )
-    .filter(({ name }) => {
-      if (!name) return false;
-      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, "iu").test(value);
-    })
-    .sort((a, b) => b.name.length - a.name.length);
-  return candidates[0]?.entry.entity_id ?? null;
-}
-
-function isManipulationVerb(text: string): boolean {
-  return /\b(?:touch(?:es|ed|ing)?|grip(?:s|ped|ping)?|grasp(?:s|ed|ing)?|hold(?:s|ing)?|held|pick(?:s|ed|ing)?|lift(?:s|ed|ing)?|place(?:s|d|ing)?|release(?:s|d|ing)?|push(?:es|ed|ing)?|pull(?:s|ed|ing)?|remove(?:s|d|ing)?|take(?:s|n|ing)? off|reach(?:es|ed|ing)?)\b|\b(?:chạm|nắm|cầm|nhặt|nhấc|đặt|thả|đẩy|kéo|tháo|cởi|vươn tay|đưa tay)\b/iu.test(text);
-}
-
 function placementFor(
   placements: EntityPlacementState[],
   entityId: string | null
@@ -145,38 +119,20 @@ export function compileAtomicActions(
     const declared = declaredDurations[index];
     const duration = declared ?? Math.max(minimum, inferredShare);
     const changedEntity = registry.find((entry) => entry.entity_id === change.entity_id);
-    // Models sometimes attach a manipulation row to the actor ("Lan changes
-    // from resting to reaching") while the actual prop is named only in the
-    // action prose. In that case `change.entity_id` is not the contact target.
-    // Resolve the named non-character entity and keep the original ledger row
-    // untouched; this only repairs the additive canonical action contract.
-    const namedObjectEntityId = resolveObject(
-      `${verb} ${change.action} ${change.caused_by}`,
-      registry,
-      subject
-    );
     const objectEntityId = changedEntity?.kind === "character" && change.entity_id === subject
-      ? namedObjectEntityId
-      : change.entity_id || namedObjectEntityId;
-    const manipulation = isManipulationVerb(verb);
-    const bodyPart = change.body_part ?? (manipulation && objectEntityId ? "right_hand" : null);
-    const contactEntityIds = manipulation && objectEntityId
-      ? Array.from(new Set([
-          ...(change.contact_entity_ids ?? []).filter((entityId) => entityId !== subject),
-          objectEntityId,
-        ]))
-      : [...(change.contact_entity_ids ?? [])];
+      ? null
+      : change.entity_id || null;
     return {
       action_id: `${shot.shot_id}_action_${String(index + 1).padStart(3, "0")}`,
       source_change_index: changeIndex,
       subject_entity_id: subject,
       verb,
       object_entity_id: objectEntityId,
-      body_part: bodyPart,
+      body_part: change.body_part ?? null,
       start_state: partIndex === 0 ? clean(change.from) : "",
       transition_states: [],
       end_state: partIndex === partCount - 1 ? clean(change.to) : "",
-      contact_entity_ids: contactEntityIds,
+      contact_entity_ids: [...(change.contact_entity_ids ?? [])],
       duration_s: Number.isFinite(duration) && duration > 0
         ? Math.round(duration * 10) / 10
         : null,

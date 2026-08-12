@@ -19,7 +19,6 @@ import {
   AlertTriangle,
   BookOpen,
   Trash2,
-  FolderKanban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,15 +67,6 @@ import {
   NANO_FLOW_MESSAGE_TYPE,
 } from "@/types/nano-flow";
 import { Send } from "lucide-react";
-import {
-  loadProjectWorkspace,
-  makeProjectSlot,
-  normalizeProjectWorkspace,
-  PROJECT_WORKSPACE_LIMIT,
-  saveProjectWorkspace,
-  type ProjectSlotStatus,
-  type ProjectWorkspace,
-} from "@/lib/project-workspace-store";
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
@@ -887,94 +877,6 @@ interface BackgroundEntry {
   sceneIndices?: number[];
 }
 
-interface ProjectFormSnapshot {
-  step: number;
-  storyIdea: string;
-  scriptTreatment: "preserve" | "polish";
-  genre: string;
-  topicType: string;
-  topicItemId: string;
-  settingSel: string;
-  settingCustom: string;
-  toneSel: string;
-  toneCustom: string;
-  productName: string;
-  sellingPoints: string;
-  targetAudience: string;
-  keyMessage: string;
-  callToAction: string;
-  mainCharacter: string;
-  centralConflict: string;
-  characters: CharacterEntry[];
-  charName: string;
-  charHasRealPhoto: boolean;
-  charRole: string;
-  charIsChild: boolean;
-  charHeightCm: string;
-  charBodyType: CharacterEntry["bodyType"];
-  charAppearance: string;
-  charApprSel: string;
-  charImages: UploadedImage[];
-  products: ProductEntry[];
-  prodName: string;
-  prodDesc: string;
-  prodDescSel: string;
-  prodImages: UploadedImage[];
-  ingredients: ProductEntry[];
-  ingName: string;
-  ingDesc: string;
-  ingImages: UploadedImage[];
-  cookingSourceText: string;
-  cookingSourceImages: UploadedImage[];
-  cookingStyle: CookingStyle;
-  cookingRecipe: CookingRecipeIR | null;
-  backgrounds: BackgroundEntry[];
-  locationMode: "auto" | "upload";
-  style: StoryboardStyle;
-  characterRender: "auto" | "photo" | "stylized";
-  segmentCount: number;
-  beatsPerSegment: number;
-  forceVietnameseDialogue: boolean;
-  videoGoal: VideoGoal;
-  audienceGoal: AudienceGoal;
-  storyFormat: StoryFormat;
-  visualInterpretation: VisualInterpretation;
-  characterRepresentation: CharacterRepresentation;
-  directingProfile: DirectingProfileId;
-  aspectRatio: AspectRatio;
-  thumbnailAspectRatio: "16:9" | "9:16";
-}
-
-interface ProjectWorkflowSnapshot {
-  phase: "input" | "script" | "result";
-  result: StoryboardResult | null;
-  draft: StoryboardGenerationOutput | null;
-  genInput: StoryboardGenerationInput | null;
-  genAnalysis: StoryboardAnalysis | null;
-  planWarnings: string[];
-  boardErrors: Record<string, string>;
-  error: string | null;
-}
-
-function emptyProjectSnapshot(): ProjectFormSnapshot {
-  return {
-    step: 0, storyIdea: "", scriptTreatment: "preserve", genre: "advertising",
-    topicType: "", topicItemId: "", settingSel: "", settingCustom: "",
-    toneSel: "", toneCustom: "", productName: "", sellingPoints: "",
-    targetAudience: "", keyMessage: "", callToAction: "", mainCharacter: "",
-    centralConflict: "", characters: [], charName: "", charHasRealPhoto: false,
-    charRole: "", charIsChild: false, charHeightCm: "", charBodyType: "standard",
-    charAppearance: "", charApprSel: "", charImages: [], products: [], prodName: "",
-    prodDesc: "", prodDescSel: "", prodImages: [], ingredients: [], ingName: "",
-    ingDesc: "", ingImages: [], cookingSourceText: "", cookingSourceImages: [],
-    cookingStyle: "kitchen_asmr", cookingRecipe: null, backgrounds: [], locationMode: "auto",
-    style: "cinematic", characterRender: "auto", segmentCount: 4, beatsPerSegment: 3,
-    forceVietnameseDialogue: true, videoGoal: "product_ad", audienceGoal: "action",
-    storyFormat: "auto", visualInterpretation: "auto", characterRepresentation: "auto",
-    directingProfile: "auto", aspectRatio: "16:9", thumbnailAspectRatio: "16:9",
-  };
-}
-
 type Phase = "input" | "generating" | "script" | "result";
 
 type CachedStoryboardPlan = {
@@ -1196,7 +1098,7 @@ export function GenerateClient() {
 
   // Step 1: Story
   const [storyIdea, setStoryIdea] = useState("");
-  const [scriptTreatment, setScriptTreatment] = useState<"preserve" | "polish">("preserve");
+  const [scriptTreatment, setScriptTreatment] = useState<"preserve" | "polish">("polish");
   const [genre, setGenre] = useState("advertising");
   const steps = t.steps[lang].map((label, index) =>
     genre === "cooking" && index === 2
@@ -1387,224 +1289,6 @@ export function GenerateClient() {
   const [zipping, setZipping] = useState(false);
   const [nanoPushed, setNanoPushed] = useState(false);
 
-  // ─── Multi-project workspace (max 5) ─────────────────────────────
-  // This wraps the existing form without replacing it. Every slot stores a
-  // complete independent form snapshot (including uploaded image data) in
-  // IndexedDB; queueing is local-only and never calls an AI API.
-  const [projectWorkspace, setProjectWorkspace] = useState<ProjectWorkspace<ProjectFormSnapshot, ProjectWorkflowSnapshot>>(
-    () => normalizeProjectWorkspace(null, emptyProjectSnapshot())
-  );
-  const [projectWorkspaceReady, setProjectWorkspaceReady] = useState(false);
-  const [projectWorkspaceMessage, setProjectWorkspaceMessage] = useState("");
-  const [pendingProjectExport, setPendingProjectExport] = useState<{ projectId: string; kind: "manifest" | "zip" } | null>(null);
-  const suppressWorkspaceAutosave = useRef(false);
-
-  const captureProjectWorkflow = (): ProjectWorkflowSnapshot => ({
-    phase: phase === "generating" ? (draft ? "script" : result ? "result" : "input") : phase,
-    result: result ? structuredClone(result) : null,
-    draft: draft ? structuredClone(draft) : null,
-    genInput: genInput ? structuredClone(genInput) : null,
-    genAnalysis: genAnalysis ? structuredClone(genAnalysis) : null,
-    planWarnings: [...planWarnings],
-    boardErrors: { ...boardErrors },
-    error,
-  });
-
-  const captureProjectSnapshot = (): ProjectFormSnapshot => ({
-    step, storyIdea, scriptTreatment, genre, topicType, topicItemId, settingSel,
-    settingCustom, toneSel, toneCustom, productName, sellingPoints, targetAudience,
-    keyMessage, callToAction, mainCharacter, centralConflict, characters, charName,
-    charHasRealPhoto, charRole, charIsChild, charHeightCm, charBodyType, charAppearance,
-    charApprSel, charImages, products, prodName, prodDesc, prodDescSel, prodImages,
-    ingredients, ingName, ingDesc, ingImages, cookingSourceText, cookingSourceImages,
-    cookingStyle, cookingRecipe, backgrounds, locationMode, style, characterRender,
-    segmentCount, beatsPerSegment, forceVietnameseDialogue, videoGoal, audienceGoal,
-    storyFormat, visualInterpretation, characterRepresentation, directingProfile,
-    aspectRatio, thumbnailAspectRatio,
-  });
-
-  const applyProjectSnapshot = (snapshot: ProjectFormSnapshot) => {
-    suppressWorkspaceAutosave.current = true;
-    setStep(snapshot.step); setStoryIdea(snapshot.storyIdea); setScriptTreatment(snapshot.scriptTreatment);
-    setGenre(snapshot.genre); setTopicType(snapshot.topicType); setTopicItemId(snapshot.topicItemId);
-    setSettingSel(snapshot.settingSel); setSettingCustom(snapshot.settingCustom);
-    setToneSel(snapshot.toneSel); setToneCustom(snapshot.toneCustom); setProductName(snapshot.productName);
-    setSellingPoints(snapshot.sellingPoints); setTargetAudience(snapshot.targetAudience);
-    setKeyMessage(snapshot.keyMessage); setCallToAction(snapshot.callToAction);
-    setMainCharacter(snapshot.mainCharacter); setCentralConflict(snapshot.centralConflict);
-    setCharacters(snapshot.characters); setCharName(snapshot.charName);
-    setCharHasRealPhoto(snapshot.charHasRealPhoto); setCharRole(snapshot.charRole);
-    setCharIsChild(snapshot.charIsChild); setCharHeightCm(snapshot.charHeightCm);
-    setCharBodyType(snapshot.charBodyType); setCharAppearance(snapshot.charAppearance);
-    setCharApprSel(snapshot.charApprSel); setCharImages(snapshot.charImages);
-    setProducts(snapshot.products); setProdName(snapshot.prodName); setProdDesc(snapshot.prodDesc);
-    setProdDescSel(snapshot.prodDescSel); setProdImages(snapshot.prodImages);
-    setIngredients(snapshot.ingredients); setIngName(snapshot.ingName); setIngDesc(snapshot.ingDesc);
-    setIngImages(snapshot.ingImages); setCookingSourceText(snapshot.cookingSourceText);
-    setCookingSourceImages(snapshot.cookingSourceImages); setCookingStyle(snapshot.cookingStyle);
-    setCookingRecipe(snapshot.cookingRecipe); setBackgrounds(snapshot.backgrounds);
-    setLocationMode(snapshot.locationMode); setStyle(snapshot.style); setCharacterRender(snapshot.characterRender);
-    setSegmentCount(snapshot.segmentCount); setBeatsPerSegment(snapshot.beatsPerSegment);
-    setForceVietnameseDialogue(snapshot.forceVietnameseDialogue); setVideoGoal(snapshot.videoGoal);
-    setAudienceGoal(snapshot.audienceGoal); setStoryFormat(snapshot.storyFormat);
-    setVisualInterpretation(snapshot.visualInterpretation); setCharacterRepresentation(snapshot.characterRepresentation);
-    setDirectingProfile(snapshot.directingProfile); setAspectRatio(snapshot.aspectRatio);
-    setThumbnailAspectRatio(snapshot.thumbnailAspectRatio);
-    setError(null); setResult(null); setDraft(null); setGenInput(null); setGenAnalysis(null);
-    setPlanWarnings([]); setBoardErrors({}); setPhase("input");
-  };
-
-  const applyProjectWorkflow = (workflow?: ProjectWorkflowSnapshot) => {
-    if (!workflow) return;
-    setResult(workflow.result ? structuredClone(workflow.result) : null);
-    setDraft(workflow.draft ? structuredClone(workflow.draft) : null);
-    setGenInput(workflow.genInput ? structuredClone(workflow.genInput) : null);
-    setGenAnalysis(workflow.genAnalysis ? structuredClone(workflow.genAnalysis) : null);
-    setPlanWarnings([...(workflow.planWarnings ?? [])]);
-    setBoardErrors({ ...(workflow.boardErrors ?? {}) });
-    setError(workflow.error ?? null);
-    setPhase(workflow.phase ?? "input");
-  };
-
-  const persistWorkspace = async (workspace: ProjectWorkspace<ProjectFormSnapshot, ProjectWorkflowSnapshot>) => {
-    setProjectWorkspace(workspace);
-    try {
-      await saveProjectWorkspace(workspace);
-    } catch (workspaceError) {
-      setProjectWorkspaceMessage(
-        workspaceError instanceof Error ? workspaceError.message : "Không lưu được danh sách dự án."
-      );
-    }
-  };
-
-  useEffect(() => {
-    let alive = true;
-    loadProjectWorkspace<ProjectFormSnapshot, ProjectWorkflowSnapshot>()
-      .then((stored) => {
-        if (!alive) return;
-        const workspace = normalizeProjectWorkspace(stored, emptyProjectSnapshot());
-        setProjectWorkspace(workspace);
-        const active = workspace.projects.find((project) => project.id === workspace.active_project_id)!;
-        applyProjectSnapshot({ ...emptyProjectSnapshot(), ...active.snapshot });
-        applyProjectWorkflow(active.workflow);
-        setProjectWorkspaceReady(true);
-      })
-      .catch((workspaceError) => {
-        if (!alive) return;
-        setProjectWorkspaceReady(true);
-        setProjectWorkspaceMessage(
-          workspaceError instanceof Error ? workspaceError.message : "Không đọc được danh sách dự án."
-        );
-      });
-    return () => { alive = false; };
-    // Hydrate exactly once; setters are intentionally not dependencies.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!projectWorkspaceReady || phase !== "input") return;
-    if (suppressWorkspaceAutosave.current) {
-      suppressWorkspaceAutosave.current = false;
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      const now = new Date().toISOString();
-      const snapshot = captureProjectSnapshot();
-      const projects = projectWorkspace.projects.map((project) =>
-        project.id === projectWorkspace.active_project_id
-          ? { ...project, snapshot, updated_at: now }
-          : project
-      );
-      void persistWorkspace({ ...projectWorkspace, projects });
-    }, 500);
-    return () => window.clearTimeout(timer);
-    // Every meaningful form value below belongs to the active project slot.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectWorkspaceReady, phase, step, storyIdea, scriptTreatment, genre, topicType,
-    topicItemId, settingSel, settingCustom, toneSel, toneCustom, productName, sellingPoints,
-    targetAudience, keyMessage, callToAction, mainCharacter, centralConflict, characters,
-    charName, charHasRealPhoto, charRole, charIsChild, charHeightCm, charBodyType,
-    charAppearance, charApprSel, charImages, products, prodName, prodDesc, prodDescSel,
-    prodImages, ingredients, ingName, ingDesc, ingImages, cookingSourceText,
-    cookingSourceImages, cookingStyle, cookingRecipe, backgrounds, locationMode, style,
-    characterRender, segmentCount, beatsPerSegment, forceVietnameseDialogue, videoGoal,
-    audienceGoal, storyFormat, visualInterpretation, characterRepresentation,
-    directingProfile, aspectRatio, thumbnailAspectRatio]);
-
-  const saveActiveProjectInto = (
-    workspace: ProjectWorkspace<ProjectFormSnapshot, ProjectWorkflowSnapshot>,
-    status?: ProjectSlotStatus
-  ): ProjectWorkspace<ProjectFormSnapshot, ProjectWorkflowSnapshot> => {
-    const now = new Date().toISOString();
-    const snapshot = structuredClone(captureProjectSnapshot());
-    const suggestedName = (productName || storyIdea.split(/\n|[.!?]/)[0] || "").trim().slice(0, 48);
-    return {
-      ...workspace,
-      projects: workspace.projects.map((project, index) =>
-        project.id === workspace.active_project_id
-          ? {
-              ...project,
-              name: project.name.startsWith("Dự án ") && suggestedName ? suggestedName : project.name || `Dự án ${index + 1}`,
-              status: status ?? project.status,
-              snapshot,
-              workflow: captureProjectWorkflow(),
-              updated_at: now,
-            }
-          : project
-      ),
-    };
-  };
-
-  const switchProject = async (projectId: string, useQueuedSnapshot = false) => {
-    const saved = saveActiveProjectInto(projectWorkspace);
-    const target = saved.projects.find((project) => project.id === projectId);
-    if (!target) return;
-    const next = { ...saved, active_project_id: projectId };
-    await persistWorkspace(next);
-    const targetSnapshot = useQueuedSnapshot && target.queued_snapshot
-      ? target.queued_snapshot
-      : target.snapshot;
-    applyProjectSnapshot({ ...emptyProjectSnapshot(), ...structuredClone(targetSnapshot) });
-    applyProjectWorkflow(target.workflow);
-    setProjectWorkspaceMessage("");
-  };
-
-  const deleteActiveProject = async () => {
-    if (!window.confirm("Xóa dự án đang chọn khỏi danh sách? Dữ liệu trong slot này sẽ bị xóa.")) return;
-    const remaining = projectWorkspace.projects.filter((project) => project.id !== projectWorkspace.active_project_id);
-    const projects = remaining.length ? remaining : [makeProjectSlot<ProjectFormSnapshot, ProjectWorkflowSnapshot>(emptyProjectSnapshot(), 0)];
-    const next = { ...projectWorkspace, active_project_id: projects[0]!.id, projects };
-    await persistWorkspace(next);
-    applyProjectSnapshot(structuredClone(projects[0]!.snapshot));
-    applyProjectWorkflow(projects[0]!.workflow);
-    setProjectWorkspaceMessage("Đã xóa dự án khỏi danh sách.");
-  };
-
-  const setActiveProjectStatus = (
-    status: ProjectSlotStatus,
-    options: { clearWorkflow?: boolean; lastError?: string; projectId?: string } = {}
-  ) => {
-    const now = new Date().toISOString();
-    setProjectWorkspace((current) => {
-      const next = {
-        ...current,
-        projects: current.projects.map((project) =>
-          project.id === (options.projectId ?? current.active_project_id)
-            ? {
-                ...project,
-                status,
-                ...(options.clearWorkflow ? { workflow: undefined } : {}),
-                last_error: options.lastError,
-                updated_at: now,
-              }
-            : project
-        ),
-      };
-      void saveProjectWorkspace(next);
-      return next;
-    });
-  };
-
   const hasCharacterUploads =
     charImages.length > 0 ||
     charHasRealPhoto ||
@@ -1717,7 +1401,6 @@ export function GenerateClient() {
   // ─── Generate ────────────────────────────────────────────────────
 
   const handleGenerate = async () => {
-    if (projectWorkspaceReady) setActiveProjectStatus("building");
     setPhase("generating");
     setError(null);
     setExportAttempted(false);
@@ -1732,9 +1415,6 @@ export function GenerateClient() {
       setProgressMessage(lang === "vi" ? "Đang đọc công thức và định lượng..." : "Reading recipe quantities...");
       recipeForInput = await runCookingAnalysis();
       if (!recipeForInput) {
-        const message = cookingAnalysisError || (lang === "vi" ? "Không phân tích được công thức." : "Could not analyze the recipe.");
-        setError(message);
-        setActiveProjectStatus("needs_repair", { lastError: message });
         setPhase("input");
         setStep(2);
         return;
@@ -2057,7 +1737,6 @@ export function GenerateClient() {
       const plan = await generateStoryboardPlan(input, provider);
       if (!plan.success) {
         setError(plan.error);
-        setActiveProjectStatus("needs_repair", { lastError: plan.error });
         setPhase("input");
         return;
       }
@@ -2073,14 +1752,7 @@ export function GenerateClient() {
       setPlanWarnings([...payloadWarnings, ...plan.data.warnings]);
       setPhase("script");
     } catch (err) {
-      const rawMessage = err instanceof Error ? err.message : "An unexpected error occurred";
-      const message = /unexpected response was received from the server|server components render|failed to fetch/i.test(rawMessage)
-        ? (lang === "vi"
-            ? "Máy chủ xử lý quá thời gian. Dự án đã thoát khỏi trạng thái dựng; hãy bấm Chạy lại riêng."
-            : "The server timed out. The project was released from building; use Run again.")
-        : rawMessage;
-      setError(message);
-      setActiveProjectStatus("needs_repair", { lastError: message });
+      setError(err instanceof Error ? err.message : "An unexpected error occurred");
       setPhase("input");
     }
   };
@@ -2501,28 +2173,6 @@ export function GenerateClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result, genInput, beatsPerSegment, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
 
-  // Persist every settled script/result into the active slot. This is the key
-  // isolation boundary that prevents the next project from overwriting it.
-  useEffect(() => {
-    if (!projectWorkspaceReady || (phase !== "script" && phase !== "result")) return;
-    const workflow = captureProjectWorkflow();
-    const now = new Date().toISOString();
-    setProjectWorkspace((current) => {
-      const projects = current.projects.map((project) => {
-        if (project.id !== current.active_project_id) return project;
-        const status: ProjectSlotStatus = phase === "result"
-          ? (blockingFindingCount(exportBundle?.report) > 0 ? "needs_repair" : "completed")
-          : project.status === "queued" ? "building" : project.status;
-        return { ...project, status, workflow, last_error: error ?? undefined, updated_at: now };
-      });
-      const next = { ...current, projects };
-      void saveProjectWorkspace(next);
-      return next;
-    });
-    // Persist on settled workflow changes; capture helper is intentionally local.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectWorkspaceReady, phase, result, draft, genInput, genAnalysis, planWarnings, boardErrors, error, exportCheckVersion]);
-
   const cleanManifestForExport = () => {
     if (!exportBundle?.manifest) {
       setExportAttempted(true);
@@ -2866,28 +2516,6 @@ export function GenerateClient() {
     }
   };
 
-  // Export buttons may be clicked on an inactive slot. Activate its isolated
-  // workflow first, then call the existing trusted export function on the next
-  // settled render; no prompt or result is rebuilt.
-  useEffect(() => {
-    if (!pendingProjectExport || phase === "generating") return;
-    const target = projectWorkspace.projects.find((project) => project.id === pendingProjectExport.projectId);
-    if (!target?.workflow?.result) {
-      setPendingProjectExport(null);
-      return;
-    }
-    if (projectWorkspace.active_project_id !== target.id) {
-      void switchProject(target.id);
-      return;
-    }
-    if (!result) return;
-    const kind = pendingProjectExport.kind;
-    setPendingProjectExport(null);
-    if (kind === "manifest") downloadNanoManifest();
-    else void downloadAllFrames();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingProjectExport, projectWorkspace.active_project_id, phase, result]);
-
   // ─── Language Toggle Button ──────────────────────────────────────
 
   const LangToggle = () => (
@@ -2902,95 +2530,6 @@ export function GenerateClient() {
     </Button>
   );
 
-  const activeProject = projectWorkspace.projects.find(
-    (project) => project.id === projectWorkspace.active_project_id
-  );
-  const projectStatusLabel = (status: ProjectSlotStatus) => ({
-    draft: lang === "vi" ? "Bản nháp" : "Draft",
-    queued: lang === "vi" ? "Chờ" : "Queued",
-    building: lang === "vi" ? "Đang dựng" : "Building",
-    needs_repair: lang === "vi" ? "Cần sửa" : "Needs repair",
-    completed: lang === "vi" ? "Hoàn thành" : "Completed",
-  })[status];
-  const projectStatusClass = (status: ProjectSlotStatus) =>
-    status === "completed" ? "text-emerald-600"
-      : status === "needs_repair" ? "text-amber-600"
-        : status === "building" ? "text-blue-600"
-          : status === "queued" ? "text-violet-600"
-            : "text-muted-foreground";
-  const ProjectWorkspaceBar = () => (
-    <Card className="mb-5 border-primary/20 bg-primary/[0.03]">
-      <CardContent className="space-y-3 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <FolderKanban className="h-5 w-5 text-primary" />
-            <div>
-              <p className="text-sm font-semibold">
-                {lang === "vi" ? "Dự án hiện tại" : "Current project"}
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  {projectWorkspace.projects.length}/{PROJECT_WORKSPACE_LIMIT}
-                </span>
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {lang === "vi"
-                  ? "Chế độ tiết kiệm: chỉ một dự án, không hàng chờ, không tự chạy API"
-                  : "Cost-safe mode: one project, no queue, no automatic API runs"}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={deleteActiveProject}
-              disabled={!projectWorkspaceReady}
-              className="gap-1.5 text-destructive hover:text-destructive"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {lang === "vi" ? "Xóa" : "Delete"}
-            </Button>
-          </div>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-5">
-          {projectWorkspace.projects.map((project, index) => (
-            <div key={project.id} className={`rounded-lg border px-3 py-2 ${project.id === projectWorkspace.active_project_id ? "border-primary bg-primary/10" : "border-border bg-background"}`}>
-              <button type="button" onClick={() => void switchProject(project.id)} className="w-full text-left">
-                <span className="block truncate text-xs font-semibold">{index + 1}. {project.name}</span>
-                <span className={`mt-0.5 block text-[11px] ${projectStatusClass(project.status)}`}>
-                  ● {projectStatusLabel(project.status)}
-                </span>
-              </button>
-              <div className="mt-2 flex flex-wrap gap-1">
-                {(project.status === "needs_repair" || project.status === "completed") && (
-                  <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]"
-                    onClick={() => void switchProject(project.id, true)}>
-                    {lang === "vi" ? "Mở dự án" : "Open project"}
-                  </Button>
-                )}
-                {project.workflow?.result && (
-                  <>
-                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]"
-                      onClick={() => setPendingProjectExport({ projectId: project.id, kind: "manifest" })}>
-                      Manifest
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]"
-                      onClick={() => setPendingProjectExport({ projectId: project.id, kind: "zip" })}>
-                      ZIP
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-        {projectWorkspaceMessage && (
-          <p className="text-xs text-muted-foreground">{projectWorkspaceMessage}</p>
-        )}
-      </CardContent>
-    </Card>
-  );
-
   // ─── Generating Phase ──────────────────────────────────────────────
 
   if (phase === "generating") {
@@ -2998,11 +2537,6 @@ export function GenerateClient() {
       <div className="mx-auto max-w-lg py-20 text-center">
         <Loader2 className="mx-auto mb-6 h-12 w-12 animate-spin text-primary" />
         <h2 className="mb-2 text-xl font-bold">{L("generating")}</h2>
-        {activeProject && (
-          <p className="mb-1 text-sm font-medium text-primary">
-            {activeProject.name}
-          </p>
-        )}
         <p className="mb-6 text-sm text-muted-foreground">{progressMessage}</p>
         <Progress value={progressPercent} showLabel className="mx-auto max-w-xs" />
       </div>
@@ -3013,7 +2547,6 @@ export function GenerateClient() {
   if (phase === "script" && draft) {
     return (
       <div className="mx-auto max-w-3xl space-y-6">
-        <ProjectWorkspaceBar />
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">
@@ -3351,7 +2884,6 @@ export function GenerateClient() {
 
     return (
       <div className="space-y-8">
-        <ProjectWorkspaceBar />
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -4039,7 +3571,6 @@ export function GenerateClient() {
     <div className="mx-auto max-w-2xl">
       {hiddenTrigger}
       {adminModal}
-      <ProjectWorkspaceBar />
 
       {/* Hidden script-model switcher — double-click the title, passcode 2502 */}
       {modelPanelOpen && (
