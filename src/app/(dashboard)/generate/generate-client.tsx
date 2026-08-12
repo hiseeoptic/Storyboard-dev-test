@@ -35,6 +35,7 @@ import { Progress } from "@/components/ui/progress";
 import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploader";
 import {
   generateStoryboardPlan,
+  prepareStoryboardPlan,
   analyzeCookingRecipe,
   generateBoardImage,
   finalizeScript,
@@ -43,6 +44,7 @@ import {
   getTopicLibrary,
   type StoryboardResult,
   type StoryboardAnalysis,
+  type StoryboardPreparation,
 } from "@/actions";
 import type { TopicCategory } from "@/services/topics";
 import { buildVeoJson, genreAmbientAudio } from "@/prompts";
@@ -941,6 +943,9 @@ export function GenerateClient() {
   // Browser-page-only cache: identical inputs reuse the finished text plan
   // instead of paying for the script + Context IR + storyboard calls again.
   const planCacheRef = useRef(new StoryboardPlanCache<CachedStoryboardPlan>(3));
+  // If the second Vercel execution fails, preserve the already-paid vision,
+  // script and Context IR checkpoint so Retry never buys those calls again.
+  const preparationCacheRef = useRef(new Map<string, StoryboardPreparation>());
   // Per-scene AI rewrite in the script editor (index being rewritten, or null).
   const [rewriteTarget, setRewriteTarget] = useState<number | null>(null);
 
@@ -1730,11 +1735,35 @@ export function GenerateClient() {
     }
 
     setProgressPercent(6);
-    setProgressMessage(L("creatingScenes"));
+    setProgressMessage(
+      lang === "vi"
+        ? "Bước 1/2 — Đang phân tích ảnh, kịch bản và khóa bối cảnh..."
+        : "Step 1/2 — Analyzing references, script and locked context..."
+    );
 
     try {
-      // Phase 1: script + ready-to-paste prompts (fast, tiny payload).
-      const plan = await generateStoryboardPlan(input, provider);
+      let preparation = preparationCacheRef.current.get(planFingerprint);
+      if (!preparation) {
+        const prepared = await prepareStoryboardPlan(input, provider);
+        if (!prepared.success) {
+          setError(prepared.error);
+          setPhase("input");
+          return;
+        }
+        preparation = prepared.data;
+        preparationCacheRef.current.set(
+          planFingerprint,
+          structuredClone(preparation)
+        );
+      }
+
+      setProgressPercent(52);
+      setProgressMessage(
+        lang === "vi"
+          ? "Bước 2/2 — Đang dựng JSON storyboard từ kịch bản đã khóa..."
+          : "Step 2/2 — Building storyboard JSON from the locked script..."
+      );
+      const plan = await generateStoryboardPlan(input, provider, preparation);
       if (!plan.success) {
         setError(plan.error);
         setPhase("input");
@@ -1742,6 +1771,7 @@ export function GenerateClient() {
       }
 
       planCacheRef.current.set(planFingerprint, structuredClone(plan.data));
+      preparationCacheRef.current.delete(planFingerprint);
 
       // Keep inputs + the generated script, then let the user REVIEW & EDIT it
       // before we spend any image generations (catch wrong gender / dialogue /
