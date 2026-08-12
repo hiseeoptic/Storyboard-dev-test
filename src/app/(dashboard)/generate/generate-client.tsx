@@ -19,6 +19,9 @@ import {
   AlertTriangle,
   BookOpen,
   Trash2,
+  FolderKanban,
+  Plus,
+  Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,6 +70,14 @@ import {
   NANO_FLOW_MESSAGE_TYPE,
 } from "@/types/nano-flow";
 import { Send } from "lucide-react";
+import {
+  loadProjectInputWorkspace,
+  makeProjectInputSlot,
+  normalizeProjectInputWorkspace,
+  PROJECT_INPUT_SLOT_LIMIT,
+  saveProjectInputWorkspace,
+  type ProjectInputWorkspace,
+} from "@/lib/project-input-slots";
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
@@ -877,6 +888,83 @@ interface BackgroundEntry {
   sceneIndices?: number[];
 }
 
+interface ProjectFormSnapshot {
+  step: number;
+  storyIdea: string;
+  scriptTreatment: "preserve" | "polish";
+  genre: string;
+  topicType: string;
+  topicItemId: string;
+  settingSel: string;
+  settingCustom: string;
+  toneSel: string;
+  toneCustom: string;
+  productName: string;
+  sellingPoints: string;
+  targetAudience: string;
+  keyMessage: string;
+  callToAction: string;
+  mainCharacter: string;
+  centralConflict: string;
+  characters: CharacterEntry[];
+  charName: string;
+  charHasRealPhoto: boolean;
+  charRole: string;
+  charIsChild: boolean;
+  charHeightCm: string;
+  charBodyType: CharacterEntry["bodyType"];
+  charAppearance: string;
+  charApprSel: string;
+  charImages: UploadedImage[];
+  products: ProductEntry[];
+  prodName: string;
+  prodDesc: string;
+  prodDescSel: string;
+  prodImages: UploadedImage[];
+  ingredients: ProductEntry[];
+  ingName: string;
+  ingDesc: string;
+  ingImages: UploadedImage[];
+  cookingSourceText: string;
+  cookingSourceImages: UploadedImage[];
+  cookingStyle: CookingStyle;
+  cookingRecipe: CookingRecipeIR | null;
+  backgrounds: BackgroundEntry[];
+  locationMode: "auto" | "upload";
+  style: StoryboardStyle;
+  characterRender: "auto" | "photo" | "stylized";
+  segmentCount: number;
+  beatsPerSegment: number;
+  forceVietnameseDialogue: boolean;
+  videoGoal: VideoGoal;
+  audienceGoal: AudienceGoal;
+  storyFormat: StoryFormat;
+  visualInterpretation: VisualInterpretation;
+  characterRepresentation: CharacterRepresentation;
+  directingProfile: DirectingProfileId;
+  aspectRatio: AspectRatio;
+  thumbnailAspectRatio: "16:9" | "9:16";
+}
+
+function emptyProjectSnapshot(): ProjectFormSnapshot {
+  return {
+    step: 0, storyIdea: "", scriptTreatment: "polish", genre: "advertising",
+    topicType: "", topicItemId: "", settingSel: "", settingCustom: "",
+    toneSel: "", toneCustom: "", productName: "", sellingPoints: "",
+    targetAudience: "", keyMessage: "", callToAction: "", mainCharacter: "",
+    centralConflict: "", characters: [], charName: "", charHasRealPhoto: false,
+    charRole: "", charIsChild: false, charHeightCm: "", charBodyType: "standard",
+    charAppearance: "", charApprSel: "", charImages: [], products: [], prodName: "",
+    prodDesc: "", prodDescSel: "", prodImages: [], ingredients: [], ingName: "",
+    ingDesc: "", ingImages: [], cookingSourceText: "", cookingSourceImages: [],
+    cookingStyle: "kitchen_asmr", cookingRecipe: null, backgrounds: [], locationMode: "auto",
+    style: "cinematic", characterRender: "auto", segmentCount: 4, beatsPerSegment: 3,
+    forceVietnameseDialogue: true, videoGoal: "product_ad", audienceGoal: "action",
+    storyFormat: "auto", visualInterpretation: "auto", characterRepresentation: "auto",
+    directingProfile: "auto", aspectRatio: "16:9", thumbnailAspectRatio: "16:9",
+  };
+}
+
 type Phase = "input" | "generating" | "script" | "result";
 
 type CachedStoryboardPlan = {
@@ -1288,6 +1376,150 @@ export function GenerateClient() {
   const [copiedSeg, setCopiedSeg] = useState<number | null>(null);
   const [zipping, setZipping] = useState(false);
   const [nanoPushed, setNanoPushed] = useState(false);
+
+  // Five lightweight INPUT slots only. They never store script drafts,
+  // storyboard results, manifests or validator output and never call an API.
+  const [inputWorkspace, setInputWorkspace] = useState<ProjectInputWorkspace<ProjectFormSnapshot>>(
+    () => normalizeProjectInputWorkspace(null, emptyProjectSnapshot())
+  );
+  const [inputWorkspaceReady, setInputWorkspaceReady] = useState(false);
+  const [inputWorkspaceMessage, setInputWorkspaceMessage] = useState("");
+
+  const captureProjectSnapshot = (): ProjectFormSnapshot => ({
+    step, storyIdea, scriptTreatment, genre, topicType, topicItemId, settingSel,
+    settingCustom, toneSel, toneCustom, productName, sellingPoints, targetAudience,
+    keyMessage, callToAction, mainCharacter, centralConflict, characters, charName,
+    charHasRealPhoto, charRole, charIsChild, charHeightCm, charBodyType, charAppearance,
+    charApprSel, charImages, products, prodName, prodDesc, prodDescSel, prodImages,
+    ingredients, ingName, ingDesc, ingImages, cookingSourceText, cookingSourceImages,
+    cookingStyle, cookingRecipe, backgrounds, locationMode, style, characterRender,
+    segmentCount, beatsPerSegment, forceVietnameseDialogue, videoGoal, audienceGoal,
+    storyFormat, visualInterpretation, characterRepresentation, directingProfile,
+    aspectRatio, thumbnailAspectRatio,
+  });
+
+  const applyProjectSnapshot = (snapshot: ProjectFormSnapshot) => {
+    setStep(snapshot.step); setStoryIdea(snapshot.storyIdea); setScriptTreatment(snapshot.scriptTreatment);
+    setGenre(snapshot.genre); setTopicType(snapshot.topicType); setTopicItemId(snapshot.topicItemId);
+    setSettingSel(snapshot.settingSel); setSettingCustom(snapshot.settingCustom);
+    setToneSel(snapshot.toneSel); setToneCustom(snapshot.toneCustom); setProductName(snapshot.productName);
+    setSellingPoints(snapshot.sellingPoints); setTargetAudience(snapshot.targetAudience);
+    setKeyMessage(snapshot.keyMessage); setCallToAction(snapshot.callToAction);
+    setMainCharacter(snapshot.mainCharacter); setCentralConflict(snapshot.centralConflict);
+    setCharacters(structuredClone(snapshot.characters)); setCharName(snapshot.charName);
+    setCharHasRealPhoto(snapshot.charHasRealPhoto); setCharRole(snapshot.charRole);
+    setCharIsChild(snapshot.charIsChild); setCharHeightCm(snapshot.charHeightCm);
+    setCharBodyType(snapshot.charBodyType); setCharAppearance(snapshot.charAppearance);
+    setCharApprSel(snapshot.charApprSel); setCharImages(structuredClone(snapshot.charImages));
+    setProducts(structuredClone(snapshot.products)); setProdName(snapshot.prodName);
+    setProdDesc(snapshot.prodDesc); setProdDescSel(snapshot.prodDescSel);
+    setProdImages(structuredClone(snapshot.prodImages)); setIngredients(structuredClone(snapshot.ingredients));
+    setIngName(snapshot.ingName); setIngDesc(snapshot.ingDesc); setIngImages(structuredClone(snapshot.ingImages));
+    setCookingSourceText(snapshot.cookingSourceText); setCookingSourceImages(structuredClone(snapshot.cookingSourceImages));
+    setCookingStyle(snapshot.cookingStyle); setCookingRecipe(structuredClone(snapshot.cookingRecipe));
+    setBackgrounds(structuredClone(snapshot.backgrounds)); setLocationMode(snapshot.locationMode);
+    setStyle(snapshot.style); setCharacterRender(snapshot.characterRender);
+    setSegmentCount(snapshot.segmentCount); setBeatsPerSegment(snapshot.beatsPerSegment);
+    setForceVietnameseDialogue(snapshot.forceVietnameseDialogue); setVideoGoal(snapshot.videoGoal);
+    setAudienceGoal(snapshot.audienceGoal); setStoryFormat(snapshot.storyFormat);
+    setVisualInterpretation(snapshot.visualInterpretation); setCharacterRepresentation(snapshot.characterRepresentation);
+    setDirectingProfile(snapshot.directingProfile); setAspectRatio(snapshot.aspectRatio);
+    setThumbnailAspectRatio(snapshot.thumbnailAspectRatio);
+    setError(null); setResult(null); setDraft(null); setGenInput(null); setGenAnalysis(null);
+    setPlanWarnings([]); setBoardErrors({}); setPhase("input");
+  };
+
+  const persistInputWorkspace = async (workspace: ProjectInputWorkspace<ProjectFormSnapshot>) => {
+    setInputWorkspace(workspace);
+    try {
+      await saveProjectInputWorkspace(workspace);
+    } catch (workspaceError) {
+      setInputWorkspaceMessage(
+        workspaceError instanceof Error ? workspaceError.message : "Không lưu được dữ liệu dự án."
+      );
+    }
+  };
+
+  const saveActiveInputInto = (
+    workspace: ProjectInputWorkspace<ProjectFormSnapshot>
+  ): ProjectInputWorkspace<ProjectFormSnapshot> => {
+    const snapshot = structuredClone(captureProjectSnapshot());
+    const now = new Date().toISOString();
+    const suggestedName = (productName || storyIdea.split(/\n|[.!?]/)[0] || "").trim().slice(0, 42);
+    return {
+      ...workspace,
+      projects: workspace.projects.map((project, index) =>
+        project.id === workspace.active_project_id
+          ? {
+              ...project,
+              name: project.name.startsWith("Dự án ") && suggestedName ? suggestedName : project.name || `Dự án ${index + 1}`,
+              snapshot,
+              updated_at: now,
+            }
+          : project
+      ),
+    };
+  };
+
+  useEffect(() => {
+    let alive = true;
+    loadProjectInputWorkspace<ProjectFormSnapshot>()
+      .then((stored) => {
+        if (!alive) return;
+        const workspace = normalizeProjectInputWorkspace(stored, emptyProjectSnapshot());
+        setInputWorkspace(workspace);
+        const active = workspace.projects.find((project) => project.id === workspace.active_project_id)!;
+        applyProjectSnapshot({ ...emptyProjectSnapshot(), ...structuredClone(active.snapshot) });
+        setInputWorkspaceReady(true);
+      })
+      .catch((workspaceError) => {
+        if (!alive) return;
+        setInputWorkspaceReady(true);
+        setInputWorkspaceMessage(
+          workspaceError instanceof Error ? workspaceError.message : "Không đọc được dữ liệu dự án."
+        );
+      });
+    return () => { alive = false; };
+    // Initial IndexedDB hydration only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const saveCurrentInputProject = async () => {
+    const next = saveActiveInputInto(inputWorkspace);
+    await persistInputWorkspace(next);
+    setInputWorkspaceMessage("Đã lưu dữ liệu đầu vào. Không gọi API.");
+  };
+
+  const switchInputProject = async (projectId: string) => {
+    if (phase !== "input" || projectId === inputWorkspace.active_project_id) return;
+    const saved = saveActiveInputInto(inputWorkspace);
+    const target = saved.projects.find((project) => project.id === projectId);
+    if (!target) return;
+    await persistInputWorkspace({ ...saved, active_project_id: projectId });
+    applyProjectSnapshot({ ...emptyProjectSnapshot(), ...structuredClone(target.snapshot) });
+    setInputWorkspaceMessage(`Đã chuyển sang ${target.name}. Không gọi API.`);
+  };
+
+  const addInputProject = async () => {
+    if (inputWorkspace.projects.length >= PROJECT_INPUT_SLOT_LIMIT) {
+      setInputWorkspaceMessage("Đã đủ 5 dự án đầu vào.");
+      return;
+    }
+    const saved = saveActiveInputInto(inputWorkspace);
+    const slot = makeProjectInputSlot(emptyProjectSnapshot(), saved.projects.length);
+    await persistInputWorkspace({ ...saved, active_project_id: slot.id, projects: [...saved.projects, slot] });
+    applyProjectSnapshot(slot.snapshot);
+    setInputWorkspaceMessage(`Đã mở ${slot.name}. Dự án trước đã được lưu; không gọi API.`);
+  };
+
+  const deleteInputProject = async () => {
+    if (!window.confirm("Xóa dữ liệu đầu vào của dự án đang chọn?")) return;
+    const remaining = inputWorkspace.projects.filter((project) => project.id !== inputWorkspace.active_project_id);
+    const projects = remaining.length ? remaining : [makeProjectInputSlot(emptyProjectSnapshot())];
+    await persistInputWorkspace({ ...inputWorkspace, active_project_id: projects[0]!.id, projects });
+    applyProjectSnapshot(structuredClone(projects[0]!.snapshot));
+    setInputWorkspaceMessage("Đã xóa dữ liệu đầu vào dự án.");
+  };
 
   const hasCharacterUploads =
     charImages.length > 0 ||
@@ -2530,6 +2762,60 @@ export function GenerateClient() {
     </Button>
   );
 
+  const InputProjectBar = () => (
+    <Card className="mb-5 border-primary/20 bg-primary/[0.03]">
+      <CardContent className="space-y-3 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <FolderKanban className="h-5 w-5 text-primary" />
+            <div>
+              <p className="text-sm font-semibold">
+                {lang === "vi" ? "Dữ liệu đầu vào dự án" : "Project input slots"}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {inputWorkspace.projects.length}/{PROJECT_INPUT_SLOT_LIMIT}
+                </span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {lang === "vi"
+                  ? "Chỉ lưu form và ảnh trong trình duyệt · Không gọi API · Không lưu kết quả storyboard"
+                  : "Stores only form data and images · No API call · Storyboard results are not retained"}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={saveCurrentInputProject}
+              disabled={!inputWorkspaceReady} className="gap-1.5">
+              <Save className="h-3.5 w-3.5" />
+              {lang === "vi" ? "Lưu dữ liệu" : "Save input"}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={addInputProject}
+              disabled={!inputWorkspaceReady || inputWorkspace.projects.length >= PROJECT_INPUT_SLOT_LIMIT} className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              {lang === "vi" ? "Thêm dự án" : "Add project"}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={deleteInputProject}
+              disabled={!inputWorkspaceReady} className="gap-1.5 text-destructive hover:text-destructive">
+              <Trash2 className="h-3.5 w-3.5" />
+              {lang === "vi" ? "Xóa" : "Delete"}
+            </Button>
+          </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-5">
+          {inputWorkspace.projects.map((project, index) => (
+            <button key={project.id} type="button" onClick={() => void switchInputProject(project.id)}
+              className={`rounded-lg border px-3 py-2 text-left ${project.id === inputWorkspace.active_project_id ? "border-primary bg-primary/10" : "border-border bg-background hover:border-primary/50"}`}>
+              <span className="block truncate text-xs font-semibold">{index + 1}. {project.name}</span>
+              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                {project.snapshot.storyIdea.trim() ? (lang === "vi" ? "Đã có dữ liệu" : "Input saved") : (lang === "vi" ? "Chưa nhập" : "Empty")}
+              </span>
+            </button>
+          ))}
+        </div>
+        {inputWorkspaceMessage && <p className="text-xs text-muted-foreground">{inputWorkspaceMessage}</p>}
+      </CardContent>
+    </Card>
+  );
+
   // ─── Generating Phase ──────────────────────────────────────────────
 
   if (phase === "generating") {
@@ -3571,6 +3857,7 @@ export function GenerateClient() {
     <div className="mx-auto max-w-2xl">
       {hiddenTrigger}
       {adminModal}
+      <InputProjectBar />
 
       {/* Hidden script-model switcher — double-click the title, passcode 2502 */}
       {modelPanelOpen && (
@@ -5046,7 +5333,7 @@ export function GenerateClient() {
                 {L("next")} <ChevronRight className="h-4 w-4" />
               </Button>
             ) : (
-              <Button onClick={handleGenerate} className="gap-2">
+              <Button onClick={async () => { await saveCurrentInputProject(); await handleGenerate(); }} className="gap-2">
                 <Sparkles className="h-4 w-4" />
                 {L("generate")}
               </Button>
