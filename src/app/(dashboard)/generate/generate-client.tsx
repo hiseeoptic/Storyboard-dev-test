@@ -19,6 +19,9 @@ import {
   AlertTriangle,
   BookOpen,
   Trash2,
+  Plus,
+  ListPlus,
+  FolderKanban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,6 +70,14 @@ import {
   NANO_FLOW_MESSAGE_TYPE,
 } from "@/types/nano-flow";
 import { Send } from "lucide-react";
+import {
+  loadProjectWorkspace,
+  makeProjectSlot,
+  normalizeProjectWorkspace,
+  PROJECT_WORKSPACE_LIMIT,
+  saveProjectWorkspace,
+  type ProjectWorkspace,
+} from "@/lib/project-workspace-store";
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
@@ -877,6 +888,83 @@ interface BackgroundEntry {
   sceneIndices?: number[];
 }
 
+interface ProjectFormSnapshot {
+  step: number;
+  storyIdea: string;
+  scriptTreatment: "preserve" | "polish";
+  genre: string;
+  topicType: string;
+  topicItemId: string;
+  settingSel: string;
+  settingCustom: string;
+  toneSel: string;
+  toneCustom: string;
+  productName: string;
+  sellingPoints: string;
+  targetAudience: string;
+  keyMessage: string;
+  callToAction: string;
+  mainCharacter: string;
+  centralConflict: string;
+  characters: CharacterEntry[];
+  charName: string;
+  charHasRealPhoto: boolean;
+  charRole: string;
+  charIsChild: boolean;
+  charHeightCm: string;
+  charBodyType: CharacterEntry["bodyType"];
+  charAppearance: string;
+  charApprSel: string;
+  charImages: UploadedImage[];
+  products: ProductEntry[];
+  prodName: string;
+  prodDesc: string;
+  prodDescSel: string;
+  prodImages: UploadedImage[];
+  ingredients: ProductEntry[];
+  ingName: string;
+  ingDesc: string;
+  ingImages: UploadedImage[];
+  cookingSourceText: string;
+  cookingSourceImages: UploadedImage[];
+  cookingStyle: CookingStyle;
+  cookingRecipe: CookingRecipeIR | null;
+  backgrounds: BackgroundEntry[];
+  locationMode: "auto" | "upload";
+  style: StoryboardStyle;
+  characterRender: "auto" | "photo" | "stylized";
+  segmentCount: number;
+  beatsPerSegment: number;
+  forceVietnameseDialogue: boolean;
+  videoGoal: VideoGoal;
+  audienceGoal: AudienceGoal;
+  storyFormat: StoryFormat;
+  visualInterpretation: VisualInterpretation;
+  characterRepresentation: CharacterRepresentation;
+  directingProfile: DirectingProfileId;
+  aspectRatio: AspectRatio;
+  thumbnailAspectRatio: "16:9" | "9:16";
+}
+
+function emptyProjectSnapshot(): ProjectFormSnapshot {
+  return {
+    step: 0, storyIdea: "", scriptTreatment: "polish", genre: "advertising",
+    topicType: "", topicItemId: "", settingSel: "", settingCustom: "",
+    toneSel: "", toneCustom: "", productName: "", sellingPoints: "",
+    targetAudience: "", keyMessage: "", callToAction: "", mainCharacter: "",
+    centralConflict: "", characters: [], charName: "", charHasRealPhoto: false,
+    charRole: "", charIsChild: false, charHeightCm: "", charBodyType: "standard",
+    charAppearance: "", charApprSel: "", charImages: [], products: [], prodName: "",
+    prodDesc: "", prodDescSel: "", prodImages: [], ingredients: [], ingName: "",
+    ingDesc: "", ingImages: [], cookingSourceText: "", cookingSourceImages: [],
+    cookingStyle: "kitchen_asmr", cookingRecipe: null, backgrounds: [], locationMode: "auto",
+    style: "cinematic", characterRender: "auto", segmentCount: 4, beatsPerSegment: 3,
+    forceVietnameseDialogue: true, videoGoal: "product_ad", audienceGoal: "action",
+    storyFormat: "auto", visualInterpretation: "auto", characterRepresentation: "auto",
+    directingProfile: "auto", aspectRatio: "16:9", thumbnailAspectRatio: "16:9",
+  };
+}
+
 type Phase = "input" | "generating" | "script" | "result";
 
 type CachedStoryboardPlan = {
@@ -1288,6 +1376,209 @@ export function GenerateClient() {
   const [copiedSeg, setCopiedSeg] = useState<number | null>(null);
   const [zipping, setZipping] = useState(false);
   const [nanoPushed, setNanoPushed] = useState(false);
+
+  // ─── Multi-project workspace (max 5) ─────────────────────────────
+  // This wraps the existing form without replacing it. Every slot stores a
+  // complete independent form snapshot (including uploaded image data) in
+  // IndexedDB; queueing is local-only and never calls an AI API.
+  const [projectWorkspace, setProjectWorkspace] = useState<ProjectWorkspace<ProjectFormSnapshot>>(
+    () => normalizeProjectWorkspace(null, emptyProjectSnapshot())
+  );
+  const [projectWorkspaceReady, setProjectWorkspaceReady] = useState(false);
+  const [projectWorkspaceMessage, setProjectWorkspaceMessage] = useState("");
+  const suppressWorkspaceAutosave = useRef(false);
+
+  const captureProjectSnapshot = (): ProjectFormSnapshot => ({
+    step, storyIdea, scriptTreatment, genre, topicType, topicItemId, settingSel,
+    settingCustom, toneSel, toneCustom, productName, sellingPoints, targetAudience,
+    keyMessage, callToAction, mainCharacter, centralConflict, characters, charName,
+    charHasRealPhoto, charRole, charIsChild, charHeightCm, charBodyType, charAppearance,
+    charApprSel, charImages, products, prodName, prodDesc, prodDescSel, prodImages,
+    ingredients, ingName, ingDesc, ingImages, cookingSourceText, cookingSourceImages,
+    cookingStyle, cookingRecipe, backgrounds, locationMode, style, characterRender,
+    segmentCount, beatsPerSegment, forceVietnameseDialogue, videoGoal, audienceGoal,
+    storyFormat, visualInterpretation, characterRepresentation, directingProfile,
+    aspectRatio, thumbnailAspectRatio,
+  });
+
+  const applyProjectSnapshot = (snapshot: ProjectFormSnapshot) => {
+    suppressWorkspaceAutosave.current = true;
+    setStep(snapshot.step); setStoryIdea(snapshot.storyIdea); setScriptTreatment(snapshot.scriptTreatment);
+    setGenre(snapshot.genre); setTopicType(snapshot.topicType); setTopicItemId(snapshot.topicItemId);
+    setSettingSel(snapshot.settingSel); setSettingCustom(snapshot.settingCustom);
+    setToneSel(snapshot.toneSel); setToneCustom(snapshot.toneCustom); setProductName(snapshot.productName);
+    setSellingPoints(snapshot.sellingPoints); setTargetAudience(snapshot.targetAudience);
+    setKeyMessage(snapshot.keyMessage); setCallToAction(snapshot.callToAction);
+    setMainCharacter(snapshot.mainCharacter); setCentralConflict(snapshot.centralConflict);
+    setCharacters(snapshot.characters); setCharName(snapshot.charName);
+    setCharHasRealPhoto(snapshot.charHasRealPhoto); setCharRole(snapshot.charRole);
+    setCharIsChild(snapshot.charIsChild); setCharHeightCm(snapshot.charHeightCm);
+    setCharBodyType(snapshot.charBodyType); setCharAppearance(snapshot.charAppearance);
+    setCharApprSel(snapshot.charApprSel); setCharImages(snapshot.charImages);
+    setProducts(snapshot.products); setProdName(snapshot.prodName); setProdDesc(snapshot.prodDesc);
+    setProdDescSel(snapshot.prodDescSel); setProdImages(snapshot.prodImages);
+    setIngredients(snapshot.ingredients); setIngName(snapshot.ingName); setIngDesc(snapshot.ingDesc);
+    setIngImages(snapshot.ingImages); setCookingSourceText(snapshot.cookingSourceText);
+    setCookingSourceImages(snapshot.cookingSourceImages); setCookingStyle(snapshot.cookingStyle);
+    setCookingRecipe(snapshot.cookingRecipe); setBackgrounds(snapshot.backgrounds);
+    setLocationMode(snapshot.locationMode); setStyle(snapshot.style); setCharacterRender(snapshot.characterRender);
+    setSegmentCount(snapshot.segmentCount); setBeatsPerSegment(snapshot.beatsPerSegment);
+    setForceVietnameseDialogue(snapshot.forceVietnameseDialogue); setVideoGoal(snapshot.videoGoal);
+    setAudienceGoal(snapshot.audienceGoal); setStoryFormat(snapshot.storyFormat);
+    setVisualInterpretation(snapshot.visualInterpretation); setCharacterRepresentation(snapshot.characterRepresentation);
+    setDirectingProfile(snapshot.directingProfile); setAspectRatio(snapshot.aspectRatio);
+    setThumbnailAspectRatio(snapshot.thumbnailAspectRatio);
+    setError(null); setResult(null); setDraft(null); setPhase("input");
+  };
+
+  const persistWorkspace = async (workspace: ProjectWorkspace<ProjectFormSnapshot>) => {
+    setProjectWorkspace(workspace);
+    try {
+      await saveProjectWorkspace(workspace);
+    } catch (workspaceError) {
+      setProjectWorkspaceMessage(
+        workspaceError instanceof Error ? workspaceError.message : "Không lưu được danh sách dự án."
+      );
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    loadProjectWorkspace<ProjectFormSnapshot>()
+      .then((stored) => {
+        if (!alive) return;
+        const workspace = normalizeProjectWorkspace(stored, emptyProjectSnapshot());
+        setProjectWorkspace(workspace);
+        const active = workspace.projects.find((project) => project.id === workspace.active_project_id)!;
+        applyProjectSnapshot({ ...emptyProjectSnapshot(), ...active.snapshot });
+        setProjectWorkspaceReady(true);
+      })
+      .catch((workspaceError) => {
+        if (!alive) return;
+        setProjectWorkspaceReady(true);
+        setProjectWorkspaceMessage(
+          workspaceError instanceof Error ? workspaceError.message : "Không đọc được danh sách dự án."
+        );
+      });
+    return () => { alive = false; };
+    // Hydrate exactly once; setters are intentionally not dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!projectWorkspaceReady || phase !== "input") return;
+    if (suppressWorkspaceAutosave.current) {
+      suppressWorkspaceAutosave.current = false;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const now = new Date().toISOString();
+      const snapshot = captureProjectSnapshot();
+      const projects = projectWorkspace.projects.map((project) =>
+        project.id === projectWorkspace.active_project_id
+          ? { ...project, snapshot, updated_at: now }
+          : project
+      );
+      void persistWorkspace({ ...projectWorkspace, projects });
+    }, 500);
+    return () => window.clearTimeout(timer);
+    // Every meaningful form value below belongs to the active project slot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectWorkspaceReady, phase, step, storyIdea, scriptTreatment, genre, topicType,
+    topicItemId, settingSel, settingCustom, toneSel, toneCustom, productName, sellingPoints,
+    targetAudience, keyMessage, callToAction, mainCharacter, centralConflict, characters,
+    charName, charHasRealPhoto, charRole, charIsChild, charHeightCm, charBodyType,
+    charAppearance, charApprSel, charImages, products, prodName, prodDesc, prodDescSel,
+    prodImages, ingredients, ingName, ingDesc, ingImages, cookingSourceText,
+    cookingSourceImages, cookingStyle, cookingRecipe, backgrounds, locationMode, style,
+    characterRender, segmentCount, beatsPerSegment, forceVietnameseDialogue, videoGoal,
+    audienceGoal, storyFormat, visualInterpretation, characterRepresentation,
+    directingProfile, aspectRatio, thumbnailAspectRatio]);
+
+  const saveActiveProjectInto = (
+    workspace: ProjectWorkspace<ProjectFormSnapshot>,
+    status?: "draft" | "queued"
+  ): ProjectWorkspace<ProjectFormSnapshot> => {
+    const now = new Date().toISOString();
+    const snapshot = structuredClone(captureProjectSnapshot());
+    const suggestedName = (productName || storyIdea.split(/\n|[.!?]/)[0] || "").trim().slice(0, 48);
+    return {
+      ...workspace,
+      projects: workspace.projects.map((project, index) =>
+        project.id === workspace.active_project_id
+          ? {
+              ...project,
+              name: project.name.startsWith("Dự án ") && suggestedName ? suggestedName : project.name || `Dự án ${index + 1}`,
+              status: status ?? project.status,
+              snapshot,
+              updated_at: now,
+            }
+          : project
+      ),
+    };
+  };
+
+  const switchProject = async (projectId: string) => {
+    if (projectId === projectWorkspace.active_project_id) return;
+    const saved = saveActiveProjectInto(projectWorkspace);
+    const target = saved.projects.find((project) => project.id === projectId);
+    if (!target) return;
+    const next = { ...saved, active_project_id: projectId };
+    await persistWorkspace(next);
+    applyProjectSnapshot({ ...emptyProjectSnapshot(), ...structuredClone(target.snapshot) });
+    setProjectWorkspaceMessage("");
+  };
+
+  const addProjectSlot = async () => {
+    if (projectWorkspace.projects.length >= PROJECT_WORKSPACE_LIMIT) {
+      setProjectWorkspaceMessage("Đã đủ 5 dự án. Hãy xóa một dự án trước khi thêm dự án mới.");
+      return;
+    }
+    const saved = saveActiveProjectInto(projectWorkspace);
+    const slot = makeProjectSlot(emptyProjectSnapshot(), saved.projects.length);
+    const next = { ...saved, active_project_id: slot.id, projects: [...saved.projects, slot] };
+    await persistWorkspace(next);
+    applyProjectSnapshot(slot.snapshot);
+    setProjectWorkspaceMessage(`Đã mở ${slot.name}. Dự án trước vẫn được giữ nguyên.`);
+  };
+
+  const queueActiveProject = async () => {
+    if (!storyIdea.trim()) {
+      setProjectWorkspaceMessage("Hãy nhập nội dung dự án trước khi đưa vào danh sách chờ.");
+      return;
+    }
+    const queued = saveActiveProjectInto(projectWorkspace, "queued");
+    const now = new Date().toISOString();
+    const projectsWithQueueSnapshot = queued.projects.map((project) =>
+      project.id === queued.active_project_id
+        ? { ...project, queued_snapshot: structuredClone(project.snapshot), queued_at: now }
+        : project
+    );
+    if (projectsWithQueueSnapshot.length < PROJECT_WORKSPACE_LIMIT) {
+      const slot = makeProjectSlot(emptyProjectSnapshot(), projectsWithQueueSnapshot.length);
+      const next = {
+        ...queued,
+        active_project_id: slot.id,
+        projects: [...projectsWithQueueSnapshot, slot],
+      };
+      await persistWorkspace(next);
+      applyProjectSnapshot(slot.snapshot);
+      setProjectWorkspaceMessage("Đã chốt dự án vào hàng chờ và mở dự án mới. Không gọi API.");
+      return;
+    }
+    await persistWorkspace({ ...queued, projects: projectsWithQueueSnapshot });
+    setProjectWorkspaceMessage("Đã chốt dự án vào hàng chờ. Danh sách hiện đã đủ 5 dự án; không gọi API.");
+  };
+
+  const deleteActiveProject = async () => {
+    if (!window.confirm("Xóa dự án đang chọn khỏi danh sách? Dữ liệu trong slot này sẽ bị xóa.")) return;
+    const remaining = projectWorkspace.projects.filter((project) => project.id !== projectWorkspace.active_project_id);
+    const projects = remaining.length ? remaining : [makeProjectSlot(emptyProjectSnapshot(), 0)];
+    const next = { ...projectWorkspace, active_project_id: projects[0]!.id, projects };
+    await persistWorkspace(next);
+    applyProjectSnapshot(structuredClone(projects[0]!.snapshot));
+    setProjectWorkspaceMessage("Đã xóa dự án khỏi danh sách.");
+  };
 
   const hasCharacterUploads =
     charImages.length > 0 ||
@@ -2530,6 +2821,99 @@ export function GenerateClient() {
     </Button>
   );
 
+  const activeProject = projectWorkspace.projects.find(
+    (project) => project.id === projectWorkspace.active_project_id
+  );
+  const queuedProjectCount = projectWorkspace.projects.filter(
+    (project) => project.status === "queued"
+  ).length;
+  const ProjectWorkspaceBar = () => (
+    <Card className="mb-5 border-primary/20 bg-primary/[0.03]">
+      <CardContent className="space-y-3 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <FolderKanban className="h-5 w-5 text-primary" />
+            <div>
+              <p className="text-sm font-semibold">
+                {lang === "vi" ? "Danh sách dự án" : "Project workspace"}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {projectWorkspace.projects.length}/{PROJECT_WORKSPACE_LIMIT}
+                </span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {lang === "vi"
+                  ? `${queuedProjectCount} dự án đang chờ · Mỗi dự án lưu form và ảnh độc lập`
+                  : `${queuedProjectCount} queued · Each project keeps an isolated form and images`}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addProjectSlot}
+              disabled={!projectWorkspaceReady || projectWorkspace.projects.length >= PROJECT_WORKSPACE_LIMIT}
+              className="gap-1.5"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {lang === "vi" ? "Dự án mới" : "New project"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={queueActiveProject}
+              disabled={!projectWorkspaceReady || activeProject?.status === "queued"}
+              className="gap-1.5"
+            >
+              <ListPlus className="h-3.5 w-3.5" />
+              {activeProject?.status === "queued"
+                ? (lang === "vi" ? "Đã trong hàng chờ" : "Already queued")
+                : (lang === "vi" ? "Đưa vào danh sách chờ" : "Add to queue")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={deleteActiveProject}
+              disabled={!projectWorkspaceReady}
+              className="gap-1.5 text-destructive hover:text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {lang === "vi" ? "Xóa" : "Delete"}
+            </Button>
+          </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-5">
+          {projectWorkspace.projects.map((project, index) => (
+            <button
+              key={project.id}
+              type="button"
+              onClick={() => void switchProject(project.id)}
+              className={`rounded-lg border px-3 py-2 text-left transition ${
+                project.id === projectWorkspace.active_project_id
+                  ? "border-primary bg-primary/10"
+                  : "border-border bg-background hover:border-primary/40"
+              }`}
+            >
+              <span className="block truncate text-xs font-semibold">
+                {index + 1}. {project.name}
+              </span>
+              <span className={`mt-0.5 block text-[11px] ${project.status === "queued" ? "text-emerald-600" : "text-muted-foreground"}`}>
+                {project.status === "queued"
+                  ? (lang === "vi" ? "● Đang chờ" : "● Queued")
+                  : (lang === "vi" ? "○ Bản nháp" : "○ Draft")}
+              </span>
+            </button>
+          ))}
+        </div>
+        {projectWorkspaceMessage && (
+          <p className="text-xs text-muted-foreground">{projectWorkspaceMessage}</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+
   // ─── Generating Phase ──────────────────────────────────────────────
 
   if (phase === "generating") {
@@ -3571,6 +3955,7 @@ export function GenerateClient() {
     <div className="mx-auto max-w-2xl">
       {hiddenTrigger}
       {adminModal}
+      <ProjectWorkspaceBar />
 
       {/* Hidden script-model switcher — double-click the title, passcode 2502 */}
       {modelPanelOpen && (
