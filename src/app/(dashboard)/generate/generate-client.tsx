@@ -19,8 +19,6 @@ import {
   AlertTriangle,
   BookOpen,
   Trash2,
-  Plus,
-  ListPlus,
   FolderKanban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -960,7 +958,7 @@ interface ProjectWorkflowSnapshot {
 
 function emptyProjectSnapshot(): ProjectFormSnapshot {
   return {
-    step: 0, storyIdea: "", scriptTreatment: "polish", genre: "advertising",
+    step: 0, storyIdea: "", scriptTreatment: "preserve", genre: "advertising",
     topicType: "", topicItemId: "", settingSel: "", settingCustom: "",
     toneSel: "", toneCustom: "", productName: "", sellingPoints: "",
     targetAudience: "", keyMessage: "", callToAction: "", mainCharacter: "",
@@ -1198,7 +1196,7 @@ export function GenerateClient() {
 
   // Step 1: Story
   const [storyIdea, setStoryIdea] = useState("");
-  const [scriptTreatment, setScriptTreatment] = useState<"preserve" | "polish">("polish");
+  const [scriptTreatment, setScriptTreatment] = useState<"preserve" | "polish">("preserve");
   const [genre, setGenre] = useState("advertising");
   const steps = t.steps[lang].map((label, index) =>
     genre === "cooking" && index === 2
@@ -1569,47 +1567,6 @@ export function GenerateClient() {
     applyProjectSnapshot({ ...emptyProjectSnapshot(), ...structuredClone(targetSnapshot) });
     applyProjectWorkflow(target.workflow);
     setProjectWorkspaceMessage("");
-  };
-
-  const addProjectSlot = async () => {
-    if (projectWorkspace.projects.length >= PROJECT_WORKSPACE_LIMIT) {
-      setProjectWorkspaceMessage("Đã đủ 5 dự án. Hãy xóa một dự án trước khi thêm dự án mới.");
-      return;
-    }
-    const saved = saveActiveProjectInto(projectWorkspace);
-    const slot = makeProjectSlot<ProjectFormSnapshot, ProjectWorkflowSnapshot>(emptyProjectSnapshot(), saved.projects.length);
-    const next = { ...saved, active_project_id: slot.id, projects: [...saved.projects, slot] };
-    await persistWorkspace(next);
-    applyProjectSnapshot(slot.snapshot);
-    setProjectWorkspaceMessage(`Đã mở ${slot.name}. Dự án trước vẫn được giữ nguyên.`);
-  };
-
-  const queueActiveProject = async () => {
-    if (!storyIdea.trim()) {
-      setProjectWorkspaceMessage("Hãy nhập nội dung dự án trước khi đưa vào danh sách chờ.");
-      return;
-    }
-    const queued = saveActiveProjectInto(projectWorkspace, "queued");
-    const now = new Date().toISOString();
-    const projectsWithQueueSnapshot = queued.projects.map((project) =>
-      project.id === queued.active_project_id
-        ? { ...project, queued_snapshot: structuredClone(project.snapshot), queued_at: now }
-        : project
-    );
-    if (projectsWithQueueSnapshot.length < PROJECT_WORKSPACE_LIMIT) {
-      const slot = makeProjectSlot<ProjectFormSnapshot, ProjectWorkflowSnapshot>(emptyProjectSnapshot(), projectsWithQueueSnapshot.length);
-      const next = {
-        ...queued,
-        active_project_id: slot.id,
-        projects: [...projectsWithQueueSnapshot, slot],
-      };
-      await persistWorkspace(next);
-      applyProjectSnapshot(slot.snapshot);
-      setProjectWorkspaceMessage("Đã chốt dự án vào hàng chờ và mở dự án mới. Không gọi API.");
-      return;
-    }
-    await persistWorkspace({ ...queued, projects: projectsWithQueueSnapshot });
-    setProjectWorkspaceMessage("Đã chốt dự án vào hàng chờ. Danh sách hiện đã đủ 5 dự án; không gọi API.");
   };
 
   const deleteActiveProject = async () => {
@@ -2948,9 +2905,6 @@ export function GenerateClient() {
   const activeProject = projectWorkspace.projects.find(
     (project) => project.id === projectWorkspace.active_project_id
   );
-  const pendingProjectCount = projectWorkspace.projects.filter(
-    (project) => project.status === "queued" || project.status === "needs_repair"
-  ).length;
   const projectStatusLabel = (status: ProjectSlotStatus) => ({
     draft: lang === "vi" ? "Bản nháp" : "Draft",
     queued: lang === "vi" ? "Chờ" : "Queued",
@@ -2972,42 +2926,19 @@ export function GenerateClient() {
             <FolderKanban className="h-5 w-5 text-primary" />
             <div>
               <p className="text-sm font-semibold">
-                {lang === "vi" ? "Danh sách dự án" : "Project workspace"}
+                {lang === "vi" ? "Dự án hiện tại" : "Current project"}
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
                   {projectWorkspace.projects.length}/{PROJECT_WORKSPACE_LIMIT}
                 </span>
               </p>
               <p className="text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? `${pendingProjectCount} dự án chờ thao tác · Chọn và bấm Tạo Storyboard từng dự án, không tự chạy hàng loạt`
-                  : `${pendingProjectCount} awaiting manual action · Select and build one project at a time`}
+                  ? "Chế độ tiết kiệm: chỉ một dự án, không hàng chờ, không tự chạy API"
+                  : "Cost-safe mode: one project, no queue, no automatic API runs"}
               </p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addProjectSlot}
-              disabled={!projectWorkspaceReady || projectWorkspace.projects.length >= PROJECT_WORKSPACE_LIMIT}
-              className="gap-1.5"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {lang === "vi" ? "Dự án mới" : "New project"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={queueActiveProject}
-              disabled={!projectWorkspaceReady || activeProject?.status !== "draft"}
-              className="gap-1.5"
-            >
-              <ListPlus className="h-3.5 w-3.5" />
-              {activeProject?.status === "draft"
-                ? (lang === "vi" ? "Đưa vào danh sách chờ" : "Add to queue")
-                : projectStatusLabel(activeProject?.status ?? "draft")}
-            </Button>
             <Button
               type="button"
               variant="outline"

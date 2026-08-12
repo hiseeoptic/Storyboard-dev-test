@@ -906,14 +906,13 @@ export async function generateScript(
           timeoutMs: boundedTimeoutMs(timing, 45_000, "Gemini script generation"),
         });
       } else {
-        // The script stage is high-volume structured creative work. Default is
-        // gpt-5.6-sol (per user request — the strongest script writer for this
-        // deployment); gpt-5-mini remains a cheaper option via OPENAI_SCRIPT_MODEL.
+        // COST-SAFE LOCK: this high-volume stage must never silently move back
+        // to the premium gpt-5.6-sol model through an old deployment env var.
         // GPT-5-series models take `max_completion_tokens` (NOT `max_tokens`)
         // and only support the default temperature — sending either legacy
         // param 400s the request. Overridable via OPENAI_SCRIPT_MODEL.
         const openai = getOpenAIClient();
-        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5.6-sol";
+        const scriptModel = "gpt-5-mini";
         const isGpt5 = scriptModel.startsWith("gpt-5") || scriptModel.startsWith("o");
         const completion = await openai.chat.completions.create(
           {
@@ -923,7 +922,7 @@ export async function generateScript(
               { role: "user", content: userPrompt },
             ],
             ...(isGpt5
-              ? { max_completion_tokens: 8000 }
+              ? { max_completion_tokens: 4000 }
               : { temperature: 0.85, max_tokens: 4000 }),
           },
           { timeout: boundedTimeoutMs(timing, 60_000, "OpenAI script generation") }
@@ -1058,7 +1057,7 @@ export async function generateStoryboardBreakdown(
             temperature: 0.7,
             // Richer segments need more room — 8k truncated tails into stubs
             // when this path runs as the rescue provider. gpt-4o caps at 16384.
-            max_tokens: 14000,
+            max_tokens: 10500,
             response_format: { type: "json_object" },
           },
           // Raised from 75s: with the whole pipeline on OpenAI and no separate

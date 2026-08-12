@@ -120,6 +120,7 @@ export interface StoryboardPlan {
 // boundary, which produced the opaque "unexpected response" error.
 const PLAN_GENERATION_BUDGET_MS = 235_000;
 const MIN_PROVIDER_FALLBACK_BUDGET_MS = 20_000;
+const COST_SAFE_MODE = true;
 
 /** Remove eyewear mentions from a description (used when a real face photo
  * is the source of truth, so invented "glasses" can't override it). */
@@ -796,6 +797,14 @@ async function runAnalysis(
     ingredientDescriptions: {},
     backgroundDescription: "",
   };
+
+  // Uploaded pixels remain intact in the generation input and Nano Flow
+  // manifest. Vision-to-text before script preview was optional enrichment,
+  // but six images alone consumed 6-8k tokens and made failed retries costly.
+  if (COST_SAFE_MODE) {
+    warnings.push("Chế độ tiết kiệm: giữ nguyên ảnh tham chiếu cho manifest/board, không gọi Vision trước preview.");
+    return analysis;
+  }
 
   // Only real image BYTES trigger (paid) vision analysis. A Nano Flow declared
   // reference carries no bytes here (the photo is attached in the extension),
@@ -2246,8 +2255,9 @@ export async function generateStoryboardPlan(
     // Backward compatibility: old callers that do not send script_treatment
     // retain the original zero-cost verbatim path. The app now exposes an
     // explicit "polish" choice which deliberately runs the scriptwriter once.
-    let sourceScript: string | null =
-      pastedScript && input.script_treatment !== "polish" ? pastedScript : null;
+    let sourceScript: string | null = pastedScript && COST_SAFE_MODE
+      ? pastedScript
+      : pastedScript && input.script_treatment !== "polish" ? pastedScript : null;
     if (sourceScript) {
       warnings.push(
         "Đã nhận diện nội dung nhập là kịch bản hoàn chỉnh và dùng trực tiếp; không gọi API viết lại kịch bản."
@@ -2266,18 +2276,20 @@ export async function generateStoryboardPlan(
     if (!compiledCooking && !sourceScript) {
       // Script fallback chain — NEVER Claude (this deployment has no Anthropic
       // credit): if the chosen writer fails, try the other OpenAI/Gemini writer.
-      const scriptChain: AIProvider[] = [
-        scriptProvider,
-        ...(["openai", "gemini"] as AIProvider[]).filter(
-          (p) => p !== scriptProvider && p !== provider
-        ),
-      ];
+      const scriptChain: AIProvider[] = COST_SAFE_MODE
+        ? ["openai"]
+        : [
+            scriptProvider,
+            ...(["openai", "gemini"] as AIProvider[]).filter(
+              (p) => p !== scriptProvider && p !== provider
+            ),
+          ];
       for (const [chainIndex, sp] of scriptChain.entries()) {
         if (generationDeadlineMs - Date.now() < MIN_PROVIDER_FALLBACK_BUDGET_MS) break;
         try {
           sourceScript = await generateScript(enhanced, sp, {
             deadlineMs: generationDeadlineMs,
-            maxAttempts: chainIndex === 0 ? 2 : 1,
+            maxAttempts: 1,
           });
           if (chainIndex > 0) {
             warnings.push(
@@ -2314,7 +2326,7 @@ export async function generateStoryboardPlan(
     try {
       const resolvedContext = await analyzeVideoContext(stage2Input, provider, {
         deadlineMs: generationDeadlineMs,
-        maxAttempts: 2,
+        maxAttempts: 1,
       });
       // Context analysis deliberately returns "resolved". This server boundary
       // is the single deterministic owner that promotes the reviewed payload to
@@ -2355,9 +2367,15 @@ export async function generateStoryboardPlan(
         // Stage 2: main provider expands the approved script into storyboard JSON.
         breakdown = await generateStoryboardBreakdown(contextBoundInput, provider, {
           deadlineMs: generationDeadlineMs,
+          maxAttempts: 1,
         });
       } catch (e) {
         if (shouldAbortAiPipeline(e)) throw e;
+        if (COST_SAFE_MODE) {
+          throw new Error(
+            `Storyboard generation stopped after one attempt to protect API cost. (${e instanceof Error ? e.message : String(e)})`
+          );
+        }
         // Stage 2 failed (usually a provider timeout). ALWAYS give it one
         // bounded rescue attempt on a DIFFERENT provider — retrying the same
         // stalled provider tends to time out again, while the other one

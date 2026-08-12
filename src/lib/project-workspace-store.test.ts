@@ -13,7 +13,7 @@ test("workspace always starts with one editable project", () => {
   assert.equal(workspace.active_project_id, workspace.projects[0]!.id);
 });
 
-test("workspace caps restored projects at five and keeps snapshots isolated", () => {
+test("cost-safe workspace restores only one active project", () => {
   const projects = Array.from({ length: 7 }, (_, index) =>
     makeProjectSlot({ story: `story-${index}` }, index)
   );
@@ -21,10 +21,10 @@ test("workspace caps restored projects at five and keeps snapshots isolated", ()
     { version: 1, active_project_id: projects[6]!.id, projects },
     { story: "fallback" }
   );
-  assert.equal(workspace.projects.length, PROJECT_WORKSPACE_LIMIT);
+  assert.equal(PROJECT_WORKSPACE_LIMIT, 1);
+  assert.equal(workspace.projects.length, 1);
   assert.equal(workspace.active_project_id, workspace.projects[0]!.id);
-  workspace.projects[0]!.snapshot.story = "changed";
-  assert.equal(workspace.projects[1]!.snapshot.story, "story-1");
+  assert.equal(workspace.projects[0]!.snapshot.story, "story-0");
 });
 
 test("queued snapshot remains immutable while the editable snapshot changes", () => {
@@ -35,7 +35,7 @@ test("queued snapshot remains immutable while the editable snapshot changes", ()
   assert.equal(project.queued_snapshot.story, "approved");
 });
 
-test("workflow results and statuses stay isolated per project", () => {
+test("cost-safe workspace preserves the active project's workflow", () => {
   const workspace = normalizeProjectWorkspace<{ story: string }, { title: string }>(
     {
       version: 1,
@@ -47,9 +47,9 @@ test("workflow results and statuses stay isolated per project", () => {
     },
     { story: "" }
   );
-  workspace.projects[0]!.workflow!.title = "changed";
-  assert.equal(workspace.projects[1]!.workflow!.title, "B");
-  assert.equal(workspace.projects[1]!.status, "needs_repair");
+  assert.equal(workspace.projects.length, 1);
+  assert.equal(workspace.projects[0]!.workflow!.title, "A");
+  assert.equal(workspace.projects[0]!.status, "completed");
 });
 
 test("a stale building project becomes recoverable after reload", () => {

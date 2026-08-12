@@ -1,4 +1,7 @@
-export const PROJECT_WORKSPACE_LIMIT = 5;
+// Cost-safe production mode: one project is active at a time. Keeping the
+// storage abstraction lets us restore multi-project work later without
+// reintroducing any automatic API orchestration.
+export const PROJECT_WORKSPACE_LIMIT = 1;
 const DB_NAME = "storyboard-project-workspace-v1";
 const STORE_NAME = "workspace";
 const ACTIVE_KEY = "active";
