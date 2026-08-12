@@ -1638,14 +1638,14 @@ export function GenerateClient() {
 
   const setActiveProjectStatus = (
     status: ProjectSlotStatus,
-    options: { clearWorkflow?: boolean; lastError?: string } = {}
+    options: { clearWorkflow?: boolean; lastError?: string; projectId?: string } = {}
   ) => {
     const now = new Date().toISOString();
     setProjectWorkspace((current) => {
       const next = {
         ...current,
         projects: current.projects.map((project) =>
-          project.id === current.active_project_id
+          project.id === (options.projectId ?? current.active_project_id)
             ? {
                 ...project,
                 status,
@@ -1800,6 +1800,9 @@ export function GenerateClient() {
       setProgressMessage(lang === "vi" ? "Đang đọc công thức và định lượng..." : "Reading recipe quantities...");
       recipeForInput = await runCookingAnalysis();
       if (!recipeForInput) {
+        const message = cookingAnalysisError || (lang === "vi" ? "Không phân tích được công thức." : "Could not analyze the recipe.");
+        setError(message);
+        setActiveProjectStatus("needs_repair", { lastError: message });
         setPhase("input");
         setStep(2);
         return;
@@ -2122,6 +2125,7 @@ export function GenerateClient() {
       const plan = await generateStoryboardPlan(input, provider);
       if (!plan.success) {
         setError(plan.error);
+        setActiveProjectStatus("needs_repair", { lastError: plan.error });
         setPhase("input");
         return;
       }
@@ -2137,7 +2141,14 @@ export function GenerateClient() {
       setPlanWarnings([...payloadWarnings, ...plan.data.warnings]);
       setPhase("script");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An unexpected error occurred");
+      const rawMessage = err instanceof Error ? err.message : "An unexpected error occurred";
+      const message = /unexpected response was received from the server|server components render|failed to fetch/i.test(rawMessage)
+        ? (lang === "vi"
+            ? "Máy chủ xử lý quá thời gian. Dự án đã thoát khỏi trạng thái dựng; hãy bấm Chạy lại riêng."
+            : "The server timed out. The project was released from building; use Run again.")
+        : rawMessage;
+      setError(message);
+      setActiveProjectStatus("needs_repair", { lastError: message });
       setPhase("input");
     }
   };
@@ -2582,36 +2593,36 @@ export function GenerateClient() {
           // A queued rerun must start from its saved input, never from a prior
           // script/result screen that belongs to an earlier run of this slot.
           resetProjectWorkflow();
-          setActiveProjectStatus("building", { clearWorkflow: true });
+          setActiveProjectStatus("building", { clearWorkflow: true, projectId });
           setBulkQueue((current) => current ? { ...current, stage: "plan" } : null);
         } catch (queueError) {
-          setActiveProjectStatus("needs_repair", { lastError: queueError instanceof Error ? queueError.message : String(queueError) });
+          setActiveProjectStatus("needs_repair", { projectId, lastError: queueError instanceof Error ? queueError.message : String(queueError) });
           advance();
         }
       })();
     } else if (bulkQueue.stage === "plan" && phase === "input") {
       void handleGenerate().catch((queueError) => {
-        setActiveProjectStatus("needs_repair", { lastError: queueError instanceof Error ? queueError.message : String(queueError) });
+        setActiveProjectStatus("needs_repair", { projectId, lastError: queueError instanceof Error ? queueError.message : String(queueError) });
         advance();
       });
       setBulkQueue((current) => current ? { ...current, stage: "finalize" } : null);
     } else if (bulkQueue.stage === "finalize") {
       if (phase === "script" && draft && genInput && genAnalysis) {
         void buildStoryboardFromScript().catch((queueError) => {
-          setActiveProjectStatus("needs_repair", { lastError: queueError instanceof Error ? queueError.message : String(queueError) });
+          setActiveProjectStatus("needs_repair", { projectId, lastError: queueError instanceof Error ? queueError.message : String(queueError) });
           advance();
         });
         setBulkQueue((current) => current ? { ...current, stage: "advance" } : null);
       } else if (phase === "input" && error) {
-        setActiveProjectStatus("needs_repair", { lastError: error });
+        setActiveProjectStatus("needs_repair", { projectId, lastError: error });
         advance();
       }
     } else if (bulkQueue.stage === "advance") {
       if (phase === "result" && result) {
-        setActiveProjectStatus(blockingFindingCount(exportBundle?.report) > 0 ? "needs_repair" : "completed");
+        setActiveProjectStatus(blockingFindingCount(exportBundle?.report) > 0 ? "needs_repair" : "completed", { projectId });
         advance();
       } else if ((phase === "script" || phase === "input") && error) {
-        setActiveProjectStatus("needs_repair", { lastError: error });
+        setActiveProjectStatus("needs_repair", { projectId, lastError: error });
         advance();
       }
     }

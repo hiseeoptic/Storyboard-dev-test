@@ -51,3 +51,14 @@ test("workflow results and statuses stay isolated per project", () => {
   assert.equal(workspace.projects[1]!.workflow!.title, "B");
   assert.equal(workspace.projects[1]!.status, "needs_repair");
 });
+
+test("a stale building project becomes recoverable after reload", () => {
+  const project = makeProjectSlot({ story: "timeout" }, 0);
+  project.status = "building";
+  const workspace = normalizeProjectWorkspace(
+    { version: 1, active_project_id: project.id, projects: [project] },
+    { story: "" }
+  );
+  assert.equal(workspace.projects[0]!.status, "needs_repair");
+  assert.match(workspace.projects[0]!.last_error ?? "", /chạy lại/i);
+});

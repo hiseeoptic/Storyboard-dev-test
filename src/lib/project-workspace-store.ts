@@ -52,7 +52,17 @@ export function normalizeProjectWorkspace<T, R = unknown>(
   fallbackSnapshot: T
 ): ProjectWorkspace<T, R> {
   const projects = Array.isArray(value?.projects)
-    ? value!.projects.slice(0, PROJECT_WORKSPACE_LIMIT)
+    ? value!.projects.slice(0, PROJECT_WORKSPACE_LIMIT).map((project) =>
+        // A page reload cannot have a live server request. Therefore a stored
+        // "building" status is stale by definition and must be recoverable.
+        project.status === "building"
+          ? {
+              ...project,
+              status: "needs_repair" as const,
+              last_error: project.last_error || "Lượt dựng trước đã bị gián đoạn. Hãy chạy lại riêng dự án này.",
+            }
+          : project
+      )
     : [];
   if (projects.length === 0) projects.push(makeProjectSlot(fallbackSnapshot, 0));
   const active = projects.some((project) => project.id === value?.active_project_id)

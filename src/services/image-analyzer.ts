@@ -168,18 +168,46 @@ export async function analyzeLocationSets(params: {
 }): Promise<Record<string, string>> {
   const provider: AIProvider = params.provider ?? "openai";
   const out: Record<string, string> = {};
-  await Promise.all(
-    (params.sets ?? []).map(async (set) => {
-      const imgs = (set.images ?? []).filter(Boolean);
-      if (!imgs.length || !set.name?.trim()) return;
-      const desc = await analyzeWithVision({
-        provider,
-        images: imgs,
-        maxTokens: 320,
-        prompt: `These are LOCATION reference photos of ONE single place called "${set.name}", shown from multiple angles. It may be an INDOOR room or an OUTDOOR scene. Reconstruct this ONE place precisely so an image model can rebuild it identically from ANY camera angle, including the reverse view, and so a screenwriter knows exactly what actions can happen here. In under ~180 words describe: (1) place type and overall geometry (indoor: shape/size/ceiling; outdoor: openness, depth, ground plane, sky); (2) the FIXED layout — where the major landmarks sit relative to each other and to the boundaries (indoor: furniture, doors, windows, fixtures; outdoor: buildings, trees, paths, water, terrain); (3) boundaries and surfaces with precise colours and materials; (4) light — direction, warmth and source; (5) small persistent details that must reappear; (6) the practical ACTION AFFORDANCES an actor has here (where they can sit, stand, walk, what they can interact with). State only what is visibly confirmed; do not invent. This is the authoritative setting for its assigned shots.`,
-      });
-      if (desc) out[set.name.trim()] = desc.trim();
-    })
+  const sets = (params.sets ?? []).filter(
+    (set) => set.name?.trim() && (set.images ?? []).some(Boolean)
   );
+  if (sets.length === 0) return out;
+
+  // PREVIEW LATENCY CONTRACT: analyse every location in ONE vision request.
+  // The old implementation made one paid request per set (commonly six), then
+  // still had to build Context IR + script + storyboard JSON. Production logs
+  // showed that chain repeatedly hitting Vercel's hard 300-second timeout.
+  // One representative image per set is sufficient for script staging; every
+  // original angle remains untouched in input/manifest for board generation.
+  const imageBindings = sets.map((set, index) => ({
+    index: index + 1,
+    name: set.name.trim(),
+    image: set.images.find(Boolean)!,
+  }));
+  const requestedKeys = imageBindings.map(({ name }) => name);
+  const desc = await analyzeWithVision({
+    provider,
+    images: imageBindings.map(({ image }) => image),
+    maxTokens: Math.min(900, Math.max(320, sets.length * 120)),
+    prompt:
+      `Analyze ${sets.length} separate location reference images in their supplied order. ` +
+      imageBindings.map(({ index, name }) => `IMAGE ${index} = "${name}"`).join("; ") +
+      `. Return ONLY a valid JSON object whose exact keys are ${JSON.stringify(requestedKeys)}. ` +
+      `For each value, write a concise 70-100 word authoritative spatial description: place type, fixed landmark/furniture layout, boundaries and surfaces, light direction/source, persistent details, and practical actor affordances. Treat every image as a separate location; never merge or rename them and never invent unseen facts.`,
+  });
+  if (!desc) return out;
+  try {
+    const jsonText = desc.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const parsed = JSON.parse(jsonText) as Record<string, unknown>;
+    for (const name of requestedKeys) {
+      if (typeof parsed[name] === "string" && parsed[name].trim()) {
+        out[name] = parsed[name].trim();
+      }
+    }
+  } catch (error) {
+    // Fail soft: the original photos and user labels remain the authority in
+    // the manifest. Never retry six individual calls and risk another timeout.
+    console.error("[Image Analyzer] Batched location JSON was invalid:", error);
+  }
   return out;
 }
