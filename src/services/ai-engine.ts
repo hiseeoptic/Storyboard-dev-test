@@ -907,13 +907,16 @@ export async function generateScript(
         });
       } else {
         // The script stage is high-volume structured creative work. Default is
-        // gpt-5.6-sol (per user request — the strongest script writer for this
-        // deployment); gpt-5-mini remains a cheaper option via OPENAI_SCRIPT_MODEL.
+        // gpt-5-mini — RẺ + NHANH (chi phí thấp, ít chạm trần thời gian 300s của
+        // Vercel nên không bị "unexpected response" và không đốt token cho lần
+        // chạy hỏng). Trước đây mặc định là gpt-5.6-sol (reasoning, đắt + chậm
+        // nhất) khiến pipeline nhiều bước hay timeout và trừ tiền rất nhiều.
+        // Ai cần chất lượng cao nhất vẫn đặt lại OPENAI_SCRIPT_MODEL=gpt-5.6-sol.
         // GPT-5-series models take `max_completion_tokens` (NOT `max_tokens`)
         // and only support the default temperature — sending either legacy
         // param 400s the request. Overridable via OPENAI_SCRIPT_MODEL.
         const openai = getOpenAIClient();
-        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5.6-sol";
+        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5-mini";
         const isGpt5 = scriptModel.startsWith("gpt-5") || scriptModel.startsWith("o");
         const completion = await openai.chat.completions.create(
           {

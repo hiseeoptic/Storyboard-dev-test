@@ -993,7 +993,7 @@ export function GenerateClient() {
   };
 
   // ─── Script model (default OpenAI — the whole text pipeline is on OpenAI now:
-  // gpt-5.6-sol writes the script, gpt-4.1-mini builds the storyboard JSON). Claude
+  // gpt-5-mini writes the script (rẻ+nhanh, ít timeout), gpt-4.1-mini builds the storyboard JSON). Claude
   // Opus timed out too often on the 60s script budget. Still switchable via the
   // hidden panel (double-click the title, passcode 2502). ──
   const [scriptProvider, setScriptProvider] = useState<AIProvider>("openai");
