@@ -105,9 +105,18 @@ function validateAction(action: AtomicAction, shot: ShotState): ProductionFindin
       })
     );
   }
+  // Only a manipulation of a REAL, external object needs the limb+contact
+  // contract. Expressive / self-directed beats ("hand near ears", contact on
+  // self) and verbs with no distinct object are not object manipulations, so
+  // they must not be forced to declare a body part + object contact.
+  const externalObject =
+    action.object_entity_id && action.object_entity_id !== action.subject_entity_id
+      ? action.object_entity_id
+      : null;
   if (
     isContactAction(action.verb) &&
-    (!action.body_part || !action.object_entity_id || !action.contact_entity_ids.includes(action.object_entity_id))
+    externalObject &&
+    (!action.body_part || !action.contact_entity_ids.includes(externalObject))
   ) {
     findings.push(
       finding({
@@ -201,7 +210,11 @@ export function validateAtomicActions(state: ProductionState): ProductionFinding
       (sum, action) => sum + (action.duration_s ?? 0),
       0
     );
-    if (declaredTotal > shot.end_time_s - shot.start_time_s + 0.001) {
+    // Action durations are model ESTIMATES, so a tiny overshoot (10.2s in a 10s
+    // shot) is noise, not a real budget break. Tolerate the larger of +0.5s or
+    // 5% of the shot before flagging.
+    const shotDuration = shot.end_time_s - shot.start_time_s;
+    if (declaredTotal > shotDuration + Math.max(0.5, shotDuration * 0.05)) {
       findings.push(
         finding({
           code: "ACTION_BUDGET_EXCEEDS_SHOT",

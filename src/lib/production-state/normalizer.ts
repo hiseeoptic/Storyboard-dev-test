@@ -65,20 +65,64 @@ function preferredLegacyId(kind: ProductionEntityKind, value: string): string | 
   return prefix && value.startsWith(prefix) ? value : undefined;
 }
 
+function descText(v: unknown): string {
+  return String(v ?? "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function descTokens(v: unknown): Set<string> {
+  return new Set(descText(v).split(" ").filter((t) => t.length > 2));
+}
+// Position / orientation are FREE TEXT the model re-words between the previous
+// end snapshot and this start snapshot ("room+bed" vs "room+bed edge", "facing
+// Lan" vs "face-toward Lan"). Pure wording drift is normal; only a materially
+// different descriptor (weak token overlap, no containment) is a real change.
+function descriptorsDiffer(a: unknown, b: unknown): boolean {
+  const ta = descText(a);
+  const tb = descText(b);
+  if (ta === tb) return false;
+  const A = descTokens(a);
+  const B = descTokens(b);
+  if (A.size === 0 || B.size === 0) return false; // one side unspecified → no conflict
+  let inter = 0;
+  for (const t of A) if (B.has(t)) inter++;
+  if (inter === A.size || inter === B.size) return false; // containment (one adds detail)
+  return inter / Math.min(A.size, B.size) < 0.5;
+}
+// Holder only changes for real when BOTH ends name a real, DIFFERENT holder.
+// Picking up / putting down (none ↔ someone, incl. the `entity_none` sentinel)
+// is a natural transition prose routinely omits — never a continuity break.
+function holderChanged(before: unknown, after: unknown): boolean {
+  const norm = (v: unknown) => {
+    const s = descText(v);
+    return s === "entity none" || s === "none" || s === "null" ? "" : s;
+  };
+  const a = norm(before);
+  const b = norm(after);
+  return Boolean(a && b && a !== b);
+}
+
 function snapshotDifference(
   before: ProductionEntitySnapshot,
   after: ProductionEntitySnapshot
 ): Record<string, { previous_end: unknown; current_start: unknown }> {
   const differences: Record<string, { previous_end: unknown; current_start: unknown }> = {};
-  const fields = ["state", "position", "holder_entity_id", "orientation", "traces"] as const;
-  for (const field of fields) {
-    if (JSON.stringify(before[field]) !== JSON.stringify(after[field])) {
-      differences[field] = {
-        previous_end: before[field] ?? null,
-        current_start: after[field] ?? null,
-      };
-    }
-  }
+  const record = (field: "state" | "position" | "holder_entity_id" | "orientation" | "traces") => {
+    differences[field] = {
+      previous_end: before[field] ?? null,
+      current_start: after[field] ?? null,
+    };
+  };
+  // `state` is descriptive mood prose the model words freely — NOT a causality
+  // fact — so it never drives a boundary continuity break (same rationale as
+  // STATE-004/005). Only real position/holder/orientation changes count.
+  if (descriptorsDiffer(before.position, after.position)) record("position");
+  if (descriptorsDiffer(before.orientation, after.orientation)) record("orientation");
+  if (holderChanged(before.holder_entity_id, after.holder_entity_id)) record("holder_entity_id");
+  if (JSON.stringify(before.traces) !== JSON.stringify(after.traces)) record("traces");
   return differences;
 }
 

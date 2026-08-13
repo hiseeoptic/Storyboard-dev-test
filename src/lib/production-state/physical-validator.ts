@@ -24,6 +24,16 @@ function isNoHolderEntityId(value: string | null | undefined): boolean {
   return /^(?:entity_)?(?:none|null|nil|no_holder|nobody|no_one)$/iu.test(value ?? "");
 }
 
+// A room / set / architecture entity (obj_bedroom, "kitchen floor", a wall…) is
+// the ENVIRONMENT itself — not a portable object resting on ground/surface/hand
+// — so it never needs a holder or support relation and must not raise
+// OBJECT_SUPPORT_MISSING.
+function isEnvironmentEntity(entityId: string | null | undefined): boolean {
+  return /\b(?:room|bedroom|kitchen|bathroom|living_?room|hall(?:way)?|corridor|floor|wall|ceiling|window|door(?:way)?|background|backdrop|scene|scenery|set|space|environment|interior|exterior|street|road|sky|building|house|store|shop|market|garden|yard)\b/iu.test(
+    String(entityId ?? "")
+  );
+}
+
 function validateLimb(
   limb: LimbState,
   shotId: string,
@@ -169,6 +179,7 @@ function validateSnapshot(
       object.visibility === "visible" &&
       !entity.holder_entity_id &&
       entity.position &&
+      !isEnvironmentEntity(entity.entity_id) &&
       !activeSupport(snapshot, entity.entity_id, ["ground", "surface", "hand", "body"])
     ) {
       findings.push(

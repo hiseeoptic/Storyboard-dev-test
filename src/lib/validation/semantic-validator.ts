@@ -796,12 +796,17 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
       );
       for (const entry of startEntries) {
         const prior = previousEnd.get(entry.entity_id);
+        // The intrinsic `state` prose is descriptive mood the model re-words
+        // freely between the previous end and this start ("folded, resting" vs
+        // "folded, resting smooth") — it is NOT a causality fact, so (like
+        // STATE-004) it must not drive a false continuity break. Only a real
+        // change of POSITION, HOLDER or ORIENTATION is a genuine pre-action
+        // change; match those tolerantly.
         if (
           prior &&
-          (!sameState(prior.state, entry.state) ||
-            !sameState(prior.position, entry.position) ||
-            norm(prior.holder) !== norm(entry.holder) ||
-            norm(prior.orientation) !== norm(entry.orientation))
+          (!compatibleDescriptor(prior.position, entry.position) ||
+            holderConflict(prior.holder, entry.holder) ||
+            !compatibleDescriptor(prior.orientation, entry.orientation))
         ) {
           push({
             code: "STATE-005",

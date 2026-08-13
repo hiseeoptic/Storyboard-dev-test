@@ -154,12 +154,42 @@ export function validateProductionPromptAuthority(
         str(board.setting),
       ].map(str).filter(Boolean)
     );
+    // A board panel's `action` is usually a CAMERA FRAMING that elaborates a
+    // declared action ("framing 1: wide shot showing Lan reaching…", "Medium
+    // close-up on Lan"). Exact-set matching flagged these as "invented". Strip
+    // framing/camera vocabulary, then treat the panel as declared when its
+    // remaining content words are substantially covered by the declared actions,
+    // or when nothing but framing/camera words remain.
+    const normAct = (s: unknown): string =>
+      String(s ?? "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+    const FRAMING_STOP = new Set([
+      "framing", "shot", "wide", "medium", "close", "closeup", "up", "two", "twoshot",
+      "angle", "low", "high", "frame", "panel", "showing", "shows", "view", "camera",
+      "over", "shoulder", "on", "of", "the", "a", "an", "and", "with", "as", "in", "to",
+      "at", "her", "his", "their", "him", "she", "he", "they", "gently", "quietly",
+      "softly", "soft", "expression", "again", "toward", "towards", "each", "other",
+    ]);
+    const contentTokens = (s: unknown): string[] =>
+      normAct(s).split(" ").filter((t) => t.length > 2 && !FRAMING_STOP.has(t));
+    const allowedActionCorpus = new Set<string>();
+    for (const a of allowedPanelActions) for (const t of contentTokens(a)) allowedActionCorpus.add(t);
+    const allowedNorm = [...allowedPanelActions].map(normAct).filter(Boolean);
+    const panelDeclared = (action: string): boolean => {
+      if (allowedPanelActions.has(action)) return true;
+      const na = normAct(action);
+      if (na && allowedNorm.some((a) => a.includes(na) || na.includes(a))) return true;
+      const toks = contentTokens(action);
+      if (toks.length === 0) return true; // pure camera framing → not an invented action
+      let inter = 0;
+      for (const t of toks) if (allowedActionCorpus.has(t)) inter++;
+      return inter / toks.length >= 0.5;
+    };
     const panels = Array.isArray(board.panels) ? board.panels : [];
     const inventedPanel = panels
       .map(obj)
       .find((panel) => {
         const action = str(panel.action);
-        return action && !allowedPanelActions.has(action);
+        return action && !panelDeclared(action);
       });
     if (inventedPanel) {
       push({

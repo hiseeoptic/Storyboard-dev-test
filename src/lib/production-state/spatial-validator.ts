@@ -64,6 +64,26 @@ function graphErrors(shot: ShotState, graph: SpatialGraphState): ProductionFindi
   return findings;
 }
 
+// Zone ids drift by cosmetic qualifiers the model appends for the SAME physical
+// place ("zone_kitchen_floor" vs "zone_kitchen_floor_only"). Strip the leading
+// `zone_` and trailing qualifier suffixes, then treat two ids as the same zone
+// when one is a prefix of the other — so an alias is never read as a teleport.
+function normZoneId(v: string | null | undefined): string {
+  return String(v ?? "")
+    .toLowerCase()
+    .replace(/^zone_/, "")
+    .replace(/_(?:only|area|zone|space|region|spot|side|part)$/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+}
+function sameZoneId(a: string | null | undefined, b: string | null | undefined): boolean {
+  const na = normZoneId(a);
+  const nb = normZoneId(b);
+  if (!na || !nb) return na === nb;
+  return na === nb || na.startsWith(nb) || nb.startsWith(na);
+}
+
 function changedPlacement(before: EntityPlacementState, after: EntityPlacementState): boolean {
   const sameProsePlacement =
     before.position_label.trim().toLocaleLowerCase() ===
@@ -80,7 +100,7 @@ function changedPlacement(before: EntityPlacementState, after: EntityPlacementSt
     return false;
   }
   return (
-    before.zone_id !== after.zone_id ||
+    !sameZoneId(before.zone_id, after.zone_id) ||
     before.anchor_id !== after.anchor_id ||
     (before.world_side !== "unknown" &&
       after.world_side !== "unknown" &&
