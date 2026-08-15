@@ -24,6 +24,64 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+const MISSING_AUTHORITY =
+  /^(?:n\/?a|none|unknown|unspecified|tbd|todo|missing|not set|chưa rõ|không rõ)$/i;
+
+function hasAuthority(value: unknown): boolean {
+  const normalized = text(value);
+  return !!normalized && !MISSING_AUTHORITY.test(normalized);
+}
+
+function normalizedEvidence(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase();
+}
+
+/**
+ * Context analysis is intentionally allowed to admit that the source does not
+ * specify a clock time. The locked Context IR, however, still needs one stable
+ * lighting/continuity authority before storyboard compilation. Resolve that
+ * authority from existing evidence, then use a documented neutral default as
+ * the last resort. This is local and never triggers another model call.
+ */
+function temporalAuthority(
+  input: StoryboardGenerationInput,
+  layers: UnknownRecord
+): string {
+  const temporal = record(layers.temporal);
+  const environment = record(layers.environment);
+  const locations = Array.isArray(environment.locations)
+    ? environment.locations.map(record)
+    : [];
+  const evidence = normalizedEvidence(
+    [
+      text(input.source_script),
+      text(input.story_idea),
+      text(input.setting),
+      text(input.tone),
+      text(temporal.story_time_span),
+      text(temporal.season_weather),
+      ...locations.map((location) => text(location.lighting_motivation)),
+    ].join("\n")
+  );
+
+  const authorities: Array<[RegExp, string]> = [
+    [/\b(midnight|night(?:time)?)\b|\b(nua dem|ban dem|buoi toi|troi toi|dem)\b/, "night"],
+    [/\b(dawn|sunrise)\b|\b(binh minh|rang sang)\b/, "dawn"],
+    [/\b(sunset|dusk|twilight)\b|\b(hoang hon|chang vang)\b/, "sunset"],
+    [/\bafternoon\b|\b(buoi chieu|chieu nay|chieu muon|xe chieu)\b/, "afternoon"],
+    [/\b(noon|midday)\b|\b(buoi trua|trua)\b/, "noon"],
+    [/\bmorning\b|\b(buoi sang|sang som)\b/, "morning"],
+    [/\b(daytime|daylight|sunlight|sunlit|sun)\b|\b(ban ngay|anh nang|mat troi)\b/, "daytime"],
+  ];
+  for (const [pattern, authority] of authorities) {
+    if (pattern.test(evidence)) return authority;
+  }
+  return "continuity-neutral daytime (deterministic default; source does not specify clock time)";
+}
+
 function textArray(value: unknown, fallback: string[]): string[] {
   if (!Array.isArray(value)) return fallback;
   return value.map(text).filter(Boolean);
@@ -158,6 +216,13 @@ export function completeContextRealityProfile(
   }
 
   const fallback = realityDefaults(input, context);
+  const layers = record(context.layers);
+  const temporal = record(layers.temporal);
+  const needsTemporalFallback =
+    Object.keys(temporal).length > 0 && !hasAuthority(temporal.time_of_day);
+  const completedTimeOfDay = needsTemporalFallback
+    ? temporalAuthority(input, layers)
+    : text(temporal.time_of_day);
   const candidate = record(context.reality_profile);
   const dimensions = record(candidate.dimensions);
   const salience = record(candidate.salience_policy);
@@ -221,6 +286,7 @@ export function completeContextRealityProfile(
   };
 
   const usedFallback =
+    needsTemporalFallback ||
     Object.keys(candidate).length === 0 ||
     !text(candidate.mode) ||
     !text(candidate.fidelity) ||
@@ -230,7 +296,22 @@ export function completeContextRealityProfile(
     Object.keys(salience).length < 5;
 
   return {
-    payload: { ...context, reality_profile: completed },
+    payload: {
+      ...context,
+      ...(needsTemporalFallback
+        ? {
+            assumptions: [
+              ...textArray(context.assumptions, []),
+              `Temporal authority completed locally as "${completedTimeOfDay}" because the source did not lock a clock time.`,
+            ],
+            layers: {
+              ...layers,
+              temporal: { ...temporal, time_of_day: completedTimeOfDay },
+            },
+          }
+        : {}),
+      reality_profile: completed,
+    },
     used_fallback: usedFallback,
   };
 }

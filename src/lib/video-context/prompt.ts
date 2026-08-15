@@ -25,6 +25,7 @@ CORE RULES:
 - Uploaded character references force strict photographic identity. Uploaded environment/product references force their respective geometry, material and layout facts regardless of a conflicting legacy style label.
 - Never choose a kitchen, living room, mountain, country, culture, era, social class, visual style or marketing formula just because a preset/library contains it.
 - If evidence is absent, write "unspecified" and record an assumption instead of silently defaulting.
+- REQUIRED TEMPORAL AUTHORITY: layers.temporal.time_of_day must not be a bare placeholder. Prefer an explicit script/setting/lighting cue; when no clock-time cue exists, declare "continuity-neutral daytime (source does not specify clock time)" and record that bounded assumption. Never change an explicit morning/afternoon/evening/night cue.
 - Environment location ids are PROJECT-LOCAL semantic ids such as "location_01". Never output an environment library/archetype id.
 - Every location owns both sound_bed and reverb_profile. sound_bed names the audible sources/room tone; reverb_profile names the acoustic decay/reflection character. A continuous boundary preserves both exactly. A location or time transition resets them instead of inheriting one global project ambience.
 - A multi-location script must use a multi-location strategy. Do not force exact spatial continuity between scenes that intentionally change location; choose strict, soft, montage, match-cut, symbolic or scene-cut continuity from the story evidence.

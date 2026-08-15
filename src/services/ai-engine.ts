@@ -791,7 +791,7 @@ export async function analyzeVideoContext(
       const completedContext = completeContextRealityProfile(rawContext, input);
       if (completedContext.used_fallback) {
         console.warn(
-          "[AI Engine] Context response omitted part or all of reality_profile; completed it deterministically from the approved creative route."
+          "[AI Engine] Context response omitted a bounded required authority; completed it deterministically from approved project evidence."
         );
       }
       const parsed = resolvedVideoContextSchema.safeParse(

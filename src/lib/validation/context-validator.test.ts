@@ -189,6 +189,61 @@ test("missing reality profile preserves stylized and fantasy world modes", () =>
   );
 });
 
+test("missing time authority is completed locally for all ten named visual styles", () => {
+  const representations = [
+    "whiteboard_stick_figure",
+    "hand_drawn_doodle",
+    "flat_2d_cartoon",
+    "chibi_illustration",
+    "cinematic_cartoon",
+    "comic_book",
+    "layered_paper_cut",
+    "claymation",
+    "low_poly_3d",
+    "semi_realistic_3d",
+  ] as const;
+
+  for (const characterRepresentation of representations) {
+    const fixture = context();
+    fixture.layers.temporal.time_of_day = "unspecified";
+    const completed = completeContextRealityProfile(fixture, {
+      story_idea: "Người que buộc dây giày rồi tiếp tục chạy về phía mặt trời.",
+      source_script: "Ba người ở vạch xuất phát. Cuối cùng một người đi về phía mặt trời.",
+      genre: "life_wisdom",
+      style: "realistic",
+      scene_count: 6,
+      character_representation: characterRepresentation,
+    });
+    const resolved = completed.payload as ResolvedVideoContext;
+    assert.equal(resolved.layers.temporal.time_of_day, "afternoon");
+    assert.equal(validateResolvedVideoContext(resolved, {
+      story_idea: "Người que tiếp tục chạy.",
+      genre: "life_wisdom",
+      style: "realistic",
+      scene_count: 6,
+      character_representation: characterRepresentation,
+    }).findings.some((finding) => finding.code === "CTX-006"), false);
+  }
+});
+
+test("local temporal completion preserves an explicit night authority", () => {
+  const fixture = context();
+  fixture.layers.temporal.time_of_day = "night";
+  const completed = completeContextRealityProfile(fixture, {
+    story_idea: "Một nhân vật đi dưới đèn đường.",
+    genre: "life_wisdom",
+    style: "realistic",
+    scene_count: 3,
+    character_representation: "stick_figure",
+  });
+  const resolved = completed.payload as ResolvedVideoContext;
+  assert.equal(resolved.layers.temporal.time_of_day, "night");
+  assert.equal(
+    resolved.assumptions.some((entry) => entry.includes("Temporal authority completed")),
+    false
+  );
+});
+
 test("OpenAI Context IR schema strictly requires every declared object property", () => {
   let totalProperties = 0;
   let maxDepth = 0;
