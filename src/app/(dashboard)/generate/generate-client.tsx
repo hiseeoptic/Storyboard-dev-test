@@ -94,6 +94,7 @@ import {
   CHARACTER_REPRESENTATION_OPTIONS as CREATIVE_CHARACTER_OPTIONS,
   characterWorldStylePrompt,
   isStylizedCharacterRepresentation,
+  resolveCreativeRoute,
   DIRECTING_PROFILE_OPTIONS as CREATIVE_DIRECTING_OPTIONS,
   type CreativeOption,
 } from "@/lib/creative-routing";
@@ -120,6 +121,16 @@ function creativeOptionDescription<T extends string>(
   const option = options.find((item) => item.value === value);
   if (!option) return "";
   return lang === "vi" ? option.description_vi : option.description_en;
+}
+
+function creativeOptionLabel<T extends string>(
+  options: CreativeOption<T>[],
+  value: T,
+  lang: Lang,
+): string {
+  const option = options.find((item) => item.value === value);
+  if (!option) return value;
+  return lang === "vi" ? option.label_vi : option.label_en;
 }
 
 // ─── Nano Flow (text-only) ─────────────────────────────────────────────────
@@ -1313,6 +1324,13 @@ function ProjectWorkspace() {
       : hasCharacterUploads
         ? "uploaded_photoreal"
         : characterRepresentation;
+  const previewCharacterRepresentation = resolveCreativeRoute({
+    story_idea: storyIdea,
+    genre: genre as StoryboardGenerationInput["genre"],
+    style,
+    scene_count: segmentCount,
+    character_representation: effectiveCharacterRepresentation,
+  }).effective_character_representation;
 
   // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -5076,6 +5094,7 @@ function ProjectWorkspace() {
                 <p className="font-medium">{L("summary")}</p>
                 <p className="text-muted-foreground">
                   <strong>{segmentCount}</strong> {L("segments")} (~{segmentCount * 10}s) · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong>
+                  {<> · <strong>{creativeOptionLabel(CREATIVE_CHARACTER_OPTIONS, previewCharacterRepresentation, lang)}</strong></>}
                   {characters.length > 0 && <> · {characters.length} {L("characters")}</>}
                   {products.length > 0 && <> · {products.length} {L("products")}</>}
                   {backgrounds.length > 0 && <> · {backgrounds.length} {L("locations")}</>}

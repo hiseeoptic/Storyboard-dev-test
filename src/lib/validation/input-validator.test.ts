@@ -76,3 +76,13 @@ test("auto mode understands an explicit stick-figure instruction in the script",
   }));
   assert.equal(route.effective_character_representation, "whiteboard_stick_figure");
 });
+
+test("auto mode reads a complete pasted source_script when the short idea is generic", () => {
+  const route = resolveCreativeRoute(input({
+    story_idea: "Đừng vội cười người đi chậm",
+    source_script:
+      "Cảnh 1: Ba người que đứng trên vạch xuất phát. Hai người chạy nhanh, một người vẫn đang buộc dây giày.",
+    character_representation: "auto",
+  }));
+  assert.equal(route.effective_character_representation, "whiteboard_stick_figure");
+});

@@ -6,6 +6,7 @@ import type {
   RealityProfile,
 } from "../reality/types";
 import { isStylizedCharacterRepresentation } from "../creative-routing/profiles.ts";
+import { resolveCreativeRoute } from "../creative-routing/compiler.ts";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -80,6 +81,114 @@ function temporalAuthority(
     if (pattern.test(evidence)) return authority;
   }
   return "continuity-neutral daytime (deterministic default; source does not specify clock time)";
+}
+
+function timePeriodAuthority(input: StoryboardGenerationInput): string {
+  const evidence = normalizedEvidence(
+    [input.source_script, input.story_idea, input.setting, input.custom_instructions]
+      .map(text)
+      .join("\n")
+  );
+  const periods: Array<[RegExp, string]> = [
+    [/\b(future|futuristic)\b|\b(tuong lai)\b/, "future"],
+    [/\b(ancient|antiquity)\b|\b(co dai)\b/, "ancient"],
+    [/\b(medieval|middle ages)\b|\b(trung co)\b/, "medieval"],
+    [/\b(?:18|19|20)\d{2}s?\b|\b(thap nien|the ky)\b/, "script-declared historical period"],
+    [/\b(contemporary|modern|present day)\b|\b(duong dai|hien dai|ngay nay)\b/, "contemporary"],
+  ];
+  for (const [pattern, period] of periods) {
+    if (pattern.test(evidence)) return period;
+  }
+  return "contemporary era-neutral setting (deterministic default; source does not specify an era)";
+}
+
+function completeRequiredAuthorities(
+  input: StoryboardGenerationInput,
+  layers: UnknownRecord
+): { layers: UnknownRecord; assumptions: string[]; used_fallback: boolean } {
+  const route = resolveCreativeRoute(input);
+  const mode = realityModeFor(input);
+  const projectIntent = { ...record(layers.project_intent) };
+  const worldContext = { ...record(layers.world_context) };
+  const temporal = { ...record(layers.temporal) };
+  const environment = { ...record(layers.environment) };
+  const motionContinuity = { ...record(layers.motion_continuity) };
+  const visualLanguage = { ...record(layers.visual_language) };
+  const audioValidation = { ...record(layers.audio_validation) };
+  const locations = Array.isArray(environment.locations) ? environment.locations : [];
+  const completed: string[] = [];
+  const fill = (owner: UnknownRecord, key: string, value: string, label: string) => {
+    if (hasAuthority(owner[key])) return;
+    owner[key] = value;
+    completed.push(label);
+  };
+
+  if (Object.keys(projectIntent).length > 0) {
+    fill(projectIntent, "purpose", input.video_goal || `${input.genre} storytelling`, "project purpose");
+    fill(projectIntent, "platform", "digital short-form video", "target platform");
+    fill(projectIntent, "aspect_ratio", input.aspect_ratio || "9:16", "aspect ratio");
+  }
+  if (Object.keys(worldContext).length > 0) {
+    fill(
+      worldContext,
+      "world_type",
+      mode === "stylized" ? "script-derived stylized world" : "script-derived physical world",
+      "world type"
+    );
+    fill(worldContext, "genre", input.genre, "world genre");
+    fill(worldContext, "time_period", timePeriodAuthority(input), "time period");
+    fill(
+      worldContext,
+      "physics_mode",
+      mode === "stylized"
+        ? "coherent stylized cause-and-effect physics"
+        : "real-world cause-and-effect physics",
+      "world physics"
+    );
+  }
+  if (Object.keys(temporal).length > 0) {
+    fill(temporal, "timeline_mode", "linear script order", "timeline mode");
+    fill(temporal, "time_of_day", temporalAuthority(input, layers), "time of day");
+  }
+  if (Object.keys(environment).length > 0) {
+    fill(
+      environment,
+      "strategy",
+      locations.length > 1 ? "multi_location_script_led" : "single_location_script_led",
+      "environment strategy"
+    );
+  }
+  if (Object.keys(motionContinuity).length > 0) {
+    fill(motionContinuity, "continuity_mode", "script-led scene continuity", "continuity mode");
+  }
+  if (Object.keys(visualLanguage).length > 0) {
+    fill(
+      visualLanguage,
+      "style_mode",
+      `${route.effective_character_representation} script-derived visual medium`,
+      "visual style"
+    );
+  }
+  if (Object.keys(audioValidation).length > 0) {
+    fill(audioValidation, "language", input.dialogue_language || "Vietnamese", "audio language");
+    fill(audioValidation, "voice_strategy", "stable per-speaker voice lock", "voice strategy");
+    fill(audioValidation, "ambience_strategy", "per-location ambience lock", "ambience strategy");
+  }
+
+  return {
+    layers: {
+      ...layers,
+      project_intent: projectIntent,
+      world_context: worldContext,
+      temporal,
+      environment,
+      motion_continuity: motionContinuity,
+      visual_language: visualLanguage,
+      audio_validation: audioValidation,
+    },
+    assumptions: completed,
+    used_fallback: completed.length > 0,
+  };
 }
 
 function textArray(value: unknown, fallback: string[]): string[] {
@@ -199,12 +308,12 @@ function realityDefaults(
 }
 
 /**
- * Gemini structured output can occasionally omit the entire top-level
- * `reality_profile` even though it is marked required. Complete that bounded
- * cross-cutting profile deterministically from the already-approved creative
- * route, then let the full Zod schema and Context validator fail closed on
- * every other field. This performs no remote retry and never invents a world,
- * location or storyboard.
+ * Structured model output can occasionally omit the top-level reality profile
+ * or return a bare placeholder for an authority that is already derivable from
+ * approved project input. Complete only those bounded fields locally, then let
+ * the full Zod schema and Context validator fail closed on structural/world
+ * omissions. This performs no remote retry and never invents a location or
+ * storyboard.
  */
 export function completeContextRealityProfile(
   raw: unknown,
@@ -217,12 +326,7 @@ export function completeContextRealityProfile(
 
   const fallback = realityDefaults(input, context);
   const layers = record(context.layers);
-  const temporal = record(layers.temporal);
-  const needsTemporalFallback =
-    Object.keys(temporal).length > 0 && !hasAuthority(temporal.time_of_day);
-  const completedTimeOfDay = needsTemporalFallback
-    ? temporalAuthority(input, layers)
-    : text(temporal.time_of_day);
+  const authorityCompletion = completeRequiredAuthorities(input, layers);
   const candidate = record(context.reality_profile);
   const dimensions = record(candidate.dimensions);
   const salience = record(candidate.salience_policy);
@@ -286,7 +390,7 @@ export function completeContextRealityProfile(
   };
 
   const usedFallback =
-    needsTemporalFallback ||
+    authorityCompletion.used_fallback ||
     Object.keys(candidate).length === 0 ||
     !text(candidate.mode) ||
     !text(candidate.fidelity) ||
@@ -298,16 +402,13 @@ export function completeContextRealityProfile(
   return {
     payload: {
       ...context,
-      ...(needsTemporalFallback
+      ...(authorityCompletion.used_fallback
         ? {
             assumptions: [
               ...textArray(context.assumptions, []),
-              `Temporal authority completed locally as "${completedTimeOfDay}" because the source did not lock a clock time.`,
+              `Required Context authorities completed locally from approved input: ${authorityCompletion.assumptions.join(", ")}.`,
             ],
-            layers: {
-              ...layers,
-              temporal: { ...temporal, time_of_day: completedTimeOfDay },
-            },
+            layers: authorityCompletion.layers,
           }
         : {}),
       reality_profile: completed,

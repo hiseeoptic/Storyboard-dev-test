@@ -239,9 +239,43 @@ test("local temporal completion preserves an explicit night authority", () => {
   const resolved = completed.payload as ResolvedVideoContext;
   assert.equal(resolved.layers.temporal.time_of_day, "night");
   assert.equal(
-    resolved.assumptions.some((entry) => entry.includes("Temporal authority completed")),
+    resolved.assumptions.some((entry) => entry.includes("Required Context authorities completed")),
     false
   );
+});
+
+test("pasted stick-figure script completes all derivable Context authorities before the gate", () => {
+  const fixture = context();
+  fixture.layers.project_intent.purpose = "unspecified";
+  fixture.layers.project_intent.platform = "unknown";
+  fixture.layers.project_intent.aspect_ratio = "tbd";
+  fixture.layers.world_context.world_type = "unspecified";
+  fixture.layers.world_context.genre = "unknown";
+  fixture.layers.world_context.time_period = "unspecified";
+  fixture.layers.world_context.physics_mode = "tbd";
+  fixture.layers.temporal.timeline_mode = "unknown";
+  fixture.layers.temporal.time_of_day = "unspecified";
+  fixture.layers.environment.strategy = "unknown";
+  fixture.layers.motion_continuity.continuity_mode = "unspecified";
+  fixture.layers.visual_language.style_mode = "unknown";
+  fixture.layers.audio_validation.language = "unknown";
+  fixture.layers.audio_validation.voice_strategy = "tbd";
+  fixture.layers.audio_validation.ambience_strategy = "unspecified";
+  const projectInput = {
+    story_idea: "Đừng vội cười người đi chậm",
+    source_script:
+      "Ba người que đứng trên vạch xuất phát. Một người buộc dây giày rồi chạy về phía mặt trời.",
+    genre: "life_wisdom" as const,
+    style: "realistic" as const,
+    scene_count: 6,
+    aspect_ratio: "9:16" as const,
+    character_representation: "auto" as const,
+  };
+  const completed = completeContextRealityProfile(fixture, projectInput);
+  const resolved = completed.payload as ResolvedVideoContext;
+  assert.equal(resolved.layers.world_context.time_period.startsWith("contemporary"), true);
+  assert.equal(resolved.layers.visual_language.style_mode.includes("whiteboard_stick_figure"), true);
+  assert.equal(validateResolvedVideoContext(resolved, projectInput).ok, true);
 });
 
 test("OpenAI Context IR schema strictly requires every declared object property", () => {

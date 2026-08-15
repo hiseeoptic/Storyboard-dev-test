@@ -79,6 +79,7 @@ function inferCharacterRepresentation(input: StoryboardGenerationInput): Charact
   if (input.character_representation && input.character_representation !== "auto") return input.character_representation;
   const scriptStyleSignal = [
     input.story_idea,
+    input.source_script,
     input.main_character,
     input.key_message,
     input.setting,
