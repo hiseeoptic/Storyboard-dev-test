@@ -1,7 +1,7 @@
 # Deploy to Vercel (production) on every push to main.
 #
 # WHY: relying on Vercel's Git integration alone has been unreliable for this
-# project (pushes to main did not always reach storyboard.nguyenduchoa.com).
+# project (pushes to main did not always reach storyboard.aiglobalvn.com).
 # This workflow deploys to production explicitly from GitHub's own runners and
 # shows a green/red status on each commit, so "pushed" always means "deployed".
 #
