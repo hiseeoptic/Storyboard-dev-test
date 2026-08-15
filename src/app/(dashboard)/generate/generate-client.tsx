@@ -19,8 +19,12 @@ import {
   AlertTriangle,
   BookOpen,
   Trash2,
+  Plus,
+  X,
+  Folder,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
@@ -908,9 +912,15 @@ function exportRepairSignature(report: SemanticValidationReport | null | undefin
     .join("\n");
 }
 
-// ─── Component ──────────────────────────────────────────────────────────────
+// ─── Per-project workspace ───────────────────────────────────────────────────
+// The entire state of ONE project (brief, characters, products, generated
+// storyboard, exports…) lives inside this component. React keeps every
+// useState isolated per mounted instance, so rendering this once per tab gives
+// five completely independent projects — each with its own "Tạo storyboard"
+// button — without sharing any state. The multi-tab shell is GenerateClient
+// (defined at the bottom of this file); this used to be GenerateClient itself.
 
-export function GenerateClient() {
+function ProjectWorkspace() {
   const [lang, setLang] = useState<Lang>("vi");
   const [phase, setPhase] = useState<Phase>("input");
   const [step, setStep] = useState(0);
@@ -5054,6 +5064,178 @@ export function GenerateClient() {
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// ─── Multi-project tabs (shell) ──────────────────────────────────────────────
+// Up to 5 independent projects, each an isolated ProjectWorkspace instance.
+//
+//  • Data is separate per tab because React isolates each instance's state.
+//  • Each tab has its own "Tạo storyboard" button (it lives inside the
+//    workspace), so generating in one project never touches the others.
+//  • Tabs are lazy-mounted on first open, then kept alive (hidden, not
+//    unmounted) — switching tabs never loses a brief or a generated storyboard.
+//  • Tab 1 mounts immediately so it still consumes any Studio/Analyzer handoff,
+//    exactly like the old single-project page did.
+//  • Closing a tab unmounts its workspace and discards that project — the
+//    "làm xong dự án 1 → xoá → làm tiếp dự án 2" workflow.
+
+const MAX_PROJECTS = 5;
+
+type ProjectTab = { id: string; name: string };
+
+function newProjectId(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+// Smallest free "Dự án N" name, so numbers get reused after a tab is closed.
+function nextProjectName(tabs: ProjectTab[]): string {
+  const used = new Set(tabs.map((t) => t.name));
+  let n = 1;
+  while (used.has(`Dự án ${n}`)) n++;
+  return `Dự án ${n}`;
+}
+
+export function GenerateClient() {
+  // The first project is created once (stable id) so the initializers below
+  // never index into a possibly-empty array.
+  const [initialTab] = useState<ProjectTab>(() => ({
+    id: newProjectId(),
+    name: "Dự án 1",
+  }));
+  const [tabs, setTabs] = useState<ProjectTab[]>([initialTab]);
+  const [activeId, setActiveId] = useState<string>(initialTab.id);
+  // A workspace is created only once its tab is first opened, then kept alive.
+  const [mounted, setMounted] = useState<Set<string>>(
+    () => new Set([initialTab.id])
+  );
+
+  const activate = (id: string) => {
+    setActiveId(id);
+    setMounted((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+
+  const addProject = () => {
+    if (tabs.length >= MAX_PROJECTS) return;
+    const id = newProjectId();
+    setTabs((prev) => [...prev, { id, name: nextProjectName(prev) }]);
+    activate(id);
+  };
+
+  const renameProject = (id: string) => {
+    if (typeof window === "undefined") return;
+    const tab = tabs.find((t) => t.id === id);
+    if (!tab) return;
+    const name = window.prompt("Đổi tên dự án:", tab.name);
+    if (name == null) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setTabs((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, name: trimmed } : t))
+    );
+  };
+
+  const closeProject = (id: string) => {
+    const tab = tabs.find((t) => t.id === id);
+    if (!tab) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Xoá "${tab.name}"? Toàn bộ dữ liệu và storyboard của dự án này sẽ bị xoá.`
+      )
+    ) {
+      return;
+    }
+    // Never leave zero projects: closing the last tab resets it to a fresh,
+    // empty project (new id → new instance → clean state).
+    if (tabs.length === 1) {
+      const fresh = { id: newProjectId(), name: "Dự án 1" };
+      setTabs([fresh]);
+      setMounted(new Set([fresh.id]));
+      setActiveId(fresh.id);
+      return;
+    }
+    const idx = tabs.findIndex((t) => t.id === id);
+    const remaining = tabs.filter((t) => t.id !== id);
+    setTabs(remaining);
+    setMounted((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    if (activeId === id) {
+      // Fall back to the previous tab (or the first if we removed index 0).
+      const fallback = remaining[Math.max(0, idx - 1)];
+      if (fallback) activate(fallback.id);
+    }
+  };
+
+  return (
+    <div>
+      {/* Tab bar — sits just under the sticky navbar. */}
+      <div className="sticky top-14 z-40 -mx-4 mb-6 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+          {tabs.map((t) => {
+            const active = t.id === activeId;
+            return (
+              <div
+                key={t.id}
+                onClick={() => activate(t.id)}
+                onDoubleClick={() => renameProject(t.id)}
+                title="Nhấp để mở • Nhấp đúp để đổi tên"
+                className={cn(
+                  "group flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-sm transition-colors",
+                  active
+                    ? "border-primary bg-primary/10 font-medium text-foreground"
+                    : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
+                )}
+              >
+                <Folder className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                <span className="max-w-[10rem] truncate">{t.name}</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeProject(t.id);
+                  }}
+                  title="Xoá dự án"
+                  aria-label={`Xoá ${t.name}`}
+                  className="ml-0.5 rounded p-0.5 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+          })}
+          {tabs.length < MAX_PROJECTS && (
+            <button
+              type="button"
+              onClick={addProject}
+              title="Thêm dự án mới"
+              className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-dashed px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" /> Thêm dự án
+            </button>
+          )}
+          <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">
+            {tabs.length}/{MAX_PROJECTS} dự án
+          </span>
+        </div>
+      </div>
+
+      {/* Every mounted project stays in the tree; inactive ones are hidden so
+          their brief + generated storyboard survive tab switches. */}
+      {tabs.map((t) => (
+        <div key={t.id} hidden={t.id !== activeId}>
+          {mounted.has(t.id) && <ProjectWorkspace />}
+        </div>
+      ))}
     </div>
   );
 }
