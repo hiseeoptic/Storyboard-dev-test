@@ -32,6 +32,7 @@ import {
   type RealityProfile,
 } from "@/lib/reality";
 import type { WorldContext } from "@/types";
+import { isStylizedCharacterRepresentation } from "@/lib/creative-routing";
 import { compileCookingRecipeDigest } from "@/lib/cooking";
 import {
   inferRevolvingDoorOperation,
@@ -91,13 +92,7 @@ function veoConciseTail(
   const productNeg = hasProduct
     ? "warped or altered label/logo text, brand-colour change, extra or duplicated products, "
     : "";
-  const stylizedMedium = [
-    "stick_figure",
-    "illustrated_2d",
-    "stylized_3d",
-    "anthropomorphic_animal",
-    "anthropomorphic_object",
-  ].includes(renderMedium ?? "");
+  const stylizedMedium = isStylizedCharacterRepresentation(renderMedium);
   const realWorld = !stylizedMedium && realityUsesRealWorldPhysics(realityProfile);
   const realityDirective = hasCharacterReference
     ? `CHARACTER REFERENCE LOCK: ${REFERENCE_CHARACTER_APPEARANCE_LOCK} Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
@@ -2076,13 +2071,7 @@ export function buildSegmentVeoPrompt(params: {
   const settingSource = params.hasLocationRef
     ? "An attached LOCATION photo shows the REAL set — rebuild THIS exact place as the scene (same layout, furniture, colours, materials and light); only the CHARACTER portrait's own background is ignored."
     : "build the described setting, do NOT copy the character photo's own background.";
-  const stylizedMedium = [
-    "stick_figure",
-    "illustrated_2d",
-    "stylized_3d",
-    "anthropomorphic_animal",
-    "anthropomorphic_object",
-  ].includes(params.renderMedium ?? "");
+  const stylizedMedium = isStylizedCharacterRepresentation(params.renderMedium);
   const outputMedium = stylizedMedium
     ? `a ${params.renderMedium} animated shot in the one locked graphic medium`
     : "a live-action shot";

@@ -1,5 +1,6 @@
 import type { ResolvedVideoContext } from "@/lib/video-context/types";
 import type { StoryboardGenerationInput } from "@/types";
+import { isStylizedCharacterRepresentation } from "../creative-routing/profiles.ts";
 import {
   buildReport,
   type SemanticFinding,
@@ -134,12 +135,9 @@ export function validateResolvedVideoContext(
     high("CTX-018", "Context cast ids must be unique.");
   }
 
-  const stylizedRepresentation = new Set([
-    "illustrated_2d",
-    "stylized_3d",
-    "anthropomorphic_animal",
-    "anthropomorphic_object",
-  ]).has(input?.character_representation ?? "");
+  const stylizedRepresentation = isStylizedCharacterRepresentation(
+    input?.character_representation
+  );
   if (
     stylizedRepresentation &&
     /\b(?:photoreal|live[- ]action|documentary realism)\b/i.test(

@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildNanoFlowManifest, lockStyle, slugify, withKeyframeAuthority } from "./manifest.ts";
 import { validateProductionPromptAuthority } from "../validation/production-authority-validator.ts";
+import {
+  STYLIZED_CHARACTER_REPRESENTATIONS,
+  characterWorldStylePrompt,
+} from "../creative-routing/profiles.ts";
+import { validatePromptExports } from "../validation/prompt-validator.ts";
 
 // Minimal breakdown fixture — only the fields buildNanoFlowManifest reads.
 function fixture() {
@@ -78,6 +83,56 @@ test("selected video style is locked into the manifest board + video prompts", (
   assert.doesNotMatch(m.shots[0]?.storyboard_prompt ?? "", /photoreal film frame/);
   // and the Veo video prompt carries the same style lock
   assert.match(String(m.shots[0]?.video_prompt ?? ""), /CLAYMATION STYLE LOCK/);
+});
+
+test("all ten named video styles lock characters and script-derived worlds across every export surface", () => {
+  const tenNamedStyles = STYLIZED_CHARACTER_REPRESENTATIONS.filter((style) =>
+    /^(whiteboard|hand_drawn|flat_2d|chibi|cinematic_cartoon|comic_book|layered_paper|claymation|low_poly|semi_realistic)/.test(style)
+  );
+  assert.equal(tenNamedStyles.length, 10);
+  for (const representation of tenNamedStyles) {
+    const stylePrompt = characterWorldStylePrompt(representation);
+    const m = buildNanoFlowManifest(fixture(), {
+      characterRepresentation: representation,
+      characterStylePrompt: stylePrompt,
+      generatedAt: "2026-08-15T00:00:00Z",
+      veoClips: [{
+        scene_id: "1",
+        duration_sec: 10,
+        location_id: "living_room_1",
+        continuity_mode: "opening",
+        visual_style: "Photoreal premium commercial",
+        negative_prompt: "NOT cartoon, real photograph",
+        character_lock: { CHAR_1: { name: "Lan" } },
+        background_lock: {
+          setting: "An outdoor running track from the script",
+          scenery: "start line, rough road and distant sunrise",
+          lighting: "daylight",
+        },
+        scene_bible_tokens: {},
+        scene_action: { start_state: "Lan at the line", motion: "Lan runs", end_state: "Lan continues" },
+        camera: { framing: "wide" },
+        foley_and_ambience: {},
+        audio_transition: {},
+        output_rules: {},
+      }],
+    });
+    const board = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+    const video = m.shots[0]!.video_prompt as Record<string, unknown>;
+    const location = JSON.parse(m.assets.environments?.[0]?.location_sheet_prompt ?? "{}") as Record<string, unknown>;
+    const thumbnail = JSON.parse(m.project.thumbnail_prompt ?? "{}") as Record<string, unknown>;
+    assert.match(String(board.render), /SCRIPT-DERIVED WORLD AUTHORITY/);
+    assert.equal(board.visual_style, stylePrompt);
+    assert.equal(video.visual_style, stylePrompt);
+    assert.match(String((video.output_rules as Record<string, unknown>).character_style_lock), /SCRIPT-DERIVED WORLD AUTHORITY/);
+    assert.equal(location.render, stylePrompt);
+    assert.equal(thumbnail.render, stylePrompt);
+    assert.doesNotMatch(String(video.negative_prompt), /NOT cartoon|real photograph/i);
+    const styleFindings = validatePromptExports(m).findings.filter((finding) =>
+        ["STYLE-005", "STYLE-006"].includes(finding.code)
+      );
+    assert.equal(styleFindings.length, 0, `${representation}: ${JSON.stringify(styleFindings)}`);
+  }
 });
 
 test("photoreal representation adds NO style lock (board stays photoreal)", () => {

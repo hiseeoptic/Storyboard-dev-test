@@ -8,7 +8,7 @@ import type {
 import {
   REFERENCE_CHARACTER_ANTI_PLASTIC,
   REFERENCE_CHARACTER_APPEARANCE_LOCK,
-} from "@/lib/character-realism";
+} from "../character-realism.ts";
 
 export interface CreativeOption<T extends string> {
   value: T;
@@ -57,8 +57,8 @@ export const CHARACTER_REPRESENTATION_OPTIONS: CreativeOption<CharacterRepresent
   { value: "stylized_3d", label_vi: "Nhân vật 3D cách điệu", label_en: "Stylized 3D character", description_vi: "Hình khối 3D nhất quán, không trượt sang người thật.", description_en: "Consistent 3D form without drifting into live action." },
   { value: "anthropomorphic_animal", label_vi: "Động vật nhân hoá", label_en: "Anthropomorphic animal", description_vi: "Giữ nhận dạng loài và đặc điểm giải phẫu cốt lõi.", description_en: "Preserve species identity and essential anatomy." },
   { value: "anthropomorphic_object", label_vi: "Đồ vật nhân hoá", label_en: "Anthropomorphic object", description_vi: "Giữ công năng và vật liệu của đồ vật dù có biểu cảm.", description_en: "Preserve object function and material even when expressive." },
-  { value: "whiteboard_stick_figure", label_vi: "01 · Người que bảng trắng", label_en: "01 · Whiteboard stick figure", description_vi: "Người que nét đen tối giản, điểm màu nhỏ; bối cảnh bảng trắng sạch với vài đạo cụ/sơ đồ nét tay.", description_en: "Minimal black-line stick figure with small colour accents on a clean whiteboard world with sparse hand-drawn props and diagrams." },
-  { value: "hand_drawn_doodle", label_vi: "02 · Doodle phác tay", label_en: "02 · Hand-drawn doodle", description_vi: "Nhân vật phác bút chì/bút mực giàu nét nguệch ngoạc; bối cảnh giấy trắng có biểu tượng và mũi tên vẽ tay.", description_en: "Expressive pencil-and-ink doodle character on white paper with hand-drawn symbols, arrows and sketch texture." },
+  { value: "whiteboard_stick_figure", label_vi: "01 · Người que nét trắng", label_en: "01 · Whiteboard-line stick figure", description_vi: "Người que nét đen tối giản, điểm màu nhỏ; toàn bộ địa điểm và đạo cụ do kịch bản yêu cầu được minh hoạ bằng cùng ngôn ngữ nét vẽ trên nền sáng.", description_en: "Minimal black-line stick figures with small colour accents; every script-required location and prop is illustrated in the same line language on a clean light canvas." },
+  { value: "hand_drawn_doodle", label_vi: "02 · Doodle phác tay", label_en: "02 · Hand-drawn doodle", description_vi: "Nhân vật, địa điểm và đạo cụ trong kịch bản cùng được phác bằng bút chì/bút mực giàu nét tay và điểm màu có chủ ý.", description_en: "Script-defined characters, locations and props share one expressive pencil-and-ink sketch language with purposeful colour accents." },
   { value: "flat_2d_cartoon", label_vi: "03 · Hoạt hình 2D phẳng", label_en: "03 · Flat 2D cartoon", description_vi: "Nhân vật 2D sạch, hình khối bo tròn và màu phẳng; bối cảnh minh hoạ gọn, sáng, ít chi tiết và bóng mềm.", description_en: "Clean 2D character with rounded shapes and flat colours in a bright, uncluttered illustrated setting with restrained soft shading." },
   { value: "chibi_illustration", label_vi: "04 · Chibi đáng yêu", label_en: "04 · Cute chibi illustration", description_vi: "Nhân vật chibi đầu lớn, mắt to, thân nhỏ, biểu cảm đáng yêu; bối cảnh pastel ấm, mềm và đồng bộ tỷ lệ.", description_en: "Cute chibi character with a large head, large expressive eyes and small body in a warm pastel environment that shares the same stylised scale." },
   { value: "cinematic_cartoon", label_vi: "05 · Hoạt hình điện ảnh", label_en: "05 · Cinematic cartoon", description_vi: "Nhân vật hoạt hình 2D/2.5D rõ nét với tỷ lệ thân thiện; bối cảnh kể chuyện nhiều lớp, ánh sáng điện ảnh ấm và chiều sâu rõ.", description_en: "Polished 2D/2.5D cartoon character with friendly proportions in a layered story setting with warm cinematic light and clear depth." },
@@ -69,6 +69,47 @@ export const CHARACTER_REPRESENTATION_OPTIONS: CreativeOption<CharacterRepresent
   { value: "semi_realistic_3d", label_vi: "10 · 3D bán hiện thực", label_en: "10 · Semi-realistic 3D", description_vi: "Nhân vật 3D bán hiện thực, gương mặt thân thiện và vật liệu chi tiết; bối cảnh điện ảnh chân thực vừa phải, ánh sáng ấm và chiều sâu tự nhiên.", description_en: "Friendly semi-realistic 3D character with detailed materials in a moderately realistic cinematic environment with warm light and natural depth." },
   { value: "none", label_vi: "Không nhân vật / chỉ cảnh vật", label_en: "No character / environment only", description_vi: "Cảnh vật, vật liệu và quá trình tự nhiên là chủ thể.", description_en: "Place, material and natural process are the subjects." },
 ];
+
+/** Every non-photographic representation that must keep the character, setting,
+ * props, thumbnail, storyboard and video inside one coherent visual medium. */
+export const STYLIZED_CHARACTER_REPRESENTATIONS: readonly CharacterRepresentation[] = [
+  "stick_figure",
+  "illustrated_2d",
+  "stylized_3d",
+  "anthropomorphic_animal",
+  "anthropomorphic_object",
+  "whiteboard_stick_figure",
+  "hand_drawn_doodle",
+  "flat_2d_cartoon",
+  "chibi_illustration",
+  "cinematic_cartoon",
+  "comic_book",
+  "layered_paper_cut",
+  "claymation",
+  "low_poly_3d",
+  "semi_realistic_3d",
+];
+
+export function isStylizedCharacterRepresentation(
+  value: CharacterRepresentation | string | null | undefined
+): value is CharacterRepresentation {
+  return STYLIZED_CHARACTER_REPRESENTATIONS.includes(value as CharacterRepresentation);
+}
+
+export const SCRIPT_DERIVED_STYLE_WORLD_LAW =
+  "SCRIPT-DERIVED WORLD AUTHORITY: the script decides the actual location, terrain or architecture, time, weather, spatial anchors, props and actions in every scene; the selected visual style decides only how that complete story world is rendered. Build every required setting in full inside the same medium as the characters—never replace the scripted place with a blank board, studio backdrop, generic room or decorative template.";
+
+export function characterWorldStylePrompt(
+  representation: CharacterRepresentation
+): string {
+  const laws = CHARACTER_LAWS[representation] ?? [];
+  return [
+    ...(isStylizedCharacterRepresentation(representation)
+      ? [SCRIPT_DERIVED_STYLE_WORLD_LAW]
+      : []),
+    ...laws,
+  ].join(" ");
+}
 
 export const DIRECTING_PROFILE_OPTIONS: CreativeOption<DirectingProfileId>[] = [
   { value: "auto", label_vi: "Tự động theo nội dung", label_en: "Auto by content", description_vi: "Chọn ngôn ngữ quay phù hợp, không trộn profile chuyên ngành.", description_en: "Choose a fitting camera grammar without mixing specialist profiles." },
@@ -126,8 +167,8 @@ export const CHARACTER_LAWS: Record<CharacterRepresentation, string[]> = {
   stylized_3d: ["Lock mesh proportions, material shader, eye scale, surface roughness and render language; never morph toward photoreal humans."],
   anthropomorphic_animal: ["Preserve species markers, anatomy, coat/feather/scales and locomotion; human expression cannot erase the animal identity."],
   anthropomorphic_object: ["Preserve the object's material, construction, scale and function; face/limbs cannot make it physically become a different object."],
-  whiteboard_stick_figure: ["WHITEBOARD STICK-FIGURE STYLE LOCK: draw every character with the same clean black stroke weight, circular head, minimal face marks, thin limbs and tiny controlled colour accents.", "Build the setting only from a clean whiteboard surface and sparse line-drawn props, frames or teaching symbols; no realistic room, textured skin, 3D volume or painterly background."],
-  hand_drawn_doodle: ["HAND-DRAWN DOODLE STYLE LOCK: use lively pencil-and-ink construction, visible scribble/hatching, simplified anatomy and stable character proportions; reserve colour for a few purposeful accents.", "Keep every environment on tactile white paper with hand-drawn arrows, icons and loose sketch marks; never drift into polished vector art, photorealism or 3D."],
+  whiteboard_stick_figure: ["WHITEBOARD-LINE STICK-FIGURE STYLE LOCK: draw every character with the same clean black stroke weight, circular head, minimal face marks, thin limbs and tiny controlled colour accents.", "Translate the complete script-derived location—indoor or outdoor, terrain or architecture, spatial anchors and story props—into the same economical black-line illustration language on a clean light canvas. The canvas is a medium, never a literal blank whiteboard or empty studio; no textured skin, live action, 3D volume or painterly drift."],
+  hand_drawn_doodle: ["HAND-DRAWN DOODLE STYLE LOCK: use lively pencil-and-ink construction, visible scribble/hatching, simplified anatomy and stable character proportions; reserve colour for a few purposeful accents.", "Translate the complete script-derived location, terrain, architecture and props into the same tactile hand-drawn paper language; arrows or icons appear only when the story needs them. Never replace the real story setting with blank paper, and never drift into polished vector art, photorealism or 3D."],
   flat_2d_cartoon: ["FLAT 2D CARTOON STYLE LOCK: use clean rounded silhouettes, stable 2D proportions, crisp shapes, flat colour fills and only restrained soft cel shading.", "Render props and locations in the same simplified illustrated grammar with a limited harmonious palette, uncluttered geometry and no photoreal textures or 3D materials."],
   chibi_illustration: ["CHIBI STYLE LOCK: preserve the same large-head/small-body ratio, oversized expressive eyes, tiny nose/mouth, rounded hands and cute readable expressions in every shot.", "The environment uses the same soft pastel illustration language, rounded props and miniature scale; no realistic adult anatomy, live-action skin or gritty photographic detail."],
   cinematic_cartoon: ["CINEMATIC CARTOON STYLE LOCK: preserve a polished 2D/2.5D animated character design with friendly proportions, clean contours, controlled cel shading and stable facial features.", "Build layered storybook-like locations with coherent perspective, richer production detail, warm motivated cinematic light and depth, while remaining unmistakably animated rather than photographic."],

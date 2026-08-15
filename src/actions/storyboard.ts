@@ -30,7 +30,8 @@ import {
 import {
   renderCreativeVisualDirective,
   resolveCreativeRoute,
-  CHARACTER_LAWS,
+  characterWorldStylePrompt,
+  isStylizedCharacterRepresentation,
 } from "@/lib/creative-routing";
 import {
   REFERENCE_CHARACTER_ANTI_PLASTIC,
@@ -1523,13 +1524,28 @@ function buildRefContext(
     if (["uploaded_photoreal", "generated_human"].includes(representation)) {
       return isPhotoStyle(input.style) ? input.style : "cinematic";
     }
-    if (representation === "stick_figure" || representation === "illustrated_2d") {
+    if (
+      [
+        "stick_figure",
+        "illustrated_2d",
+        "whiteboard_stick_figure",
+        "hand_drawn_doodle",
+        "flat_2d_cartoon",
+        "chibi_illustration",
+        "cinematic_cartoon",
+        "comic_book",
+        "layered_paper_cut",
+      ].includes(representation)
+    ) {
       return isPhotoStyle(input.style) ? "comic" : input.style;
     }
     if (
       representation === "stylized_3d" ||
       representation === "anthropomorphic_animal" ||
-      representation === "anthropomorphic_object"
+      representation === "anthropomorphic_object" ||
+      representation === "claymation" ||
+      representation === "low_poly_3d" ||
+      representation === "semi_realistic_3d"
     ) {
       return isPhotoStyle(input.style) ? "3d_render" : input.style;
     }
@@ -1564,6 +1580,26 @@ function buildRefContext(
       "the script-defined anthropomorphic animal with stable species anatomy, markings, scale, wardrobe and locomotion",
     anthropomorphic_object:
       "the script-defined anthropomorphic object with stable construction, material, scale and functional identity",
+    whiteboard_stick_figure:
+      "the script-defined stick-figure identity with one stable black stroke weight, head/body ratio, face marks and small distinguishing colour accent",
+    hand_drawn_doodle:
+      "the script-defined doodle identity with stable pencil-and-ink proportions, signature marks and purposeful colour accents",
+    flat_2d_cartoon:
+      "the script-defined flat 2D character with stable rounded silhouette, proportions, palette and restrained cel shading",
+    chibi_illustration:
+      "the script-defined chibi character with one stable large-head/small-body ratio, facial design, palette and identity markers",
+    cinematic_cartoon:
+      "the script-defined cinematic cartoon character with stable 2D/2.5D proportions, contours, facial design and cel shading",
+    comic_book:
+      "the script-defined comic-book character with stable ink contours, anatomy, halftone treatment, palette and identity marks",
+    layered_paper_cut:
+      "the script-defined paper-cut character built from the same stable layered shapes, cut edges, fibre texture and palette",
+    claymation:
+      "the script-defined claymation character with stable model proportions, facial features, matte clay material and handmade marks",
+    low_poly_3d:
+      "the script-defined low-poly character with one stable faceted mesh, facial planes, proportions and palette",
+    semi_realistic_3d:
+      "the script-defined semi-realistic 3D character with stable stylized anatomy, facial design, hair, clothing and materials",
     none:
       "no character, no face and no mascot; the environment, material or natural process is the only subject",
   };
@@ -1896,7 +1932,7 @@ function validatePreRenderGates(
         "the locked project language",
       // Selected video style → lock the manifest (board + video) to that medium.
       characterRepresentation: manifestCharacterRepresentation,
-      characterStylePrompt: CHARACTER_LAWS[manifestCharacterRepresentation].join(" "),
+      characterStylePrompt: characterWorldStylePrompt(manifestCharacterRepresentation),
       veoClips,
       // Cách 1 — embed uploaded location photos into the manifest per shot.
       locationSets: input.location_mode === "upload" ? input.location_sets : undefined,
@@ -3162,7 +3198,11 @@ export async function generateBoardImage(params: {
         // and drop the directive so the thumbnail renders exactly as before.
         // (The nature/fable/commercial branches in buildThumbnailPrompt stay
         // available for a future opt-in, just not auto-selected here.)
-        creativeDirective: undefined,
+        creativeDirective: isStylizedCharacterRepresentation(
+          resolveCreativeRoute(input).effective_character_representation
+        )
+          ? creativeDirective
+          : undefined,
         coverTreatment: "viral",
       });
       return { success: true, data: { url: r.url } };

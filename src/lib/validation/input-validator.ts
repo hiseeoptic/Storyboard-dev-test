@@ -1,4 +1,5 @@
 import type { ImageReference, StoryboardGenerationInput } from "@/types";
+import { isStylizedCharacterRepresentation } from "../creative-routing/profiles.ts";
 import {
   buildReport,
   type SemanticFinding,
@@ -118,12 +119,9 @@ export function validateStoryboardInput(
     }
   }
 
-  const stylizedRepresentation = new Set([
-    "illustrated_2d",
-    "stylized_3d",
-    "anthropomorphic_animal",
-    "anthropomorphic_object",
-  ]).has(input.character_representation ?? "");
+  const stylizedRepresentation = isStylizedCharacterRepresentation(
+    input.character_representation
+  );
   const hasCharacterPhotos = (input.character_images ?? []).some(
     (group) => (group.images?.length ?? 0) > 0 || group.isReference === true
   );

@@ -5,6 +5,7 @@ import type {
   RealityMode,
   RealityProfile,
 } from "../reality/types";
+import { isStylizedCharacterRepresentation } from "../creative-routing/profiles.ts";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -48,13 +49,6 @@ function realityModeFor(input: StoryboardGenerationInput): RealityMode {
     "3d_render",
     "pixel_art",
   ]);
-  const stylizedCharacter = new Set([
-    "stick_figure",
-    "illustrated_2d",
-    "stylized_3d",
-    "anthropomorphic_animal",
-    "anthropomorphic_object",
-  ]);
   const requestedCharacter = input.character_representation;
   const explicitlyPhotoreal =
     requestedCharacter === "uploaded_photoreal" ||
@@ -63,7 +57,7 @@ function realityModeFor(input: StoryboardGenerationInput): RealityMode {
   const explicitlyStylized =
     (requestedCharacter != null &&
       requestedCharacter !== "auto" &&
-      stylizedCharacter.has(requestedCharacter)) ||
+      isStylizedCharacterRepresentation(requestedCharacter)) ||
     input.character_render === "stylized";
 
   if (fantasyGenre.has(input.genre)) return "fantasy_scifi_internal";

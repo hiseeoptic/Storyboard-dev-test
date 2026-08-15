@@ -702,6 +702,73 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
 export function validatePromptExports(manifest: NanoFlowManifest): SemanticValidationReport {
   const findings: SemanticFinding[] = [];
   const push: Push = (f) => findings.push(f);
+  const projectStyle = manifest.project.character_style;
+  const projectStylePrompt = str(projectStyle?.prompt);
+  if (projectStyle?.id && projectStylePrompt) {
+    const thumbnail = parseImagePrompt(str(manifest.project.thumbnail_prompt));
+    if (!containsExact(thumbnail?.render, projectStylePrompt)) {
+      push({
+        code: "STYLE-005",
+        severity: "high",
+        scope: "project",
+        message:
+          "Thumbnail does not carry the exact project character-and-world style authority.",
+        evidence: `style=${projectStyle.id}`,
+      });
+    }
+    for (const environment of manifest.assets.environments ?? []) {
+      const sheet = parseImagePrompt(str(environment.location_sheet_prompt));
+      if (sheet && !containsExact(sheet.render, projectStylePrompt)) {
+        push({
+          code: "STYLE-005",
+          severity: "high",
+          scope: "project",
+          message:
+            `Location sheet "${environment.name}" does not carry the exact project style authority.`,
+          evidence: `style=${projectStyle.id}`,
+        });
+      }
+    }
+    for (const shot of manifest.shots ?? []) {
+      const image = parseImagePrompt(str(shot.storyboard_prompt));
+      const structuredVideo =
+        shot.video_prompt != null && typeof shot.video_prompt === "object";
+      const clip = obj(shot.video_prompt);
+      const rules = obj(clip.output_rules);
+      if (
+        !containsExact(image?.render, projectStylePrompt) ||
+        (structuredVideo
+          ? !containsExact(clip.visual_style, projectStylePrompt) ||
+            !containsExact(rules.character_style_lock, projectStylePrompt)
+          : !containsExact(shot.video_prompt, projectStylePrompt))
+      ) {
+        push({
+          code: "STYLE-005",
+          severity: "high",
+          scope: "segment",
+          segment_number: shot.index,
+          message:
+            "Storyboard and video prompt do not share the exact project character-and-world style authority.",
+          evidence: `style=${projectStyle.id}`,
+        });
+      }
+      if (
+        /photorealistic only|not cartoon|real photograph|create one .*live[- ]action shot/iu.test(
+          `${str(image?.negative)} ${str(clip.negative_prompt)}`
+        )
+      ) {
+        push({
+          code: "STYLE-006",
+          severity: "high",
+          scope: "segment",
+          segment_number: shot.index,
+          message:
+            "A locked stylized project still contains a live-action/anti-animation render instruction.",
+          evidence: `style=${projectStyle.id}`,
+        });
+      }
+    }
+  }
   for (const shot of manifest.shots ?? []) checkShot(shot, push);
   findings.push(...validateProductionPromptAuthority(manifest).findings);
   const shots = manifest.shots ?? [];

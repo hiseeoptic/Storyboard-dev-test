@@ -13,9 +13,11 @@ import {
   FORMAT_LAWS,
   GOAL_LAWS,
   INTERPRETATION_LAWS,
+  SCRIPT_DERIVED_STYLE_WORLD_LAW,
+  isStylizedCharacterRepresentation,
   REAL_WORLD_MATERIAL_LAWS,
   TOPIC_LAWS,
-} from "./profiles";
+} from "./profiles.ts";
 
 export interface CreativeRoute {
   topic: Genre;
@@ -75,6 +77,27 @@ function inferInterpretation(input: StoryboardGenerationInput, format: StoryForm
 function inferCharacterRepresentation(input: StoryboardGenerationInput): CharacterRepresentation {
   if ((input.character_images?.length ?? 0) > 0) return "uploaded_photoreal";
   if (input.character_representation && input.character_representation !== "auto") return input.character_representation;
+  const scriptStyleSignal = [
+    input.story_idea,
+    input.main_character,
+    input.key_message,
+    input.setting,
+  ].filter(Boolean).join(" ");
+  const namedStyleSignals: Array<[RegExp, CharacterRepresentation]> = [
+    [/\b(?:whiteboard[- ]?(?:line )?stick figure|stick figure)\b|người que/iu, "whiteboard_stick_figure"],
+    [/\b(?:hand[- ]drawn doodle|doodle)\b|phác tay|vẽ tay/iu, "hand_drawn_doodle"],
+    [/\bflat[- ]?2d(?: cartoon)?\b|hoạt hình 2d phẳng/iu, "flat_2d_cartoon"],
+    [/\bchibi\b/iu, "chibi_illustration"],
+    [/\b(?:cinematic cartoon|2\.5d cartoon)\b|hoạt hình điện ảnh/iu, "cinematic_cartoon"],
+    [/\b(?:comic book|pop[- ]?art)\b|truyện tranh/iu, "comic_book"],
+    [/\b(?:layered paper cut|paper[- ]cut)\b|cắt giấy/iu, "layered_paper_cut"],
+    [/\b(?:claymation|clay stop[- ]motion)\b|đất nặn/iu, "claymation"],
+    [/\blow[- ]?poly(?: 3d)?\b/iu, "low_poly_3d"],
+    [/\bsemi[- ]realistic 3d\b|3d bán hiện thực/iu, "semi_realistic_3d"],
+  ];
+  for (const [pattern, representation] of namedStyleSignals) {
+    if (pattern.test(scriptStyleSignal)) return representation;
+  }
   if (input.character_render === "photo") return "generated_human";
   if (input.character_render === "stylized") return "illustrated_2d";
   if (input.genre === "nature") return "none";
@@ -119,18 +142,24 @@ export function resolveCreativeRoute(input: StoryboardGenerationInput): Creative
   let interpretation = inferInterpretation(input, storyFormat);
   const requestedCharacter = input.character_representation ?? "auto";
   const hasCharacterReferences = (input.character_images?.length ?? 0) > 0;
-  const effectiveCharacter = hasCharacterReferences ? "uploaded_photoreal" : inferCharacterRepresentation(input);
+  const hasExplicitStylizedChoice = isStylizedCharacterRepresentation(requestedCharacter);
+  const effectiveCharacter = hasExplicitStylizedChoice
+    ? requestedCharacter
+    : hasCharacterReferences
+      ? "uploaded_photoreal"
+      : inferCharacterRepresentation(input);
+  const strictPhotorealReferences = hasCharacterReferences && !hasExplicitStylizedChoice;
   const notes: string[] = [];
 
-  if (hasCharacterReferences && requestedCharacter !== "auto" && requestedCharacter !== "uploaded_photoreal") {
-    notes.push("Character upload overrides the requested stylized medium and forces strict photoreal identity lock.");
+  if (hasCharacterReferences && hasExplicitStylizedChoice) {
+    notes.push("The explicit stylized medium remains authoritative; uploaded real-person references are incompatible and must be removed before generation.");
   }
-  if (hasCharacterReferences && interpretation === "parable_fable") {
+  if (strictPhotorealReferences && interpretation === "parable_fable") {
     interpretation = "symbolic_metaphor";
     notes.push("A live-action symbolic metaphor replaces personified-fable treatment because real character references are present.");
   }
   let directingProfile = inferDirectingProfile(input, interpretation, effectiveCharacter);
-  if (hasCharacterReferences && ["anthropomorphic_fable", "psychological_metaphor"].includes(directingProfile)) {
+  if (strictPhotorealReferences && ["anthropomorphic_fable", "psychological_metaphor"].includes(directingProfile)) {
     directingProfile = input.genre === "psychology" ? "cinematic_drama" : "everyday_naturalism";
     notes.push("A live-action directing profile replaces an incompatible stylized profile because real character references are present.");
   }
@@ -143,7 +172,7 @@ export function resolveCreativeRoute(input: StoryboardGenerationInput): Creative
     requested_character_representation: requestedCharacter,
     effective_character_representation: effectiveCharacter,
     directing_profile: directingProfile,
-    character_reference_lock: hasCharacterReferences ? "strict_photoreal" : "none",
+    character_reference_lock: strictPhotorealReferences ? "strict_photoreal" : "none",
     specialist_dna: specialistDnaFor(input, directingProfile),
     resolution_notes: notes,
   };
@@ -196,6 +225,9 @@ export function renderCreativeVisualDirective(inputOrRoute: StoryboardGeneration
     : [];
   return `VISUAL ROUTE LOCK: topic=${route.topic}; character=${route.effective_character_representation}; directing=${route.directing_profile}; interpretation=${route.visual_interpretation}; reference=${route.character_reference_lock}.
 ${bulletLines([
+    ...(isStylizedCharacterRepresentation(route.effective_character_representation)
+      ? [SCRIPT_DERIVED_STYLE_WORLD_LAW]
+      : []),
     ...CHARACTER_LAWS[route.effective_character_representation],
     ...INTERPRETATION_LAWS[route.visual_interpretation],
     ...directing,

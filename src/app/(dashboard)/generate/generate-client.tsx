@@ -92,7 +92,8 @@ import {
   STORY_FORMAT_OPTIONS as CREATIVE_FORMAT_OPTIONS,
   VISUAL_INTERPRETATION_OPTIONS as CREATIVE_INTERPRETATION_OPTIONS,
   CHARACTER_REPRESENTATION_OPTIONS as CREATIVE_CHARACTER_OPTIONS,
-  CHARACTER_LAWS,
+  characterWorldStylePrompt,
+  isStylizedCharacterRepresentation,
   DIRECTING_PROFILE_OPTIONS as CREATIVE_DIRECTING_OPTIONS,
   type CreativeOption,
 } from "@/lib/creative-routing";
@@ -1303,9 +1304,15 @@ function ProjectWorkspace() {
     charImages.length > 0 ||
     charHasRealPhoto ||
     characters.some((character) => character.images.length > 0 || character.hasRealPhoto);
-  const effectiveCharacterRepresentation: CharacterRepresentation = hasCharacterUploads
-    ? "uploaded_photoreal"
-    : characterRepresentation;
+  const explicitStylizedRepresentation = isStylizedCharacterRepresentation(
+    characterRepresentation
+  );
+  const effectiveCharacterRepresentation: CharacterRepresentation =
+    explicitStylizedRepresentation
+      ? characterRepresentation
+      : hasCharacterUploads
+        ? "uploaded_photoreal"
+        : characterRepresentation;
 
   // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -1636,7 +1643,11 @@ function ProjectWorkspace() {
       story_format: storyFormat,
       visual_interpretation: visualInterpretation,
       character_representation:
-        finalCharacterImages.length > 0 ? "uploaded_photoreal" : characterRepresentation,
+        isStylizedCharacterRepresentation(characterRepresentation)
+          ? characterRepresentation
+          : finalCharacterImages.length > 0
+            ? "uploaded_photoreal"
+            : characterRepresentation,
       directing_profile: directingProfile,
       script_provider: scriptProvider,
       script_treatment: scriptTreatment,
@@ -1711,7 +1722,9 @@ function ProjectWorkspace() {
       thumbnail_aspect_ratio: thumbnailAspectRatio,
       reference_expressions: 0,
       character_render:
-        finalCharacterImages.length > 0 || characterRepresentation === "generated_human"
+        isStylizedCharacterRepresentation(characterRepresentation)
+          ? "stylized"
+          : finalCharacterImages.length > 0 || characterRepresentation === "generated_human"
           ? "photo"
           : characterRepresentation !== "auto" && characterRepresentation !== "none"
             ? "stylized"
@@ -2128,6 +2141,8 @@ function ProjectWorkspace() {
     const veoClips = Array.isArray((veoJson as { clips?: unknown[] }).clips)
       ? ((veoJson as { clips: Array<Record<string, unknown>> }).clips)
       : [];
+    const manifestCharacterRepresentation =
+      genInput?.character_representation ?? effectiveCharacterRepresentation;
     const manifest = buildNanoFlowManifest(result.breakdown, {
       aspectRatio: genInput?.aspect_ratio ?? "9:16",
       thumbnailAspectRatio: genInput?.thumbnail_aspect_ratio ?? thumbnailAspectRatio,
@@ -2135,8 +2150,8 @@ function ProjectWorkspace() {
       beatsPerSegment: genInput?.beats_per_segment ?? beatsPerSegment,
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
       // Selected video style → lock the manifest (board + video) to that medium.
-      characterRepresentation: effectiveCharacterRepresentation,
-      characterStylePrompt: CHARACTER_LAWS[effectiveCharacterRepresentation].join(" "),
+      characterRepresentation: manifestCharacterRepresentation,
+      characterStylePrompt: characterWorldStylePrompt(manifestCharacterRepresentation),
       veoClips,
       // Cách 1 — embed uploaded location photos into the downloadable manifest.
       locationSets: genInput?.location_mode === "upload" ? genInput?.location_sets : undefined,
@@ -4129,6 +4144,40 @@ function ProjectWorkspace() {
                   <span>{lang === "vi" ? "Đã nhận ảnh đã duyệt từ Image Studio làm ảnh tham chiếu nhân vật." : "Approved images from Image Studio loaded as character references."}</span>
                 </div>
               )}
+              <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/[0.03] p-4">
+                <label className="text-sm font-semibold">
+                  {lang === "vi"
+                    ? "Phong cách nhân vật và thế giới video"
+                    : "Character and video-world style"}
+                </label>
+                <Select
+                  value={characterRepresentation}
+                  onChange={(e) =>
+                    setCharacterRepresentation(e.target.value as CharacterRepresentation)
+                  }
+                  options={localizedCreativeOptions(CREATIVE_CHARACTER_OPTIONS, lang)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Kịch bản quyết định địa điểm, địa hình, kiến trúc, đạo cụ và hành động; lựa chọn này quyết định cách toàn bộ nhân vật, bối cảnh, sheet, thumbnail, storyboard và video được thể hiện. Bối cảnh không bị thay bằng phông nền mẫu."
+                    : "The script decides location, terrain, architecture, props and action; this choice decides how the complete cast, setting, sheets, thumbnail, storyboard and video are rendered. The setting is never replaced by a generic backdrop."}
+                </p>
+                {hasCharacterUploads && explicitStylizedRepresentation ? (
+                  <p className="text-xs font-medium text-amber-700">
+                    {lang === "vi"
+                      ? "Đang chọn phong cách cách điệu nhưng có ảnh thật được khai báo. Hãy bỏ ảnh/tắt ô Có ảnh thật trước khi dựng; app sẽ không âm thầm đổi lựa chọn này thành người thật."
+                      : "A stylized medium is selected while real-person references are declared. Remove those references before generation; the app will not silently change this choice to live action."}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {creativeOptionDescription(
+                      CREATIVE_CHARACTER_OPTIONS,
+                      effectiveCharacterRepresentation,
+                      lang
+                    )}
+                  </p>
+                )}
+              </div>
               <div className="space-y-1.5 rounded-lg border border-primary/30 bg-primary/[0.03] p-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-primary">
                   <Users className="h-4 w-4 shrink-0" />
@@ -4855,19 +4904,20 @@ function ProjectWorkspace() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">
-                  {lang === "vi" ? "4. Hình thức nhân vật" : "4. Character medium"}
+                  {lang === "vi"
+                    ? "4. Phong cách nhân vật và thế giới video (đồng bộ)"
+                    : "4. Character and video-world style (synced)"}
                 </label>
                 <Select
                   value={effectiveCharacterRepresentation}
                   onChange={(e) => setCharacterRepresentation(e.target.value as CharacterRepresentation)}
                   options={localizedCreativeOptions(CREATIVE_CHARACTER_OPTIONS, lang)}
-                  disabled={hasCharacterUploads}
                 />
-                <p className={`text-xs ${hasCharacterUploads ? "font-medium text-emerald-600" : "text-muted-foreground"}`}>
-                  {hasCharacterUploads
+                <p className={`text-xs ${hasCharacterUploads && !explicitStylizedRepresentation ? "font-medium text-emerald-600" : "text-muted-foreground"}`}>
+                  {hasCharacterUploads && !explicitStylizedRepresentation
                     ? lang === "vi"
-                      ? "Đã phát hiện ảnh nhân vật: tự khóa Người thật từ ảnh tải lên, giữ mặt và danh tính 100%. Muốn dùng người que/nhân hoá, hãy gỡ ảnh nhân vật."
-                      : "Character photos detected: strict uploaded-person identity lock is automatic. Remove those photos to use stick figures or personification."
+                      ? "Có ảnh nhân vật và chưa chọn phong cách cách điệu: hệ thống khóa Người thật từ ảnh. Nếu chọn một trong 10 phong cách, lựa chọn đó được giữ nguyên và app sẽ yêu cầu gỡ ảnh thật trước khi dựng."
+                      : "Character photos are present and no stylized medium is selected, so uploaded-person identity is locked. Choosing one of the ten styles keeps that choice and requires removing real-person references before generation."
                     : creativeOptionDescription(CREATIVE_CHARACTER_OPTIONS, effectiveCharacterRepresentation, lang)}
                 </p>
               </div>

@@ -84,11 +84,11 @@ function buildLocationContinuitySheetPrompt(params: {
     layout:
       "ONE single 16:9 image split into EXACTLY TWO equal side-by-side panels with one thin divider; no third panel, no collage, no captions, labels, people or products.",
     panel_1:
-      "WIDE establishing view from the primary entrance/camera side, showing the complete floor plan, fixed architecture, furniture and main spatial anchors.",
+      "WIDE establishing view showing the complete script-defined place: terrain and route for an exterior, or architecture and circulation for an interior, plus every fixed landmark, prop-support surface and main spatial anchor required by the story.",
     panel_2:
-      "A genuinely different reverse three-quarter view from the opposite connected corner, rotated roughly 90-135 degrees from panel 1, revealing the previously hidden wall and reverse relationships between the SAME immutable anchors. It must not be a crop, zoom, duplicate or tiny variation of panel 1.",
+      "A genuinely different reverse three-quarter view from another connected camera position, rotated roughly 90-135 degrees from panel 1, revealing the reverse relationships between the SAME immutable terrain, architecture, landmarks and anchors. It must not be a crop, zoom, duplicate or tiny variation of panel 1.",
     continuity:
-      "Both panels depict the exact same empty place at the same moment: identical architecture, doors, windows, furniture, materials, colours, prop design, time of day and light direction. Only camera position and viewing direction differ.",
+      "Both panels depict the exact same empty script-derived place at the same moment: identical terrain/architecture, boundaries, landmarks, support surfaces, materials, colours, prop design, time of day and light direction. Only camera position and viewing direction differ.",
     render: params.visualMediumLock || KEYFRAME_RENDER_NOTE,
     negative:
       "No people, characters, hands, products, readable text, watermark, duplicated room, mirrored layout, moved furniture, changed weather/time, two separate image files or near-identical camera angles.",
@@ -377,14 +377,17 @@ function buildLocationBoardPrompt(
     character_cardinality_contract: {
       identities: cast.map((entry) => ({
         name: entry.name,
-        reference_binding: `Use ONLY the attached wardrobe sheet labelled ${entry.name} for ${entry.name}.`,
+        reference_binding: characterStyleLock
+          ? `Use ONLY the attached character/design sheet labelled ${entry.name} for ${entry.name}; keep the exact proportions, line/shape/material language, palette and identity markers.`
+          : `Use ONLY the attached wardrobe sheet labelled ${entry.name} for ${entry.name}.`,
         maximum_instances_per_panel: 1,
       })),
       rule:
-        "For each panel, render exactly the 0-or-1 count declared in panel.expected_character_instances. Never duplicate a person, never use one identity twice, never merge two people, and never substitute one character's face/body for another. Multiple views inside a wardrobe sheet are reference views of ONE person, not extra people to copy into the scene.",
+        "For each panel, render exactly the 0-or-1 count declared in panel.expected_character_instances. Never duplicate an identity, never use one character twice, never merge two characters and never substitute one design for another. Multiple views inside a character/design sheet are reference views of ONE identity, not extra characters to copy into the scene.",
     },
-    body_visibility_contract:
-      "A visible hand, wrist, arm or finger must remain anatomically connected to its named owner's visible face, shoulders and upper torso in the same panel. Never render a hand-only, arm-only, headless or disembodied human crop as a storyboard panel or Veo input frame.",
+    body_visibility_contract: characterStyleLock
+      ? "Every visible hand, limb or character part remains visibly connected to its named owner's head/body according to the locked character-design grammar. Never render an isolated hand, arm, limb or headless fragment as a storyboard panel or Veo input frame unless the script explicitly requires an object-only insert."
+      : "A visible hand, wrist, arm or finger must remain anatomically connected to its named owner's visible face, shoulders and upper torso in the same panel. Never render a hand-only, arm-only, headless or disembodied human crop as a storyboard panel or Veo input frame.",
     ...(placementContract
       ? {
           placement_continuity_contract: {
@@ -396,7 +399,7 @@ function buildLocationBoardPrompt(
         }
       : {}),
     establishing_view_contract:
-      "AT LEAST ONE panel — make it PANEL 1 — MUST be a WIDE ESTABLISHING shot that clearly shows the FULL location: walls, windows, main furniture and where the characters stand in the room, reproduced from the attached location reference (a real photo OR the character-free 2-angle location sheet of this set). NEVER let all panels be tight face close-ups — if the room is never visible the downstream video invents a wrong set. The other panels may be medium / OTS / close, but the SAME recognizable set (same furniture geometry, same time-of-day and light) must stay visible behind the cast in every panel.",
+      "AT LEAST ONE panel—make it PANEL 1—MUST be a WIDE ESTABLISHING shot of the FULL script-defined location. For an exterior show terrain, route, boundaries and landmarks; for an interior show architecture, circulation and anchors. Reproduce the attached location reference/sheet when present. Never replace the place with a blank canvas or generic studio, and never let every panel become a tight portrait. The same recognizable location, time-of-day and light remain behind the cast in every panel.",
     ...(continueFromPrevious
       ? {
           continue_from_previous:
@@ -404,14 +407,16 @@ function buildLocationBoardPrompt(
         }
       : {}),
     setting_authority: hasLocationPhoto
-      ? "An ATTACHED location photo is the EXACT and MANDATORY setting. Reproduce THAT real place — its layout, furniture, walls, windows, materials, colours and lighting — in EVERY panel. Never invent, relocate or substitute a different location; only the camera framing changes."
-      : `If a LOCATION REFERENCE image is attached (a real photo OR the character-free 2-angle location sheet of this set), it is the EXACT and MANDATORY setting: reproduce THAT place — its layout, furniture, walls, windows, materials, colours and lighting — in EVERY panel, and never relocate or substitute a different location; only the camera framing changes. If no location image is attached, build the setting faithfully from this description: ${setting}.`,
+      ? "The SCRIPT defines what happens here and the ATTACHED location photo defines the exact geometry and landmarks. Reproduce that complete place in the project's locked visual medium in EVERY panel; never relocate it or substitute a generic location."
+      : `The SCRIPT defines the location content. If a LOCATION REFERENCE image/sheet is attached, reproduce its exact terrain/architecture, boundaries, landmarks, anchors, materials, colours and lighting in the project's locked medium. If none is attached, build the complete setting faithfully from this description: ${setting}. Never replace it with a blank board, empty studio or generic template.`,
     staging:
-      "Place only the characters named by each panel.visible_characters into the location and render each exactly once. A character not named for that panel remains out of frame but still exists in the scene; do not clone another person to fill the space. Each visible character's face, hair and full outfit must match only that same-named ATTACHED wardrobe sheet.",
+      characterStyleLock
+        ? "Place only the characters named by each panel.visible_characters into the script-derived location and render each exactly once. An absent character stays out of frame; never clone another identity. Each visible character must match only its same-named ATTACHED character/design sheet and the entire environment/prop set must remain in the same locked medium."
+        : "Place only the characters named by each panel.visible_characters into the location and render each exactly once. A character not named for that panel remains out of frame but still exists in the scene; do not clone another person to fill the space. Each visible character's face, hair and full outfit must match only that same-named ATTACHED wardrobe sheet.",
     render: characterStyleLock || (liveAction
       ? KEYFRAME_RENDER_NOTE
       : `Reality E storyboard board in the project's locked ${realityMode} medium. Preserve its exact design language, materials, proportions, lighting logic and internal physics; never convert it to live-action photorealism.`),
-    visual_style: visualStyle || undefined,
+    visual_style: characterStyleLock || visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
     time_of_day: lockedTimeOfDay || undefined,
@@ -461,22 +466,43 @@ function buildThumbnailPrompt(params: {
   hero: string;
   aspect: "16:9" | "9:16";
   realityMode: string;
+  characterStyleLock?: string;
+  characterStyleId?: string;
 }): string {
   const cast = params.castNames.length ? params.castNames.join(" and ") : "the main character(s)";
-  const liveAction = ["documentary", "cinematic", "commercial"].includes(params.realityMode);
+  const styled = Boolean(params.characterStyleLock);
+  const liveAction = !styled && ["documentary", "cinematic", "commercial"].includes(params.realityMode);
   const prompt: Record<string, unknown> = {
-    type: liveAction ? "photoreal_viral_thumbnail" : `${slugify(params.realityMode)}_viral_thumbnail`,
+    type: styled
+      ? `${slugify(params.characterStyleId || "styled")}_thumbnail`
+      : liveAction
+        ? "photoreal_viral_thumbnail"
+        : `${slugify(params.realityMode)}_viral_thumbnail`,
     aspect: params.aspect === "9:16" ? "9:16 vertical" : "16:9 horizontal",
     goal: "A high-energy, high-click-through YouTube/TikTok thumbnail — instantly readable at a glance, hyper-saturated and punchy.",
-    subjects: `The cast (${cast}) cut out as stickers with a THICK glowing white + neon outline, leaning in with EXAGGERATED excited/shocked reactions — wide eyes, big open-mouth smiles — reacting to the hero item. Each person's face, hair and build come EXACTLY from that character's ATTACHED wardrobe sheet (identity source of truth); do NOT restyle their face.`,
-    hero_item: `${params.hero} as the centred hero — glistening, appetising, larger-than-life, with a subtle glow.`,
-    headline: `Big bold 3D headline "${params.headline}" across the TOP third — thick multi-colour gradient letters (warm yellow → pink → blue), heavy dark outline + drop shadow + soft glow, plus one playful emoji. The text MUST be spelled EXACTLY as given, crisp and fully legible.`,
-    background: "warm, festive setting with blurred bokeh string lights, floating confetti and sparkles, and a bright radial light-burst behind the subjects; deep saturated colours.",
-    composition: "subjects fill the lower two-thirds, headline in the top third, hero item centred between/below them; strong depth, punchy vignette.",
-    render: liveAction
+    subjects: styled
+      ? `The cast (${cast}) use the exact same character designs and identity markers as their ATTACHED character sheets, rendered once each in the locked project medium; expressions and pose communicate the script's hook without changing proportions, material or style.`
+      : `The cast (${cast}) cut out as stickers with a THICK glowing white + neon outline, leaning in with EXAGGERATED excited/shocked reactions — wide eyes, big open-mouth smiles — reacting to the hero item. Each person's face, hair and build come EXACTLY from that character's ATTACHED wardrobe sheet (identity source of truth); do NOT restyle their face.`,
+    hero_item: styled
+      ? `Use ${params.hero} only when it is actually established by the script; render it at truthful story scale in the locked medium and never invent a product or unrelated decorative object.`
+      : `${params.hero} as the centred hero — glistening, appetising, larger-than-life, with a subtle glow.`,
+    headline: styled
+      ? `Clear headline "${params.headline}" across the TOP third, using legible lettering that belongs to the locked project medium rather than unrelated photoreal/3D typography. Spell it EXACTLY as given.`
+      : `Big bold 3D headline "${params.headline}" across the TOP third — thick multi-colour gradient letters (warm yellow → pink → blue), heavy dark outline + drop shadow + soft glow, plus one playful emoji. The text MUST be spelled EXACTLY as given, crisp and fully legible.`,
+    background: styled
+      ? "Use the hook scene's actual script-derived location and hero spatial anchors, translated into the same locked visual medium; simplify only for thumbnail readability and never substitute a generic studio, blank board or unrelated festive template."
+      : "warm, festive setting with blurred bokeh string lights, floating confetti and sparkles, and a bright radial light-burst behind the subjects; deep saturated colours.",
+    composition: styled
+      ? "The script's hook action and emotional contrast fill the lower two-thirds; headline in the top third; preserve the real character spacing and story location while simplifying clutter."
+      : "subjects fill the lower two-thirds, headline in the top third, hero item centred between/below them; strong depth, punchy vignette.",
+    render: styled
+      ? params.characterStyleLock
+      : liveAction
       ? "Photoreal characters composited with graphic overlays; ultra-saturated, high contrast, tack-sharp — a scroll-stopping thumbnail."
       : `Reality E thumbnail in the project's locked ${params.realityMode} medium; keep the design language, just push saturation and energy.`,
-    negative: "no extra, missing or fused fingers; no distorted or duplicated faces; NO gibberish or misspelled text (the headline must read exactly as given); no watermark, no logo.",
+    negative: styled
+      ? "No live-action or photoreal conversion, no medium drift, no duplicate identity, no generic blank/studio backdrop, no unrelated setting; NO gibberish or misspelled text; no watermark or logo."
+      : "no extra, missing or fused fingers; no distorted or duplicated faces; NO gibberish or misspelled text (the headline must read exactly as given); no watermark, no logo.",
   };
   return JSON.stringify(prompt);
 }
@@ -529,15 +555,15 @@ function buildLocationSheetViews(params: {
     goal:
       "ONE character-free LOCATION REFERENCE SHEET of the EMPTY place — a SINGLE image holding THREE framings of the SAME set — the background authority reused to keep every shot on the SAME location. No people or product anywhere.",
     source_authority:
-      "If a real LOCATION PHOTO is attached as a reference, it is the EXACT place: faithfully reproduce THAT real location in ALL THREE framings — its layout, walls, windows, doors, furniture, materials, colours and lighting — treating the attached photo as ground truth and changing ONLY the camera vantage per framing. Remove any people or products that happen to appear in the photo (the sheet stays empty). If NO photo is attached, build the location from the setting/scenery description below.",
+      "The SCRIPT is the semantic authority for what this place contains. If a LOCATION PHOTO is attached, preserve its actual geometry and landmarks while rendering it in the locked project medium. If NO photo is attached, build the complete location from the setting/scenery description below. Never replace an exterior with a room, an interior with a blank canvas, or a specific scripted place with a generic template.",
     layout:
-      "A SINGLE 16:9 image divided into THREE framings of the SAME empty location against one clean continuous presentation: (1) a LARGE WIDE OVERVIEW establishing the whole space edge-to-edge — walls, windows, doors, main furniture and how the room is laid out; (2) a SMALLER view panning RIGHT-TO-LEFT (camera on the right side of the room looking toward the left); (3) a SMALLER view panning LEFT-TO-RIGHT (camera on the left side looking toward the right). No labels or captions — just the three empty views of the one place.",
+      "A SINGLE 16:9 image divided into THREE framings of the SAME empty location: (1) a LARGE WIDE OVERVIEW establishing the complete terrain/architecture, boundaries, route, landmarks and anchors; (2) a SMALLER right-to-left view from a connected camera position; (3) a SMALLER left-to-right reverse view. No labels or captions—just three views of the one script-defined place.",
     setting: setting || "the scripted location",
     scenery: scenery && scenery !== setting ? scenery : undefined,
     lighting: lighting || undefined,
-    visual_style: visualStyle || undefined,
+    visual_style: characterStyleLock || visualStyle || undefined,
     consistency:
-      "All three framings are the EXACT SAME place — identical walls, windows, doors, floor, furniture geometry, landmarks, materials, colours, time-of-day and light direction; ONLY the camera vantage differs between them. This is the immutable set every scene here must reuse.",
+      "All three framings are the EXACT SAME script-derived place—identical terrain/architecture, boundaries, route, landmarks, anchor geometry, materials, colours, time-of-day and light direction; ONLY the camera vantage differs. This is the immutable story world every scene here must reuse.",
     render,
     negative,
   });
@@ -571,18 +597,26 @@ export function withKeyframeAuthority(
     clip.output_rules && typeof clip.output_rules === "object"
       ? { ...(clip.output_rules as Record<string, unknown>) }
       : {};
-  rules.reference_priority =
-    "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT is the sole semantic authority for story action, timing, camera, state transition and ending. The generated STORYBOARD / LOCATION BOARD is only a visual continuity reference for the already-declared opening appearance and set geometry; it must never add, remove, replace or reinterpret video events. Each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop. Use the location board to keep the prompt-declared environment visually consistent (background, spatial layout, furniture, props, doors, windows, lighting and materials), but when any image detail conflicts with this structured prompt, FOLLOW THIS VIDEO PROMPT. Identity and clothing come from the sheets; semantics and motion come from the video prompt.";
+  rules.reference_priority = characterStyleLock
+    ? "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT owns story action, timing, camera, state transition and ending. The selected STYLE LOCK owns the render medium for characters, the complete script-derived environment and props. Character sheets lock each design/identity; the location board locks the scripted terrain/architecture, landmarks, layout and light. Never replace the scripted location with a blank canvas, generic studio or unrelated template."
+    : "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT is the sole semantic authority for story action, timing, camera, state transition and ending. The generated STORYBOARD / LOCATION BOARD is only a visual continuity reference for the already-declared opening appearance and set geometry; it must never add, remove, replace or reinterpret video events. Each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop. Use the location board to keep the prompt-declared environment visually consistent (background, spatial layout, furniture, props, doors, windows, lighting and materials), but when any image detail conflicts with this structured prompt, FOLLOW THIS VIDEO PROMPT. Identity and clothing come from the sheets; semantics and motion come from the video prompt.";
   rules.storyboard_reference_role =
     "Visual continuity only. Do not infer new actions from the board and do not let the board override ordered actions, dialogue, camera intent, timing or end state in this video prompt.";
   // HARD LOCK (user): the multi-panel board must NEVER be rendered into the video.
   rules.board_is_reference_not_a_frame =
-    "The attached STORYBOARD BOARD is a MULTI-PANEL planning sheet that only DESCRIBES this scene (cast, wardrobe, location, staging and beats). It is NOT the video's frame and NOT a layout to copy. NEVER reproduce, show or animate the board itself: no split panels, no grid, no side-by-side sub-frames, no numbered badges, no caption strips, no white gutters or borders, no picture-in-picture. Render ONE single, full-bleed, continuous cinematic shot of the real scene the panels depict — one camera, one framing at a time, filling the entire frame.";
+    "The attached STORYBOARD BOARD is a MULTI-PANEL planning sheet that only DESCRIBES this scene (cast, character design, location, staging and beats). It is NOT the video's frame and NOT a layout to copy. NEVER reproduce, show or animate the board itself: no split panels, no grid, no side-by-side sub-frames, no numbered badges, no caption strips, no white gutters or borders, no picture-in-picture. Render ONE single, full-bleed, continuous shot of the actual scripted scene in the locked medium—one camera, one framing at a time, filling the entire frame.";
   if (characterStyleLock) rules.character_style_lock = characterStyleLock;
   return {
     ...clip,
+    ...(characterStyleLock
+      ? {
+          visual_style: characterStyleLock,
+          negative_prompt:
+            "No live-action or photoreal conversion; no conflicting animation medium; no character/environment style mismatch; no generic blank board or studio replacing the scripted setting; no duplicated identities; no text, watermark or board layout inside the video.",
+        }
+      : {}),
     board_usage:
-      "REFERENCE ONLY: the attached storyboard board is a multi-panel sheet that DESCRIBES this scene (who/what/where). Do NOT put the board — its split panels, grid, numbers, captions or borders — into the video. Produce ONE full-frame, single continuous cinematic shot of the ACTUAL scene, never a montage of panels and never a picture of the board sheet.",
+      "REFERENCE ONLY: the attached storyboard board is a multi-panel sheet that DESCRIBES this scene (who/what/where). Do NOT put the board—its split panels, grid, numbers, captions or borders—into the video. Produce ONE full-frame, single continuous shot of the ACTUAL scripted scene in the project's locked medium, never a montage of panels and never a picture of the board sheet.",
     output_rules: rules,
   };
 }
@@ -1144,6 +1178,8 @@ export function buildNanoFlowManifest(
               : "the single key story object established by the script"),
         aspect: thumbnailAspect,
         realityMode,
+        characterStyleLock: visualMediumLock,
+        characterStyleId: characterRepresentation,
       }),
       social_posts: breakdown.social_posts,
     },
