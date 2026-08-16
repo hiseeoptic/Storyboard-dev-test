@@ -1007,6 +1007,15 @@ ${JSON.stringify(input.resolved_context, null, 2)}
 - Copy the approved narrator lines in their original segment order. Add no character dialogue, reaction line, thought, list, CTA or follow/subscribe request.
 - Story action remains exactly the source action; narration mode changes speech ownership, not plot, setting or scene content.`
     : "";
+  const stylizedNarrationMetadata =
+    input.anonymous_narration === true &&
+    isStylizedCharacterRepresentation(input.character_representation ?? "auto");
+  const thumbnailTitleRule = stylizedNarrationMetadata
+    ? `string — 2-6 words in ${dialogueLanguage}, concise and emotionally faithful to the actual hook/choice/consequence. Suitable for a stylized story cover; no personal names, fake quotation, unrelated shock claim, meme insult or unearned clickbait.`
+    : `string — the SMASH-HOOK printed HUGE on the video's cover, in ${dialogueLanguage}, UPPERCASE, 2-6 words MAX (shorter = stronger). It must sell THIS video's actual curiosity gap. May end with ?! — no hashtags or emoji inside the text; preserve correct Vietnamese diacritics.`;
+  const socialPostRules = stylizedNarrationMetadata
+    ? `READY-TO-POST captions for THIS exact anonymous stylized story in ${dialogueLanguage}. Refer to the real role/action/choice/consequence and earned lesson; never invent personal names, character quotes, photoreal people, a different setting, product claims or a different moral. Do not repeat the entire narrator script. Use a specific hook, one concise insight and only a natural platform CTA when appropriate. Hashtags mix broad discovery tags with exact topic/style tags such as the story theme and người que/hoạt hình.`
+    : `READY-TO-POST captions for THIS exact video, written in ${dialogueLanguage}. Each references the actual story/hook/payoff, never a generic 'check out my video'. Keep it short and emotional with one platform-native CTA when appropriate. Hashtags mix broad discovery and specific topic tags.`;
 
   return `Create a chained-segment storyboard for this short video.
 
@@ -1044,9 +1053,9 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
     "forbidden_entities": ["CONCRETE list for THIS world — e.g. for a period piece: smartphones, sneakers, LED lights, modern signage; for modern Vietnam: unexplained foreign signage, random robots"],
     "intentional_exceptions": ["declared exceptions only: intentional contrast / memory / dream / parody / product metaphor / narrative disruption — empty array if none"]
   },
-  "thumbnail_title": "string — the SMASH-HOOK printed HUGE on the video's 9:16 cover, in ${dialogueLanguage}, UPPERCASE, 2-6 words MAX (shorter = stronger). It must sell THIS video's gag/curiosity gap in one glance, hot-trend style: a shock equation ('MẤT WIFI = MẤT VỢ?!'), a call-out ('CHỒNG ĐOẢNG CẤP ĐỘ MAX'), a forbidden question ('AI SAI Ở ĐÂY?!'). May end with ?! — no hashtags, no emoji inside the text (an emoji graphic is added separately), correct Vietnamese diacritics.",
+  "thumbnail_title": "${thumbnailTitleRule}",
   "social_posts": {
-    "_rules": "READY-TO-POST captions for THIS exact video, written in ${dialogueLanguage} — each must reference the video's actual story/hook/payoff (a specific moment, the punchline, the question it answers), NEVER a generic 'check out my video'. SHORT and emotional: hook first, 1-3 fitting emoji woven in naturally (not a wall of emoji), one platform-native CTA. Hashtags = real SEO: mix 1-2 broad trending tags + 2-3 niche topic tags (the video's subject, in ${dialogueLanguage} where natural) + 1 branded/series tag when it fits; every tag starts with # and contains no spaces.",
+    "_rules": "${socialPostRules}",
     "tiktok": {
       "caption": "string — 1-2 punchy lines + emoji, open a curiosity gap or call the viewer out, end with a comment-bait question (e.g. 'Bạn thuộc team nào? 👇'). Max ~150 chars.",
       "hashtags": ["4-6 tags — e.g. #fyp/#xuhuong + niche topic tags + 1 series tag"]
@@ -1934,7 +1943,8 @@ export function buildThumbnailPrompt(params: {
   /** Compiled topic/character/directing lock from the ordered creative route. */
   creativeDirective?: string;
   /** Objective-aware cover grammar; legacy viral treatment remains available. */
-  coverTreatment?: "viral" | "editorial" | "nature" | "fable" | "commercial";
+  coverTreatment?: "viral" | "editorial" | "nature" | "fable" | "commercial" | "stylized";
+  aspectRatio?: "16:9" | "9:16";
 }): string {
   const refBlock = buildReferenceInstructions(params.references ?? []);
   const directive = renderDirective(params.style, params.preserveRealFace ?? false);
@@ -1946,6 +1956,19 @@ export function buildThumbnailPrompt(params: {
     : params.characterDescription;
   const gag = params.gagHint || params.hook || params.title;
   const coverTreatment = params.coverTreatment ?? "viral";
+  const frameDescription = params.aspectRatio === "16:9" ? "HORIZONTAL 16:9" : "VERTICAL 9:16";
+
+  if (coverTreatment === "stylized") {
+    return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}STYLIZED STORY VIDEO COVER / THUMBNAIL — ONE single ${frameDescription} image in the exact same locked graphic medium as the video, never live action and never photoreal.
+
+HOOK MOMENT: ${gag}
+SCRIPT-DERIVED WORLD: ${params.settingHint || "the location and visual world established by the hook scene"}
+CAST: ${castDesc}. Render each scripted role exactly once with its stable line, shape, colour and role marker. Express the hook through readable silhouette, pose, spacing and facial marks appropriate to the selected stylized medium.
+${params.productDna ? `STORY OBJECT: ${params.productDna}\n` : ""}COMPOSITION: stage one clear story moment with a strong focal contrast; keep the actual relationship and positions from the hook instead of replacing them with a blank board, generic studio or unrelated meme template.
+${params.titleText ? `HEADLINE: print the EXACT text «${params.titleText}» once, with correct Vietnamese diacritics, maximum two lines, large and readable at feed size. Lettering must belong to the same graphic medium as the video.\n` : ""}${tokens ? `${tokens}\n` : ""}${directive}
+
+RENDER RULES: one cohesive ${frameDescription} cover, not a collage; same character and environment design as the storyboard; no real humans, realistic skin/hair, photographic materials, sticker-cutout people, neon human rim, duplicate character, extra cast, unrelated prop, generic whiteboard classroom, gibberish, misspelled headline, subtitle, hashtag, watermark or logo.`;
+  }
 
   if (coverTreatment === "nature") {
     return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}NATURAL-HISTORY VIDEO COVER — ONE clean vertical 9:16 camera frame, not a collage and not social clickbait.
@@ -2000,7 +2023,7 @@ RENDER RULES: one clean commercial frame, no collage, no exaggerated meme face, 
     ? `NEGATIVE (avoid — plain descriptors): resembling a real or famous person, celebrity likeness, misspelled or garbled headline letters, wrong or missing Vietnamese diacritics, duplicated or extra words beyond the specified headline, any second block of text, subtitles, captions, hashtags on the image, watermark, logo, morphing, warping, extra or fused fingers, malformed hands, extra or missing limbs, the face changing, identity drift, changed hair/wardrobe, extra people, duplicated subject, ${HUMAN_FACE_REALISM_NEGATIVE}, toy-like or 3D-render materials.`
     : SHARED_NEGATIVE;
 
-  return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}VIRAL VIDEO COVER / THUMBNAIL — ONE single VERTICAL 9:16 image used as the cover of a short video. It must STOP THE SCROLL on a phone feed: bold, funny, instantly readable at thumbnail size.
+  return `${refBlock}${params.creativeDirective ? `${params.creativeDirective}\n\n` : ""}VIRAL VIDEO COVER / THUMBNAIL — ONE single ${frameDescription} image used as the cover of a short video. It must STOP THE SCROLL on a phone feed: bold, funny, instantly readable at thumbnail size.
 
 THE MOMENT TO SELL (the video's hook — stage THIS as one exaggerated comedic beat): ${gag}
 ${params.settingHint ? `WORLD OF THE VIDEO (the cover must clearly belong to this same world/location): ${params.settingHint}\n` : ""}
@@ -2018,7 +2041,7 @@ ${params.titleText ? `■ 💥 HUGE HEADLINE (the click magnet): across the TOP 
 
 ${tokens ? tokens + "\n" : ""}${directive}
 
-RENDER RULES: ONE single 9:16 vertical frame, no panels, no frame borders, no collage; ${params.preserveRealFace ? "the attached named character image is the sole appearance authority; do not describe or reinterpret it" : "keep the generated character identity consistent"}; energetic but physically plausible pose (real anatomy, real contact with props). ${params.titleText ? `The ONLY text in the image is the exact headline «${params.titleText}» styled as specified, and the ONLY graphics are that headline, ONE emotion icon, and the white sticker outline + neon rim — nothing else written or drawn: no captions, subtitles, hashtags, extra stickers, arrows, circles, logos, watermarks or stray numbers.` : `The white sticker OUTLINE + neon glow rim around the character are the ONLY graphic treatment allowed — ABSOLUTELY NO TEXT of any kind: no title, caption, text sticker, emoji, arrows, circles, logo, watermark or numbers anywhere in the image (those get added later by the editor).`} ${negative}`;
+RENDER RULES: ONE single ${frameDescription} frame, no panels, no frame borders, no collage; ${params.preserveRealFace ? "the attached named character image is the sole appearance authority; do not describe or reinterpret it" : "keep the generated character identity consistent"}; energetic but physically plausible pose (real anatomy, real contact with props). ${params.titleText ? `The ONLY text in the image is the exact headline «${params.titleText}» styled as specified, and the ONLY graphics are that headline, ONE emotion icon, and the white sticker outline + neon rim — nothing else written or drawn: no captions, subtitles, hashtags, extra stickers, arrows, circles, logos, watermarks or stray numbers.` : `The white sticker OUTLINE + neon glow rim around the character are the ONLY graphic treatment allowed — ABSOLUTELY NO TEXT of any kind: no title, caption, text sticker, emoji, arrows, circles, logo, watermark or numbers anywhere in the image (those get added later by the editor).`} ${negative}`;
 }
 
 // ─── Step 5: Video Assembly Guide (text for Veo / Seedance) ─────────────────

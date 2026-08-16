@@ -3182,6 +3182,8 @@ export async function generateBoardImage(params: {
         isChild: !!l.is_child,
       }));
       const thumbRefs = buildBoardRefs(ctx, hookSeg?.characters_in_scene);
+      const effectiveRepresentation = resolveCreativeRoute(input).effective_character_representation;
+      const stylizedCover = isStylizedCharacterRepresentation(effectiveRepresentation);
       const r = await generateThumbnail({
         title: breakdown.title,
         // The AI-written smash-hook, printed HUGE on the cover (fallback:
@@ -3202,19 +3204,12 @@ export async function generateBoardImage(params: {
         references: ctx.canChain && thumbRefs.descriptors.length > 0 ? thumbRefs.descriptors : undefined,
         provider,
         quality: ctx.quality,
-        // THUMBNAIL RESTORED TO THE ORIGINAL VIRAL STYLE (user request): the
-        // creative-route cover routing was pushing live-action drama/psychology
-        // content to an "editorial" treatment and prefixing the creative
-        // directive, which changed the look. Force the classic bold viral cover
-        // and drop the directive so the thumbnail renders exactly as before.
-        // (The nature/fable/commercial branches in buildThumbnailPrompt stay
-        // available for a future opt-in, just not auto-selected here.)
-        creativeDirective: isStylizedCharacterRepresentation(
-          resolveCreativeRoute(input).effective_character_representation
-        )
-          ? creativeDirective
-          : undefined,
-        coverTreatment: "viral",
+        aspectRatio: input.thumbnail_aspect_ratio ?? "9:16",
+        // Live action keeps the established viral cover. A selected stylized
+        // medium gets its own script-derived cover so stick figures/animation
+        // never drift into photoreal sticker-cutout people.
+        creativeDirective: stylizedCover ? creativeDirective : undefined,
+        coverTreatment: stylizedCover ? "stylized" : "viral",
       });
       return { success: true, data: { url: r.url } };
     }

@@ -27,7 +27,11 @@ const compileTs = (mod, filename) => {
 };
 require.extensions[".ts"] = compileTs;
 
-const { buildVeoJson } = require("./storyboard-breakdown.ts");
+const {
+  buildStoryboardUserPrompt,
+  buildThumbnailPrompt,
+  buildVeoJson,
+} = require("./storyboard-breakdown.ts");
 const {
   inferRevolvingDoorOperation,
   resolveSpatialLayout,
@@ -35,6 +39,46 @@ const {
 const {
   stripUploadedCharacterAppearance,
 } = require("../lib/character-realism.ts");
+
+test("stick-figure thumbnail keeps the selected medium and requested aspect", () => {
+  const prompt = buildThumbnailPrompt({
+    title: "Đừng vội cười người đi chậm",
+    titleText: "ĐI CHẬM KHÔNG SAI",
+    gagHint: "Người đi chậm buộc dây giày trong khi hai người khác chạy trước",
+    settingHint: "Đường chạy vẽ tay có vạch xuất phát",
+    characterDescription: "three distinct minimal stick-figure roles",
+    style: "pencil_sketch",
+    creativeDirective: "LOCKED STICK-FIGURE LINE LANGUAGE",
+    coverTreatment: "stylized",
+    aspectRatio: "16:9",
+  });
+
+  assert.match(prompt, /STYLIZED STORY VIDEO COVER/);
+  assert.match(prompt, /HORIZONTAL 16:9/);
+  assert.match(prompt, /ĐI CHẬM KHÔNG SAI/);
+  assert.match(prompt, /same locked graphic medium/i);
+  assert.doesNotMatch(prompt, /EXAGGERATED COMEDIC EXPRESSION|STICKER-POP TREATMENT/);
+});
+
+test("anonymous stylized projects request faithful thumbnail and social metadata", () => {
+  const prompt = buildStoryboardUserPrompt({
+    story_idea: "Một người đi chậm chuẩn bị kỹ rồi bền bỉ đi tiếp.",
+    genre: "life_wisdom",
+    style: "pencil_sketch",
+    scene_count: 6,
+    segment_count: 6,
+    beats_per_segment: 3,
+    video_goal: "social_short",
+    character_representation: "whiteboard_stick_figure",
+    anonymous_narration: true,
+    dialogue_language: "Vietnamese",
+  });
+
+  assert.match(prompt, /anonymous stylized story/i);
+  assert.match(prompt, /never invent personal names, character quotes/i);
+  assert.match(prompt, /người que\/hoạt hình/i);
+  assert.match(prompt, /no personal names, fake quotation/i);
+});
 
 test("uploaded references keep identity image-only while preserving contextual clothing text", () => {
   const cleaned = stripUploadedCharacterAppearance(

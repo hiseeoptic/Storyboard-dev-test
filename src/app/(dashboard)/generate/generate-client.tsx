@@ -2399,11 +2399,13 @@ function ProjectWorkspace() {
           zip.file(`storyboard_overview.png`, b);
         } catch {}
       }
-      // Viral 9:16 thumbnail (video cover) — included once generated.
+      const exportedThumbnailAspect = genInput?.thumbnail_aspect_ratio ?? "16:9";
+      const thumbnailFileName = `thumbnail_${exportedThumbnailAspect.replace(":", "x")}.png`;
+      // Thumbnail (video cover) — included once generated at the selected ratio.
       if (result.thumbnailUrl) {
         try {
           const b = await (await fetch(result.thumbnailUrl)).blob();
-          zip.file(`thumbnail_9x16.png`, b);
+          zip.file(thumbnailFileName, b);
         } catch {}
       }
       // Assembly guide / prompts
@@ -2548,8 +2550,8 @@ function ProjectWorkspace() {
         "  - master_prompt.txt  → bản prompt văn bản cũ dự phòng khi không dùng JSON.",
         "  - bai_dang_social.txt→ BÀI ĐĂNG viết sẵn cho TikTok / YouTube Shorts / Facebook",
         "      Reels (caption + hashtag SEO, bám đúng nội dung video này) — copy khi đăng.",
-        "  - thumbnail_9x16.png → ẢNH BÌA dọc 9:16 (nếu bạn đã bấm 'Tạo thumbnail'): tiêu đề",
-        "      giật + emoji đã in sẵn — kiểm tra chính tả trước khi đăng, lỗi thì Tạo lại.",
+        `  - ${thumbnailFileName} → ẢNH BÌA ${exportedThumbnailAspect} (nếu bạn đã bấm 'Tạo thumbnail'),`,
+        "      bám đúng hook và phong cách video — kiểm tra chính tả trước khi đăng, lỗi thì Tạo lại.",
         "",
         "MẸO: mỗi clip đều có \"negative_prompt\" liệt kê rõ những thứ phải tránh",
         "(morphing, warping, teleporting, floating/duplicated objects, tay/ngón lỗi,",
@@ -2938,6 +2940,22 @@ function ProjectWorkspace() {
       setCopiedJson(key);
       setTimeout(() => setCopiedJson(null), 2000);
     };
+    const resultCharacterRepresentation =
+      genInput?.character_representation ?? effectiveCharacterRepresentation;
+    const stylizedProject = isStylizedCharacterRepresentation(resultCharacterRepresentation);
+    const resultThumbnailAspect = genInput?.thumbnail_aspect_ratio ?? thumbnailAspectRatio;
+    const socialPosts = result.breakdown.social_posts;
+    const socialPostText = (platform: "tiktok" | "youtube_shorts" | "facebook_reel") => {
+      if (!socialPosts) return "";
+      if (platform === "youtube_shorts") {
+        const post = socialPosts.youtube_shorts;
+        return [`TIÊU ĐỀ: ${post.title}`, post.description, (post.hashtags ?? []).join(" ")]
+          .filter(Boolean)
+          .join("\n\n");
+      }
+      const post = socialPosts[platform];
+      return [post.caption, (post.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n");
+    };
 
     return (
       <div className="space-y-8">
@@ -3228,14 +3246,16 @@ function ProjectWorkspace() {
           </Card>
         )}
 
-        {/* Viral 9:16 Thumbnail / video cover */}
+        {/* Script- and medium-locked thumbnail / video cover */}
         {result.thumbnailUrl ? (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <ImageIcon className="h-5 w-5" />
-                  {lang === "vi" ? "Thumbnail 9:16 (bìa video)" : "9:16 Thumbnail (video cover)"}
+                  {lang === "vi"
+                    ? `Thumbnail ${resultThumbnailAspect} (bìa video)`
+                    : `${resultThumbnailAspect} Thumbnail (video cover)`}
                 </CardTitle>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" disabled={regenTarget !== null} onClick={() => regenerateBoard("thumbnail")} className="gap-1.5">
@@ -3255,8 +3275,12 @@ function ProjectWorkspace() {
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? "Bìa dọc 9:16 theo khoảnh khắc hài nhất của video — tiêu đề giật + 1 emoji cảm xúc đã in sẵn thật to (kiểm tra chính tả; nếu chữ lỗi bấm Tạo lại). Ảnh này cũng được kèm vào ZIP khi tải."
-                  : "Vertical 9:16 cover staging the video's funniest beat — the smash-hook headline + 1 emotion emoji are printed on it (check spelling; hit Redo if garbled). Included in the ZIP download."}
+                  ? stylizedProject
+                    ? "Bìa lấy đúng hook, nhân vật và bối cảnh từ kịch bản; giữ nguyên phong cách người que/hoạt hình đã chọn, không chuyển thành người thật hoặc mẫu meme không liên quan. Ảnh được kèm trong ZIP."
+                    : "Bìa lấy đúng hook và thế giới của video; kiểm tra tiêu đề, nhân vật và sản phẩm trước khi tải. Ảnh được kèm trong ZIP."
+                  : stylizedProject
+                    ? "The cover uses the script's real hook, cast and setting in the selected stick-figure/stylized medium, without live-action or unrelated meme drift. Included in the ZIP."
+                    : "The cover uses the video's real hook and world; verify the headline, cast and product before download. Included in the ZIP."}
               </p>
             </CardContent>
           </Card>
@@ -3265,20 +3289,73 @@ function ProjectWorkspace() {
             <CardContent className="flex flex-col items-center justify-center py-8 text-center">
               <ImageIcon className="mb-2 h-8 w-8 text-muted-foreground/50" />
               <p className="text-sm font-medium text-muted-foreground">
-                {lang === "vi" ? "Thumbnail 9:16 — bìa video (tuỳ chọn)" : "9:16 Thumbnail — video cover (optional)"}
+                {lang === "vi"
+                  ? `Thumbnail ${resultThumbnailAspect} — bìa video (tuỳ chọn)`
+                  : `${resultThumbnailAspect} Thumbnail — video cover (optional)`}
               </p>
               <p className="mt-1 max-w-md text-xs text-muted-foreground">
                 {lang === "vi"
-                  ? "Tạo 1 ảnh bìa dọc kiểu hài hước, bắt mắt: nhân vật cutout viền trắng + neon với biểu cảm cường điệu, TIÊU ĐỀ GIẬT in sẵn thật to + 1 emoji cảm xúc — đập vào mắt ngay khi lướt. Dùng làm cover khi đăng TikTok/Shorts/Reels."
-                  : "Generate one funny, scroll-stopping vertical cover: sticker-cutout character with neon rim, the HUGE smash-hook headline + 1 emotion emoji printed on it. Use as the upload cover."}
+                  ? stylizedProject
+                    ? "Tạo bìa từ hook thật của kịch bản, cùng nhân vật, bối cảnh và ngôn ngữ tạo hình người que/hoạt hình đã chọn. Không dùng người thật, phông trắng mặc định hoặc meme không thuộc câu chuyện."
+                    : "Tạo một bìa bắt mắt từ đúng hook, nhân vật, bối cảnh và sản phẩm của video."
+                  : stylizedProject
+                    ? "Create a cover from the script's real hook in the selected stick-figure/stylized character and world language—never live action, a default blank board or an unrelated meme."
+                    : "Create a strong cover from the video's actual hook, cast, setting and product."}
               </p>
               {boardErrors["thumbnail"] && (
                 <p className="mt-1 max-w-md text-xs text-destructive/80">{boardErrors["thumbnail"]}</p>
               )}
               <Button variant="outline" size="sm" disabled={regenTarget !== null} onClick={() => regenerateBoard("thumbnail")} className="mt-3 gap-1.5">
                 {regenTarget === "thumbnail" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                {lang === "vi" ? "Tạo thumbnail hài hước" : "Generate funny thumbnail"}
+                {lang === "vi" ? "Tạo thumbnail" : "Generate thumbnail"}
               </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {socialPosts && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Send className="h-5 w-5" />
+                {lang === "vi" ? "Nội dung đăng mạng xã hội" : "Social media post content"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 lg:grid-cols-3">
+              {([
+                ["tiktok", "TikTok"],
+                ["youtube_shorts", "YouTube Shorts"],
+                ["facebook_reel", "Facebook Reels"],
+              ] as const).map(([platform, label]) => {
+                const text = socialPostText(platform);
+                const copyKey = `social-${platform}`;
+                return (
+                  <div key={platform} className="rounded-lg border p-4">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <h3 className="font-semibold">{label}</h3>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copyJson(copyKey, text)}
+                        className="gap-1.5"
+                      >
+                        {copiedJson === copyKey ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {lang === "vi" ? "Sao chép" : "Copy"}
+                      </Button>
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm text-muted-foreground">{text}</p>
+                  </div>
+                );
+              })}
+              <p className="text-xs text-muted-foreground lg:col-span-3">
+                {lang === "vi"
+                  ? stylizedProject
+                    ? "Nội dung bám đúng hook, hành động và bài học của kịch bản người que; không tự thêm tên riêng, lời thoại nhân vật hoặc một thông điệp khác. Bản TXT vẫn được kèm trong ZIP."
+                    : "Nội dung được viết theo đúng câu chuyện và vẫn được kèm trong ZIP."
+                  : stylizedProject
+                    ? "Posts stay faithful to the stick-figure story's hook, action and earned lesson, without invented names, character dialogue or a different message. The TXT file remains included in the ZIP."
+                    : "Posts follow the actual story and remain included in the ZIP."}
+              </p>
             </CardContent>
           </Card>
         )}

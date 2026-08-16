@@ -269,14 +269,14 @@ export async function generateThumbnail(params: {
   provider?: AIProvider;
   quality?: ImageQuality;
   creativeDirective?: string;
-  coverTreatment?: "viral" | "editorial" | "nature" | "fable" | "commercial";
+  coverTreatment?: "viral" | "editorial" | "nature" | "fable" | "commercial" | "stylized";
+  aspectRatio?: "16:9" | "9:16";
 }): Promise<{ url: string }> {
   const prompt = buildThumbnailPrompt(params);
   const url = await generateImage(prompt, {
     provider: params.provider,
     referenceImages: params.referenceImages,
-    // The cover is ALWAYS vertical 9:16 (feed/upload cover format).
-    aspectRatio: "9:16",
+    aspectRatio: params.aspectRatio ?? "9:16",
     quality: params.quality,
     imageSize: "1K",
   });

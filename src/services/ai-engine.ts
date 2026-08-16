@@ -32,6 +32,7 @@ import {
 } from "@/lib/validation";
 import { shouldRetryAiError } from "@/lib/ai/retry-policy";
 import { logOpenAiUsage } from "@/lib/ai/usage";
+import { isStylizedCharacterRepresentation } from "@/lib/creative-routing";
 import type {
   AIProvider,
   CharacterLock,
@@ -1252,7 +1253,26 @@ export async function generateStoryboardBreakdown(
       // the title/synopsis when the model omitted them).
       if (!parsed.social_posts || typeof parsed.social_posts !== "object") {
         const firstLine = (parsed.synopsis ?? "").split(/(?<=[.!?])\s+/)[0] ?? parsed.title;
-        parsed.social_posts = {
+        const stylizedNarrationMetadata =
+          input.anonymous_narration === true &&
+          isStylizedCharacterRepresentation(input.character_representation ?? "auto");
+        parsed.social_posts = stylizedNarrationMetadata
+          ? {
+              tiktok: {
+                caption: `${firstLine} Bạn nhìn thấy mình ở khoảnh khắc nào trong câu chuyện này?`,
+                hashtags: ["#xuhuong", "#nguoique", "#chuyencuocsong", "#baihoccuocsong"],
+              },
+              youtube_shorts: {
+                title: parsed.title,
+                description: `${firstLine} Một câu chuyện người que ngắn về lựa chọn, hệ quả và điều đáng để suy ngẫm.`,
+                hashtags: ["#Shorts", "#NguoiQue", "#BaiHocCuocSong"],
+              },
+              facebook_reel: {
+                caption: `${firstLine}\n\nMột câu chuyện nhỏ, nhưng có thể là điều ai đó đang cần nghe hôm nay.`,
+                hashtags: ["#NguoiQue", "#ChuyenCuocSong", "#SongTichCuc"],
+              },
+            }
+          : {
           tiktok: {
             caption: `${parsed.title} 😮 Xem hết rồi nói cảm nhận của bạn ở comment nhé 👇`,
             hashtags: ["#viral", "#xuhuong", "#fyp", "#learnontiktok"],
