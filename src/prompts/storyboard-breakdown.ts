@@ -547,12 +547,15 @@ ACTION DRAMA DIRECTOR PROFILE — activate for action/thriller/crime/rescue scen
 - Sound is causal and specific: foot plant, cloth strain, breath, one impact matching each visible contact, furniture/ground response, then the stunned breath or ringing silence after it. Never use only “natural footsteps and contact sounds”.
 - FORBIDDEN: superhero victory pose, balletic showboating, beautiful technique displayed for its own sake, an enemy waiting to be hit, weightless wire-fu unless the world explicitly permits it, consequence-free strikes, or three people performing independent attack chains at once.`;
 
+const ACTION_GENRE_PATTERN =
+  /\b(?:action|thriller|crime|rescue|martial(?: arts)?|fight|combat)\b|hành động|giật gân|đánh nhau|giải cứu|tự vệ/iu;
+const PHYSICAL_THREAT_PATTERN =
+  /\b(?:attack(?:s|ed|ing)?|assault(?:s|ed|ing)?|strike(?:s|struck|ing)?|punch(?:es|ed|ing)?|kick(?:s|ed|ing)?|block(?:s|ed|ing)?|dodge(?:s|d|ing)?|shove(?:s|d|ing)?|tackle(?:s|d|ing)?|grapple(?:s|d|ing)?)\b|đánh nhau|ẩu đả|tấn công|giải cứu|tự vệ|đấm|đá|đỡ đòn|né đòn/iu;
+
 function actionDramaRequested(input: StoryboardGenerationInput): boolean {
   const genre = `${input.genre ?? ""} ${input.video_goal ?? ""}`;
   const story = `${input.story_idea ?? ""} ${input.central_conflict ?? ""} ${input.source_script ?? ""}`;
-  return /\b(?:action|thriller|crime|rescue|martial|fight|combat)\b|hành động|giật gân|đánh nhau|ẩu đả|tấn công|giải cứu|tự vệ/iu.test(
-    `${genre} ${story}`
-  );
+  return ACTION_GENRE_PATTERN.test(genre) || PHYSICAL_THREAT_PATTERN.test(story);
 }
 
 // ─── Stage 1: Script writer (Claude) — creative script ONLY ─────────────────
@@ -2384,6 +2387,12 @@ interface VeoJsonOptions {
   /** Exact menu names that have uploaded character images. Their appearance
    * must remain image-only and must never be serialized as prose. */
   characterReferenceNames?: string[];
+  /** The selected render medium. Stylized media use a compact design lock and
+   * never inherit photoreal environment/character payloads. */
+  characterRepresentation?: CharacterRepresentation;
+  /** Menu-selected anonymous narrator mode: role labels only, no character
+   * voice identity or human demographic metadata in the Veo payload. */
+  anonymousNarration?: boolean;
 }
 
 // ─── BURN-PROOFING: Veo prints salient technical tokens straight onto the
@@ -2496,6 +2505,9 @@ export function buildVeoJson(
       : [s, SKIN_REALISM].filter(Boolean).join("; ");
   const lang = opts.dialogueLanguage ?? "Vietnamese";
   const locks = breakdown.character_locks ?? [];
+  const stylizedRepresentation = isStylizedCharacterRepresentation(
+    opts.characterRepresentation
+  );
   const sb = breakdown.scene_bible;
   const culture = oneLine(breakdown.world_context?.culture);
   const characterReferenceNames = new Set(
@@ -2779,11 +2791,17 @@ export function buildVeoJson(
   const clips = breakdown.segments.map((seg, segIndex) => {
     const beats = Array.isArray(seg.beats) ? seg.beats : [];
     const clipSeconds = Math.max(1, seg.duration_seconds || 10);
-    const actionDrama = /\b(?:action|thriller|crime|rescue|martial|fight|combat|attack|assault|strike|punch|kick|block|dodge|shove)\b|hành động|giật gân|đánh nhau|ẩu đả|tấn công|giải cứu|tự vệ|đấm|đá|đỡ đòn|né đòn/iu.test(
-      `${breakdown.world_context?.genre ?? ""} ${seg.title ?? ""} ${seg.motion_prompt ?? ""}`
-    );
+    const actionDrama =
+      ACTION_GENRE_PATTERN.test(breakdown.world_context?.genre ?? "") ||
+      PHYSICAL_THREAT_PATTERN.test(`${seg.title ?? ""} ${seg.motion_prompt ?? ""}`);
     const speaker = oneLine(seg.speaker);
-    const env = resolveEnvironment(seg.environment_ref, seg.first_frame_prompt);
+    // Environment archetypes contain real materials, Kelvin/lux and photographic
+    // surface physics. They are valuable for live action but conflict with a
+    // selected illustrated/clay/paper/low-poly world. A stylized project keeps
+    // the script-derived setting and lets its style lock render that world.
+    const env = stylizedRepresentation
+      ? undefined
+      : resolveEnvironment(seg.environment_ref, seg.first_frame_prompt);
     const contextLocation = seg.location_id
       ? contextLocationsById.get(seg.location_id.trim().toLowerCase())
       : undefined;
@@ -2988,6 +3006,36 @@ export function buildVeoJson(
           main_action: `Perform only ${lock.name}'s actions in scene_action.motion`,
           post_action: "Finish exactly in scene_action.end_state",
         };
+        if (stylizedRepresentation) {
+          const designMarkers = [
+            noHex(lock.build),
+            noHex(lock.face_structure),
+            noHex(lock.signature_features),
+            noHex(lock.skin_tone),
+          ].filter(Boolean).join("; ");
+          const wardrobeMarker = opts.anonymousNarration
+            ? "Use only the stable role marker, line/shape language and small colour accent established by the character sheet"
+            : [outfit.top, outfit.bottom, noHex(lock.wardrobe_materials)].filter(Boolean).join("; ");
+          return [
+            id,
+            {
+              id,
+              name: lock.name,
+              design_medium: opts.characterRepresentation,
+              design_markers: designMarkers || "Use the exact same locked stylized character design in every clip",
+              signature_marker: noHex(lock.signature_features),
+              wardrobe_or_role_marker: wardrobeMarker,
+              ...(opts.anonymousNarration
+                ? { speech_authority: "Silent visible role; narrator VOICEOVER owns all spoken audio and this character never lip-syncs" }
+                : { voice_personality: oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child) }),
+              props,
+              body_metrics: "cons=no-auto-rescale,lock-proportions,keep-relative-height",
+              ...sceneStateFields,
+              expression: noHex(lock.default_expression) || "Use scene_action.start_state",
+              action_flow: actionFlow,
+            },
+          ];
+        }
         if (hasUploadedReference(lock.name)) {
           const referenceOutfit = motivatedWardrobe
             ? { top: "See wardrobe_state", bottom: "See wardrobe_state" }

@@ -45,6 +45,9 @@ export interface BuildNanoFlowManifestOptions {
   /** Fully rendered character + environment style-lock law for the selected id
    * (CHARACTER_LAWS[representation].join(" ")). */
   characterStylePrompt?: string;
+  /** Role-label cast with narrator-only speech. Keeps demographic/live-action
+   * reference prose out of stylized boards. */
+  anonymousNarration?: boolean;
   /** The STRUCTURED Veo scene clips from buildVeoJson (one per segment, in
    * order). When present, each shot's video_prompt carries the full structured
    * clip (high-quality Veo input) instead of a flat prose paragraph, and the
@@ -203,6 +206,7 @@ function buildLocationBoardPrompt(
   // dropped because its time was clamped forward).
   resolvedLighting: string,
   characterStyleLock = "",
+  anonymousNarration = false,
   requestedPanels?: number,
   fallbackCast: Array<Record<string, string>> = [],
   continuityId = "project_set_01",
@@ -242,15 +246,19 @@ function buildLocationBoardPrompt(
     const c = clipObj(locks[key]);
     const name = clipStr(c.name);
     if (!name) continue;
-    const appearance = [
-      meaningful(clipStr(c.gender)),
-      meaningful(clipStr(c.age)),
-      meaningful(clipStr(c.body_build)),
-      meaningful(clipStr(c.hair)) ? `hair ${clipStr(c.hair)}` : "",
-      meaningful(clipStr(c.skin_or_fur_color)),
-    ].filter(Boolean).join(", ");
-    const wardrobe = [clipStr(c.outfit_top), clipStr(c.outfit_bottom)]
-      .map(meaningful).filter(Boolean).join(", ");
+    const appearance = anonymousNarration
+      ? [clipStr(c.design_markers), clipStr(c.signature_marker)].filter(Boolean).join("; ")
+      : [
+          meaningful(clipStr(c.gender)),
+          meaningful(clipStr(c.age)),
+          meaningful(clipStr(c.body_build)),
+          meaningful(clipStr(c.hair)) ? `hair ${clipStr(c.hair)}` : "",
+          meaningful(clipStr(c.skin_or_fur_color)),
+        ].filter(Boolean).join(", ");
+    const wardrobe = anonymousNarration
+      ? meaningful(clipStr(c.wardrobe_or_role_marker))
+      : [clipStr(c.outfit_top), clipStr(c.outfit_bottom)]
+          .map(meaningful).filter(Boolean).join(", ");
     const entry: Record<string, string> = { name };
     if (appearance) entry.appearance = appearance;
     if (wardrobe) entry.wardrobe = wardrobe;
@@ -436,7 +444,9 @@ function buildLocationBoardPrompt(
           rule: "The first generated/attached appearance is the immutable visual design authority for every later board.",
         }))
       : undefined,
-    reference_authority: KEYFRAME_REFERENCE_AUTHORITY,
+    reference_authority: characterStyleLock
+      ? "Each attached character/design sheet controls only that same-named stylized identity's proportions, line/shape/material language, palette and role markers. The attached location sheet controls the script-derived terrain/architecture, landmarks, layout and light in the SAME locked visual medium. Treat every sheet only as design data for this medium; never translate it into another rendering medium."
+      : KEYFRAME_REFERENCE_AUTHORITY,
     image_prompt_validation: {
       status: "clean_after_deterministic_repair",
       repairs: [...(placementContract?.findings ?? []), ...normalizedBoard.findings],
@@ -626,6 +636,11 @@ export function withProductionStateAuthority(
   clip: Record<string, unknown>,
   authority: NanoFlowShotStateAuthority
 ): Record<string, unknown> {
+  // state_ledger is a legacy compatibility copy. The canonical state lives once
+  // in manifest.production_state and the compact transition contract below is
+  // the only physical projection Veo needs. Do not repeat the full ledger in
+  // every clip.
+  const { state_ledger: _legacyStateLedger, ...clipWithoutLegacyLedger } = clip;
   const rules = clipObj(clip.output_rules);
   const compact = compactPromptAuthority(authority);
   // The canonical manifest keeps contacts, supports and placements in full.
@@ -635,7 +650,7 @@ export function withProductionStateAuthority(
     entities: snapshot.entities,
   });
   return {
-    ...clip,
+    ...clipWithoutLegacyLedger,
     // Lightweight pointer only. The transition and audio projections below
     // contain the exact fields Veo needs, while the full canonical copy lives
     // once at manifest.production_state.shots[]. Previously all three copies
@@ -819,7 +834,7 @@ export function buildNanoFlowManifest(
     envIdSeen.add(ref);
     const clip = opts.veoClips?.[segmentIndex];
     const background = clipObj(clip?.background_lock);
-    const name = humanizeEnvId(ref);
+    const name = clipStr(background.name) || humanizeEnvId(ref);
     environments.push({
       id: ref,
       name,
@@ -1102,11 +1117,15 @@ export function buildNanoFlowManifest(
         !!boardLocationImage,
         boardLighting,
         visualMediumLock,
+        opts.anonymousNarration === true,
         opts.beatsPerSegment,
         inScene.map((name) => {
           const key = name.trim().toLowerCase();
           const wardrobe = wardrobeOverride.get(key) ?? baseCostumeByName.get(key) ?? "";
-          return { name: name.trim(), ...(wardrobe ? { wardrobe } : {}) };
+          return {
+            name: name.trim(),
+            ...(!opts.anonymousNarration && wardrobe ? { wardrobe } : {}),
+          };
         }),
         `set_${slugify((seg.location_id ?? seg.environment_ref ?? "project_location").trim()) || "project_location"}`,
         persistentPropIds,

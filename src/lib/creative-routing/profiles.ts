@@ -99,6 +99,32 @@ export function isStylizedCharacterRepresentation(
 export const SCRIPT_DERIVED_STYLE_WORLD_LAW =
   "SCRIPT-DERIVED WORLD AUTHORITY: the script decides the actual location, terrain or architecture, time, weather, spatial anchors, props and actions in every scene; the selected visual style decides only how that complete story world is rendered. Build every required setting in full inside the same medium as the characters—never replace the scripted place with a blank board, studio backdrop, generic room or decorative template.";
 
+/** Medium-specific motion is part of style continuity. Without this layer the
+ * image may look correct while every medium moves like the same stiff human or
+ * smooth CGI rig. Kept to one compact directive per style to avoid prompt bloat. */
+export const CHARACTER_MOTION_LAWS: Partial<Record<CharacterRepresentation, string>> = {
+  whiteboard_stick_figure:
+    "MOTION GRAMMAR: communicate acting through readable silhouette poses, spacing, limb arcs, small face-mark changes and sparse motion lines; preserve constant stroke weight and never grow realistic anatomy between poses.",
+  hand_drawn_doodle:
+    "MOTION GRAMMAR: use lively hand-drawn pose changes and restrained line boil while keeping the same proportions and signature marks; hatching may breathe but identity outlines never redraw into another person.",
+  flat_2d_cartoon:
+    "MOTION GRAMMAR: use clear anticipation, clean action arcs, readable holds and restrained squash-and-stretch that returns to the locked proportions; avoid rubbery joints or accidental 3D rotation.",
+  chibi_illustration:
+    "MOTION GRAMMAR: favour small quick gestures, clear eye-and-mouth changes, compact anticipation and soft settled reactions while preserving the locked large-head/small-body ratio.",
+  cinematic_cartoon:
+    "MOTION GRAMMAR: use polished pose-to-pose acting, subtle breathing, motivated parallax and one controlled cinematic reframe; maintain stable 2D/2.5D volumes without live-action drift.",
+  comic_book:
+    "MOTION GRAMMAR: stage decisive graphic poses with directional speed lines, controlled impact emphasis and short readable aftermath holds; never animate speech bubbles or turn the clip into unrelated panel cuts.",
+  layered_paper_cut:
+    "MOTION GRAMMAR: articulate through plausible paper hinges, layer slides and limited rotations with consistent fibre direction and cast shadows; pieces never stretch like rubber or morph material.",
+  claymation:
+    "MOTION GRAMMAR: use tactile stepped stop-motion timing, planted weight shifts and small handmade pose increments while the clay model, fingerprints and miniature-set contact remain stable.",
+  low_poly_3d:
+    "MOTION GRAMMAR: preserve one rigid faceted mesh and move through clean joint rotations, grounded weight transfer and readable geometric silhouettes; facets never smooth, multiply or remesh mid-shot.",
+  semi_realistic_3d:
+    "MOTION GRAMMAR: add natural blinking, breathing, eye focus, hand preparation and weight transfer around the primary action; keep micro-acting restrained and the same face/body rig throughout.",
+};
+
 export function characterWorldStylePrompt(
   representation: CharacterRepresentation
 ): string {
@@ -108,7 +134,8 @@ export function characterWorldStylePrompt(
       ? [SCRIPT_DERIVED_STYLE_WORLD_LAW]
       : []),
     ...laws,
-  ].join(" ");
+    CHARACTER_MOTION_LAWS[representation] ?? "",
+  ].filter(Boolean).join(" ");
 }
 
 export const DIRECTING_PROFILE_OPTIONS: CreativeOption<DirectingProfileId>[] = [

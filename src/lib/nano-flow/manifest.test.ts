@@ -85,6 +85,33 @@ test("selected video style is locked into the manifest board + video prompts", (
   assert.match(String(m.shots[0]?.video_prompt ?? ""), /CLAYMATION STYLE LOCK/);
 });
 
+test("anonymous stylized boards omit real-person reference authority and demographics", () => {
+  const m = buildNanoFlowManifest(fixture(), {
+    characterRepresentation: "whiteboard_stick_figure",
+    characterStylePrompt: characterWorldStylePrompt("whiteboard_stick_figure"),
+    anonymousNarration: true,
+    veoClips: [{
+      scene_id: "1",
+      character_lock: {
+        CHAR_1: {
+          name: "Người đi chậm",
+          design_markers: "thin black line figure; blue shoe accent",
+          signature_marker: "blue shoes",
+          wardrobe_or_role_marker: "blue shoe accent",
+        },
+      },
+      background_lock: { name: "Đường chạy", setting: "illustrated running route" },
+      scene_action: { start_state: "at the line", motion: "ties a lace", end_state: "knot secured" },
+      output_rules: {},
+    }],
+  });
+  const board = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  assert.doesNotMatch(String(board.reference_authority), /real person's face|skin|real place/i);
+  assert.match(String(board.reference_authority), /stylized identity/i);
+  assert.doesNotMatch(JSON.stringify(board.cast), /Male|Female|early thirties|skin texture/i);
+  assert.match(JSON.stringify(board.cast), /blue shoe accent/i);
+});
+
 test("all ten named video styles lock characters and script-derived worlds across every export surface", () => {
   const tenNamedStyles = STYLIZED_CHARACTER_REPRESENTATIONS.filter((style) =>
     /^(whiteboard|hand_drawn|flat_2d|chibi|cinematic_cartoon|comic_book|layered_paper|claymation|low_poly|semi_realistic)/.test(style)
@@ -92,6 +119,7 @@ test("all ten named video styles lock characters and script-derived worlds acros
   assert.equal(tenNamedStyles.length, 10);
   for (const representation of tenNamedStyles) {
     const stylePrompt = characterWorldStylePrompt(representation);
+    assert.match(stylePrompt, /MOTION GRAMMAR/);
     const m = buildNanoFlowManifest(fixture(), {
       characterRepresentation: representation,
       characterStylePrompt: stylePrompt,

@@ -22,6 +22,7 @@ import {
   shouldAbortAiPipeline,
 } from "@/lib/ai/retry-policy";
 import { approvedScriptFromStoryIdea } from "@/lib/storyboard/source-script";
+import { enforceAnonymousNarrationContract } from "@/lib/storyboard/anonymous-narration";
 import {
   resolveSpatialLayout,
   renderSpatialTopologyBoardHint,
@@ -1855,6 +1856,7 @@ function normalizeRepairCandidate(
   enforceMenuCharacterContract(input, breakdown, analysis);
   sanitizeUploadedCharacterSceneText(input, breakdown);
   normalizeDialogue(breakdown, sourceScript ?? undefined);
+  enforceAnonymousNarrationContract(input, breakdown);
   enforceSingleDialogueClock(breakdown);
   enforceSceneCastContract(breakdown);
   sanitizeContinuityNotes(breakdown);
@@ -1899,6 +1901,7 @@ function validatePreRenderGates(
   const findings = [...semantic.findings];
 
   try {
+    const manifestCharacterRepresentation = resolveCreativeRoute(input).effective_character_representation;
     const veoJson = buildVeoJson(breakdown, {
       aspectRatio: input.aspect_ratio ?? "9:16",
       dialogueLanguage:
@@ -1914,13 +1917,14 @@ function validatePreRenderGates(
             character.isReference === true
         )
         .map((character) => character.name),
+      characterRepresentation: manifestCharacterRepresentation,
+      anonymousNarration: input.anonymous_narration === true,
     });
     const veoClips = Array.isArray(
       (veoJson as { clips?: unknown[] }).clips
     )
       ? (veoJson as { clips: Array<Record<string, unknown>> }).clips
       : [];
-    const manifestCharacterRepresentation = resolveCreativeRoute(input).effective_character_representation;
     const manifest = buildNanoFlowManifest(breakdown, {
       aspectRatio: input.aspect_ratio ?? "9:16",
       thumbnailAspectRatio: input.thumbnail_aspect_ratio,
@@ -1933,6 +1937,7 @@ function validatePreRenderGates(
       // Selected video style → lock the manifest (board + video) to that medium.
       characterRepresentation: manifestCharacterRepresentation,
       characterStylePrompt: characterWorldStylePrompt(manifestCharacterRepresentation),
+      anonymousNarration: input.anonymous_narration === true,
       veoClips,
       // Cách 1 — embed uploaded location photos into the manifest per shot.
       locationSets: input.location_mode === "upload" ? input.location_sets : undefined,
@@ -2443,6 +2448,7 @@ export async function generateStoryboardPlan(
     softStep("Nhân vật / menu", warnings, () => enforceMenuCharacterContract(input, breakdown, analysis));
     softStep("Làm sạch mô tả nhân vật", warnings, () => sanitizeUploadedCharacterSceneText(input, breakdown));
     softStep("Chuẩn hoá thoại", warnings, () => normalizeDialogue(breakdown, sourceScript));
+    softStep("Lời dẫn ẩn danh", warnings, () => enforceAnonymousNarrationContract(input, breakdown));
     softStep("Nhịp thoại (wpm)", warnings, () => enforceSingleDialogueClock(breakdown));
     softStep("Cast từng cảnh", warnings, () => enforceSceneCastContract(breakdown));
     softStep("Continuity notes", warnings, () => sanitizeContinuityNotes(breakdown));
@@ -3030,6 +3036,11 @@ export async function rewriteSegment(params: {
       backgroundDescription: "",
     });
     normalizeDialogue(scopedBreakdown);
+    // The editor's current lines were explicitly typed/approved by the user;
+    // keep that text verbatim while still forcing narrator ownership.
+    enforceAnonymousNarrationContract(params.input, scopedBreakdown, {
+      preserveCurrentText: true,
+    });
     enforceSingleDialogueClock(scopedBreakdown);
     enforceSceneCastContract(scopedBreakdown);
     sanitizeContinuityNotes(scopedBreakdown);

@@ -57,7 +57,29 @@ function mentionsName(text: string, name: string): boolean {
 }
 
 function namesIn(text: string, castNames: string[]): string[] {
-  return castNames.filter((name) => mentionsName(text, name));
+  const exact = castNames.filter((name) => mentionsName(text, name));
+  const expanded = [...exact];
+  // Models often shorten an enumerated role after naming the first identity,
+  // e.g. "Người chạy nhanh 1 and 2". Recover the second locked identity so a
+  // two-person beat never compiles as one person or clones identity #1.
+  for (const name of exact) {
+    const match = name.match(/^(.*?)(\d+)$/u);
+    if (!match) continue;
+    const prefix = match[1]!.trim();
+    if (!prefix) continue;
+    for (const sibling of castNames) {
+      const siblingMatch = sibling.match(/^(.*?)(\d+)$/u);
+      if (!siblingMatch || siblingMatch[1]!.trim() !== prefix) continue;
+      const siblingNumber = siblingMatch[2]!;
+      const firstNumber = match[2]!;
+      const shorthand = new RegExp(
+        `${escapeRegExp(prefix)}\\s*${escapeRegExp(firstNumber)}\\s*(?:and|&|và)\\s*${escapeRegExp(siblingNumber)}(?:\\b|$)`,
+        "iu"
+      );
+      if (shorthand.test(text)) expanded.push(sibling);
+    }
+  }
+  return unique(expanded);
 }
 
 function unique(values: string[]): string[] {
@@ -201,7 +223,16 @@ export function normalizeBoardImagePanels(
       });
     }
 
-    if (/\b(?:wide|establishing|two[- ]shot|full room)\b/iu.test(`${action} ${camera}`)) {
+    // A wide frame controls geography, not cast membership. Earlier code put
+    // the whole project cast into every WIDE panel, creating people absent from
+    // the beat. Expand to the whole cast only when the prose explicitly asks
+    // for the complete group and names no individual identity.
+    const groupCount = castNames.length;
+    const explicitWholeGroup = groupCount > 1 && new RegExp(
+      `\\b(?:all\\s+${groupCount}|${groupCount}\\s+(?:people|persons|characters|figures|runners)|cả\\s+${groupCount}|${groupCount}\\s+(?:người|nhân vật|người que))\\b`,
+      "iu"
+    ).test(`${action} ${camera}`);
+    if (visibleNames.length === 0 && explicitWholeGroup) {
       visibleNames = [...castNames];
     }
     if (visibleNames.length === 0 && castNames.length > 0) visibleNames = [subject];

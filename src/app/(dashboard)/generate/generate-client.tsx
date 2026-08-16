@@ -2159,6 +2159,9 @@ function ProjectWorkspace() {
       characterReferenceNames: (genInput?.character_images ?? [])
         .filter((c) => (c.images?.length ?? 0) > 0 || c.isReference === true)
         .map((c) => c.name),
+      characterRepresentation:
+        genInput?.character_representation ?? effectiveCharacterRepresentation,
+      anonymousNarration: genInput?.anonymous_narration === true,
     });
     const veoClips = Array.isArray((veoJson as { clips?: unknown[] }).clips)
       ? ((veoJson as { clips: Array<Record<string, unknown>> }).clips)
@@ -2174,6 +2177,7 @@ function ProjectWorkspace() {
       // Selected video style → lock the manifest (board + video) to that medium.
       characterRepresentation: manifestCharacterRepresentation,
       characterStylePrompt: characterWorldStylePrompt(manifestCharacterRepresentation),
+      anonymousNarration: genInput?.anonymous_narration === true,
       veoClips,
       // Cách 1 — embed uploaded location photos into the downloadable manifest.
       locationSets: genInput?.location_mode === "upload" ? genInput?.location_sets : undefined,
@@ -2448,6 +2452,9 @@ function ProjectWorkspace() {
         characterReferenceNames: (genInput?.character_images ?? [])
           .filter((c) => (c.images?.length ?? 0) > 0)
           .map((c) => c.name),
+        characterRepresentation:
+          genInput?.character_representation ?? effectiveCharacterRepresentation,
+        anonymousNarration: genInput?.anonymous_narration === true,
       });
       zip.file(`veo_prompts.json`, JSON.stringify(veoJson, null, 2));
       const clipArr = Array.isArray((veoJson as { clips?: unknown[] }).clips)
@@ -2898,6 +2905,9 @@ function ProjectWorkspace() {
       characterReferenceNames: (genInput?.character_images ?? [])
         .filter((c) => (c.images?.length ?? 0) > 0)
         .map((c) => c.name),
+      characterRepresentation:
+        genInput?.character_representation ?? effectiveCharacterRepresentation,
+      anonymousNarration: genInput?.anonymous_narration === true,
     });
     const resultJsonClips = Array.isArray((resultVeoJson as { clips?: unknown[] }).clips)
       ? ((resultVeoJson as { clips: unknown[] }).clips as unknown[])

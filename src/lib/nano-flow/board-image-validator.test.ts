@@ -128,3 +128,36 @@ test("binds a missing close-up subject and declares one instance per identity", 
   assert.ok(result.findings.some((finding) => finding.code === "BOARD_SUBJECT_MISSING"));
   assert.ok(result.findings.some((finding) => finding.code === "BOARD_DUPLICATE_IDENTITY_RISK"));
 });
+
+test("a wide panel does not add cast members absent from that panel action", () => {
+  const result = normalizeBoardImagePanels({
+    castNames: ["Người đi chậm", "Người chạy nhanh 1", "Người chạy nhanh 2"],
+    sceneAction: "All three figures remain somewhere along the route",
+    panels: [{
+      action: "Wide shot of Người đi chậm tying the shoelace alone at the starting line",
+      camera: "[WIDE] establish the route around Người đi chậm",
+    }],
+  });
+
+  assert.deepEqual(result.panels[0]!.visible_characters, ["Người đi chậm"]);
+  assert.deepEqual(result.panels[0]!.expected_character_instances, {
+    "Người đi chậm": 1,
+    "Người chạy nhanh 1": 0,
+    "Người chạy nhanh 2": 0,
+  });
+});
+
+test("enumerated role shorthand resolves both locked identities", () => {
+  const result = normalizeBoardImagePanels({
+    castNames: ["Người đi chậm", "Người chạy nhanh 1", "Người chạy nhanh 2"],
+    panels: [{
+      action: "Người chạy nhanh 1 and 2 sprint beyond the starting line",
+      camera: "[OTS] behind the two runners",
+    }],
+  });
+
+  assert.deepEqual(result.panels[0]!.visible_characters, [
+    "Người chạy nhanh 1",
+    "Người chạy nhanh 2",
+  ]);
+});

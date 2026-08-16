@@ -632,3 +632,39 @@ test("action drama keeps a kinetic causal exchange, readable camera and exactly-
   assert.equal(clip.dialogue[0].repeat_policy, "exactly_once");
   assert.match(clip.dialogue[0].turn_id, /1_turn_001/);
 });
+
+test("ordinary prose containing the word action does not activate the fight director", () => {
+  const result = buildVeoJson({
+    world_context: { genre: "reflection" },
+    character_locks: [
+      { name: "Người đi chậm", build: "minimal stick figure", signature_features: "blue shoes" },
+    ],
+    scene_bible: {},
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      title: "Buộc dây giày",
+      marketing_role: "hook",
+      characters_in_scene: ["Người đi chậm"],
+      environment_ref: "minimal_glass_studio",
+      first_frame_prompt: "A drawn starting line; Người đi chậm bends over one shoe.",
+      motion_prompt: "Người đi chậm ties the shoelace carefully; the deliberate action contrasts with the runners ahead.",
+      dialogue_lines: [{ speaker: "", delivery: "voiceover", text: "Đi chậm không có nghĩa là đứng yên." }],
+      beats: [{ beat: "Người đi chậm ties the lace", camera: "[WIDE] the illustrated route" }],
+      continuity_note: "Người đi chậm finishes the knot.",
+    }],
+  }, {
+    aspectRatio: "9:16",
+    dialogueLanguage: "Vietnamese",
+    characterRepresentation: "whiteboard_stick_figure",
+    anonymousNarration: true,
+  });
+
+  const clip = result.clips[0];
+  assert.equal(clip.scene_action.action_director_profile, undefined);
+  assert.doesNotMatch(clip.camera.movement, /ACTION CAMERA/i);
+  assert.doesNotMatch(JSON.stringify(clip.character_lock), /early thirties|skin_texture|Human -/i);
+  assert.match(JSON.stringify(clip.character_lock), /Silent visible role/);
+  assert.doesNotMatch(JSON.stringify(clip.background_lock), /Minimal Glass|concrete|micro-cement|lux|Kelvin/i);
+  assert.match(clip.background_lock.setting, /starting line/i);
+});

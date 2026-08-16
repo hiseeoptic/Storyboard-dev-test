@@ -153,7 +153,24 @@ export function compactPromptAuthority(authority: NanoFlowShotStateAuthority) {
  * audio, so dialogue_state/audio_state/foley are dropped — a smaller board
  * prompt (fewer image-gen tokens) with zero loss for a static projection. */
 export function compactBoardAuthority(authority: NanoFlowShotStateAuthority) {
-  return compactAuthorityBase(authority);
+  const compact = compactAuthorityBase(authority);
+  const boardSnapshot = (snapshot: typeof compact.start_snapshot) => ({
+    entities: snapshot.entities,
+    placements: snapshot.placements,
+  });
+  return {
+    production_shot_id: compact.production_shot_id,
+    authority_fingerprint: compact.authority_fingerprint,
+    authority_order: compact.authority_order,
+    script_contract: compact.script_contract,
+    start_snapshot: boardSnapshot(compact.start_snapshot),
+    ordered_atomic_actions: compact.ordered_atomic_actions.map((action) => {
+      const { evidence: _evidence, transition_states: _transitionStates, ...essential } = action;
+      return essential;
+    }),
+    end_snapshot: boardSnapshot(compact.end_snapshot),
+    canonical_manifest_path: `production_state.shots[${Math.max(0, Number.parseInt(authority.production_shot_id.replace(/\D+/g, ""), 10) - 1 || 0)}]`,
+  };
 }
 
 /** Slim the per-shot authority for STORAGE in the manifest. The heavy canonical
