@@ -212,6 +212,9 @@ export interface StoryboardGenerationInput {
    * wording verbatim; `polish` runs one editorial pass that preserves every
    * story fact while strengthening the hook, action, subtext and dialogue. */
   script_treatment?: "preserve" | "polish";
+  /** Menu-selected narration format for anonymous visual-story videos. Visible
+   * characters keep role labels only and never speak; all audio speech is VO. */
+  anonymous_narration?: boolean;
   /** Numerology (and topic) script tone: emotional/inspiring, sharp behavioral
    * analysis, or both blended. Defaults to "balanced". */
   numerology_style?: "inspirational" | "analytical" | "balanced";

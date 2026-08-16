@@ -1121,6 +1121,7 @@ function ProjectWorkspace() {
   // Step 1: Story
   const [storyIdea, setStoryIdea] = useState("");
   const [scriptTreatment, setScriptTreatment] = useState<"preserve" | "polish">("polish");
+  const [anonymousNarration, setAnonymousNarration] = useState(false);
   const [genre, setGenre] = useState("advertising");
   const steps = t.steps[lang].map((label, index) =>
     genre === "cooking" && index === 2
@@ -1669,18 +1670,21 @@ function ProjectWorkspace() {
       directing_profile: directingProfile,
       script_provider: scriptProvider,
       script_treatment: scriptTreatment,
+      anonymous_narration: anonymousNarration,
       numerology_style: numerologyStyle,
       numerology_hook_mode: numerologyHookMode,
       dialogue_language:
         genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)
           ? undefined
-          : forceVietnameseDialogue
+          : anonymousNarration || forceVietnameseDialogue
             ? "Vietnamese"
             : undefined,
       force_dialogue:
         genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)
           ? false
-          : forceVietnameseDialogue,
+          : anonymousNarration
+            ? false
+            : forceVietnameseDialogue,
       cooking_recipe: genre === "cooking" ? recipeForInput ?? undefined : undefined,
       cooking_style: genre === "cooking" ? cookingStyle : undefined,
       character_descriptions: effectiveCharacters.length > 0
@@ -3805,8 +3809,12 @@ function ProjectWorkspace() {
                         {
                           value: "polish",
                           label: lang === "vi"
-                            ? "Biên tập nâng cấp hook + thoại"
-                            : "Polish hook + dialogue",
+                            ? anonymousNarration
+                              ? "Biên tập nâng cấp hook + lời dẫn"
+                              : "Biên tập nâng cấp hook + thoại"
+                            : anonymousNarration
+                              ? "Polish hook + narration"
+                              : "Polish hook + dialogue",
                         },
                         {
                           value: "preserve",
@@ -3818,9 +3826,33 @@ function ProjectWorkspace() {
                     />
                     <p className="text-[11px] leading-relaxed text-muted-foreground">
                       {lang === "vi"
-                        ? "Biên tập giữ nguyên cốt truyện, nhân vật, đạo cụ và thông điệp; chỉ nâng hook 30 giây, hành động, biểu cảm và lời thoại."
-                        : "Polish preserves plot, cast, props and meaning while strengthening the first 30 seconds, performance and dialogue."}
+                        ? anonymousNarration
+                          ? "Biên tập giữ nguyên cốt truyện, vai trò, đạo cụ và thông điệp; chỉ nâng hook, hành động, biểu cảm và lời dẫn — không tạo thoại nhân vật."
+                          : "Biên tập giữ nguyên cốt truyện, nhân vật, đạo cụ và thông điệp; chỉ nâng hook 30 giây, hành động, biểu cảm và lời thoại."
+                        : anonymousNarration
+                          ? "Polish preserves plot, roles, props and meaning while strengthening the hook, action and narration without character dialogue."
+                          : "Polish preserves plot, cast, props and meaning while strengthening the first 30 seconds, performance and dialogue."}
                     </p>
+                    <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-md border bg-background p-2.5">
+                      <input
+                        type="checkbox"
+                        checked={anonymousNarration}
+                        onChange={(e) => setAnonymousNarration(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 shrink-0"
+                      />
+                      <span>
+                        <span className="block text-xs font-medium">
+                          {lang === "vi"
+                            ? "Không tên riêng, không thoại nhân vật — chỉ giọng lồng tiếng"
+                            : "No personal names or character dialogue — voice-over only"}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+                          {lang === "vi"
+                            ? "Nhân vật chỉ dùng nhãn vai trò để giữ hình nhất quán; mọi câu nói thuộc VOICEOVER, nhân vật trên hình không nói và không lip-sync."
+                            : "Characters use role labels only for visual continuity; every spoken line belongs to VOICEOVER and visible characters never speak or lip-sync."}
+                        </span>
+                      </span>
+                    </label>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">
@@ -5022,10 +5054,12 @@ function ProjectWorkspace() {
                     checked={
                       genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)
                         ? false
-                        : forceVietnameseDialogue
+                        : anonymousNarration
+                          ? false
+                          : forceVietnameseDialogue
                     }
                     onChange={(e) => setForceVietnameseDialogue(e.target.checked)}
-                    disabled={genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)}
+                    disabled={anonymousNarration || (genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle))}
                     className="mt-0.5 h-4 w-4 shrink-0"
                   />
                   <span>
@@ -5035,6 +5069,10 @@ function ProjectWorkspace() {
                         ? lang === "vi"
                           ? "Phong cách ASMR đã khóa: không thoại, không voice-over, không nhạc."
                           : "ASMR lock: no dialogue, voice-over or music."
+                        : anonymousNarration
+                          ? lang === "vi"
+                            ? "Chế độ chỉ giọng lồng tiếng đã khóa: nhân vật trên hình không nói và không lip-sync."
+                            : "Voice-over-only mode is locked: visible characters never speak or lip-sync."
                         : L("forceDialogueHint")}
                     </span>
                   </span>
@@ -5095,6 +5133,7 @@ function ProjectWorkspace() {
                 <p className="text-muted-foreground">
                   <strong>{segmentCount}</strong> {L("segments")} (~{segmentCount * 10}s) · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong>
                   {<> · <strong>{creativeOptionLabel(CREATIVE_CHARACTER_OPTIONS, previewCharacterRepresentation, lang)}</strong></>}
+                  {anonymousNarration && <> · <strong>{lang === "vi" ? "Chỉ giọng lồng tiếng" : "Voice-over only"}</strong></>}
                   {characters.length > 0 && <> · {characters.length} {L("characters")}</>}
                   {products.length > 0 && <> · {products.length} {L("products")}</>}
                   {backgrounds.length > 0 && <> · {backgrounds.length} {L("locations")}</>}

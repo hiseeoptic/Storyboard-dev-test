@@ -593,7 +593,7 @@ DIALOGUE QUALITY DOCTRINE — MANDATORY (make every line worth quoting; this is 
 Output PLAIN TEXT in EXACTLY this shape (no markdown, no JSON):
 TITLE: <catchy title>
 CORE MESSAGE: <one-line takeaway>
-CHARACTERS: <EVERY person in the story, one per line — name, age, signature look, tone; mark children with "(child)". When the user supplies a CLOSED USER CAST, copy only those exact names and never create another name. Only when no closed cast was supplied may an unnamed role receive one ordinary generated name. A solo video simply lists one person.>
+CHARACTERS: <EVERY person in the story, one per line — name, age, signature look, tone; mark children with "(child)". When the user supplies a CLOSED USER CAST, copy only those exact names and never create another name. Only when no closed cast was supplied may an unnamed role receive one ordinary generated name. EXCEPTION: when ANONYMOUS NARRATION MODE is active, use stable functional role labels from the script instead of personal names. A solo video simply lists one person.>
 SEGMENT 1 [HOOK WINDOW 3-5s + <PRIMARY FUNCTION justified by project/script>]:
   IN SCENE: <names of everyone visible in this segment>
   ACTION: <one vivid thing we SEE — a visual metaphor for this beat>
@@ -682,6 +682,14 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
     : `${closedCastRule}${uploadedRule}`;
 
   const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
+  const anonymousNarrationBlock = input.anonymous_narration
+    ? `\nANONYMOUS NARRATION MODE — USER-SELECTED, NON-NEGOTIABLE:
+- Do not create or use any personal given name. Identify visible figures only with stable functional role labels derived from the script, such as "Người đi chậm", "Người chạy nhanh 1" and "Người chạy nhanh 2".
+- Visible characters NEVER speak, mouth words or lip-sync. They communicate only through the scripted action, pose and facial marks.
+- Every spoken line is narrator voice-over labelled exactly "VO". Preserve supplied Lời dẫn/Lời kết as voice-over; editorial polish may tighten narration but may never convert it into character dialogue.
+- Do not add reactions, replies, banter, quoted thoughts, subscribe/follow CTA or any spoken line not justified by the source.
+- In every DIALOGUE section output VO only; never put a visible role label before a spoken line.`
+    : "";
 
   return `Write a ${segmentCount}-segment short-video script.
 
@@ -693,7 +701,7 @@ Dialogue language: ${
     isCooking && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")
       ? "NONE — every segment is wordless diegetic ASMR"
       : `${lang} (when dialogue is justified, write it naturally in ${lang})`
-  }.${briefBlock}${framework ? `\n${framework}` : ""}${actionDramaBlock}
+  }.${briefBlock}${framework ? `\n${framework}` : ""}${actionDramaBlock}${anonymousNarrationBlock}
 
 ${input.script_treatment === "polish" ? `EDITORIAL-POLISH MODE FOR A PASTED SCREENPLAY: preserve every character, relationship, location, prop identity, plot fact, causal reveal, emotional meaning and ending message from the supplied screenplay. You MAY and SHOULD restructure the first 30 seconds, merge or redistribute turns across the requested 10s segments, sharpen weak dialogue, add subtext and specify performance/action. Do not introduce a different story, product, setting, relationship or moral. The result must feel like the strongest filmed version of the same screenplay, not a summary and not a replacement premise.` : ""}
 
@@ -728,10 +736,10 @@ FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's vid
 - SINGLE-DESCRIPTION AUTHORITY: static character identity, appearance, initial wardrobe and voice are written ONCE in character_locks. Product identity is written ONCE in product_dna; style is written ONCE in scene_bible. first_frame_prompt, motion_prompt, beats, camera and continuity_note refer to those locks by exact name only and NEVER restate or paraphrase their static descriptions. Repetition is not continuity; it creates conflicting instructions.
 - Every object is locked to a "DNA" that NEVER drifts. Store that DNA once in its canonical lock, then preserve it by id/name rather than copying the prose into every scene field.
 - For a TEXT-ONLY character with no uploaded image, build a detailed "character_lock" with gender, age, build, skin tone, facial structure, skin texture, eyes, brows, lashes, nose/lips, hair, costume, signature features, expression and DNA. For a character WITH an uploaded image, ONLY the FACIAL-IDENTITY/anatomy fields stay image-only ("REFERENCE_IMAGE" or blank): face_structure, skin_texture, skin_tone, eye/eyebrow/eyelash/nose_lips details, hair, hair_details, build, dna. The following are CASTING/WARDROBE facts, NOT facial identity, and MUST STILL BE FILLED for reference characters: "gender", "gender_age" (coarse, from the script), "costume" + "wardrobe_materials" (derived from the setting — location, weather, time, activity, role), "signature_features" (non-facial: accessories/props/outfit accents), "default_expression" and "voice". Never copy the costume from the uploaded pixels and never repeat it in action/camera prose.
-- CHARACTERS ARE ORIGINAL AND FICTIONAL. For TEXT-ONLY characters, use only the exact names supplied by the approved script/menu. If a role has no name, assign one ordinary given name once and keep it consistent; never copy names from rule examples or use a fixed default. NEVER use the name, likeness or description of any real, famous or recognisable public figure/celebrity/influencer. Do not write "looks like [celebrity]" or reference any real person. For UPLOADED-REFERENCE characters, do not describe appearance at all: bind the supplied pixels only to their exact menu name and keep the reference-image contract above.
+- CHARACTERS ARE ORIGINAL AND FICTIONAL. For TEXT-ONLY characters, use only the exact names supplied by the approved script/menu. If a role has no name, assign one ordinary given name once and keep it consistent, EXCEPT when the user activates ANONYMOUS NARRATION MODE: then retain stable functional role labels and never invent a personal name. Never copy names from rule examples or use a fixed default. NEVER use the name, likeness or description of any real, famous or recognisable public figure/celebrity/influencer. Do not write "looks like [celebrity]" or reference any real person. For UPLOADED-REFERENCE characters, do not describe appearance at all: bind the supplied pixels only to their exact menu name and keep the reference-image contract above.
 
 MULTI-CHARACTER CASTING & DIALOGUE ASSIGNMENT (mandatory whenever the story/script has 2+ people — this is what keeps a family/dialogue video coherent):
-- FULL CAST LOCK: create ONE character_lock for EVERY distinct person who appears anywhere in the story/script — no exceptions. If the script names people by ROLE (Chồng/Vợ/Con, Bố/Mẹ, husband/wife/child…), assign each role ONE ordinary given name and state the mapping in the synopsis. Use those EXACT names consistently in every segment, beat caption, first_frame_prompt, dialogue and speaker field. NEVER invent an extra unnamed person or silently choose a name from a rule example.
+- FULL CAST LOCK: create ONE character_lock for EVERY distinct person who appears anywhere in the story/script — no exceptions. If the script names people by ROLE (Chồng/Vợ/Con, Bố/Mẹ, husband/wife/child…), assign each role ONE ordinary given name and state the mapping in the synopsis, EXCEPT in ANONYMOUS NARRATION MODE: use the role labels themselves, never personal names. Use those exact identity tokens consistently in every segment, beat caption and first_frame_prompt. NEVER invent an extra unnamed person or silently choose a name from a rule example.
 - CHILDREN: keep "is_child": true when the menu/script marks a child. For a text-only child, use an age-locked description. For an uploaded-reference child, never state or infer age/body appearance; the image alone supplies it.
 - ROLE-LABELLED DIALOGUE RECOGNITION: when the idea/script contains dialogue labelled by role or an exact character name, each labelled line belongs to THAT character — keep that SPEAKER mapping and the line's core intent/information, but you SHOULD ELEVATE its craft into sharp, witty, subtext-rich, in-character dialogue (apply the DIALOGUE QUALITY DOCTRINE below); do NOT slavishly copy a flat line, and NEVER reassign a line to a different character. A short back-and-forth (e.g. a question + a reply, ~2-3 short lines) SHOULD share ONE 10s clip as sequential turns in "dialogue_lines" (fill the time instead of wasting a clip per line) — following the DIALOGUE turn-taking rules below. Only spill to the NEXT segment when the exchange no longer fits in ~9 seconds.
 - "characters_in_scene" (REQUIRED per segment): list the EXACT lock names of everyone VISIBLE in that segment — nobody else may appear. A turn with delivery="on_screen" MUST name one of them. A named delivery="off_screen" speaker keeps their own locked voice but remains outside the camera beat. delivery="voiceover" requires speaker="". Non-speaking listed characters react silently, mouths closed.
@@ -951,7 +959,9 @@ ${JSON.stringify(input.resolved_context, null, 2)}
   const cookingAsmr =
     isCooking &&
     ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "");
-  const dialogueBlock = cookingAsmr
+  const dialogueBlock = input.anonymous_narration
+    ? `\nSpeech mode: ANONYMOUS NARRATION ONLY. Every spoken turn MUST use speaker="", delivery="voiceover", camera_beat omitted, and ${dialogueLanguage} narrator text derived from the source. Visible characters have closed/non-speaking mouths and no lip-sync. Never create on_screen/off_screen character speech, personal names, banter, replies, quoted thoughts or an unrequested CTA.`
+    : cookingAsmr
     ? `\nDialogue: FORBIDDEN by the selected cooking ASMR profile. Set "dialogue" to "", "speaker" to "", omit dialogue_lines, and use no voice-over/music in EVERY segment.`
     : input.force_dialogue === false
       ? `\nDialogue: optional. When a segment has a spoken line, write it in ${dialogueLanguage}.`
@@ -986,6 +996,14 @@ ${JSON.stringify(input.resolved_context, null, 2)}
     ? "For uploaded-reference characters, first_frame_prompt contains only the exact name, position, action and expression; the attached image supplies all appearance."
     : "Restate only the visually necessary character attributes in every first_frame_prompt.";
   const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
+  const anonymousNarrationBlock = input.anonymous_narration
+    ? `\n\nANONYMOUS NARRATION MODE — USER MENU AUTHORITY:
+- Preserve anonymous figures as stable functional role labels from the script; never assign personal given names.
+- Character locks use those role labels only. For a stylized character medium, identity details must describe only medium-appropriate shape, line, palette and role markers—never photoreal skin, pores, realistic hair or REFERENCE_IMAGE sentinels without an uploaded reference.
+- Every dialogue_lines entry is narrator VO: speaker="", delivery="voiceover", no camera_beat. No visible character speaks or lip-syncs.
+- Copy the approved narrator lines in their original segment order. Add no character dialogue, reaction line, thought, list, CTA or follow/subscribe request.
+- Story action remains exactly the source action; narration mode changes speech ownership, not plot, setting or scene content.`
+    : "";
 
   return `Create a chained-segment storyboard for this short video.
 
@@ -996,7 +1014,7 @@ Video Goal: ${goal} — ${goalGuidance}
 Genre: ${input.genre}
 Visual Style: ${input.style}
 Number of 10-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 10} seconds)
-Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${shotLocationBlock}${toneBlock}${customBlock}${actionDramaBlock}
+Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${anonymousNarrationBlock}${characterBlock}${settingBlock}${shotLocationBlock}${toneBlock}${customBlock}${actionDramaBlock}
 
 Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Beats preserve a clear chronological order while the subject, props and locked physics stay continuous, but beats and camera notes contain NO numeric timecodes. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" describes that ONE continuous action as an untimed ordered physical sequence using deliberate, specific verbs (body part + verb + manner) plus an explicit final state/anchor. dialogue_lines.start_s/end_s is the clip's ONLY clock. Keep ONE primary action per clip — never stack multiple actions beyond the model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. ${firstFrameIdentityRule} Inside the motion_prompt use only the exact name plus position, action and expression for an uploaded-reference character.
 

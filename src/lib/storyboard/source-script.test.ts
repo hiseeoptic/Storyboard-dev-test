@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { approvedScriptFromStoryIdea } from "./source-script.ts";
 
@@ -32,4 +33,17 @@ test("does not bypass writing for a short dialogue idea", () => {
     approvedScriptFromStoryIdea('Vợ: "Anh về rồi à?"\nChồng: "Ừ, anh về rồi."'),
     null
   );
+});
+
+test("anonymous narration menu mode reaches both script and storyboard prompts", () => {
+  const promptSource = readFileSync(
+    new URL("../../prompts/storyboard-breakdown.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(promptSource, /input\.anonymous_narration/);
+  assert.match(promptSource, /Do not create or use any personal given name/);
+  assert.match(promptSource, /Every spoken line is narrator voice-over/);
+  assert.match(promptSource, /speaker=\"\", delivery=\"voiceover\"/);
+  assert.match(promptSource, /No visible character speaks or lip-syncs/);
+  assert.match(promptSource, /Add no character dialogue/);
 });
