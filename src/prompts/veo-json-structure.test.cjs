@@ -78,6 +78,10 @@ test("anonymous stylized projects request faithful thumbnail and social metadata
   assert.match(prompt, /never invent personal names, character quotes/i);
   assert.match(prompt, /người que\/hoạt hình/i);
   assert.match(prompt, /no personal names, fake quotation/i);
+  assert.match(prompt, /PRODUCTION LANGUAGE CONTRACT/);
+  assert.match(prompt, /ALL machine-facing production prose in English/);
+  assert.match(prompt, /ONLY fields allowed in Vietnamese are verbatim dialogue\/voice-over text/);
+  assert.match(prompt, /Never code-switch within a production sentence/);
 });
 
 test("uploaded references keep identity image-only while preserving contextual clothing text", () => {
@@ -232,6 +236,12 @@ test("Veo JSON keeps the stable structure with contextual outfits and local voic
     characterReferenceNames: ["Lan"],
   });
   const clip = result.clips[0];
+
+  assert.equal(result.production_prompt_language, "English");
+  assert.equal(result.spoken_language, "Vietnamese");
+  assert.equal(clip.output_specs.production_prompt_language, "English");
+  assert.equal(clip.output_specs.spoken_language, "Vietnamese");
+  assert.match(clip.output_specs.language_policy, /Only verbatim dialogue or voice-over/i);
 
   assert.equal(Object.hasOwn(clip, "prompt"), false);
   assert.deepEqual(Object.keys(clip).slice(0, 7), [

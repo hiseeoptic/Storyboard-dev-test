@@ -232,6 +232,9 @@ export interface NanoFlowProject {
    * generates every board at this ratio regardless of the video aspect. */
   board_aspect_ratio?: "16:9";
   dialogue_language?: string;
+  /** Language used by camera/action/environment instructions. Independent from
+   * dialogue_language and UI locale; English is the production default. */
+  production_prompt_language?: string;
   total_duration_seconds?: number;
   thumbnail_title?: string;
   /** Explicit thumbnail delivery format, independent from the video format. */

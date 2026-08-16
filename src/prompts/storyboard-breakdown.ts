@@ -558,6 +558,27 @@ function actionDramaRequested(input: StoryboardGenerationInput): boolean {
   return ACTION_GENRE_PATTERN.test(genre) || PHYSICAL_THREAT_PATTERN.test(story);
 }
 
+const DEFAULT_PRODUCTION_PROMPT_LANGUAGE = "English";
+
+function productionPromptLanguage(input: StoryboardGenerationInput): string {
+  return input.production_prompt_language?.trim() || DEFAULT_PRODUCTION_PROMPT_LANGUAGE;
+}
+
+/** Keep machine instructions separate from audience-facing speech/copy. The
+ * split is deliberately independent of the UI locale so a future English UI
+ * can switch dialogue/copy without changing the Veo production language. */
+function productionLanguageContract(
+  promptLanguage: string,
+  dialogueLanguage: string
+): string {
+  return `PRODUCTION LANGUAGE CONTRACT — NON-NEGOTIABLE:
+- Write ALL machine-facing production prose in ${promptLanguage}: world/context descriptions, character visual locks, wardrobe/material descriptions, scene_bible, segment titles, first_frame_prompt, motion_prompt, beats and camera directions, transition reasons, spatial_layout, state_ledger descriptions, continuity notes, ambience/Foley and negative instructions.
+- The ONLY fields allowed in ${dialogueLanguage} are verbatim dialogue/voice-over text, audience-facing thumbnail_title/social_posts, and readable on-screen text explicitly required by the approved script. If visible text is forbidden, do not invent any.
+- Preserve exact user-supplied character names and stable role labels as identity tokens even when they are not ${promptLanguage}; names are identifiers, not production prose.
+- Translate the source script's action, setting and directing descriptions into fluent ${promptLanguage}. Never copy Vietnamese action verbs or mixed-language fragments into an English sentence. Never code-switch within a production sentence.
+- This language split changes wording only; it must not alter story facts, action order, locations, props, character identity or dialogue.`;
+}
+
 // ─── Stage 1: Script writer (Claude) — creative script ONLY ─────────────────
 // When the user splits the pipeline (e.g. Claude writes the script, Gemini
 // builds the storyboard), Claude produces just the creative script text; the
@@ -959,6 +980,11 @@ ${JSON.stringify(input.resolved_context, null, 2)}
           : "";
 
   const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
+  const promptLanguage = productionPromptLanguage(input);
+  const languageContract = productionLanguageContract(
+    promptLanguage,
+    dialogueLanguage
+  );
   const cookingAsmr =
     isCooking &&
     ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "");
@@ -1018,6 +1044,8 @@ ${JSON.stringify(input.resolved_context, null, 2)}
     : `READY-TO-POST captions for THIS exact video, written in ${dialogueLanguage}. Each references the actual story/hook/payoff, never a generic 'check out my video'. Keep it short and emotional with one platform-native CTA when appropriate. Hashtags mix broad discovery and specific topic tags.`;
 
   return `Create a chained-segment storyboard for this short video.
+
+${languageContract}
 
 ${creativeRouteDirective}
 
@@ -1189,6 +1217,7 @@ export function buildSegmentRewriteUserPrompt(params: {
   const next = breakdown.segments[segmentIndex + 1];
   const beatsPerSegment = Math.min(5, Math.max(3, input.beats_per_segment ?? 3));
   const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
+  const promptLanguage = productionPromptLanguage(input);
   const continuityMode = breakdown.context_ir?.layers.motion_continuity.continuity_mode ?? "strict";
   const strictContinuity = /strict|one.?shot/i.test(continuityMode);
   const cookingRewriteBlock =
@@ -1236,6 +1265,8 @@ export function buildSegmentRewriteUserPrompt(params: {
     : "This is the LAST segment. Its ending function comes from scene_intent; do not invent a CTA unless the project intent requires one.";
 
   return `REWRITE EXACTLY ONE SEGMENT of an existing storyboard. The user edited this segment's dialogue turns in the editor, so its action/beats/timing no longer match — re-choreograph the WHOLE segment around the new turns. Everything else in the video is already approved and stays untouched.
+
+${productionLanguageContract(promptLanguage, dialogueLanguage)}
 
 FULL CAST (character_locks — use these EXACT names):
 ${castBlock || "- (voiceover only)"}
@@ -1322,6 +1353,7 @@ export function buildStoryboardRepairUserPrompt(params: {
     input.dialogue_language ??
     breakdown.context_ir?.layers.audio_validation.language ??
     "the locked project language";
+  const promptLanguage = productionPromptLanguage(input);
   const lockedProject = {
     context_ir: breakdown.context_ir,
     world_context: breakdown.world_context,
@@ -1345,7 +1377,9 @@ export function buildStoryboardRepairUserPrompt(params: {
     evidence: finding.evidence,
   }));
 
-  return `LỚP C — TARGETED STORYBOARD REPAIR, ROUND ${round}.
+  return `LAYER C — TARGETED STORYBOARD REPAIR, ROUND ${round}.
+
+${productionLanguageContract(promptLanguage, dialogueLanguage)}
 
 The deterministic Layer A+B validator rejected only the listed storyboard segments. Repair those segments until every reported critical/high defect is gone. This is a PRE-RENDER text/JSON repair: do not create, request or discuss images or video renders.
 
@@ -2402,6 +2436,9 @@ const VEO_LIP_SYNC_DIRECTOR_NOTE =
 interface VeoJsonOptions {
   aspectRatio: string;
   dialogueLanguage?: string;
+  /** Machine-facing production prose remains English even when speech/copy is
+   * localized. Kept configurable for future product locales. */
+  productionPromptLanguage?: string;
   /** Genre-appropriate ambient sound (kitchen sizzle, gym energy, …). */
   ambientAudio?: string;
   /** TRUE when the user uploaded a real LOCATION photo — the set must be
@@ -2527,6 +2564,7 @@ export function buildVeoJson(
       ? s
       : [s, SKIN_REALISM].filter(Boolean).join("; ");
   const lang = opts.dialogueLanguage ?? "Vietnamese";
+  const promptLang = opts.productionPromptLanguage?.trim() || DEFAULT_PRODUCTION_PROMPT_LANGUAGE;
   const locks = breakdown.character_locks ?? [];
   const stylizedRepresentation = isStylizedCharacterRepresentation(
     opts.characterRepresentation
@@ -3247,6 +3285,9 @@ export function buildVeoJson(
       aspect_ratio: opts.aspectRatio,
       output_specs: {
         aspect_ratio: opts.aspectRatio,
+        production_prompt_language: promptLang,
+        spoken_language: lang,
+        language_policy: `All camera, action, environment, continuity, sound and negative instructions are written in ${promptLang}. Only verbatim dialogue or voice-over and explicitly required readable audience text may use ${lang}. Exact character names and role labels remain unchanged identity tokens.`,
         note: `Render this video strictly in ${opts.aspectRatio} (${opts.aspectRatio === "9:16" ? "vertical portrait" : opts.aspectRatio === "1:1" ? "square" : "horizontal landscape"}). Do not crop, letterbox or switch orientation.`,
       },
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
@@ -3390,6 +3431,8 @@ export function buildVeoJson(
   return {
     format: "flow-veo-scene-json-v2",
     usage: "Each clips item is one compact structured Veo scene. Use characters_in_scene to attach only that scene's named references; do not flatten or prepend another prose prompt.",
+    production_prompt_language: promptLang,
+    spoken_language: lang,
     aspect_ratio: opts.aspectRatio,
     clip_count: clips.length,
     clips,

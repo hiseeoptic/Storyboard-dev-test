@@ -54,6 +54,8 @@ test("manifest has the fixed contract shape", () => {
   assert.equal(m.shots.length, 2);
   assert.equal(m.project.title, "Making Trà Bắc");
   assert.equal(m.project.aspect_ratio, "9:16");
+  assert.equal(m.project.production_prompt_language, "English");
+  assert.equal(m.project.dialogue_language, "Vietnamese");
   assert.equal(m.project.thumbnail_title, "TRÀ BẮC CHÍNH GỐC");
   assert.equal(m.shots[0]?.continuity_mode, "opening");
   assert.equal(m.shots[1]?.continuity_mode, "continuous");

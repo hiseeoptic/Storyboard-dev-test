@@ -229,6 +229,10 @@ export interface StoryboardGenerationInput {
   cooking_style?: CookingStyle;
   /** Spoken-line language for every segment (ISO-ish name, e.g. "Vietnamese"). */
   dialogue_language?: string;
+  /** Language for machine-facing production prose (camera, action, state,
+   * environment and generation instructions). Defaults to English and stays
+   * independent from dialogue/UI locale so exported prompts never code-switch. */
+  production_prompt_language?: string;
   /** When true, every segment MUST carry a spoken line in dialogue_language. */
   force_dialogue?: boolean;
   reference_images?: string[];

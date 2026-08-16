@@ -41,6 +41,7 @@ CORE RULES:
 
 export function buildContextAnalysisUserPrompt(input: StoryboardGenerationInput): string {
   const creativeRoute = resolveCreativeRoute(input);
+  const productionPromptLanguage = input.production_prompt_language?.trim() || "English";
   const evidence = {
     story_idea: input.story_idea,
     approved_script: input.source_script ?? null,
@@ -51,6 +52,7 @@ export function buildContextAnalysisUserPrompt(input: StoryboardGenerationInput)
     setting_request: input.setting ?? null,
     tone: input.tone ?? null,
     dialogue_language: input.dialogue_language ?? "Vietnamese",
+    production_prompt_language: productionPromptLanguage,
     segment_count: input.segment_count ?? input.scene_count ?? 5,
     beats_per_segment: input.beats_per_segment ?? 3,
     aspect_ratio: input.aspect_ratio ?? "9:16",
@@ -87,5 +89,5 @@ export function buildContextAnalysisUserPrompt(input: StoryboardGenerationInput)
         : null,
     custom_instructions: input.custom_instructions ?? null,
   };
-  return `Resolve the 10-layer Context IR from this project evidence:\n${JSON.stringify(evidence, null, 2)}`;
+  return `Resolve the 10-layer Context IR from this project evidence:\n${JSON.stringify(evidence, null, 2)}\n\nLANGUAGE CONTRACT: write every descriptive Context IR value in ${productionPromptLanguage}. Preserve exact user-supplied names/role labels and verbatim dialogue-language literals only when they are identifiers or required audience text. Do not copy source-language action prose into Context IR and never code-switch inside a descriptive value.`;
 }

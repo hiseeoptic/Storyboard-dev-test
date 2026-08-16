@@ -1673,6 +1673,9 @@ function ProjectWorkspace() {
       anonymous_narration: anonymousNarration,
       numerology_style: numerologyStyle,
       numerology_hook_mode: numerologyHookMode,
+      // Production/camera/action prose stays English. Spoken and audience-facing
+      // language is controlled separately by dialogue_language.
+      production_prompt_language: "English",
       dialogue_language:
         genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)
           ? undefined
@@ -2427,7 +2430,7 @@ function ProjectWorkspace() {
       for (const seg of bd.segments) {
         masterLines.push(
           `[SEGMENT ${seg.segment_number} — ${(seg.marketing_role || "").toUpperCase()} — ${seg.duration_seconds ?? 10}s]`,
-          `OPTIONAL START FRAME: ${seg.keyframe_url ? kf(seg.segment_number) : "crop đúng ô cảnh từ storyboard_overview.png hoặc dùng Text-to-Video/Ingredients"}`,
+          `OPTIONAL START FRAME: ${seg.keyframe_url ? kf(seg.segment_number) : "crop the matching scene panel from storyboard_overview.png, or use Text-to-Video/Ingredients"}`,
           `PROMPT: ${oneLine(seg.full_prompt ?? seg.motion_prompt ?? "")}`,
         );
         if (seg.dialogue) {

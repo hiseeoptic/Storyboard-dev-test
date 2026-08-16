@@ -21,6 +21,7 @@
         "aspect_ratio": { "type": "string", "enum": ["16:9", "9:16", "1:1"] },
         "board_aspect_ratio": { "const": "16:9", "description": "Storyboard board/sheet format. Always landscape and independent from final video aspect_ratio." },
         "dialogue_language": { "type": "string" },
+        "production_prompt_language": { "type": "string", "description": "Language for machine-facing camera, action, environment and continuity instructions; independent from dialogue/UI locale." },
         "total_duration_seconds": { "type": "number" },
         "thumbnail_title": { "type": "string" },
         "thumbnail_aspect_ratio": { "type": "string", "enum": ["16:9", "9:16"], "description": "Thumbnail delivery format; independent from the video aspect ratio." },

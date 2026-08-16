@@ -29,6 +29,7 @@ export interface BuildNanoFlowManifestOptions {
   aspectRatio?: "16:9" | "9:16" | "1:1";
   thumbnailAspectRatio?: "16:9" | "9:16";
   dialogueLanguage?: string;
+  productionPromptLanguage?: string;
   projectId?: string;
   /** Số cảnh nhỏ mỗi đoạn (beats_per_segment) người dùng chọn. Board vẽ ĐÚNG
    * bấy nhiêu ô — 3 cảnh ⇒ 3 frame, không thừa. Trống ⇒ tối đa 5. */
@@ -1179,6 +1180,7 @@ export function buildNanoFlowManifest(
       aspect_ratio: opts.aspectRatio ?? "9:16",
       board_aspect_ratio: "16:9",
       dialogue_language: opts.dialogueLanguage ?? "Vietnamese",
+      production_prompt_language: opts.productionPromptLanguage?.trim() || "English",
       total_duration_seconds: breakdown.total_duration_seconds,
       thumbnail_title: breakdown.thumbnail_title,
       thumbnail_aspect_ratio: thumbnailAspect,
