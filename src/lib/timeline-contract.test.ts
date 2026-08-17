@@ -45,3 +45,17 @@ test("valid but unnaturally fast dialogue windows are retimed locally", () => {
   assert.deepEqual(dialogueClockErrors(turns), []);
   assert.ok(turns[0]!.end_s! > 3);
 });
+
+test("overloaded dialogue is never accelerated to fake a ten-second fit", () => {
+  const text = Array.from({ length: 40 }, (_, index) => `từ${index + 1}`).join(" ");
+  const turns = ensureDialogueClock([
+    { speaker: "Lan", text, start_s: 0, end_s: 4 },
+  ]);
+  const seconds = turns[0]!.end_s! - turns[0]!.start_s!;
+  const wpm = (40 / seconds) * 60;
+  assert.ok(wpm <= 190, `clock must not accelerate overloaded speech (${wpm} wpm)`);
+  assert.ok(
+    turns[0]!.end_s! > 10,
+    "the validator must see the real capacity overflow instead of a fake fast fit"
+  );
+});

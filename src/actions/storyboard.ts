@@ -46,6 +46,10 @@ import {
 } from "@/lib/timeline-contract";
 import { normalizeProductionContracts } from "@/lib/storyboard/production-normalizer";
 import {
+  bindOnScreenSpeakersToCameraBeats,
+  normalizeSegmentAudioAuthority,
+} from "@/lib/storyboard/audio-authority";
+import {
   buildVideoPromptText,
   buildSegmentVeoPrompt,
   buildVeoJson,
@@ -743,9 +747,11 @@ function normalizeDialogue(
 
     const clockErrors = dialogueClockErrors(seg.dialogue_lines, 10);
     if (clockErrors.length > 0) {
-      throw new Error(
-        `Invalid dialogue clock in segment ${seg.segment_number}: ${clockErrors.join("; ")}`
-      );
+      // Keep processing the remaining scenes. The semantic/export validators
+      // still report this exact capacity defect, but one long line must never
+      // prevent speaker-camera binding, cast repair, voice locking and audio
+      // authority normalization for every later scene.
+      continue;
     }
   }
 }
@@ -1857,12 +1863,14 @@ function normalizeRepairCandidate(
   sanitizeUploadedCharacterSceneText(input, breakdown);
   normalizeDialogue(breakdown, sourceScript ?? undefined);
   enforceAnonymousNarrationContract(input, breakdown);
+  bindOnScreenSpeakersToCameraBeats(breakdown);
   enforceSingleDialogueClock(breakdown);
   enforceSceneCastContract(breakdown);
   sanitizeContinuityNotes(breakdown);
   enforceCookingContract(input, breakdown);
   enforceSpatialTopology(breakdown);
   synchronizeContinuityContracts(breakdown);
+  normalizeSegmentAudioAuthority(breakdown);
   normalizeProductionContracts(breakdown);
 
   for (const segment of breakdown.segments) {
@@ -2297,7 +2305,7 @@ export async function generateStoryboardPlan(
     }
     // Always run a dedicated creative SCRIPT stage (except cooking, which uses
     // its own Recipe-IR path). The script writer's dialogue-density rules
-    // (PACING AUDIT + LOAD BUDGET: 8-22 spoken words per clip, short exchanges
+    // (PACING AUDIT + LOAD BUDGET: no more than 18 spoken words per clip, short exchanges
     // packed into one clip) ONLY run in this stage — a single storyboard call
     // that also improvises the story produces thin, one-line-per-clip dialogue.
     // On OpenAI the script is written by gpt-5-mini (rẻ+nhanh), then gpt-4.1-mini expands it.
@@ -2449,12 +2457,14 @@ export async function generateStoryboardPlan(
     softStep("Làm sạch mô tả nhân vật", warnings, () => sanitizeUploadedCharacterSceneText(input, breakdown));
     softStep("Chuẩn hoá thoại", warnings, () => normalizeDialogue(breakdown, sourceScript));
     softStep("Lời dẫn ẩn danh", warnings, () => enforceAnonymousNarrationContract(input, breakdown));
+    softStep("Người nói / camera", warnings, () => bindOnScreenSpeakersToCameraBeats(breakdown));
     softStep("Nhịp thoại (wpm)", warnings, () => enforceSingleDialogueClock(breakdown));
     softStep("Cast từng cảnh", warnings, () => enforceSceneCastContract(breakdown));
     softStep("Continuity notes", warnings, () => sanitizeContinuityNotes(breakdown));
     softStep("Cooking", warnings, () => enforceCookingContract(input, breakdown));
     softStep("Bố cục không gian", warnings, () => enforceSpatialTopology(breakdown));
     softStep("Đồng bộ continuity", warnings, () => synchronizeContinuityContracts(breakdown));
+    softStep("Âm học theo bối cảnh", warnings, () => normalizeSegmentAudioAuthority(breakdown));
     softStep("Production contracts", warnings, () => normalizeProductionContracts(breakdown));
 
     const referencedCharacterNames = uploadedCharacterNameSet(input);
@@ -3041,10 +3051,12 @@ export async function rewriteSegment(params: {
     enforceAnonymousNarrationContract(params.input, scopedBreakdown, {
       preserveCurrentText: true,
     });
+    bindOnScreenSpeakersToCameraBeats(scopedBreakdown);
     enforceSingleDialogueClock(scopedBreakdown);
     enforceSceneCastContract(scopedBreakdown);
     sanitizeContinuityNotes(scopedBreakdown);
     enforceSpatialTopology(scopedBreakdown);
+    normalizeSegmentAudioAuthority(scopedBreakdown);
 
     const violations = findLawViolations(
       `${segment.motion_prompt ?? ""} ${segment.first_frame_prompt ?? ""}`

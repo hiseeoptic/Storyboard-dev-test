@@ -82,19 +82,25 @@ export function ensureDialogueClock(
   if (turns.length === 0 || dialogueClockErrors(turns, durationSeconds).length === 0) {
     return turns;
   }
-  const gap = 0.4;
+  const gap = 0.5;
   const usable = Math.max(1, durationSeconds - 0.5);
   const natural = turns.map((turn) =>
-    Math.max(1.2, turn.text.trim().split(/\s+/).filter(Boolean).length * 0.42)
+    Math.max(1.2, turn.text.trim().split(/\s+/).filter(Boolean).length * 0.4)
   );
   const rawTotal = natural.reduce((sum, value) => sum + value, 0) + gap * (turns.length - 1);
-  const scale = rawTotal > usable ? usable / rawTotal : 1;
+  // Never "repair" an overloaded clip by accelerating the voice. The old
+  // scale-to-fit branch could squeeze 35-45 words into 10 seconds and create
+  // 300-600 WPM dialogue. When the approved text is physically too long we
+  // keep a natural clock (which deliberately extends past the clip boundary),
+  // allowing the existing validator/editor to report the real capacity defect
+  // without corrupting the spoken performance. Fresh generated scripts are
+  // prevented from reaching this branch by the hard prompt budget.
   let cursor = 0;
   return turns.map((turn, index) => {
     const start = Math.round(cursor * 10) / 10;
-    cursor += natural[index]! * scale;
-    const end = Math.round(Math.min(cursor, usable) * 10) / 10;
-    cursor += gap * scale;
+    cursor += natural[index]!;
+    const end = Math.round((rawTotal <= usable ? Math.min(cursor, usable) : cursor) * 10) / 10;
+    cursor += gap;
     return { ...turn, start_s: start, end_s: end };
   });
 }
