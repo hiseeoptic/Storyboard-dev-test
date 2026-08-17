@@ -1,6 +1,7 @@
 import type { CharacterLock, VideoSegment } from "@/types";
 import type { ResolvedVideoContext } from "@/lib/video-context/types";
 import { ensureDialogueClock } from "../timeline-contract.ts";
+import { lockedNarratorVoiceProfile } from "../audio/narrator-voice.ts";
 import type {
   AudioState,
   DialogueDeliveryState,
@@ -117,7 +118,9 @@ export function compileDialogueAudioState(params: {
         absolute_end_time_s: end === null ? null : shot.start_time_s + end,
         camera_beat: delivery === "on_screen" ? turn.camera_beat ?? null : null,
         lip_sync_target_entity_id: delivery === "on_screen" ? speaker?.entity_id ?? null : null,
-        voice_profile: delivery === "voiceover" ? "off-screen narrator" : voiceFor(speaker, characterLocks),
+        voice_profile: delivery === "voiceover"
+          ? lockedNarratorVoiceProfile(clean(context?.layers?.audio_validation?.language) || "Vietnamese")
+          : voiceFor(speaker, characterLocks),
         listener_entity_ids: listeners.map((entry) => entry.entity_id),
         listener_reaction_evidence: reactionEvidence(segment, listeners),
       };

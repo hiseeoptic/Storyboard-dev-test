@@ -145,19 +145,20 @@ export function validateDialogueAudioState(state: ProductionState): ProductionFi
     for (const turn of shot.dialogue_state.turns) {
       findings.push(...validateTurn(shot, turn, previousEnd));
       if (turn.end_time_s !== null) previousEnd = Math.max(previousEnd, turn.end_time_s);
-      if (turn.speaker_entity_id && turn.voice_profile) {
-        const previous = voices.get(turn.speaker_entity_id);
+      if (turn.voice_profile) {
+        const voiceKey = turn.speaker_entity_id ?? "__VOICEOVER__";
+        const previous = voices.get(voiceKey);
         if (previous && previous.profile !== turn.voice_profile) {
           findings.push(finding({
             code: "VOICE_PROFILE_DRIFT",
             severity: "critical",
             message: "The same speaker is bound to different voice profiles across shots.",
             shot_id: shot.shot_id,
-            entity_ids: [turn.speaker_entity_id],
+            entity_ids: turn.speaker_entity_id ? [turn.speaker_entity_id] : [],
             evidence: { previous_shot_id: previous.shot_id, previous_profile: previous.profile, current_profile: turn.voice_profile },
-            suggested_patch: { op: "restore_locked_voice_profile", entity_id: turn.speaker_entity_id, value: previous.profile },
+            suggested_patch: { op: "restore_locked_voice_profile", entity_id: turn.speaker_entity_id ?? "VOICEOVER", value: previous.profile },
           }));
-        } else if (!previous) voices.set(turn.speaker_entity_id, { profile: turn.voice_profile, shot_id: shot.shot_id });
+        } else if (!previous) voices.set(voiceKey, { profile: turn.voice_profile, shot_id: shot.shot_id });
       }
     }
     const actionIds = new Set(shot.actions.map((action) => action.action_id));

@@ -623,7 +623,7 @@ export function withKeyframeAuthority(
       ? {
           visual_style: characterStyleLock,
           negative_prompt:
-            "No live-action or photoreal conversion; no conflicting animation medium; no character/environment style mismatch; no generic blank board or studio replacing the scripted setting; no duplicated identities; no text, watermark or board layout inside the video.",
+            "No live-action or photoreal conversion; no live-action or photoreal human hands, realistic skin hands, palms, fingernails, knuckles, realistic wrists or detached hands entering the frame; no mixed-media anatomy; no conflicting animation medium; no character/environment style mismatch; no generic blank board or studio replacing the scripted setting; no duplicated identities; no text, watermark or board layout inside the video.",
         }
       : {}),
     board_usage:
@@ -673,7 +673,8 @@ export function withProductionStateAuthority(
     },
     dialogue_audio_contract: {
       authority_fingerprint: authority.authority_fingerprint,
-      dialogue_state: compact.dialogue_state,
+      canonical_dialogue_path: `production_state.shots[${Math.max(0, Number.parseInt(authority.production_shot_id.replace(/\D+/g, ""), 10) - 1 || 0)}].dialogue_state`,
+      dialogue_turn_ids: compact.dialogue_state.turns.map((turn) => turn.turn_id),
       audio_state: compact.audio_state,
     },
     output_rules: {
@@ -690,10 +691,18 @@ function buildLegacyVideoPrompt(
   characterStyleLock: string
 ): string {
   const primary = [characterStyleLock, rawPrompt.trim()].filter(Boolean).join(" ");
+  const compact = compactPromptAuthority(authority);
+  const { dialogue_state: dialogueState, ...physicalAndAudioAuthority } = compact;
   return [
     primary,
     `PRODUCTION_STATE_AUTHORITY ${authority.authority_fingerprint}:`,
-    JSON.stringify(compactPromptAuthority(authority)),
+    JSON.stringify({
+      ...physicalAndAudioAuthority,
+      dialogue_audio_contract: {
+        canonical_dialogue_path: `production_state.shots[${Math.max(0, Number.parseInt(authority.production_shot_id.replace(/\D+/g, ""), 10) - 1 || 0)}].dialogue_state`,
+        dialogue_turn_ids: dialogueState.turns.map((turn) => turn.turn_id),
+      },
+    }),
     "AUTHORITY RULE: this video prompt controls semantics and motion; the generated storyboard is visual continuity only and must never override it.",
   ].filter(Boolean).join("\n");
 }
@@ -1157,7 +1166,9 @@ export function buildNanoFlowManifest(
         products: [],
       },
 
-      dialogue: seg.dialogue ?? null,
+      // Structured video_prompt.dialogue is the one Veo-facing spoken payload.
+      // Do not expose a second legacy copy for an extension to append again.
+      dialogue: null,
       voice: null,
       beats: (seg.beats ?? []).map((b) => ({ beat: b.beat, camera: b.camera })),
       wardrobe_change: Object.keys(wardrobeChange).length ? wardrobeChange : null,

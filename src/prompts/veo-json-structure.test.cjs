@@ -28,6 +28,7 @@ const compileTs = (mod, filename) => {
 require.extensions[".ts"] = compileTs;
 
 const {
+  buildSegmentVeoPrompt,
   buildStoryboardUserPrompt,
   buildThumbnailPrompt,
   buildVeoJson,
@@ -82,6 +83,67 @@ test("anonymous stylized projects request faithful thumbnail and social metadata
   assert.match(prompt, /ALL machine-facing production prose in English/);
   assert.match(prompt, /ONLY fields allowed in Vietnamese are verbatim dialogue\/voice-over text/);
   assert.match(prompt, /Never code-switch within a production sentence/);
+});
+
+test("stick-figure video prompt rejects real hands and photoreal scene-bible leakage", () => {
+  const breakdown = {
+    character_locks: [{
+      name: "Người đi chậm",
+      build: "thin black-line stick figure",
+      costume: "small blue shoe accent",
+      signature_features: "blue shoes",
+    }],
+    scene_bible: {
+      lens: "85mm live-action lens at f/1.8",
+      lighting: "photographic studio skin light",
+      backdrop: "a script-derived rough running road",
+      color_grade: "photoreal premium commercial Rec.709",
+      film_grain: "organic camera sensor grain",
+    },
+    style_guide: { art_direction: "photoreal premium commercial", color_palette: [] },
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      title: "Buộc dây giày",
+      marketing_role: "hook",
+      beats: [{ beat: "Người đi chậm buộc dây", camera: "medium eye-level" }],
+      first_frame_prompt: "A rough illustrated running road with a start line.",
+      motion_prompt: "The slow stick figure ties one shoe and rises.",
+      dialogue_lines: [{ speaker: "", text: "Mỗi người có một thời điểm khác nhau.", start_s: 1, end_s: 5 }],
+      characters_in_scene: ["Người đi chậm"],
+      environment_ref: "office_night",
+      continuity_note: "The same graphic world continues.",
+    }],
+  };
+  const result = buildVeoJson(breakdown, {
+    aspectRatio: "9:16",
+    dialogueLanguage: "Vietnamese",
+    characterRepresentation: "whiteboard_stick_figure",
+    anonymousNarration: true,
+  });
+  const clip = result.clips[0];
+  const serialized = JSON.stringify(clip);
+
+  assert.match(clip.character_lock.CHAR_1.hand_detail, /black-line endpoints|minimal mitten/i);
+  assert.match(clip.negative_prompt, /photoreal human hand|realistic skin hand/i);
+  assert.match(clip.dialogue[0].voice_personality, /NARRATOR_01/);
+  assert.doesNotMatch(clip.visual_style, /photoreal premium commercial|Rec\.709|85mm/i);
+  assert.doesNotMatch(JSON.stringify(clip.scene_bible_tokens), /Rec\.709|85mm|sensor grain/i);
+  assert.doesNotMatch(serialized, /REAL MATERIALS/i);
+
+  const flat = buildSegmentVeoPrompt({
+    characterDescription: "one minimal black-line stick figure",
+    setting: "the script-derived rough running road",
+    sceneBible: breakdown.scene_bible,
+    colorPalette: [],
+    motionPrompt: "The figure ties one shoe.",
+    dialogue: "Mỗi người có một thời điểm khác nhau.",
+    dialogueLanguage: "Vietnamese",
+    renderMedium: "whiteboard_stick_figure",
+    environmentRef: "office_night",
+  });
+  assert.match(flat, /NARRATOR_01/);
+  assert.doesNotMatch(flat, /REAL MATERIALS|Rec\.709|85mm|sensor grain/i);
 });
 
 test("uploaded references keep identity image-only while preserving contextual clothing text", () => {

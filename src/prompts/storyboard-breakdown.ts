@@ -20,6 +20,7 @@ import {
   worldContextLockBlock,
 } from "@/lib/laws";
 import { ensureDialogueClock, stripProductionTimecodes } from "@/lib/timeline-contract";
+import { lockedNarratorVoiceProfile } from "@/lib/audio/narrator-voice";
 import { contextFrameworkSystemDigest } from "@/lib/video-context";
 import {
   renderSceneIntentDirective,
@@ -128,6 +129,24 @@ function sceneBibleTokens(sb?: SceneBible): string {
   // constant across every clip (ported from veoflow-web's scene_bible_tokens).
   const grain = sb.film_grain ? `; ${sb.film_grain}` : "";
   return `STYLE TOKENS (keep the SAME lens, lighting mood and colour grade across every clip): ${sb.lens}; ${sb.lighting}; ${sb.color_grade}${grain}. Setting style: ${sb.backdrop}.`;
+}
+
+/** A live-action scene bible must never overpower a selected illustrated
+ * medium. Keep the script-derived place, but translate all photographic camera,
+ * material and grain language into one stable graphic-world instruction. */
+function stylizedSceneBibleTokens(
+  sb: SceneBible | undefined,
+  renderMedium: CharacterRepresentation | undefined
+): string {
+  const backdrop = (sb?.backdrop ?? "the complete script-derived setting").trim();
+  return `STYLIZED STYLE TOKENS: render ${backdrop} only inside the locked ${renderMedium ?? "illustrated"} medium, with its native palette, line/shape language, simplified lighting and texture. Use a virtual camera with stable perspective; no live-action lens look, photographic material detail, realistic skin, sensor texture or film grain.`;
+}
+
+function stylizedHandLock(renderMedium: CharacterRepresentation | undefined): string {
+  if (renderMedium === "whiteboard_stick_figure" || renderMedium === "stick_figure") {
+    return "Hands remain tiny black-line endpoints or minimal mitten marks in the exact stick-figure design; every prop contact is line-to-prop contact only; never render a live-action or photoreal human hand, skin, palm, fingernail, knuckle, realistic wrist or detached hand entering the frame";
+  }
+  return "Hands use only the simplified anatomy and material native to the locked stylized medium, remain attached to the correct character and contact only named props; never insert a live-action or photoreal human hand, skin, palm, fingernail, knuckle, realistic wrist or detached hand";
 }
 
 // ─── Marketing templates ────────────────────────────────────────────────────
@@ -2190,7 +2209,9 @@ export function buildSegmentVeoPrompt(params: {
     : "";
   // Locked world spec (materials/Kelvin+Lux/atmosphere/imperfections) — the
   // veoflow-web environment payload that makes the SETTING render real.
-  const env = resolveEnvironment(params.environmentRef, params.setting);
+  const env = stylizedMedium
+    ? undefined
+    : resolveEnvironment(params.environmentRef, params.setting);
   const envBlock = env ? ` ${stripBurnableTech(renderEnvironmentBlock(env))}` : "";
   const product = params.productDescription
     ? /^FINISHED HERO DISH/i.test(params.productDescription.trim())
@@ -2201,7 +2222,9 @@ export function buildSegmentVeoPrompt(params: {
   // Style tokens are camera/render settings — flag them as internal so Veo
   // never draws "50mm / 4300K / 600 lux" as a spec card on the frame (it did).
   const tokens = params.sceneBible
-    ? ` ${stripBurnableTech(sceneBibleTokens(params.sceneBible))} (These style values are internal camera settings — NEVER display them as text on screen.)`
+    ? ` ${stripBurnableTech(stylizedMedium
+        ? stylizedSceneBibleTokens(params.sceneBible, params.renderMedium)
+        : sceneBibleTokens(params.sceneBible))} (These style values are internal camera settings — NEVER display them as text on screen.)`
     : "";
   // Colour palette for Veo: strip raw hex (Veo cannot read hex and renders a
   // bare "#A9C7E8" as an on-screen colour-swatch label). Keep only real colour
@@ -2243,7 +2266,9 @@ export function buildSegmentVeoPrompt(params: {
       .map((t) => {
         const nm = (t.speaker ?? "").trim();
         const who = nm || "VOICEOVER";
-        const vt = nm ? voiceOf(nm) : params.speakerVoice ? ` (voice: ${params.speakerVoice})` : "";
+        const vt = nm
+          ? voiceOf(nm)
+          : ` (voice: ${params.speakerVoice || lockedNarratorVoiceProfile(lang)})`;
         const window =
           t.start_s != null && t.end_s != null ? `${t.start_s}-${t.end_s}s ` : "";
         return `${window}${who}${vt}: "${(t.text ?? "").trim()}"`;
@@ -3060,7 +3085,9 @@ export function buildVeoJson(
             : "Use scene_action.start_state",
           pose: "Use scene_action.start_state",
           foot_placement: "Physically grounded with stable contact on the declared walkable surface",
-          hand_detail: "Natural hands with correct contact on named props; no fused or extra fingers",
+          hand_detail: stylizedRepresentation
+            ? stylizedHandLock(opts.characterRepresentation)
+            : "Natural hands with correct contact on named props; no fused or extra fingers",
         };
         const actionFlow = {
           pre_action: "Begin exactly in scene_action.start_state",
@@ -3205,7 +3232,7 @@ export function buildVeoJson(
         const voicePersonality = name
           ? voiceProfilesByName.get(name.toLowerCase()) ||
             "native voice in the project's locked language and regional accent, stable voice matching the named speaker's locked gender, age, timbre, base pitch and speaking rate"
-          : "off-screen narrator";
+          : lockedNarratorVoiceProfile(lang);
         const line = {
           turn_id: `${String(seg.segment_number)}_turn_${String(turnIndex + 1).padStart(3, "0")}`,
           speaker_id: name ? charIds.get(name.toLowerCase()) || name : "VOICEOVER",
@@ -3268,11 +3295,21 @@ export function buildVeoJson(
               ? "reset_for_time"
               : "reset_for_cut";
     const sceneBibleTokens = {
-      lens: scrub(sb?.lens),
-      color_grade: scrub(sb?.color_grade),
-      lighting: scrub(sb?.lighting),
-      backdrop: scrub(sb?.backdrop),
-      film_grain: scrub(sb?.film_grain),
+      lens: stylizedRepresentation
+        ? "virtual camera with stable perspective in the locked graphic medium"
+        : scrub(sb?.lens),
+      color_grade: stylizedRepresentation
+        ? "palette and contrast native to the locked graphic medium; no live-action or photoreal grade"
+        : scrub(sb?.color_grade),
+      lighting: stylizedRepresentation
+        ? "script-motivated light simplified through the locked graphic medium; no photographic skin or surface detail"
+        : scrub(sb?.lighting),
+      backdrop: stylizedRepresentation
+        ? `${scrub(sb?.backdrop) || "complete script-derived setting"}; redraw every element in the locked graphic medium`
+        : scrub(sb?.backdrop),
+      film_grain: stylizedRepresentation
+        ? "none; use only texture native to the locked graphic medium"
+        : scrub(sb?.film_grain),
       audio_bed: environmentSoundBed,
       reverb: environmentReverb,
     };
@@ -3294,12 +3331,18 @@ export function buildVeoJson(
       continuity_mode: transitionMode,
       ...(seg.transition_in ? { transition_in: seg.transition_in } : {}),
       ...(seg.state_ledger ? { state_ledger: seg.state_ledger } : {}),
-      visual_style: [
-        scrub(breakdown.style_guide?.art_direction),
-        scrub(sb?.lens),
-        scrub(sb?.color_grade),
-        scrub(sb?.film_grain),
-      ]
+      visual_style: (stylizedRepresentation
+        ? [
+            `Locked ${opts.characterRepresentation} character-and-world medium`,
+            "one consistent graphic line, shape, palette, texture and simplified anatomy language",
+            "no live-action or photoreal conversion",
+          ]
+        : [
+            scrub(breakdown.style_guide?.art_direction),
+            scrub(sb?.lens),
+            scrub(sb?.color_grade),
+            scrub(sb?.film_grain),
+          ])
       .filter(Boolean)
       .join("; "),
       scene_role: seg.marketing_role,
@@ -3325,9 +3368,9 @@ export function buildVeoJson(
           incidentalBagPressure
         ),
         setting: backgroundSetting,
-        scenery: scrub(sb?.backdrop),
+        scenery: sceneBibleTokens.backdrop,
         props: noHex(breakdown.product_dna) || "Only props explicitly named in setting and action",
-        lighting: [scrub(sb?.lighting), env ? scrub(`${env.lighting.key_kelvin}K, ~${env.lighting.ambient_lux} lux`) : ""]
+        lighting: [sceneBibleTokens.lighting, env ? scrub(`${env.lighting.key_kelvin}K, ~${env.lighting.ambient_lux} lux`) : ""]
           .filter(Boolean)
           .join("; "),
         persistence: opts.hasLocationRef
@@ -3423,6 +3466,9 @@ export function buildVeoJson(
           : "unexplained pose or position change",
         hasRevolvingDoorMechanism
           ? "walking straight through a revolving door, crossing a radial glass wing, body or bag intersecting glass, reversing door rotation, changing compartments, repeating an entry or exit, exiting before the occupied opening aligns with the destination floor"
+          : "",
+        stylizedRepresentation
+          ? "live-action hand, photoreal human hand, realistic skin hand, palm, fingernails, knuckles, realistic wrist, detached human hand, mixed-media anatomy, photographic material or sensor texture"
           : "",
       ].filter(Boolean).join(", "),
     };

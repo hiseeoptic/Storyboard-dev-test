@@ -678,11 +678,13 @@ test("Production State authority flows script -> video prompt -> storyboard boar
   assert.equal(video.scene_id, "1", "original structured video fields survive");
   assert.equal(videoAuthority.authority_fingerprint, authority.authority_fingerprint);
   assert.equal(dialogueAudio.authority_fingerprint, authority.authority_fingerprint);
-  // dialogue/audio now live once on the canonical production_state (the slim
-  // per-shot state_authority no longer duplicates them); the video contract
-  // must still project them verbatim.
+  // Dialogue text lives only in the structured video's canonical dialogue rows
+  // and once in manifest.production_state. The compact contract points to that
+  // canonical state without embedding a second spoken copy.
   const canonicalShot = m.production_state!.shots[0]!;
-  assert.deepEqual(dialogueAudio.dialogue_state, canonicalShot.dialogue_state);
+  assert.equal(dialogueAudio.dialogue_state, undefined);
+  assert.deepEqual(dialogueAudio.dialogue_turn_ids, canonicalShot.dialogue_state.turns.map((turn) => turn.turn_id));
+  assert.match(String(dialogueAudio.canonical_dialogue_path), /production_state\.shots\[0\]\.dialogue_state/);
   assert.deepEqual(dialogueAudio.audio_state, canonicalShot.audio_state);
   assert.equal(board.authority_fingerprint, authority.authority_fingerprint);
   assert.match(String(board.semantic_authority), /STATIC VISUAL PROJECTION/);
@@ -715,6 +717,15 @@ test("authority validator detects a storyboard/video fingerprint mismatch", () =
       character_lock: { MINH: { name: "Minh" } },
       background_lock: { setting: "quiet office" },
       scene_action: { start_state: "Minh sits at a desk", end_state: "the notebook is open" },
+      dialogue: [{
+        turn_id: "1_turn_001",
+        speaker_id: "char_minh",
+        speaker_name: "Minh",
+        voice_personality: "Minh stable voice",
+        text: "Bắt đầu thôi.",
+        utterance_count: 1,
+        repeat_policy: "exactly_once",
+      }],
     }],
   });
   assert.equal(
@@ -762,6 +773,15 @@ test("manifest deduplicates per-shot authority and strips audio from the image b
       character_lock: { MINH: { name: "Minh" } },
       background_lock: { setting: "quiet office" },
       scene_action: { start_state: "Minh sits at a desk", end_state: "the notebook is open" },
+      dialogue: [{
+        turn_id: "1_turn_001",
+        speaker_id: "char_minh",
+        speaker_name: "Minh",
+        voice_personality: "Minh stable voice",
+        text: "Bắt đầu thôi.",
+        utterance_count: 1,
+        repeat_policy: "exactly_once",
+      }],
     }],
   });
   const shot = m.shots[0]!;
@@ -785,13 +805,17 @@ test("manifest deduplicates per-shot authority and strips audio from the image b
   assert.ok(boardAuthority.start_snapshot, "board keeps the physical projection");
   assert.equal(boardAuthority.dialogue_state, undefined);
   assert.equal(boardAuthority.audio_state, undefined);
-  // …while the video prompt keeps dialogue for lip-sync/timing.
+  // …while the video prompt keeps exactly one Veo-facing dialogue row.
   const video = shot.video_prompt as Record<string, unknown>;
   const videoAuthority = video.production_state_authority as Record<string, unknown>;
   assert.equal(videoAuthority.dialogue_state, undefined, "video pointer does not duplicate dialogue_state");
   assert.ok(videoAuthority.canonical_manifest_path);
-  assert.ok((video.dialogue_audio_contract as Record<string, unknown>).dialogue_state,
-    "video keeps dialogue once in the dedicated audio contract");
+  const dialogueContract = video.dialogue_audio_contract as Record<string, unknown>;
+  assert.equal(dialogueContract.dialogue_state, undefined);
+  assert.deepEqual(dialogueContract.dialogue_turn_ids, ["shot_001_turn_001"]);
+  assert.equal(shot.dialogue, null, "legacy shot field cannot cause an extension to append the line again");
+  const occurrences = JSON.stringify(video).split("Bắt đầu thôi.").length - 1;
+  assert.equal(occurrences, 1, "the exact spoken line occurs once in the serialized Veo prompt");
 });
 
 test("board prompt enforces numbered panels, one border system and a separate thumbnail aspect", () => {

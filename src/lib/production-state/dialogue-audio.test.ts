@@ -108,6 +108,22 @@ test("off-screen delivery never owns an on-screen lip-sync target", () => {
   assert.equal(state.findings.some((item) => item.code === "OFF_SCREEN_LIP_SYNC_FORBIDDEN"), false);
 });
 
+test("voiceover uses one deterministic narrator identity across independent clips", () => {
+  const state = buildProductionState(breakdown([
+    segment(1, { dialogue_lines: [{ speaker: "", text: "Câu dẫn thứ nhất.", start_s: 0, end_s: 2 }] }),
+    segment(2, { dialogue_lines: [{ speaker: "", text: "Câu dẫn thứ hai.", start_s: 0, end_s: 2 }] }),
+  ]));
+  const first = state.shots[0]!.dialogue_state.turns[0]!;
+  const second = state.shots[1]!.dialogue_state.turns[0]!;
+  assert.equal(first.delivery, "voiceover");
+  assert.match(first.voice_profile ?? "", /NARRATOR_01/);
+  assert.equal(second.voice_profile, first.voice_profile);
+  assert.equal(validateDialogueAudioState(state).some((item) => item.code === "VOICE_PROFILE_DRIFT"), false);
+
+  second.voice_profile = "a different narrator";
+  assert.equal(validateDialogueAudioState(state).some((item) => item.code === "VOICE_PROFILE_DRIFT"), true);
+});
+
 test("validator reports overlap, wrong lip authority and voice drift with patch evidence", () => {
   const state = buildProductionState(breakdown([
     segment(1, { dialogue_lines: [{ speaker: "Lan", text: "Một câu vừa đủ.", start_s: 0, end_s: 3, camera_beat: 1 }] }),
