@@ -6,7 +6,11 @@
  */
 export const NARRATOR_VOICE_ID = "NARRATOR_01";
 
-export function lockedNarratorVoiceProfile(language = "Vietnamese"): string {
+export function lockedNarratorVoiceProfile(
+  language = "Vietnamese",
+  performanceStyle?: string | null
+): string {
   const spokenLanguage = language.trim() || "Vietnamese";
-  return `${NARRATOR_VOICE_ID} — exactly the same recurring adult narrator in every clip; warm low-mid timbre; steady natural pitch; about 128 words per minute; clear native ${spokenLanguage} pronunciation; restrained reflective cadence; close dry studio microphone; preserve the identical voice identity, accent, timbre, pitch range, speaking rate and microphone tone across the entire project; never recast, clone, alternate or vary this narrator between clips`;
+  const performance = (performanceStyle ?? "").replace(/\s+/g, " ").trim();
+  return `${NARRATOR_VOICE_ID} — exactly the same recurring adult narrator in every clip; warm low-mid timbre; steady natural pitch; about 128 words per minute; clear native ${spokenLanguage} pronunciation; ${performance ? `performance direction: ${performance}` : "restrained reflective cadence"}; close dry studio microphone; preserve the identical voice identity, accent, timbre, pitch range, speaking rate and microphone tone across the entire project; never recast, clone, alternate or vary this narrator between clips`;
 }

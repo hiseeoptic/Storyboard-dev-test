@@ -35,6 +35,7 @@ import {
 import type { WorldContext } from "@/types";
 import { isStylizedCharacterRepresentation } from "@/lib/creative-routing";
 import { compileCookingRecipeDigest } from "@/lib/cooking";
+import { resolveSpeechMode } from "@/lib/storyboard/anonymous-narration";
 import {
   inferRevolvingDoorOperation,
   resolveSpatialLayout,
@@ -58,6 +59,33 @@ const SHARED_NEGATIVE =
 
 const REFERENCE_CHARACTER_SCENE_NEGATIVE =
   `NEGATIVE (avoid): duplicated or extra people, duplicated objects, floating objects, objects passing through solid surfaces, impossible physics, teleporting, morphing, warping, jitter, frame skipping, mid-clip jump cuts, on-screen text, captions, subtitles, title cards, HUD, technical readout, watermark, ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`;
+
+/** One compact speech contract shared by script and storyboard prompts. */
+function speechModeDirective(
+  input: StoryboardGenerationInput,
+  language: string
+): string {
+  const speech = resolveSpeechMode(input);
+  const names = speech.anonymous_characters
+    ? "Audience-facing prose and all speech use stable functional role labels only; personal names may remain only as hidden asset-binding keys."
+    : "Keep the approved character names/role labels exactly.";
+  const narratorStyle = (input.narrator_voice_style ?? "").trim();
+  // New payloads carry dialogue style here. Legacy `tone` remains one separate
+  // project-tone line below, so the same long descriptor is not duplicated.
+  const dialogueStyle = (input.character_dialogue_style ?? "").trim();
+  const audio = `music=${input.music_enabled === false ? "off" : "on"}, ambience=${input.ambience_enabled === false ? "off" : "on"}, foley=${input.foley_enabled === false ? "off" : "on"}`;
+
+  if (speech.mode === "wordless") {
+    return `SPEECH MODE — WORDLESS: no narrator, character speech, quoted thoughts or lip-sync. Dialogue fields stay empty; tell the story through visible action. ${names} Sound channels: ${audio}.`;
+  }
+  if (speech.mode === "voice_over_only") {
+    return `SPEECH MODE — VOICE-OVER ONLY: every spoken row uses speaker="", delivery="voiceover", no camera_beat; visible mouths remain closed. ${names} Narration is ${language}${narratorStyle ? `; performance: ${narratorStyle}` : ""}. Narration adds context/meaning without reading visible action or repeating itself.`;
+  }
+  if (speech.mode === "character_dialogue_only") {
+    return `SPEECH MODE — CHARACTER DIALOGUE ONLY: no narrator/VO. ${names} Character speech is ${language}${dialogueStyle ? `; style: ${dialogueStyle}` : ""}. Use sequential turns, exact speaker ownership and lip-sync; dialogue carries relationship/conflict without narrating visible action.`;
+  }
+  return `SPEECH MODE — MIXED: allow narrator VO and character dialogue, each only when it adds different information. ${names} Narrator performance${narratorStyle ? `: ${narratorStyle}` : " follows genre"}; character dialogue${dialogueStyle ? `: ${dialogueStyle}` : " follows genre"}. Never let VO repeat a character line or visible action; never overlap VO and dialogue; lock narrator and each character to separate recurring voices. Spoken language: ${language}.`;
+}
 
 // Positive realism directive — reproduced in every motion/video prompt. Models
 // respond better to explicit positive physics cues than to negatives alone, so
@@ -712,11 +740,11 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
     all.findIndex((candidate) => candidate.name.toLowerCase() === entry.name.toLowerCase()) === index
   );
   const closedCastRule = menuCharacters.length
-    ? `\nCLOSED USER CAST — ABSOLUTE NAME AUTHORITY:\n${menuCharacters
+    ? `\nCLOSED USER CAST — ABSOLUTE IDENTITY AUTHORITY:\n${menuCharacters
         .map((entry) =>
           `- ${entry.name}${entry.isChild ? " [CHILD]" : ""}${entry.role ? ` — role: ${entry.role}` : ""}`
         )
-        .join("\n")}\nThese are the ONLY character names permitted anywhere in CHARACTERS, IN SCENE, ACTION, DIALOGUE speaker labels and CAPTION. Preserve spelling exactly. Resolve every role, pronoun or alias in the idea/brief to one of these names. Never invent, rename, substitute or append another person. If a role is not represented in this closed cast, adapt the action without adding that person.`
+        .join("\n")}\nThese are the only identities permitted. Preserve each internal identity key for image/reference binding and never add another person. ${resolveSpeechMode(input).anonymous_characters ? "Personal names are INTERNAL KEYS ONLY: spoken lines, captions and audience-facing prose use the supplied role or a stable functional role label." : "Use the approved names consistently in character, action and speaker fields."} If a role is not represented in this closed cast, adapt the action without adding that person.`
     : "";
   const uploadedRule = uploadedNames.length
     ? `\nREFERENCE-IDENTITY CHARACTERS (${uploadedNames.join(", ")}): use the attached image only for each exact named identity, face, body proportions and hair. Do not restate those traits in prose. Generate one practical context-appropriate initial outfit from the approved story/location/weather/activity, store it only in character_locks.costume, and never copy clothing from the reference image. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
@@ -726,14 +754,7 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
     : `${closedCastRule}${uploadedRule}`;
 
   const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
-  const anonymousNarrationBlock = input.anonymous_narration
-    ? `\nANONYMOUS NARRATION MODE — USER-SELECTED, NON-NEGOTIABLE:
-- Do not create or use any personal given name. Identify visible figures only with stable functional role labels derived from the script, such as "Người đi chậm", "Người chạy nhanh 1" and "Người chạy nhanh 2".
-- Visible characters NEVER speak, mouth words or lip-sync. They communicate only through the scripted action, pose and facial marks.
-- Every spoken line is narrator voice-over labelled exactly "VO". Preserve supplied Lời dẫn/Lời kết as voice-over; editorial polish may tighten narration but may never convert it into character dialogue.
-- Do not add reactions, replies, banter, quoted thoughts, subscribe/follow CTA or any spoken line not justified by the source.
-- In every DIALOGUE section output VO only; never put a visible role label before a spoken line.`
-    : "";
+  const speechDirective = speechModeDirective(input, lang);
 
   return `Write a ${segmentCount}-segment short-video script.
 
@@ -745,7 +766,7 @@ Dialogue language: ${
     isCooking && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")
       ? "NONE — every segment is wordless diegetic ASMR"
       : `${lang} (when dialogue is justified, write it naturally in ${lang})`
-  }.${briefBlock}${framework ? `\n${framework}` : ""}${actionDramaBlock}${anonymousNarrationBlock}
+  }.${briefBlock}${framework ? `\n${framework}` : ""}${actionDramaBlock}\n${speechDirective}
 
 ${input.script_treatment === "polish" ? `EDITORIAL-POLISH MODE FOR A PASTED SCREENPLAY: preserve every character, relationship, location, prop identity, plot fact, causal reveal, emotional meaning and ending message from the supplied screenplay. You MAY and SHOULD restructure the first 30 seconds, merge or redistribute turns across the requested 10s segments, sharpen weak dialogue, add subtext and specify performance/action. Do not introduce a different story, product, setting, relationship or moral. The result must feel like the strongest filmed version of the same screenplay, not a summary and not a replacement premise.` : ""}
 
@@ -928,7 +949,10 @@ export function buildStoryboardUserPrompt(
       : "";
 
   const settingBlock = input.setting ? `\nPrimary Setting: ${input.setting}` : "";
-  const toneBlock = input.tone ? `\nTone: ${input.tone}` : "";
+  const toneBlock =
+    input.tone && !input.character_dialogue_style
+      ? `\nLegacy project tone: ${input.tone}`
+      : "";
 
   // Cách 1 — per-shot uploaded locations. Each set was vision-analyzed upstream;
   // tell the model which 10s shots happen in which REAL place (+ its spatial
@@ -1009,13 +1033,9 @@ ${JSON.stringify(input.resolved_context, null, 2)}
   const cookingAsmr =
     isCooking &&
     ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "");
-  const dialogueBlock = input.anonymous_narration
-    ? `\nSpeech mode: ANONYMOUS NARRATION ONLY. Every spoken turn MUST use speaker="", delivery="voiceover", camera_beat omitted, and ${dialogueLanguage} narrator text derived from the source. Visible characters have closed/non-speaking mouths and no lip-sync. Never create on_screen/off_screen character speech, personal names, banter, replies, quoted thoughts or an unrequested CTA.`
-    : cookingAsmr
+  const dialogueBlock = cookingAsmr
     ? `\nDialogue: FORBIDDEN by the selected cooking ASMR profile. Set "dialogue" to "", "speaker" to "", omit dialogue_lines, and use no voice-over/music in EVERY segment.`
-    : input.force_dialogue === false
-      ? `\nDialogue: optional. When a segment has a spoken line, write it in ${dialogueLanguage}.`
-      : `\nDialogue: REQUIRED. EVERY segment MUST have a non-empty "dialogue" line spoken in ${dialogueLanguage} (natural, conversational ${dialogueLanguage} — not translated word-for-word). Keep each line short (about 5-12 words). Put the line ONLY in the "dialogue" field — do NOT quote it inside the "motion_prompt" (the system appends it once; repeating it makes the character say it twice).`;
+    : `\n${speechModeDirective(input, dialogueLanguage)}`;
 
   // Example beat list sized to the requested count.
   const beatExample = Array.from({ length: beatsPerSegment }, (_, i) => {
@@ -1046,16 +1066,13 @@ ${JSON.stringify(input.resolved_context, null, 2)}
     ? "For uploaded-reference characters, first_frame_prompt contains only the exact name, position, action and expression; the attached image supplies all appearance."
     : "Restate only the visually necessary character attributes in every first_frame_prompt.";
   const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
-  const anonymousNarrationBlock = input.anonymous_narration
-    ? `\n\nANONYMOUS NARRATION MODE — USER MENU AUTHORITY:
-- Preserve anonymous figures as stable functional role labels from the script; never assign personal given names.
-- Character locks use those role labels only. For a stylized character medium, identity details must describe only medium-appropriate shape, line, palette and role markers—never photoreal skin, pores, realistic hair or REFERENCE_IMAGE sentinels without an uploaded reference.
-- Every dialogue_lines entry is narrator VO: speaker="", delivery="voiceover", no camera_beat. No visible character speaks or lip-syncs.
-- Copy the approved narrator lines in their original segment order. Add no character dialogue, reaction line, thought, list, CTA or follow/subscribe request.
-- Story action remains exactly the source action; narration mode changes speech ownership, not plot, setting or scene content.`
+  const speechMode = resolveSpeechMode(input);
+  const anonymousNarrationBlock = speechMode.anonymous_characters
+    ? `\n\nANONYMOUS CHARACTER AUTHORITY: audience-facing prose, captions and spoken lines use stable functional role labels only. Internal asset keys may retain the entered names solely to bind reference images. This changes labels only; speech ownership remains exactly the selected SPEECH MODE.`
     : "";
   const stylizedNarrationMetadata =
-    input.anonymous_narration === true &&
+    speechMode.anonymous_characters &&
+    speechMode.voice_over &&
     isStylizedCharacterRepresentation(input.character_representation ?? "auto");
   const thumbnailTitleRule = stylizedNarrationMetadata
     ? `string — 2-6 words in ${dialogueLanguage}, concise and emotionally faithful to the actual hook/choice/consequence. Suitable for a stylized story cover; no personal names, fake quotation, unrelated shock claim, meme insult or unearned clickbait.`
@@ -2128,6 +2145,7 @@ export function buildSegmentVeoPrompt(params: {
   motionPrompt: string;
   dialogue?: string | null;
   dialogueLanguage?: string;
+  narratorVoiceStyle?: string;
   /** Who speaks this clip (one speaker per clip). */
   speaker?: string | null;
   /** All character names in the project — used to silence the non-speakers. */
@@ -2270,7 +2288,7 @@ export function buildSegmentVeoPrompt(params: {
         const who = nm || "VOICEOVER";
         const vt = nm
           ? voiceOf(nm)
-          : ` (voice: ${params.speakerVoice || lockedNarratorVoiceProfile(lang)})`;
+          : ` (voice: ${params.speakerVoice || lockedNarratorVoiceProfile(lang, params.narratorVoiceStyle)})`;
         const window =
           t.start_s != null && t.end_s != null ? `${t.start_s}-${t.end_s}s ` : "";
         return `${window}${who}${vt}: "${(t.text ?? "").trim()}"`;
@@ -2304,6 +2322,7 @@ export function buildVideoPromptText(params: {
   aspectRatio: string;
   colorPalette: string[];
   dialogueLanguage?: string;
+  narratorVoiceStyle?: string;
   /** All character names in the project — used to silence non-speakers. */
   characterNames?: string[];
   /** TẦNG 9: locked voice profile per character name (speaker → voice line). */
@@ -2376,6 +2395,7 @@ export function buildVideoPromptText(params: {
         dialogueLanguage,
         speaker: s.speaker,
         dialogueTurns: s.dialogue_lines,
+        narratorVoiceStyle: params.narratorVoiceStyle,
         characterVoices: params.characterVoices,
         characterNames: params.characterNames,
         charactersInScene: s.characters_in_scene,
@@ -2463,6 +2483,10 @@ const VEO_LIP_SYNC_DIRECTOR_NOTE =
 interface VeoJsonOptions {
   aspectRatio: string;
   dialogueLanguage?: string;
+  narratorVoiceStyle?: string;
+  musicEnabled?: boolean;
+  ambienceEnabled?: boolean;
+  foleyEnabled?: boolean;
   /** Machine-facing production prose remains English even when speech/copy is
    * localized. Kept configurable for future product locales. */
   productionPromptLanguage?: string;
@@ -2477,8 +2501,11 @@ interface VeoJsonOptions {
   /** The selected render medium. Stylized media use a compact design lock and
    * never inherit photoreal environment/character payloads. */
   characterRepresentation?: CharacterRepresentation;
-  /** Menu-selected anonymous narrator mode: role labels only, no character
-   * voice identity or human demographic metadata in the Veo payload. */
+  /** Explicit new speech mode. Omitted payloads keep legacy behavior. */
+  speechMode?: "mixed" | "voice_over_only" | "character_dialogue_only" | "wordless";
+  /** Independent role-label mode; it must never silently disable dialogue. */
+  anonymousCharacters?: boolean;
+  /** Legacy combined anonymous narrator mode retained for old callers/tests. */
   anonymousNarration?: boolean;
 }
 
@@ -2596,6 +2623,10 @@ export function buildVeoJson(
   const stylizedRepresentation = isStylizedCharacterRepresentation(
     opts.characterRepresentation
   );
+  const speechMode = opts.speechMode ??
+    (opts.anonymousNarration ? "voice_over_only" : "character_dialogue_only");
+  const anonymousCharacters =
+    opts.anonymousCharacters ?? opts.anonymousNarration === true;
   const sb = breakdown.scene_bible;
   const culture = oneLine(breakdown.world_context?.culture);
   const characterReferenceNames = new Set(
@@ -3103,7 +3134,7 @@ export function buildVeoJson(
             noHex(lock.signature_features),
             noHex(lock.skin_tone),
           ].filter(Boolean).join("; ");
-          const wardrobeMarker = opts.anonymousNarration
+          const wardrobeMarker = anonymousCharacters
             ? "Use only the stable role marker, line/shape language and small colour accent established by the character sheet"
             : [outfit.top, outfit.bottom, noHex(lock.wardrobe_materials)].filter(Boolean).join("; ");
           return [
@@ -3115,8 +3146,10 @@ export function buildVeoJson(
               design_markers: designMarkers || "Use the exact same locked stylized character design in every clip",
               signature_marker: noHex(lock.signature_features),
               wardrobe_or_role_marker: wardrobeMarker,
-              ...(opts.anonymousNarration
-                ? { speech_authority: "Silent visible role; narrator VOICEOVER owns all spoken audio and this character never lip-syncs" }
+              ...(["voice_over_only", "wordless"].includes(speechMode)
+                ? { speech_authority: speechMode === "wordless"
+                    ? "Silent visible role; no narrator, no character speech and no lip-sync"
+                    : "Silent visible role; narrator VOICEOVER owns all spoken audio and this character never lip-syncs" }
                 : { voice_personality: oneLine(lock.voice) || defaultVoiceFor(lock.gender, lock.is_child) }),
               props,
               body_metrics: "cons=no-auto-rescale,lock-proportions,keep-relative-height",
@@ -3234,7 +3267,7 @@ export function buildVeoJson(
         const voicePersonality = name
           ? voiceProfilesByName.get(name.toLowerCase()) ||
             "native voice in the project's locked language and regional accent, stable voice matching the named speaker's locked gender, age, timbre, base pitch and speaking rate"
-          : lockedNarratorVoiceProfile(lang);
+          : lockedNarratorVoiceProfile(lang, opts.narratorVoiceStyle);
         const line = {
           turn_id: `${String(seg.segment_number)}_turn_${String(turnIndex + 1).padStart(3, "0")}`,
           speaker_id: name ? charIds.get(name.toLowerCase()) || name : "VOICEOVER",
@@ -3276,9 +3309,11 @@ export function buildVeoJson(
     const ambience = [env?.sound_bed, opts.ambientAudio].filter(
       (value): value is string => !!value
     );
-    const environmentSoundBed = scrub(
-      contextLocation?.sound_bed || env?.sound_bed || opts.ambientAudio || ""
-    );
+    const environmentSoundBed = opts.ambienceEnabled === false
+      ? "None — intentional silence with no environmental ambience"
+      : scrub(
+          contextLocation?.sound_bed || env?.sound_bed || opts.ambientAudio || ""
+        );
     const environmentReverb = scrub(contextLocation?.reverb_profile || "");
     const previousLocationId =
       segIndex > 0 ? oneLine(breakdown.segments[segIndex - 1]?.location_id) : "";
@@ -3429,15 +3464,22 @@ export function buildVeoJson(
       foley_and_ambience: {
         environment_sound_bed: environmentSoundBed,
         environment_reverb: environmentReverb,
-        project_ambient: scrub(opts.ambientAudio),
-        ambience: [environmentSoundBed, ...ambience.map(scrub)].filter(Boolean),
-        fx: actionDrama
+        project_ambient:
+          opts.ambienceEnabled === false ? "None" : scrub(opts.ambientAudio),
+        ambience:
+          opts.ambienceEnabled === false
+            ? []
+            : [environmentSoundBed, ...ambience.map(scrub)].filter(Boolean),
+        fx: opts.foleyEnabled === false
+          ? []
+          : actionDrama
           ? [
               "causal high-stakes action Foley synchronized exactly to visible motion: urgent breath, foot plant, cloth strain, one distinct impact per shown contact, nearby surface or furniture response, stagger/fall weight, then breathless aftermath; no stock punch without visible contact",
             ]
           : ["natural clothing, footsteps and prop-contact sounds synchronized to visible action"],
-        music:
-          opts.ambientAudio && !/no music/i.test(opts.ambientAudio)
+        music: opts.musicEnabled === false
+          ? "None — music disabled by user"
+          : opts.ambientAudio && !/no music/i.test(opts.ambientAudio)
             ? opts.ambientAudio
             : "None unless explicitly required by the scene",
       },

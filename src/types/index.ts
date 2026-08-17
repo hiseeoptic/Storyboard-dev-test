@@ -215,6 +215,22 @@ export interface StoryboardGenerationInput {
   /** Menu-selected narration format for anonymous visual-story videos. Visible
    * characters keep role labels only and never speak; all audio speech is VO. */
   anonymous_narration?: boolean;
+  /** Independent speech channels. Optional to preserve every legacy payload;
+   * when omitted, anonymous_narration/force_dialogue retain their old meaning. */
+  voice_over_enabled?: boolean;
+  character_dialogue_enabled?: boolean;
+  /** Role labels instead of personal given names, independent from visual
+   * medium and from whether narrator/character speech is enabled. */
+  anonymous_characters?: boolean;
+  /** Concise narrator performance profile selected by the user. */
+  narrator_voice_style?: string;
+  /** Concise character-dialogue writing/performance profile. Legacy `tone`
+   * remains supported and is used as the fallback. */
+  character_dialogue_style?: string;
+  /** Sound channels exposed when both speech channels are disabled. */
+  music_enabled?: boolean;
+  ambience_enabled?: boolean;
+  foley_enabled?: boolean;
   /** Numerology (and topic) script tone: emotional/inspiring, sharp behavioral
    * analysis, or both blended. Defaults to "balanced". */
   numerology_style?: "inspirational" | "analytical" | "balanced";

@@ -22,7 +22,10 @@ import {
   shouldAbortAiPipeline,
 } from "@/lib/ai/retry-policy";
 import { approvedScriptFromStoryIdea } from "@/lib/storyboard/source-script";
-import { enforceAnonymousNarrationContract } from "@/lib/storyboard/anonymous-narration";
+import {
+  buildSpeechManifestContract,
+  enforceAnonymousNarrationContract,
+} from "@/lib/storyboard/anonymous-narration";
 import {
   resolveSpatialLayout,
   renderSpatialTopologyBoardHint,
@@ -1910,12 +1913,17 @@ function validatePreRenderGates(
 
   try {
     const manifestCharacterRepresentation = resolveCreativeRoute(input).effective_character_representation;
+    const speechContract = buildSpeechManifestContract(input);
     const veoJson = buildVeoJson(breakdown, {
       aspectRatio: input.aspect_ratio ?? "9:16",
       dialogueLanguage:
         input.dialogue_language ??
         breakdown.context_ir?.layers.audio_validation.language ??
         "the locked project language",
+      narratorVoiceStyle: input.narrator_voice_style,
+      musicEnabled: input.music_enabled,
+      ambienceEnabled: input.ambience_enabled,
+      foleyEnabled: input.foley_enabled,
       ambientAudio: genreAmbientAudio(input.genre, input.video_goal),
       hasLocationRef: (input.background_images?.length ?? 0) > 0,
       characterReferenceNames: (input.character_images ?? [])
@@ -1926,7 +1934,8 @@ function validatePreRenderGates(
         )
         .map((character) => character.name),
       characterRepresentation: manifestCharacterRepresentation,
-      anonymousNarration: input.anonymous_narration === true,
+      speechMode: speechContract.mode,
+      anonymousCharacters: speechContract.anonymous_characters,
     });
     const veoClips = Array.isArray(
       (veoJson as { clips?: unknown[] }).clips
@@ -1942,10 +1951,12 @@ function validatePreRenderGates(
         input.dialogue_language ??
         breakdown.context_ir?.layers.audio_validation.language ??
         "the locked project language",
+      speechContract,
       // Selected video style → lock the manifest (board + video) to that medium.
       characterRepresentation: manifestCharacterRepresentation,
       characterStylePrompt: characterWorldStylePrompt(manifestCharacterRepresentation),
-      anonymousNarration: input.anonymous_narration === true,
+      anonymousNarration:
+        input.anonymous_characters ?? input.anonymous_narration === true,
       veoClips,
       // Cách 1 — embed uploaded location photos into the manifest per shot.
       locationSets: input.location_mode === "upload" ? input.location_sets : undefined,
@@ -2686,13 +2697,14 @@ function assemblePlanPrompts(
       motionPrompt: makeVeoSafe(seg.motion_prompt),
       dialogue: seg.dialogue,
       dialogueLanguage: ctx.dialogueLanguage,
+      narratorVoiceStyle: input.narrator_voice_style,
       speaker: seg.speaker,
       dialogueTurns: seg.dialogue_lines,
       characterVoices,
       characterNames: ctx.characterNames,
       charactersInScene: seg.characters_in_scene,
       speakerVoice: seg.speaker ? characterVoices[seg.speaker.trim()] : undefined,
-      ambientAudio,
+      ambientAudio: input.ambience_enabled === false ? undefined : ambientAudio,
       environmentRef: seg.environment_ref,
       hasLocationRef: ctx.bgRefs.length > 0,
       creativeDirective: veoCreativeDirective,
@@ -2714,9 +2726,10 @@ function assemblePlanPrompts(
     aspectRatio: ctx.aspectRatio,
     colorPalette: palette,
     dialogueLanguage: ctx.dialogueLanguage,
+    narratorVoiceStyle: input.narrator_voice_style,
     characterNames: ctx.characterNames,
     characterVoices,
-    ambientAudio,
+    ambientAudio: input.ambience_enabled === false ? undefined : ambientAudio,
     creativeDirective: veoCreativeDirective,
     renderMedium: creativeRoute.effective_character_representation,
     marketing: breakdown.marketing_structure,

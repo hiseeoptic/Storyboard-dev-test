@@ -879,6 +879,22 @@ test("manifest fixes the board to 16:9 while the video aspect follows the select
   }
 });
 
+test("manifest preserves the independent speech contract without duplicating prompt prose", () => {
+  const speechContract = {
+    mode: "mixed" as const,
+    voice_over_enabled: true,
+    character_dialogue_enabled: true,
+    anonymous_characters: false,
+    narrator_voice_style: "warm, measured, reflective",
+    character_dialogue_style: "natural everyday turn-taking",
+    music_enabled: true,
+    ambience_enabled: true,
+    foley_enabled: true,
+  };
+  const m = buildNanoFlowManifest(fixture(), { speechContract });
+  assert.deepEqual(m.project.speech_contract, speechContract);
+});
+
 // Regression: boards of the SAME location must not drift set or day↔night on later
 // boards. Setting/scenery lock to the first clip of the location; time-of-day is
 // MONOTONIC (day→night, never oscillating); every board carries an establishing-view

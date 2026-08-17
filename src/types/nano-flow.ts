@@ -235,6 +235,20 @@ export interface NanoFlowProject {
   /** Language used by camera/action/environment instructions. Independent from
    * dialogue_language and UI locale; English is the production default. */
   production_prompt_language?: string;
+  /** Additive speech/audio contract selected in Storyboard. Older extension
+   * versions safely ignore it; newer consumers do not need to infer silence,
+   * narrator ownership or character-dialogue ownership from empty fields. */
+  speech_contract?: {
+    mode: "mixed" | "voice_over_only" | "character_dialogue_only" | "wordless";
+    voice_over_enabled: boolean;
+    character_dialogue_enabled: boolean;
+    anonymous_characters: boolean;
+    narrator_voice_style?: string;
+    character_dialogue_style?: string;
+    music_enabled: boolean;
+    ambience_enabled: boolean;
+    foley_enabled: boolean;
+  };
   total_duration_seconds?: number;
   thumbnail_title?: string;
   /** Explicit thumbnail delivery format, independent from the video format. */

@@ -1,5 +1,6 @@
 import type { StoryboardGenerationInput } from "@/types";
 import { resolveCreativeRoute } from "@/lib/creative-routing";
+import { resolveSpeechMode } from "@/lib/storyboard/anonymous-narration";
 
 /**
  * Compact framework digest for downstream planners. The expensive reasoning is
@@ -41,6 +42,7 @@ CORE RULES:
 
 export function buildContextAnalysisUserPrompt(input: StoryboardGenerationInput): string {
   const creativeRoute = resolveCreativeRoute(input);
+  const speechMode = resolveSpeechMode(input);
   const productionPromptLanguage = input.production_prompt_language?.trim() || "English";
   const evidence = {
     story_idea: input.story_idea,
@@ -51,6 +53,15 @@ export function buildContextAnalysisUserPrompt(input: StoryboardGenerationInput)
     visual_style_request: input.style,
     setting_request: input.setting ?? null,
     tone: input.tone ?? null,
+    speech_mode: speechMode,
+    narrator_voice_style: input.narrator_voice_style ?? null,
+    character_dialogue_style:
+      input.character_dialogue_style ?? input.tone ?? null,
+    sound_channels: {
+      music: input.music_enabled !== false,
+      ambience: input.ambience_enabled !== false,
+      foley: input.foley_enabled !== false,
+    },
     dialogue_language: input.dialogue_language ?? "Vietnamese",
     production_prompt_language: productionPromptLanguage,
     segment_count: input.segment_count ?? input.scene_count ?? 5,

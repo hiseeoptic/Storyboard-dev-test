@@ -30,6 +30,19 @@ export interface BuildNanoFlowManifestOptions {
   thumbnailAspectRatio?: "16:9" | "9:16";
   dialogueLanguage?: string;
   productionPromptLanguage?: string;
+  /** Independent speech and sound channels selected in the app. Additive only:
+   * legacy manifests remain valid and older extensions may ignore this field. */
+  speechContract?: {
+    mode: "mixed" | "voice_over_only" | "character_dialogue_only" | "wordless";
+    voice_over_enabled: boolean;
+    character_dialogue_enabled: boolean;
+    anonymous_characters: boolean;
+    narrator_voice_style?: string;
+    character_dialogue_style?: string;
+    music_enabled: boolean;
+    ambience_enabled: boolean;
+    foley_enabled: boolean;
+  };
   projectId?: string;
   /** Số cảnh nhỏ mỗi đoạn (beats_per_segment) người dùng chọn. Board vẽ ĐÚNG
    * bấy nhiêu ô — 3 cảnh ⇒ 3 frame, không thừa. Trống ⇒ tối đa 5. */
@@ -1192,6 +1205,7 @@ export function buildNanoFlowManifest(
       board_aspect_ratio: "16:9",
       dialogue_language: opts.dialogueLanguage ?? "Vietnamese",
       production_prompt_language: opts.productionPromptLanguage?.trim() || "English",
+      ...(opts.speechContract ? { speech_contract: opts.speechContract } : {}),
       total_duration_seconds: breakdown.total_duration_seconds,
       thumbnail_title: breakdown.thumbnail_title,
       thumbnail_aspect_ratio: thumbnailAspect,

@@ -1254,7 +1254,7 @@ export async function generateStoryboardBreakdown(
       if (!parsed.social_posts || typeof parsed.social_posts !== "object") {
         const firstLine = (parsed.synopsis ?? "").split(/(?<=[.!?])\s+/)[0] ?? parsed.title;
         const stylizedNarrationMetadata =
-          input.anonymous_narration === true &&
+          (input.anonymous_characters ?? input.anonymous_narration === true) &&
           isStylizedCharacterRepresentation(input.character_representation ?? "auto");
         parsed.social_posts = stylizedNarrationMetadata
           ? {

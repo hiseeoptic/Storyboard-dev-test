@@ -35,6 +35,25 @@ test("empty undeclared reference and missing dialogue language fail", () => {
   assert.ok(report.findings.some((finding) => finding.code === "INPUT-007"));
 });
 
+test("either enabled speech channel requires a spoken language", () => {
+  for (const enabled of [
+    { voice_over_enabled: true, character_dialogue_enabled: false },
+    { voice_over_enabled: false, character_dialogue_enabled: true },
+  ]) {
+    const report = validateStoryboardInput(input({ ...enabled, dialogue_language: "" }));
+    assert.ok(report.findings.some((finding) => finding.code === "INPUT-004"));
+  }
+});
+
+test("wordless mode does not require a spoken language", () => {
+  const report = validateStoryboardInput(input({
+    voice_over_enabled: false,
+    character_dialogue_enabled: false,
+    dialogue_language: "",
+  }));
+  assert.equal(report.findings.some((finding) => finding.code === "INPUT-004"), false);
+});
+
 test("extension-side declared reference may omit embedded image", () => {
   const report = validateStoryboardInput(
     input({

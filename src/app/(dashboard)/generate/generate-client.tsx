@@ -53,6 +53,7 @@ import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
+import { buildSpeechManifestContract } from "@/lib/storyboard/anonymous-narration";
 import {
   validateExportReadiness,
   assessSoftExportPolicy,
@@ -184,9 +185,9 @@ const t = {
   setting: { vi: "Bối cảnh", en: "Setting" },
   settingPlaceholder: { vi: "Chọn bối cảnh...", en: "Choose a setting..." },
   settingCustomPlaceholder: { vi: "Mô tả bối cảnh của bạn", en: "Describe your own setting" },
-  tone: { vi: "Tông màu / Giọng kể", en: "Tone" },
-  tonePlaceholder: { vi: "Chọn giọng kể...", en: "Choose a tone..." },
-  toneCustomPlaceholder: { vi: "Mô tả giọng kể của bạn", en: "Describe your own tone" },
+  tone: { vi: "Phong cách lời thoại nhân vật", en: "Character dialogue style" },
+  tonePlaceholder: { vi: "Tự động theo thể loại", en: "Auto by genre" },
+  toneCustomPlaceholder: { vi: "Mô tả cách nhân vật đối thoại", en: "Describe how characters speak" },
 
   // Story / film brief
   storyBriefTitle: { vi: "Thông tin câu chuyện (cho phim / kể chuyện)", en: "Story brief (for film / narrative)" },
@@ -565,18 +566,60 @@ const TONE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
 
 // English descriptor sent to the AI for each tone key.
 const TONE_PROMPT: Record<string, string> = {
-  cheerful: "cheerful, energetic and upbeat",
-  emotional: "emotional, heartfelt and touching",
-  humorous: "humorous, light and fun",
-  luxury: "luxurious, premium and elegant",
-  professional: "professional, clean and trustworthy",
-  dramatic: "dramatic, intense and high-stakes",
-  mysterious: "mysterious, suspenseful and intriguing",
-  inspirational: "inspirational and uplifting",
-  relatable: "relatable, everyday and down-to-earth",
-  trendy: "youthful, trendy and social-media native",
-  warm: "warm, affectionate and intimate",
-  epic: "epic, grand and cinematic",
+  cheerful: "short upbeat lines, bright energy, clear emphasis, no forced excitement",
+  emotional: "restrained heartfelt lines, natural pauses, subtext before explanation",
+  humorous: "quick setup-reversal-punchline exchanges, hold reactions, no joke repetition",
+  luxury: "few precise words, low-key confidence, measured pauses, no feature-list reading",
+  professional: "concise accurate wording, clear pronunciation, cause-to-result logic, no unsupported claims",
+  dramatic: "increasingly short high-stakes turns, controlled intensity, pause before consequential words, no constant shouting",
+  mysterious: "withheld information, low directness, deliberate pauses, no explanatory monologues",
+  inspirational: "clear active language, rising cadence, earned emphasis, no empty slogans",
+  relatable: "natural everyday phrasing, short responses and believable hesitation, never ad-like",
+  trendy: "compact conversational social-native language, quick rhythm, no disposable slang overload",
+  warm: "gentle intimate phrasing, attentive replies, soft emphasis and natural breathing",
+  epic: "elevated but concise diction, deliberate cadence and decisive emphasis, no inflated exposition",
+};
+
+const NARRATOR_VOICE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
+  vi: [
+    { value: "auto", label: "Tự động theo thể loại" },
+    { value: "warm", label: "Ấm áp, gần gũi" },
+    { value: "reflective", label: "Chiêm nghiệm, tiết chế" },
+    { value: "documentary", label: "Tài liệu, đáng tin" },
+    { value: "inspirational", label: "Truyền cảm hứng" },
+    { value: "dramatic", label: "Kịch tính, có khoảng lặng" },
+    { value: "expert", label: "Chuyên gia, rõ và chính xác" },
+    { value: "commercial", label: "Quảng cáo, lợi ích rõ" },
+    { value: "poetic", label: "Thơ, giàu hình ảnh" },
+    { value: "sports", label: "Bình luận thể thao" },
+    { value: CUSTOM, label: "Khác (tự nhập)" },
+  ],
+  en: [
+    { value: "auto", label: "Auto by genre" },
+    { value: "warm", label: "Warm and approachable" },
+    { value: "reflective", label: "Reflective and restrained" },
+    { value: "documentary", label: "Documentary and credible" },
+    { value: "inspirational", label: "Inspirational" },
+    { value: "dramatic", label: "Dramatic with pauses" },
+    { value: "expert", label: "Expert, clear and precise" },
+    { value: "commercial", label: "Commercial, benefit-led" },
+    { value: "poetic", label: "Poetic and visual" },
+    { value: "sports", label: "Sports commentary" },
+    { value: CUSTOM, label: "Other (type your own)" },
+  ],
+};
+
+const NARRATOR_VOICE_PROMPT: Record<string, string> = {
+  auto: "follow the selected genre while keeping one stable recurring narrator voice",
+  warm: "warm low-mid register, natural pace, gentle emphasis, welcoming pauses",
+  reflective: "restrained low-mid register, measured pace, meaningful pauses, quiet emotional emphasis",
+  documentary: "credible neutral register, steady pace, crisp diction, factual emphasis",
+  inspirational: "clear rising energy, moderate pace, earned emphasis on action and possibility",
+  dramatic: "controlled intensity, varied pace, pause before consequential words, never constant shouting",
+  expert: "calm authoritative register, medium pace, precise terminology and pronunciation",
+  commercial: "confident concise delivery, benefit-led emphasis, clear brand/USP/CTA pronunciation",
+  poetic: "soft expressive cadence, spacious pauses, image-rich phrasing, no melodrama",
+  sports: "responsive energetic cadence, pitch rises only at real peaks, exact name and score pronunciation",
 };
 
 // ─── Setting / location (dropdown) ──────────────────────────────────────────
@@ -1121,7 +1164,16 @@ function ProjectWorkspace() {
   // Step 1: Story
   const [storyIdea, setStoryIdea] = useState("");
   const [scriptTreatment, setScriptTreatment] = useState<"preserve" | "polish">("polish");
+  const [voiceOverEnabled, setVoiceOverEnabled] = useState(false);
+  const [characterDialogueEnabled, setCharacterDialogueEnabled] = useState(true);
+  // Legacy state name retained so existing code/data remains compatible. In
+  // the new menu it means only "use role labels, not personal given names".
   const [anonymousNarration, setAnonymousNarration] = useState(false);
+  const [narratorVoiceSel, setNarratorVoiceSel] = useState("auto");
+  const [narratorVoiceCustom, setNarratorVoiceCustom] = useState("");
+  const [musicEnabled, setMusicEnabled] = useState(true);
+  const [ambienceEnabled, setAmbienceEnabled] = useState(true);
+  const [foleyEnabled, setFoleyEnabled] = useState(true);
   const [genre, setGenre] = useState("advertising");
   const steps = t.steps[lang].map((label, index) =>
     genre === "cooking" && index === 2
@@ -1160,6 +1212,10 @@ function ProjectWorkspace() {
       : toneSel
         ? TONE_PROMPT[toneSel] ?? ""
         : "";
+  const effectiveNarratorVoice =
+    narratorVoiceSel === CUSTOM
+      ? narratorVoiceCustom.trim()
+      : NARRATOR_VOICE_PROMPT[narratorVoiceSel] ?? "";
 
   // Step 2: Characters
   const [characters, setCharacters] = useState<CharacterEntry[]>([]);
@@ -1670,7 +1726,21 @@ function ProjectWorkspace() {
       directing_profile: directingProfile,
       script_provider: scriptProvider,
       script_treatment: scriptTreatment,
-      anonymous_narration: anonymousNarration,
+      // Keep the legacy combined flag only for the exact old configuration.
+      anonymous_narration:
+        voiceOverEnabled && !characterDialogueEnabled && anonymousNarration,
+      voice_over_enabled: voiceOverEnabled,
+      character_dialogue_enabled: characterDialogueEnabled,
+      anonymous_characters: anonymousNarration,
+      narrator_voice_style: voiceOverEnabled
+        ? effectiveNarratorVoice || undefined
+        : undefined,
+      character_dialogue_style: characterDialogueEnabled
+        ? effectiveTone || undefined
+        : undefined,
+      music_enabled: musicEnabled,
+      ambience_enabled: ambienceEnabled,
+      foley_enabled: foleyEnabled,
       numerology_style: numerologyStyle,
       numerology_hook_mode: numerologyHookMode,
       // Production/camera/action prose stays English. Spoken and audience-facing
@@ -1679,15 +1749,15 @@ function ProjectWorkspace() {
       dialogue_language:
         genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)
           ? undefined
-          : anonymousNarration || forceVietnameseDialogue
-            ? "Vietnamese"
+          : voiceOverEnabled || characterDialogueEnabled
+            ? lang === "vi" ? "Vietnamese" : "English"
             : undefined,
       force_dialogue:
         genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)
           ? false
-          : anonymousNarration
-            ? false
-            : forceVietnameseDialogue,
+          : characterDialogueEnabled
+            ? forceVietnameseDialogue
+            : false,
       cooking_recipe: genre === "cooking" ? recipeForInput ?? undefined : undefined,
       cooking_style: genre === "cooking" ? cookingStyle : undefined,
       character_descriptions: effectiveCharacters.length > 0
@@ -1733,7 +1803,7 @@ function ProjectWorkspace() {
       location_mode: locationMode,
       location_sets: locationSetsForInput.length > 0 ? locationSetsForInput : undefined,
       setting: effectiveSetting || undefined,
-      tone: effectiveTone || undefined,
+      tone: characterDialogueEnabled ? effectiveTone || undefined : undefined,
       // Ad genres send the product brief; narrative genres send the story brief.
       product_name: isAdGenre ? productName || undefined : undefined,
       selling_points: isAdGenre ? sellingPoints || undefined : undefined,
@@ -2151,12 +2221,19 @@ function ProjectWorkspace() {
   // ─── Nano Flow: export the manifest for the AutoFlow Reel extension ───────
   const buildResultManifest = () => {
     if (!result) return null;
+    const speechContract = genInput
+      ? buildSpeechManifestContract(genInput)
+      : undefined;
     // Build the STRUCTURED Veo clips once and embed them in the manifest so each
     // shot's video_prompt is the high-quality structured scene JSON (not a flat
     // paragraph) and the keyframe prompt is composed from that same scene.
     const veoJson = buildVeoJson(result.breakdown, {
       aspectRatio: genInput?.aspect_ratio ?? "9:16",
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+      narratorVoiceStyle: genInput?.narrator_voice_style,
+      musicEnabled: genInput?.music_enabled,
+      ambienceEnabled: genInput?.ambience_enabled,
+      foleyEnabled: genInput?.foley_enabled,
       ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
       hasLocationRef: (genInput?.background_images?.length ?? 0) > 0,
       characterReferenceNames: (genInput?.character_images ?? [])
@@ -2164,7 +2241,8 @@ function ProjectWorkspace() {
         .map((c) => c.name),
       characterRepresentation:
         genInput?.character_representation ?? effectiveCharacterRepresentation,
-      anonymousNarration: genInput?.anonymous_narration === true,
+      speechMode: speechContract?.mode,
+      anonymousCharacters: speechContract?.anonymous_characters,
     });
     const veoClips = Array.isArray((veoJson as { clips?: unknown[] }).clips)
       ? ((veoJson as { clips: Array<Record<string, unknown>> }).clips)
@@ -2177,10 +2255,12 @@ function ProjectWorkspace() {
       // Board vẽ ĐÚNG số cảnh người dùng chọn (3 cảnh ⇒ 3 frame).
       beatsPerSegment: genInput?.beats_per_segment ?? beatsPerSegment,
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+      ...(speechContract ? { speechContract } : {}),
       // Selected video style → lock the manifest (board + video) to that medium.
       characterRepresentation: manifestCharacterRepresentation,
       characterStylePrompt: characterWorldStylePrompt(manifestCharacterRepresentation),
-      anonymousNarration: genInput?.anonymous_narration === true,
+      anonymousNarration:
+        genInput?.anonymous_characters ?? genInput?.anonymous_narration === true,
       veoClips,
       // Cách 1 — embed uploaded location photos into the downloadable manifest.
       locationSets: genInput?.location_mode === "upload" ? genInput?.location_sets : undefined,
@@ -2449,9 +2529,16 @@ function ProjectWorkspace() {
       zip.file(`prompts.txt`, promptsOnly);
 
       // ── Structured Flow/Veo JSON — one concise, independent object per clip. ──
+      const exportSpeechContract = genInput
+        ? buildSpeechManifestContract(genInput)
+        : undefined;
       const veoJson = buildVeoJson(bd, {
         aspectRatio: aspect,
         dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+        narratorVoiceStyle: genInput?.narrator_voice_style,
+        musicEnabled: genInput?.music_enabled,
+        ambienceEnabled: genInput?.ambience_enabled,
+        foleyEnabled: genInput?.foley_enabled,
         ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
         hasLocationRef: (genInput?.background_images?.length ?? 0) > 0,
         characterReferenceNames: (genInput?.character_images ?? [])
@@ -2459,7 +2546,8 @@ function ProjectWorkspace() {
           .map((c) => c.name),
         characterRepresentation:
           genInput?.character_representation ?? effectiveCharacterRepresentation,
-        anonymousNarration: genInput?.anonymous_narration === true,
+        speechMode: exportSpeechContract?.mode,
+        anonymousCharacters: exportSpeechContract?.anonymous_characters,
       });
       zip.file(`veo_prompts.json`, JSON.stringify(veoJson, null, 2));
       const clipArr = Array.isArray((veoJson as { clips?: unknown[] }).clips)
@@ -2902,9 +2990,16 @@ function ProjectWorkspace() {
     const hasCharSheet = !!result.characterRefSheetUrl;
     const hasPoster = !!result.storyboardPosterUrl;
     const hasWarnings = result.warnings && result.warnings.length > 0;
+    const resultSpeechContract = genInput
+      ? buildSpeechManifestContract(genInput)
+      : undefined;
     const resultVeoJson = buildVeoJson(result.breakdown, {
       aspectRatio: genInput?.aspect_ratio ?? "9:16",
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
+      narratorVoiceStyle: genInput?.narrator_voice_style,
+      musicEnabled: genInput?.music_enabled,
+      ambienceEnabled: genInput?.ambience_enabled,
+      foleyEnabled: genInput?.foley_enabled,
       ambientAudio: genreAmbientAudio(genInput?.genre, genInput?.video_goal),
       hasLocationRef: (genInput?.background_images?.length ?? 0) > 0,
       characterReferenceNames: (genInput?.character_images ?? [])
@@ -2912,7 +3007,8 @@ function ProjectWorkspace() {
         .map((c) => c.name),
       characterRepresentation:
         genInput?.character_representation ?? effectiveCharacterRepresentation,
-      anonymousNarration: genInput?.anonymous_narration === true,
+      speechMode: resultSpeechContract?.mode,
+      anonymousCharacters: resultSpeechContract?.anonymous_characters,
     });
     const resultJsonClips = Array.isArray((resultVeoJson as { clips?: unknown[] }).clips)
       ? ((resultVeoJson as { clips: unknown[] }).clips as unknown[])
@@ -3899,12 +3995,20 @@ function ProjectWorkspace() {
                         {
                           value: "polish",
                           label: lang === "vi"
-                            ? anonymousNarration
-                              ? "Biên tập nâng cấp hook + lời dẫn"
-                              : "Biên tập nâng cấp hook + thoại"
-                            : anonymousNarration
-                              ? "Polish hook + narration"
-                              : "Polish hook + dialogue",
+                            ? voiceOverEnabled && characterDialogueEnabled
+                              ? "Biên tập hook + lời dẫn + thoại"
+                              : voiceOverEnabled
+                                ? "Biên tập hook + lời dẫn"
+                                : characterDialogueEnabled
+                                  ? "Biên tập hook + thoại"
+                                  : "Biên tập hook + hành động hình ảnh"
+                            : voiceOverEnabled && characterDialogueEnabled
+                              ? "Polish hook + narration + dialogue"
+                              : voiceOverEnabled
+                                ? "Polish hook + narration"
+                                : characterDialogueEnabled
+                                  ? "Polish hook + dialogue"
+                                  : "Polish hook + visual action",
                         },
                         {
                           value: "preserve",
@@ -3916,33 +4020,112 @@ function ProjectWorkspace() {
                     />
                     <p className="text-[11px] leading-relaxed text-muted-foreground">
                       {lang === "vi"
-                        ? anonymousNarration
-                          ? "Biên tập giữ nguyên cốt truyện, vai trò, đạo cụ và thông điệp; chỉ nâng hook, hành động, biểu cảm và lời dẫn — không tạo thoại nhân vật."
-                          : "Biên tập giữ nguyên cốt truyện, nhân vật, đạo cụ và thông điệp; chỉ nâng hook 30 giây, hành động, biểu cảm và lời thoại."
-                        : anonymousNarration
-                          ? "Polish preserves plot, roles, props and meaning while strengthening the hook, action and narration without character dialogue."
-                          : "Polish preserves plot, cast, props and meaning while strengthening the first 30 seconds, performance and dialogue."}
+                        ? "Giữ nguyên cốt truyện, nhân vật, đạo cụ và thông điệp; chỉ nâng hook, hành động và đúng các kênh lời nói bạn bật bên dưới."
+                        : "Preserves plot, cast, props and meaning while improving the hook, action and only the speech channels enabled below."}
                     </p>
-                    <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-md border bg-background p-2.5">
-                      <input
-                        type="checkbox"
-                        checked={anonymousNarration}
-                        onChange={(e) => setAnonymousNarration(e.target.checked)}
-                        className="mt-0.5 h-4 w-4 shrink-0"
-                      />
-                      <span>
-                        <span className="block text-xs font-medium">
-                          {lang === "vi"
-                            ? "Không tên riêng, không thoại nhân vật — chỉ giọng lồng tiếng"
-                            : "No personal names or character dialogue — voice-over only"}
+                    <div className="mt-2 space-y-2 rounded-md border bg-background p-3">
+                      <div className="text-xs font-semibold">
+                        {lang === "vi" ? "Hình thức lời nói" : "Speech format"}
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="flex cursor-pointer items-start gap-2 rounded-md border p-2.5">
+                          <input
+                            type="checkbox"
+                            checked={voiceOverEnabled}
+                            onChange={(e) => setVoiceOverEnabled(e.target.checked)}
+                            className="mt-0.5 h-4 w-4 shrink-0"
+                          />
+                          <span>
+                            <span className="block text-xs font-medium">
+                              {lang === "vi" ? "Giọng dẫn / Voice-over" : "Narrator / Voice-over"}
+                            </span>
+                            <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                              {lang === "vi" ? "Giọng kể ngoài hình, không lip-sync." : "Off-screen narration without lip-sync."}
+                            </span>
+                          </span>
+                        </label>
+                        <label className="flex cursor-pointer items-start gap-2 rounded-md border p-2.5">
+                          <input
+                            type="checkbox"
+                            checked={characterDialogueEnabled}
+                            onChange={(e) => setCharacterDialogueEnabled(e.target.checked)}
+                            className="mt-0.5 h-4 w-4 shrink-0"
+                          />
+                          <span>
+                            <span className="block text-xs font-medium">
+                              {lang === "vi" ? "Lời thoại nhân vật" : "Character dialogue"}
+                            </span>
+                            <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                              {lang === "vi" ? "Nhân vật nói theo lượt và lip-sync." : "Turn-taking character speech with lip-sync."}
+                            </span>
+                          </span>
+                        </label>
+                      </div>
+
+                      <label className="flex cursor-pointer items-start gap-2 rounded-md border border-dashed p-2.5">
+                        <input
+                          type="checkbox"
+                          checked={anonymousNarration}
+                          onChange={(e) => setAnonymousNarration(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0"
+                        />
+                        <span>
+                          <span className="block text-xs font-medium">
+                            {lang === "vi" ? "Không dùng tên riêng" : "No personal given names"}
+                          </span>
+                          <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                            {lang === "vi"
+                              ? "Dùng nhãn vai trò ổn định; lựa chọn này độc lập với người que, người thật và hình thức lời nói."
+                              : "Use stable role labels; independent from visual style and speech format."}
+                          </span>
                         </span>
-                        <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
-                          {lang === "vi"
-                            ? "Nhân vật chỉ dùng nhãn vai trò để giữ hình nhất quán; mọi câu nói thuộc VOICEOVER, nhân vật trên hình không nói và không lip-sync."
-                            : "Characters use role labels only for visual continuity; every spoken line belongs to VOICEOVER and visible characters never speak or lip-sync."}
-                        </span>
-                      </span>
-                    </label>
+                      </label>
+
+                      {voiceOverEnabled && (
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium">
+                            {lang === "vi" ? "Phong cách giọng dẫn" : "Narrator voice style"}
+                          </label>
+                          <Select
+                            value={narratorVoiceSel}
+                            onChange={(e) => setNarratorVoiceSel(e.target.value)}
+                            options={NARRATOR_VOICE_OPTIONS[lang]}
+                          />
+                          {narratorVoiceSel === CUSTOM && (
+                            <Input
+                              value={narratorVoiceCustom}
+                              onChange={(e) => setNarratorVoiceCustom(e.target.value)}
+                              placeholder={lang === "vi" ? "Mô tả cao độ tương đối, tốc độ, nhấn và khoảng nghỉ" : "Describe relative pitch, pace, emphasis and pauses"}
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {!voiceOverEnabled && !characterDialogueEnabled && (
+                        <div className="space-y-2 rounded-md bg-muted/40 p-2.5">
+                          <div className="text-xs font-medium">
+                            {lang === "vi" ? "Âm thanh cho video không lời" : "Audio for a wordless video"}
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            {[
+                              ["music", musicEnabled, setMusicEnabled, lang === "vi" ? "Nhạc" : "Music"],
+                              ["ambience", ambienceEnabled, setAmbienceEnabled, "Ambience"],
+                              ["foley", foleyEnabled, setFoleyEnabled, "Foley"],
+                            ].map(([id, checked, setter, label]) => (
+                              <label key={String(id)} className="flex cursor-pointer items-center gap-2 text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(checked)}
+                                  onChange={(e) => (setter as React.Dispatch<React.SetStateAction<boolean>>)(e.target.checked)}
+                                  className="h-4 w-4"
+                                />
+                                {String(label)}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">
@@ -4039,18 +4222,25 @@ function ProjectWorkspace() {
                   )}
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{L("tone")}</label>
-                <Select
-                  value={toneSel}
-                  onChange={(e) => setToneSel(e.target.value)}
-                  options={TONE_OPTIONS[lang]}
-                  placeholder={L("tonePlaceholder")}
-                />
-                {toneSel === CUSTOM && (
-                  <Input value={toneCustom} onChange={(e) => setToneCustom(e.target.value)} placeholder={L("toneCustomPlaceholder")} />
-                )}
-              </div>
+              {characterDialogueEnabled && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{L("tone")}</label>
+                  <Select
+                    value={toneSel}
+                    onChange={(e) => setToneSel(e.target.value)}
+                    options={TONE_OPTIONS[lang]}
+                    placeholder={L("tonePlaceholder")}
+                  />
+                  {toneSel === CUSTOM && (
+                    <Input value={toneCustom} onChange={(e) => setToneCustom(e.target.value)} placeholder={L("toneCustomPlaceholder")} />
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {lang === "vi"
+                      ? "Điều khiển cách viết câu, nhịp đối đáp, mức trực tiếp, điểm nhấn và khoảng nghỉ; không thay đổi danh tính giọng của từng nhân vật."
+                      : "Controls sentence craft, turn rhythm, directness, emphasis and pauses without replacing each character's locked voice identity."}
+                  </p>
+                </div>
+              )}
 
               {/* Brief — topic (numerology/health) vs product (ad) vs story */}
               {TOPIC_GENRES.has(genre) ? (
@@ -5144,12 +5334,12 @@ function ProjectWorkspace() {
                     checked={
                       genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle)
                         ? false
-                        : anonymousNarration
+                        : !characterDialogueEnabled
                           ? false
                           : forceVietnameseDialogue
                     }
                     onChange={(e) => setForceVietnameseDialogue(e.target.checked)}
-                    disabled={anonymousNarration || (genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle))}
+                    disabled={!characterDialogueEnabled || (genre === "cooking" && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(cookingStyle))}
                     className="mt-0.5 h-4 w-4 shrink-0"
                   />
                   <span>
@@ -5159,10 +5349,10 @@ function ProjectWorkspace() {
                         ? lang === "vi"
                           ? "Phong cách ASMR đã khóa: không thoại, không voice-over, không nhạc."
                           : "ASMR lock: no dialogue, voice-over or music."
-                        : anonymousNarration
+                        : !characterDialogueEnabled
                           ? lang === "vi"
-                            ? "Chế độ chỉ giọng lồng tiếng đã khóa: nhân vật trên hình không nói và không lip-sync."
-                            : "Voice-over-only mode is locked: visible characters never speak or lip-sync."
+                            ? "Lời thoại nhân vật đang tắt: nhân vật trên hình không nói và không lip-sync."
+                            : "Character dialogue is off: visible characters do not speak or lip-sync."
                         : L("forceDialogueHint")}
                     </span>
                   </span>
@@ -5223,7 +5413,16 @@ function ProjectWorkspace() {
                 <p className="text-muted-foreground">
                   <strong>{segmentCount}</strong> {L("segments")} (~{segmentCount * 10}s) · <strong>{style}</strong> {L("style")} · <strong>{aspectRatio}</strong>
                   {<> · <strong>{creativeOptionLabel(CREATIVE_CHARACTER_OPTIONS, previewCharacterRepresentation, lang)}</strong></>}
-                  {anonymousNarration && <> · <strong>{lang === "vi" ? "Chỉ giọng lồng tiếng" : "Voice-over only"}</strong></>}
+                  {<> · <strong>{
+                    voiceOverEnabled
+                      ? characterDialogueEnabled
+                        ? (lang === "vi" ? "Lời dẫn + thoại" : "Narration + dialogue")
+                        : (lang === "vi" ? "Chỉ lời dẫn" : "Voice-over only")
+                      : characterDialogueEnabled
+                        ? (lang === "vi" ? "Chỉ thoại nhân vật" : "Character dialogue only")
+                        : (lang === "vi" ? "Không lời" : "Wordless")
+                  }</strong></>}
+                  {anonymousNarration && <> · <strong>{lang === "vi" ? "Không tên riêng" : "No personal names"}</strong></>}
                   {characters.length > 0 && <> · {characters.length} {L("characters")}</>}
                   {products.length > 0 && <> · {products.length} {L("products")}</>}
                   {backgrounds.length > 0 && <> · {backgrounds.length} {L("locations")}</>}

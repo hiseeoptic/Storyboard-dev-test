@@ -118,6 +118,7 @@ test("stick-figure video prompt rejects real hands and photoreal scene-bible lea
   const result = buildVeoJson(breakdown, {
     aspectRatio: "9:16",
     dialogueLanguage: "Vietnamese",
+    narratorVoiceStyle: "reflective low-mid register with deliberate pauses",
     characterRepresentation: "whiteboard_stick_figure",
     anonymousNarration: true,
   });
@@ -127,6 +128,7 @@ test("stick-figure video prompt rejects real hands and photoreal scene-bible lea
   assert.match(clip.character_lock.CHAR_1.hand_detail, /black-line endpoints|minimal mitten/i);
   assert.match(clip.negative_prompt, /photoreal human hand|realistic skin hand/i);
   assert.match(clip.dialogue[0].voice_personality, /NARRATOR_01/);
+  assert.match(clip.dialogue[0].voice_personality, /reflective low-mid register/i);
   assert.doesNotMatch(clip.visual_style, /photoreal premium commercial|Rec\.709|85mm/i);
   assert.doesNotMatch(JSON.stringify(clip.scene_bible_tokens), /Rec\.709|85mm|sensor grain/i);
   assert.doesNotMatch(serialized, /REAL MATERIALS/i);
@@ -144,6 +146,48 @@ test("stick-figure video prompt rejects real hands and photoreal scene-bible lea
   });
   assert.match(flat, /NARRATOR_01/);
   assert.doesNotMatch(flat, /REAL MATERIALS|Rec\.709|85mm|sensor grain/i);
+});
+
+test("anonymous role labels do not silence character dialogue in mixed mode", () => {
+  const result = buildVeoJson({
+    character_locks: [{
+      name: "Người chồng",
+      build: "minimal black-line stick figure",
+      costume: "small blue accent",
+      signature_features: "square glasses",
+      voice: "warm adult male voice, calm natural cadence",
+    }],
+    scene_bible: {},
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      title: "Một câu trả lời",
+      marketing_role: "body",
+      characters_in_scene: ["Người chồng"],
+      environment_ref: "drawn_home",
+      first_frame_prompt: "A hand-drawn living room; Người chồng faces the listener.",
+      motion_prompt: "Người chồng answers with a small reassuring nod.",
+      dialogue_lines: [{
+        speaker: "Người chồng",
+        delivery: "on_screen",
+        text: "Anh hiểu rồi.",
+        start_s: 2,
+        end_s: 4,
+      }],
+      beats: [{ beat: "Người chồng answers", camera: "[MEDIUM] face and upper body" }],
+    }],
+  }, {
+    aspectRatio: "9:16",
+    dialogueLanguage: "Vietnamese",
+    characterRepresentation: "whiteboard_stick_figure",
+    speechMode: "mixed",
+    anonymousCharacters: true,
+  });
+
+  const character = result.clips[0].character_lock.CHAR_1;
+  assert.match(character.voice_personality, /warm adult male voice/i);
+  assert.equal(character.speech_authority, undefined);
+  assert.equal(result.clips[0].dialogue[0].speaker_name, "Người chồng");
 });
 
 test("uploaded references keep identity image-only while preserving contextual clothing text", () => {

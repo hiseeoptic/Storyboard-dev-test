@@ -65,12 +65,15 @@ export function validateStoryboardInput(
     });
   }
 
-  if (input.force_dialogue && !text(input.dialogue_language)) {
+  const explicitSpeechEnabled =
+    input.voice_over_enabled === true ||
+    input.character_dialogue_enabled === true;
+  if ((input.force_dialogue || explicitSpeechEnabled) && !text(input.dialogue_language)) {
     push({
       code: "INPUT-004",
       severity: "high",
       scope: "project",
-      message: "Forced dialogue requires an explicit dialogue language.",
+      message: "Enabled speech requires an explicit spoken language.",
     });
   }
 

@@ -35,15 +35,16 @@ test("does not bypass writing for a short dialogue idea", () => {
   );
 });
 
-test("anonymous narration menu mode reaches both script and storyboard prompts", () => {
+test("all speech menu modes reach both script and storyboard prompts", () => {
   const promptSource = readFileSync(
     new URL("../../prompts/storyboard-breakdown.ts", import.meta.url),
     "utf8"
   );
-  assert.match(promptSource, /input\.anonymous_narration/);
-  assert.match(promptSource, /Do not create or use any personal given name/);
-  assert.match(promptSource, /Every spoken line is narrator voice-over/);
+  assert.match(promptSource, /resolveSpeechMode/);
+  assert.match(promptSource, /SPEECH MODE — MIXED/);
+  assert.match(promptSource, /SPEECH MODE — VOICE-OVER ONLY/);
+  assert.match(promptSource, /SPEECH MODE — CHARACTER DIALOGUE ONLY/);
+  assert.match(promptSource, /SPEECH MODE — WORDLESS/);
+  assert.match(promptSource, /ANONYMOUS CHARACTER AUTHORITY/);
   assert.match(promptSource, /speaker=\"\", delivery=\"voiceover\"/);
-  assert.match(promptSource, /No visible character speaks or lip-syncs/);
-  assert.match(promptSource, /Add no character dialogue/);
 });
