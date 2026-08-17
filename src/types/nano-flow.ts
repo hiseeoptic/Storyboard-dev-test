@@ -235,6 +235,8 @@ export interface NanoFlowProject {
   /** Language used by camera/action/environment instructions. Independent from
    * dialogue_language and UI locale; English is the production default. */
   production_prompt_language?: string;
+  /** Locked genre registry selection and compact production directions. */
+  production_profile?: import("@/lib/video-context/types").LockedGenreProductionProfile;
   /** Additive speech/audio contract selected in Storyboard. Older extension
    * versions safely ignore it; newer consumers do not need to infer silence,
    * narrator ownership or character-dialogue ownership from empty fields. */

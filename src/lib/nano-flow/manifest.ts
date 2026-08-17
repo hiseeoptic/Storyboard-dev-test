@@ -1205,6 +1205,9 @@ export function buildNanoFlowManifest(
       board_aspect_ratio: "16:9",
       dialogue_language: opts.dialogueLanguage ?? "Vietnamese",
       production_prompt_language: opts.productionPromptLanguage?.trim() || "English",
+      ...(breakdown.context_ir?.production_profile
+        ? { production_profile: breakdown.context_ir.production_profile }
+        : {}),
       ...(opts.speechContract ? { speech_contract: opts.speechContract } : {}),
       total_duration_seconds: breakdown.total_duration_seconds,
       thumbnail_title: breakdown.thumbnail_title,

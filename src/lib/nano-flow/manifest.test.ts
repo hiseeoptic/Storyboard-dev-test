@@ -61,6 +61,31 @@ test("manifest has the fixed contract shape", () => {
   assert.equal(m.shots[1]?.continuity_mode, "continuous");
 });
 
+test("manifest preserves the locked genre voice and directing profile", () => {
+  const bd = fixture();
+  bd.context_ir = {
+    reality_profile: { mode: "cinematic" },
+    production_profile: {
+      genre: "advertising",
+      content_subtype: "product_demonstration",
+      dialogue_style_id: "commercial",
+      narrator_voice_style_id: "commercial",
+      camera_profile_id: "product_commercial",
+      script_direction: "Lead with the product problem, prove the feature, then land the benefit.",
+      voice_direction: "Clear benefit-led delivery with controlled emphasis.",
+      camera_direction: "Macro product detail, clean demonstration coverage and legible pack shot.",
+      edit_rhythm: "Fast enough for clarity; hold proof moments long enough to read.",
+      sound_direction: "Precise product foley under a clean commercial mix.",
+      forbidden_patterns: ["unsupported claims", "unreadable pack shot"],
+    },
+  } as unknown as NonNullable<typeof bd.context_ir>;
+
+  const m = buildNanoFlowManifest(bd);
+  assert.equal(m.project.production_profile?.content_subtype, "product_demonstration");
+  assert.equal(m.project.production_profile?.camera_profile_id, "product_commercial");
+  assert.match(m.project.production_profile?.voice_direction ?? "", /benefit-led/i);
+});
+
 test("square video delivery remains 1:1 while every storyboard board remains 16:9", () => {
   const m = buildNanoFlowManifest(fixture(), { aspectRatio: "1:1" });
   assert.equal(m.project.aspect_ratio, "1:1");

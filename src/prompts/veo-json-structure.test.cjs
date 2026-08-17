@@ -190,6 +190,55 @@ test("anonymous role labels do not silence character dialogue in mixed mode", ()
   assert.equal(result.clips[0].dialogue[0].speaker_name, "Người chồng");
 });
 
+test("Veo clip carries the locked genre voice, camera and sound profile", () => {
+  const result = buildVeoJson({
+    context_ir: {
+      layers: {
+        environment: {
+          locations: [{
+            id: "stadium",
+            description: "A competition stadium with a readable finish line",
+            spatial_anchors: ["track", "finish line", "stands"],
+            fixed_elements: ["lane markings", "scoreboard"],
+            lighting_motivation: "daylight",
+            sound_bed: "crowd bed and track ambience",
+            reverb_profile: "open stadium reflections",
+          }],
+        },
+      },
+      production_profile: {
+        genre: "sports",
+        dialogue_style_id: "live_commentary",
+        narrator_voice_style_id: "sports",
+        camera_profile_id: "broadcast_sports",
+        script_direction: "Name the live contest, score pressure and consequence.",
+        voice_direction: "Responsive commentary with rising energy at decisive moments.",
+        camera_direction: "Readable field geography, tracked play and decisive replay coverage.",
+        edit_rhythm: "Follow live action; replay only the decisive event.",
+        sound_direction: "Crowd bed, impact detail and clear commentary priority.",
+        forbidden_patterns: ["music-video montage", "camera crossing play direction"],
+      },
+    },
+    character_locks: [{ name: "Vận động viên", costume: "blue competition kit" }],
+    scene_bible: {},
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      title: "Pha quyết định",
+      marketing_role: "hook",
+      characters_in_scene: ["Vận động viên"],
+      environment_ref: "stadium",
+      first_frame_prompt: "A stadium during the decisive play.",
+      motion_prompt: "The athlete accelerates toward the finish.",
+      beats: [{ beat: "The athlete reaches the finish", camera: "tracked medium-wide" }],
+    }],
+  }, { aspectRatio: "16:9", dialogueLanguage: "Vietnamese" });
+
+  assert.equal(result.clips[0].production_profile.camera_profile_id, "broadcast_sports");
+  assert.match(result.clips[0].production_profile.camera_direction, /field geography/i);
+  assert.match(result.clips[0].production_profile.sound_direction, /crowd bed/i);
+});
+
 test("uploaded references keep identity image-only while preserving contextual clothing text", () => {
   const cleaned = stripUploadedCharacterAppearance(
     "Lan, with long black hair, wearing a soft beige knit top and dark indigo jeans, stands beside Minh.",

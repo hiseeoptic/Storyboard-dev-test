@@ -54,6 +54,15 @@ test("wordless mode does not require a spoken language", () => {
   assert.equal(report.findings.some((finding) => finding.code === "INPUT-004"), false);
 });
 
+test("advanced narrator WPM stays inside a human production range", () => {
+  const report = validateStoryboardInput(input({
+    voice_over_enabled: true,
+    dialogue_language: "Vietnamese",
+    voice_performance: { target_wpm: 260 },
+  }));
+  assert.ok(report.findings.some((finding) => finding.code === "INPUT-009"));
+});
+
 test("extension-side declared reference may omit embedded image", () => {
   const report = validateStoryboardInput(
     input({

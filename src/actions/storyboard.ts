@@ -62,6 +62,10 @@ import {
 } from "@/prompts";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
 import {
+  compactGenreStoryboardDirective,
+  lockGenreProductionProfile,
+} from "@/lib/genre-production-profiles";
+import {
   buildStoryboardPromptPackage,
   validateStoryboardPromptPackage,
 } from "@/lib/storyboard/prompt-package";
@@ -2379,6 +2383,7 @@ export async function generateStoryboardPlan(
       const sanitizedContext = {
         ...sanitizeUploadedCharacterContext(input, resolvedContext),
         state: "locked" as const,
+        production_profile: lockGenreProductionProfile(stage2Input),
       };
       const contextGate = validateResolvedVideoContext(
         sanitizedContext,
@@ -2619,7 +2624,10 @@ function assemblePlanPrompts(
   const ctx = buildRefContext(input, breakdown, analysis, provider);
   const referencedCharacterNames = uploadedCharacterNameSet(input);
   const creativeRoute = resolveCreativeRoute(input);
-  const creativeDirective = renderCreativeVisualDirective(input);
+  const creativeDirective = [
+    renderCreativeVisualDirective(input),
+    compactGenreStoryboardDirective(input),
+  ].filter(Boolean).join("\n");
   const veoCreativeDirective = makeVeoSafe(creativeDirective);
   const palette = breakdown.style_guide?.color_palette ?? [];
   // Genre-appropriate ambient sound (kitchen sizzle for cooking, gym energy for

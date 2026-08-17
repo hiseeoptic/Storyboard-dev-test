@@ -150,6 +150,18 @@ export const DIRECTING_PROFILE_OPTIONS: CreativeOption<DirectingProfileId>[] = [
   { value: "cinematic_drama", label_vi: "Chính kịch điện ảnh", label_en: "Cinematic drama", description_vi: "Blocking, nhịp và ánh sáng phục vụ xung đột nhân vật.", description_en: "Blocking, rhythm and light serve character conflict." },
   { value: "premium_commercial", label_vi: "Quảng cáo cao cấp", label_en: "Premium commercial", description_vi: "Kiểm soát phản xạ, vật liệu, chuyển động sản phẩm và CTA.", description_en: "Controlled reflections, materials, product motion and CTA." },
   { value: "explainer_clarity", label_vi: "Giải thích rõ ràng", label_en: "Explainer clarity", description_vi: "Mỗi hình chỉ giải thích một ý, dùng sơ đồ khi thực sự cần.", description_en: "Each visual explains one idea; diagrams appear only when useful." },
+  { value: "immersive_action", label_vi: "Hành động nhập vai", label_en: "Immersive action", description_vi: "Hành động hấp dẫn nhưng rõ nguyên nhân, khoảng cách, screen direction và hậu quả.", description_en: "Kinetic action with readable causality, distance, screen direction and consequence." },
+  { value: "reaction_comedy", label_vi: "Hài phản ứng", label_en: "Reaction comedy", description_vi: "Giữ khung cho setup, punchline và phản ứng; không cắt mất nhịp cười.", description_en: "Hold setup, punchline and reaction without cutting away from the joke." },
+  { value: "subjective_horror", label_vi: "Kinh dị chủ quan", label_en: "Subjective horror", description_vi: "Không gian âm, negative space và reveal có chủ đích.", description_en: "Subjective reveals, negative space and directional sound." },
+  { value: "soft_romance", label_vi: "Lãng mạn mềm mại", label_en: "Soft romance", description_vi: "Cận mắt/tay, chuyển động nhẹ, ánh sáng mềm và eyeline chính xác.", description_en: "Gentle eye/hand close coverage, soft light and exact eyelines." },
+  { value: "interview_expert", label_vi: "Phỏng vấn / chuyên gia", label_en: "Interview / expert", description_vi: "Trục phỏng vấn sạch, lời giải thích và insert bằng chứng rõ.", description_en: "Clean interview axis with readable evidence inserts." },
+  { value: "product_commercial", label_vi: "Quảng cáo sản phẩm", label_en: "Product commercial", description_vi: "Vấn đề, lợi ích, bằng chứng và hero shot sản phẩm.", description_en: "Problem, benefit proof and a controlled product hero shot." },
+  { value: "luxury_commercial", label_vi: "Luxury commercial", label_en: "Luxury commercial", description_vi: "Macro vật liệu, phản xạ kiểm soát, bố cục sạch và chuyển động siêu mượt.", description_en: "Material macro, controlled reflections, clean composition and ultra-smooth motion." },
+  { value: "technical_demo", label_vi: "Demo kỹ thuật", label_en: "Technical demo", description_vi: "Thao tác, tiếp xúc tay–vật và kết quả trước/sau đọc được rõ ràng.", description_en: "Readable operation, hand-object contact and before/after proof." },
+  { value: "broadcast_sports", label_vi: "Thể thao truyền hình", label_en: "Broadcast sports", description_vi: "Wide chiến thuật, tracking và replay đúng lúc.", description_en: "Tactical wides, action tracking and purposeful replay." },
+  { value: "cinematic_sports", label_vi: "Thể thao điện ảnh", label_en: "Cinematic sports", description_vi: "Quy mô vận động viên, tracking rõ và chi tiết ở cao trào thật.", description_en: "Athlete-scale tracking with selective detail at a genuine peak." },
+  { value: "rhythmic_music_video", label_vi: "MV nhịp điệu", label_en: "Rhythmic music video", description_vi: "Máy và dựng theo cấu trúc nhạc, không cắt ngẫu nhiên.", description_en: "Camera and edits follow musical structure, never random beat spam." },
+  { value: "animation_kids", label_vi: "Trẻ em / hoạt hình", label_en: "Kids / animation", description_vi: "Silhouette, pose và camera dễ đọc, không gây mất phương hướng.", description_en: "Readable silhouettes, poses and non-disorienting camera moves." },
 ];
 
 export const GOAL_LAWS: Record<AudienceGoal, string[]> = {
@@ -250,6 +262,54 @@ export const DIRECTING_LAWS: Record<Exclude<DirectingProfileId, "auto">, string[
   explainer_clarity: [
     "Assign one visual job to each beat; keep labels, arrows and diagrams out unless they materially clarify an invisible relation.",
     "Maintain a stable visual grammar for colour, shape, scale and transitions; examples must be concrete and causally accurate.",
+  ],
+  immersive_action: [
+    "Maintain one readable action axis and screen direction; show threat distance, contact cause, defensive response and consequence in order.",
+    "Use kinetic tracking and impact detail without hiding body mechanics or turning the exchange into pose-only choreography.",
+  ],
+  reaction_comedy: [
+    "Protect setup, misdirection, punchline and reaction timing with stable medium/two-shot geography and one motivated push-in.",
+    "Never cut away before the reaction lands or use restless camera motion as a substitute for comic timing.",
+  ],
+  subjective_horror: [
+    "Use negative space, obstructed foreground, subjective sightlines and directional off-screen sound while preserving threat geography.",
+    "Build slow reveals before acceleration; jumpscares require a planted cause and cannot become the default rhythm.",
+  ],
+  soft_romance: [
+    "Use gentle close coverage of eyes, hands and reciprocal micro-actions with exact eyelines and soft motivated light.",
+    "Camera movement remains slow and intimate; do not manufacture intimacy through abrupt proximity or axis breaks.",
+  ],
+  interview_expert: [
+    "Hold a clean interview axis and readable presenter/expert framing; evidence inserts must directly support the current statement.",
+    "Use stable light and clear eyelines; never fabricate authority through arbitrary low angles or lab imagery.",
+  ],
+  product_commercial: [
+    "Stage problem, product interaction, observable benefit proof and one controlled hero frame while locking product geometry and branding.",
+    "Macro and movement reveal real features only; never float, morph or multiply the product.",
+  ],
+  luxury_commercial: [
+    "Use clean negative space, macro material detail, controlled reflections and exceptionally smooth slow camera movement.",
+    "Hold visual silence around the hero moment; avoid busy cuts, exaggerated gestures and hard-sell framing.",
+  ],
+  technical_demo: [
+    "Cover the complete operation from stable context into exact inserts of hand, control and result.",
+    "Preserve contact, orientation and before/after state; no hidden step, impossible tool action or cosmetic jump cut.",
+  ],
+  broadcast_sports: [
+    "Keep tactical geography, track the action, and use reaction close-ups or replay only to clarify a decisive event.",
+    "Preserve field/court direction, score reality and athlete identity; never manufacture a climax.",
+  ],
+  cinematic_sports: [
+    "Track full-body performance and spatial progress, then use selective detail, breath and reaction around a genuine peak.",
+    "Cinematic movement cannot obscure form, rules, contact or outcome.",
+  ],
+  rhythmic_music_video: [
+    "Bind camera moves, cut points and motif changes to musical sections rather than every beat.",
+    "Keep one visual motif and minimise spoken coverage so dialogue never competes with the song.",
+  ],
+  animation_kids: [
+    "Prioritise clear silhouettes, readable poses, simple screen direction and friendly non-disorienting camera moves.",
+    "Keep action and emotion legible at a glance; no frantic cutting or live-action style drift.",
   ],
 };
 

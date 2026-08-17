@@ -8,6 +8,22 @@
 
 import type { RealityProfile } from "@/lib/reality/types";
 
+export interface LockedGenreProductionProfile {
+  registry_version: "1.0";
+  genre: string;
+  content_subtype?: string;
+  dialogue_style_id: string;
+  narrator_voice_style_id: string;
+  camera_profile_id: string;
+  script_direction: string;
+  voice_direction: string;
+  camera_direction: string;
+  edit_rhythm: string;
+  sound_direction: string;
+  forbidden_patterns: string[];
+  voice_performance?: Record<string, string | number | undefined>;
+}
+
 export type ContextResolutionState = "open" | "resolved" | "locked";
 
 export interface ContextProjectIntentLayer {
@@ -137,6 +153,9 @@ export interface ResolvedVideoContext {
   confidence: number;
   assumptions: string[];
   evidence: string[];
+  /** Deterministic local registry lock. It is attached after Context analysis,
+   * so the model cannot silently replace the selected genre production rules. */
+  production_profile?: LockedGenreProductionProfile;
   /** Cross-cutting simulation depth; it tunes all 10 layers without becoming layer 11. */
   reality_profile: RealityProfile;
   layers: VideoContextLayers;

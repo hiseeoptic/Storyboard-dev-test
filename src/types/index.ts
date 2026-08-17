@@ -186,7 +186,32 @@ export type DirectingProfileId =
   | "creator_ugc"
   | "cinematic_drama"
   | "premium_commercial"
-  | "explainer_clarity";
+  | "explainer_clarity"
+  | "immersive_action"
+  | "reaction_comedy"
+  | "subjective_horror"
+  | "soft_romance"
+  | "interview_expert"
+  | "product_commercial"
+  | "luxury_commercial"
+  | "technical_demo"
+  | "broadcast_sports"
+  | "cinematic_sports"
+  | "rhythmic_music_video"
+  | "animation_kids";
+
+export interface VoicePerformanceSettings {
+  role?: "auto" | "narrator" | "presenter" | "expert" | "commentator" | "character";
+  relative_pitch?: "auto" | "low" | "mid" | "high";
+  pace?: "auto" | "slow" | "medium" | "fast";
+  target_wpm?: number;
+  energy?: "auto" | "restrained" | "balanced" | "energetic" | "explosive";
+  variation?: "auto" | "steady" | "natural" | "expressive";
+  articulation?: "auto" | "soft" | "clear" | "crisp" | "conversational";
+  pause_style?: "auto" | "short" | "natural" | "dramatic";
+  emphasis?: "auto" | "benefit" | "keywords" | "emotion" | "action" | "cta";
+  pronunciation_guide?: string;
+}
 
 export interface StoryboardGenerationInput {
   story_idea: string;
@@ -227,6 +252,12 @@ export interface StoryboardGenerationInput {
   /** Concise character-dialogue writing/performance profile. Legacy `tone`
    * remains supported and is used as the fallback. */
   character_dialogue_style?: string;
+  /** Stable production-profile selections. Optional for legacy projects. */
+  content_subtype?: string;
+  dialogue_style_id?: string;
+  narrator_voice_style_id?: string;
+  camera_profile_custom?: string;
+  voice_performance?: VoicePerformanceSettings;
   /** Sound channels exposed when both speech channels are disabled. */
   music_enabled?: boolean;
   ambience_enabled?: boolean;

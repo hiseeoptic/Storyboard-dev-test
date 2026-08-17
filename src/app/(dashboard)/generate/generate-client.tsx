@@ -86,6 +86,7 @@ import type {
   VisualInterpretation,
   CharacterRepresentation,
   DirectingProfileId,
+  Genre,
 } from "@/types";
 import type { CookingRecipeIR, CookingStyle } from "@/lib/cooking";
 import {
@@ -99,6 +100,12 @@ import {
   DIRECTING_PROFILE_OPTIONS as CREATIVE_DIRECTING_OPTIONS,
   type CreativeOption,
 } from "@/lib/creative-routing";
+import {
+  ADVERTISING_SUBTYPE_LABELS,
+  genreProductionProfile,
+  type DialogueStyleId,
+  type NarratorVoiceStyleId,
+} from "@/lib/genre-production-profiles";
 
 // ─── Bilingual Labels ──────────────────────────────────────────────────────
 
@@ -533,6 +540,16 @@ const CUSTOM = "__custom__";
 // ─── Tone / narration voice (dropdown) ──────────────────────────────────────
 const TONE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
   vi: [
+    { value: "auto", label: "Tự động theo thể loại" },
+    { value: "direct", label: "Ngắn, trực diện" },
+    { value: "everyday", label: "Tự nhiên đời thường" },
+    { value: "witty", label: "Đối đáp có duyên" },
+    { value: "subtext", label: "Ẩn ý, tiết chế" },
+    { value: "intense", label: "Kịch tính, dồn ép" },
+    { value: "expert", label: "Chuyên gia, chính xác" },
+    { value: "poetic", label: "Thơ và giàu hình ảnh" },
+    { value: "live_commentary", label: "Bình luận trực tiếp" },
+    { value: "commercial", label: "Quảng cáo trực diện" },
     { value: "cheerful", label: "Vui tươi, năng động" },
     { value: "emotional", label: "Cảm động, sâu lắng" },
     { value: "humorous", label: "Hài hước, vui nhộn" },
@@ -548,6 +565,16 @@ const TONE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: CUSTOM, label: "Khác (tự nhập)" },
   ],
   en: [
+    { value: "auto", label: "Auto by genre" },
+    { value: "direct", label: "Short and direct" },
+    { value: "everyday", label: "Natural everyday" },
+    { value: "witty", label: "Witty turn-taking" },
+    { value: "subtext", label: "Restrained subtext" },
+    { value: "intense", label: "Intense and pressurised" },
+    { value: "expert", label: "Expert and precise" },
+    { value: "poetic", label: "Poetic and visual" },
+    { value: "live_commentary", label: "Live commentary" },
+    { value: "commercial", label: "Direct commercial" },
     { value: "cheerful", label: "Cheerful, energetic" },
     { value: "emotional", label: "Emotional, heartfelt" },
     { value: "humorous", label: "Humorous, fun" },
@@ -566,6 +593,16 @@ const TONE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
 
 // English descriptor sent to the AI for each tone key.
 const TONE_PROMPT: Record<string, string> = {
+  auto: "",
+  direct: "short direct sentences, one idea per turn, concrete verbs and decisive emphasis",
+  everyday: "natural everyday phrasing, short-to-medium turns, believable hesitation and response",
+  witty: "setup, misdirection and payoff through character-specific wording, with reaction space",
+  subtext: "restrained lines whose meaning sits in avoidance, reply choice and silence; never narrate visible action",
+  intense: "turns shorten as pressure rises, consequential verbs and a brief pause before decisive information; no constant shouting",
+  expert: "precise terminology and clear cause-to-mechanism-to-result explanation; state limits and avoid unsupported certainty",
+  poetic: "image-rich but concise phrasing, spacious cadence and one coherent motif",
+  live_commentary: "track action in real time, name decisive changes accurately and raise intensity only at real peaks",
+  commercial: "one benefit-led message, clear USP/brand/CTA timing and no feature-list recital",
   cheerful: "short upbeat lines, bright energy, clear emphasis, no forced excitement",
   emotional: "restrained heartfelt lines, natural pauses, subtext before explanation",
   humorous: "quick setup-reversal-punchline exchanges, hold reactions, no joke repetition",
@@ -578,6 +615,17 @@ const TONE_PROMPT: Record<string, string> = {
   trendy: "compact conversational social-native language, quick rhythm, no disposable slang overload",
   warm: "gentle intimate phrasing, attentive replies, soft emphasis and natural breathing",
   epic: "elevated but concise diction, deliberate cadence and decisive emphasis, no inflated exposition",
+};
+
+const TONE_PROFILE_ALIAS: Record<string, DialogueStyleId> = {
+  auto: "auto", direct: "direct", everyday: "everyday", witty: "witty",
+  subtext: "subtext", intense: "intense", expert: "expert",
+  inspirational: "inspirational", poetic: "poetic",
+  live_commentary: "live_commentary", commercial: "commercial",
+  cheerful: "everyday", emotional: "subtext", humorous: "witty",
+  luxury: "subtext", professional: "expert", dramatic: "intense",
+  mysterious: "subtext", relatable: "everyday", trendy: "direct",
+  warm: "everyday", epic: "poetic", [CUSTOM]: "custom",
 };
 
 const NARRATOR_VOICE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
@@ -1171,10 +1219,36 @@ function ProjectWorkspace() {
   const [anonymousNarration, setAnonymousNarration] = useState(false);
   const [narratorVoiceSel, setNarratorVoiceSel] = useState("auto");
   const [narratorVoiceCustom, setNarratorVoiceCustom] = useState("");
+  const [contentSubtype, setContentSubtype] = useState("");
+  const [cameraProfileCustom, setCameraProfileCustom] = useState("");
+  const [voiceRole, setVoiceRole] = useState("auto");
+  const [voicePitch, setVoicePitch] = useState("auto");
+  const [voicePace, setVoicePace] = useState("auto");
+  const [voiceWpm, setVoiceWpm] = useState("");
+  const [voiceEnergy, setVoiceEnergy] = useState("auto");
+  const [voiceVariation, setVoiceVariation] = useState("auto");
+  const [voiceArticulation, setVoiceArticulation] = useState("auto");
+  const [voicePauseStyle, setVoicePauseStyle] = useState("auto");
+  const [voiceEmphasis, setVoiceEmphasis] = useState("auto");
+  const [pronunciationGuide, setPronunciationGuide] = useState("");
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [ambienceEnabled, setAmbienceEnabled] = useState(true);
   const [foleyEnabled, setFoleyEnabled] = useState(true);
   const [genre, setGenre] = useState("advertising");
+  const activeGenreProfile = genreProductionProfile(genre as Genre);
+  const filteredToneOptions = TONE_OPTIONS[lang].filter((option) =>
+    activeGenreProfile.allowed_dialogue_styles.includes(
+      TONE_PROFILE_ALIAS[option.value] ?? "custom"
+    )
+  );
+  const filteredNarratorOptions = NARRATOR_VOICE_OPTIONS[lang].filter((option) =>
+    activeGenreProfile.allowed_narrator_styles.includes(
+      (option.value === CUSTOM ? "custom" : option.value) as NarratorVoiceStyleId
+    )
+  );
+  const filteredDirectingOptions = CREATIVE_DIRECTING_OPTIONS.filter((option) =>
+    activeGenreProfile.allowed_camera_profiles.includes(option.value)
+  );
   const steps = t.steps[lang].map((label, index) =>
     genre === "cooking" && index === 2
       ? lang === "vi"
@@ -1735,8 +1809,30 @@ function ProjectWorkspace() {
       narrator_voice_style: voiceOverEnabled
         ? effectiveNarratorVoice || undefined
         : undefined,
+      narrator_voice_style_id: voiceOverEnabled
+        ? narratorVoiceSel === CUSTOM ? "custom" : narratorVoiceSel
+        : undefined,
       character_dialogue_style: characterDialogueEnabled
         ? effectiveTone || undefined
+        : undefined,
+      dialogue_style_id: characterDialogueEnabled
+        ? TONE_PROFILE_ALIAS[toneSel] ?? "auto"
+        : undefined,
+      content_subtype: isAdGenre ? contentSubtype || undefined : undefined,
+      camera_profile_custom: cameraProfileCustom.trim() || undefined,
+      voice_performance: voiceOverEnabled
+        ? {
+            role: voiceRole as NonNullable<StoryboardGenerationInput["voice_performance"]>["role"],
+            relative_pitch: voicePitch as NonNullable<StoryboardGenerationInput["voice_performance"]>["relative_pitch"],
+            pace: voicePace as NonNullable<StoryboardGenerationInput["voice_performance"]>["pace"],
+            target_wpm: voiceWpm ? Number.parseInt(voiceWpm, 10) : undefined,
+            energy: voiceEnergy as NonNullable<StoryboardGenerationInput["voice_performance"]>["energy"],
+            variation: voiceVariation as NonNullable<StoryboardGenerationInput["voice_performance"]>["variation"],
+            articulation: voiceArticulation as NonNullable<StoryboardGenerationInput["voice_performance"]>["articulation"],
+            pause_style: voicePauseStyle as NonNullable<StoryboardGenerationInput["voice_performance"]>["pause_style"],
+            emphasis: voiceEmphasis as NonNullable<StoryboardGenerationInput["voice_performance"]>["emphasis"],
+            pronunciation_guide: pronunciationGuide.trim() || undefined,
+          }
         : undefined,
       music_enabled: musicEnabled,
       ambience_enabled: ambienceEnabled,
@@ -4089,7 +4185,7 @@ function ProjectWorkspace() {
                           <Select
                             value={narratorVoiceSel}
                             onChange={(e) => setNarratorVoiceSel(e.target.value)}
-                            options={NARRATOR_VOICE_OPTIONS[lang]}
+                            options={filteredNarratorOptions}
                           />
                           {narratorVoiceSel === CUSTOM && (
                             <Input
@@ -4098,6 +4194,68 @@ function ProjectWorkspace() {
                               placeholder={lang === "vi" ? "Mô tả cao độ tương đối, tốc độ, nhấn và khoảng nghỉ" : "Describe relative pitch, pace, emphasis and pauses"}
                             />
                           )}
+                          <details className="rounded-md border border-dashed p-2.5">
+                            <summary className="cursor-pointer text-xs font-medium">
+                              {lang === "vi" ? "Thiết lập giọng nâng cao" : "Advanced voice performance"}
+                            </summary>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                              <Select value={voiceRole} onChange={(e) => setVoiceRole(e.target.value)} options={[
+                                { value: "auto", label: lang === "vi" ? "Vai trò: Tự động" : "Role: Auto" },
+                                { value: "narrator", label: "Narrator" },
+                                { value: "presenter", label: "Presenter" },
+                                { value: "expert", label: lang === "vi" ? "Chuyên gia" : "Expert" },
+                                { value: "commentator", label: lang === "vi" ? "Bình luận viên" : "Commentator" },
+                              ]} />
+                              <Select value={voicePitch} onChange={(e) => setVoicePitch(e.target.value)} options={[
+                                { value: "auto", label: lang === "vi" ? "Quãng giọng: Tự động" : "Relative pitch: Auto" },
+                                { value: "low", label: lang === "vi" ? "Thấp" : "Low" },
+                                { value: "mid", label: lang === "vi" ? "Trung" : "Mid" },
+                                { value: "high", label: lang === "vi" ? "Cao" : "High" },
+                              ]} />
+                              <Select value={voicePace} onChange={(e) => setVoicePace(e.target.value)} options={[
+                                { value: "auto", label: lang === "vi" ? "Tốc độ: Tự động" : "Pace: Auto" },
+                                { value: "slow", label: lang === "vi" ? "Chậm" : "Slow" },
+                                { value: "medium", label: lang === "vi" ? "Vừa" : "Medium" },
+                                { value: "fast", label: lang === "vi" ? "Nhanh" : "Fast" },
+                              ]} />
+                              <Input type="number" min={70} max={220} value={voiceWpm} onChange={(e) => setVoiceWpm(e.target.value)} placeholder={lang === "vi" ? "WPM mục tiêu (70–220)" : "Target WPM (70–220)"} />
+                              <Select value={voiceEnergy} onChange={(e) => setVoiceEnergy(e.target.value)} options={[
+                                { value: "auto", label: lang === "vi" ? "Năng lượng: Tự động" : "Energy: Auto" },
+                                { value: "restrained", label: lang === "vi" ? "Kiềm chế" : "Restrained" },
+                                { value: "balanced", label: lang === "vi" ? "Cân bằng" : "Balanced" },
+                                { value: "energetic", label: lang === "vi" ? "Năng động" : "Energetic" },
+                                { value: "explosive", label: lang === "vi" ? "Bùng nổ" : "Explosive" },
+                              ]} />
+                              <Select value={voiceVariation} onChange={(e) => setVoiceVariation(e.target.value)} options={[
+                                { value: "auto", label: lang === "vi" ? "Biến thiên: Tự động" : "Variation: Auto" },
+                                { value: "steady", label: lang === "vi" ? "Đều" : "Steady" },
+                                { value: "natural", label: lang === "vi" ? "Tự nhiên" : "Natural" },
+                                { value: "expressive", label: lang === "vi" ? "Giàu cảm xúc" : "Expressive" },
+                              ]} />
+                              <Select value={voiceArticulation} onChange={(e) => setVoiceArticulation(e.target.value)} options={[
+                                { value: "auto", label: lang === "vi" ? "Phát âm: Tự động" : "Articulation: Auto" },
+                                { value: "soft", label: lang === "vi" ? "Mềm mại" : "Soft" },
+                                { value: "clear", label: lang === "vi" ? "Rõ chữ" : "Clear" },
+                                { value: "crisp", label: lang === "vi" ? "Sắc gọn" : "Crisp" },
+                                { value: "conversational", label: lang === "vi" ? "Khẩu ngữ" : "Conversational" },
+                              ]} />
+                              <Select value={voicePauseStyle} onChange={(e) => setVoicePauseStyle(e.target.value)} options={[
+                                { value: "auto", label: lang === "vi" ? "Nhịp nghỉ: Tự động" : "Pauses: Auto" },
+                                { value: "short", label: lang === "vi" ? "Ngắn" : "Short" },
+                                { value: "natural", label: lang === "vi" ? "Tự nhiên" : "Natural" },
+                                { value: "dramatic", label: lang === "vi" ? "Kịch tính" : "Dramatic" },
+                              ]} />
+                              <Select value={voiceEmphasis} onChange={(e) => setVoiceEmphasis(e.target.value)} options={[
+                                { value: "auto", label: lang === "vi" ? "Nhấn: Tự động" : "Emphasis: Auto" },
+                                { value: "benefit", label: lang === "vi" ? "Lợi ích" : "Benefit" },
+                                { value: "keywords", label: lang === "vi" ? "Từ khóa" : "Keywords" },
+                                { value: "emotion", label: lang === "vi" ? "Cảm xúc" : "Emotion" },
+                                { value: "action", label: lang === "vi" ? "Hành động" : "Action" },
+                                { value: "cta", label: "CTA" },
+                              ]} />
+                            </div>
+                            <Textarea className="mt-2" rows={2} value={pronunciationGuide} onChange={(e) => setPronunciationGuide(e.target.value)} placeholder={lang === "vi" ? "Từ điển phát âm: thương hiệu, sản phẩm, thuật ngữ, tên người/địa danh…" : "Pronunciation guide: brands, products, terms, people and places…"} />
+                          </details>
                         </div>
                       )}
 
@@ -4207,6 +4365,10 @@ function ProjectWorkspace() {
                       setVideoGoal("storytelling");
                       setAudienceGoal(["comedy", "action", "horror", "thriller"].includes(g) ? "retention" : "empathy");
                     }
+                    setContentSubtype("");
+                    setToneSel("auto");
+                    setNarratorVoiceSel("auto");
+                    setDirectingProfile("auto");
                   }} options={GENRE_OPTIONS[lang]} />
                 </div>
                 <div className="space-y-2">
@@ -4222,13 +4384,49 @@ function ProjectWorkspace() {
                   )}
                 </div>
               </div>
+              {genre === "advertising" && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    {lang === "vi" ? "Kiểu nội dung quảng cáo" : "Advertising content type"}
+                  </label>
+                  <Select
+                    value={contentSubtype}
+                    onChange={(e) => setContentSubtype(e.target.value)}
+                    placeholder={lang === "vi" ? "Tự động theo mục tiêu" : "Auto by objective"}
+                    options={(activeGenreProfile.content_subtypes ?? []).map((value) => ({
+                      value,
+                      label: ADVERTISING_SUBTYPE_LABELS[value]?.[lang] ?? value,
+                    }))}
+                  />
+                </div>
+              )}
+              <div className="space-y-2 rounded-lg border p-3">
+                <label className="text-sm font-medium">
+                  {lang === "vi" ? "Phong cách quay và camera" : "Camera and directing style"}
+                </label>
+                <Select
+                  value={directingProfile}
+                  onChange={(e) => setDirectingProfile(e.target.value as DirectingProfileId)}
+                  options={localizedCreativeOptions(filteredDirectingOptions, lang)}
+                />
+                <Input
+                  value={cameraProfileCustom}
+                  onChange={(e) => setCameraProfileCustom(e.target.value)}
+                  placeholder={lang === "vi" ? "Mô tả camera bổ sung (tuỳ chọn)" : "Additional camera direction (optional)"}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Danh sách được lọc theo thể loại; Auto dùng hồ sơ mặc định nhưng vẫn giữ screen direction, eyeline và continuity."
+                    : "Filtered by genre; Auto uses the genre default while preserving screen direction, eyelines and continuity."}
+                </p>
+              </div>
               {characterDialogueEnabled && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium">{L("tone")}</label>
                   <Select
                     value={toneSel}
                     onChange={(e) => setToneSel(e.target.value)}
-                    options={TONE_OPTIONS[lang]}
+                    options={filteredToneOptions}
                     placeholder={L("tonePlaceholder")}
                   />
                   {toneSel === CUSTOM && (
@@ -5259,7 +5457,7 @@ function ProjectWorkspace() {
                 <Select
                   value={directingProfile}
                   onChange={(e) => setDirectingProfile(e.target.value as DirectingProfileId)}
-                  options={localizedCreativeOptions(CREATIVE_DIRECTING_OPTIONS, lang)}
+                  options={localizedCreativeOptions(filteredDirectingOptions, lang)}
                 />
                 <p className="text-xs text-muted-foreground">
                   {creativeOptionDescription(CREATIVE_DIRECTING_OPTIONS, directingProfile, lang)}

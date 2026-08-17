@@ -77,6 +77,17 @@ export function validateStoryboardInput(
     });
   }
 
+  const targetWpm = input.voice_performance?.target_wpm;
+  if (targetWpm != null && (!Number.isFinite(targetWpm) || targetWpm < 70 || targetWpm > 220)) {
+    push({
+      code: "INPUT-009",
+      severity: "high",
+      scope: "project",
+      message: "Target voice rate must be between 70 and 220 words per minute.",
+      evidence: `target_wpm=${String(targetWpm)}`,
+    });
+  }
+
   const namedCollections: Array<Array<{ name: string }>> = [
     input.character_descriptions ?? [],
     input.character_images ?? [],

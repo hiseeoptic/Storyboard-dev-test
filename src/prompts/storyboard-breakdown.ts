@@ -44,6 +44,10 @@ import {
 } from "@/lib/spatial-topology";
 import { renderCreativeRouteDirective } from "@/lib/creative-routing";
 import {
+  compactGenreScriptDirective,
+  compactGenreStoryboardDirective,
+} from "@/lib/genre-production-profiles";
+import {
   HUMAN_FACE_REALISM_LOCK,
   HUMAN_FACE_REALISM_NEGATIVE,
   REFERENCE_CHARACTER_ANTI_PLASTIC,
@@ -755,10 +759,12 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
 
   const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
   const speechDirective = speechModeDirective(input, lang);
+  const genreScriptDirective = compactGenreScriptDirective(input);
 
   return `Write a ${segmentCount}-segment short-video script.
 
 ${creativeRouteDirective}
+${genreScriptDirective}
 
 Idea / Topic: ${input.story_idea}
 Genre: ${input.genre} · Goal: ${goal} — ${GOAL_GUIDANCE[goal]}
@@ -977,10 +983,13 @@ export function buildStoryboardUserPrompt(
     ? `\nAdditional Instructions: ${input.custom_instructions}`
     : "";
 
-  const resolvedContextBlock = input.resolved_context
+  const resolvedContextForPrompt = input.resolved_context
+    ? (({ production_profile: _compiledElsewhere, ...context }) => context)(input.resolved_context)
+    : undefined;
+  const resolvedContextBlock = resolvedContextForPrompt
     ? `\n\n=== RESOLVED CONTEXT IR (Stage 1.5 — CANONICAL, DO NOT RE-INFER) ===
 The context-analysis stage already resolved the project's 10 layers from the brief and approved script. Treat this JSON as the single source of truth. Copy its world facts into the legacy "world_context" output for compatibility; do not replace its locations, continuity mode, light motivation, audio strategy or visual language with a preset. An environment library entry may be selected only when it is semantically compatible with the location definition; otherwise use "custom".
-${JSON.stringify(input.resolved_context, null, 2)}
+${JSON.stringify(resolvedContextForPrompt, null, 2)}
 === END RESOLVED CONTEXT IR ===`
     : "";
 
@@ -1066,6 +1075,7 @@ ${JSON.stringify(input.resolved_context, null, 2)}
     ? "For uploaded-reference characters, first_frame_prompt contains only the exact name, position, action and expression; the attached image supplies all appearance."
     : "Restate only the visually necessary character attributes in every first_frame_prompt.";
   const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
+  const genreDirectionDirective = compactGenreStoryboardDirective(input);
   const speechMode = resolveSpeechMode(input);
   const anonymousNarrationBlock = speechMode.anonymous_characters
     ? `\n\nANONYMOUS CHARACTER AUTHORITY: audience-facing prose, captions and spoken lines use stable functional role labels only. Internal asset keys may retain the entered names solely to bind reference images. This changes labels only; speech ownership remains exactly the selected SPEECH MODE.`
@@ -1086,6 +1096,7 @@ ${JSON.stringify(input.resolved_context, null, 2)}
 ${languageContract}
 
 ${creativeRouteDirective}
+${genreDirectionDirective}
 
 Story / Product Idea: ${input.story_idea}
 Video Goal: ${goal} — ${goalGuidance}
@@ -3364,6 +3375,21 @@ export function buildVeoJson(
         language_policy: `All camera, action, environment, continuity, sound and negative instructions are written in ${promptLang}. Only verbatim dialogue or voice-over and explicitly required readable audience text may use ${lang}. Exact character names and role labels remain unchanged identity tokens.`,
         note: `Render this video strictly in ${opts.aspectRatio} (${opts.aspectRatio === "9:16" ? "vertical portrait" : opts.aspectRatio === "1:1" ? "square" : "horizontal landscape"}). Do not crop, letterbox or switch orientation.`,
       },
+      ...(breakdown.context_ir?.production_profile
+        ? {
+            production_profile: {
+              genre: breakdown.context_ir.production_profile.genre,
+              content_subtype: breakdown.context_ir.production_profile.content_subtype,
+              dialogue_style_id: breakdown.context_ir.production_profile.dialogue_style_id,
+              narrator_voice_style_id: breakdown.context_ir.production_profile.narrator_voice_style_id,
+              camera_profile_id: breakdown.context_ir.production_profile.camera_profile_id,
+              camera_direction: breakdown.context_ir.production_profile.camera_direction,
+              edit_rhythm: breakdown.context_ir.production_profile.edit_rhythm,
+              sound_direction: breakdown.context_ir.production_profile.sound_direction,
+              forbidden_patterns: breakdown.context_ir.production_profile.forbidden_patterns,
+            },
+          }
+        : {}),
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
       continuity_mode: transitionMode,
       ...(seg.transition_in ? { transition_in: seg.transition_in } : {}),

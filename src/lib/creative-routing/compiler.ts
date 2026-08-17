@@ -18,6 +18,7 @@ import {
   REAL_WORLD_MATERIAL_LAWS,
   TOPIC_LAWS,
 } from "./profiles.ts";
+import { genreProductionProfile } from "../genre-production-profiles.ts";
 
 export interface CreativeRoute {
   topic: Genre;
@@ -41,6 +42,16 @@ const REAL_WORLD_PROFILES = new Set<DirectingProfileId>([
   "creator_ugc",
   "cinematic_drama",
   "premium_commercial",
+  "immersive_action",
+  "reaction_comedy",
+  "subjective_horror",
+  "soft_romance",
+  "interview_expert",
+  "product_commercial",
+  "luxury_commercial",
+  "technical_demo",
+  "broadcast_sports",
+  "cinematic_sports",
 ]);
 
 function inferAudienceGoal(input: StoryboardGenerationInput): AudienceGoal {
@@ -118,10 +129,8 @@ function inferDirectingProfile(
   if (input.genre === "psychology") return "psychological_metaphor";
   if (interpretation === "parable_fable" || character === "anthropomorphic_animal" || character === "anthropomorphic_object") return "anthropomorphic_fable";
   if (input.style === "ugc") return "creator_ugc";
-  if (AD_GENRES.has(input.genre) || ["commercial", "product_showcase", "corporate_clean"].includes(input.style)) return "premium_commercial";
-  if (["education", "finance", "tech", "health", "numerology"].includes(input.genre)) return "explainer_clarity";
-  if (["lifestyle", "cooking", "fitness"].includes(input.genre) || input.style === "realistic") return "everyday_naturalism";
-  return "cinematic_drama";
+  if (["commercial", "product_showcase", "corporate_clean"].includes(input.style)) return "premium_commercial";
+  return genreProductionProfile(input.genre).default_camera_profile;
 }
 
 function specialistDnaFor(input: StoryboardGenerationInput, profile: DirectingProfileId): string[] {
