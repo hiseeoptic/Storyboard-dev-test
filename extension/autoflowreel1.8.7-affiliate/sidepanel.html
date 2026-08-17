@@ -1,0 +1,1406 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoFlow Reel</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <!-- ==================== HEADER ==================== -->
+  <header class="header">
+    <div class="header-top">
+      <div class="brand">
+        <div class="brand-icon">▶</div>
+        <div>
+          <h1>AutoFlow Reel</h1>
+          <span class="version" id="app-version">v9.52</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btn-lang" class="btn-icon" title="Switch language">EN</button>
+        <div id="connection-dot" class="dot dot-disconnected" title="Not connected"></div>
+      </div>
+    </div>
+    <div id="status-bar" class="status-bar status-idle">
+      <span id="status-icon">⏸</span>
+      <span id="status-text">Sẵn sàng</span>
+    </div>
+    <div id="demo-banner" class="demo-banner hidden">
+      <span id="demo-banner-text">🎮 Bản dùng thử — còn 5 lượt</span>
+      <a id="demo-banner-cta" href="https://member.nguyenduchoa.com/login" target="_blank">Đăng ký ↗</a>
+    </div>
+  </header>
+
+  <!-- ==================== TABS ==================== -->
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="queue">
+      <span class="tab-icon">📋</span>
+      <span id="tab-queue-label">Hàng đợi</span>
+    </button>
+    <button class="tab-btn" data-tab="setup">
+      <span class="tab-icon">🎭</span>
+      <span id="tab-setup-label">Nhân vật</span>
+    </button>
+    <button class="tab-btn" data-tab="settings">
+      <span class="tab-icon">⚙️</span>
+      <span id="tab-settings-label">Cài đặt</span>
+    </button>
+    <button class="tab-btn" data-tab="ai">
+      <span class="tab-icon">🎞️</span>
+      <span id="tab-ai-label">Storyboard</span>
+    </button>
+    <button class="tab-btn" data-tab="veoflow">
+      <span class="tab-icon">🎬</span>
+      <span id="tab-veoflow-label">VeoFlow</span>
+    </button>
+    <button class="tab-btn" data-tab="genimg">
+      <span class="tab-icon">🖼️</span>
+      <span id="tab-genimg-label">Tạo ảnh</span>
+    </button>
+    <button class="tab-btn" data-tab="vidmerge">
+      <span class="tab-icon">✂️</span>
+      <span id="tab-vidmerge-label">Cắt ghép</span>
+    </button>
+    <button class="tab-btn" data-tab="log">
+      <span class="tab-icon">📊</span>
+      <span id="tab-log-label">Nhật ký</span>
+    </button>
+  </nav>
+
+  <!-- ==================== TAB: NHÂN VẬT ==================== -->
+  <div id="tab-setup" class="tab-panel">
+    <!-- Phần "dạy DOM" cũ đã ẩn — extension TỰ NHẬN DIỆN giao diện Flow, không cần teach. -->
+    <div hidden id="legacy-teach">
+    <div class="section">
+      <div class="setup-header">
+        <span id="setup-title" class="section-title">Thiết lập phần tử</span>
+        <div style="display:flex;gap:6px">
+          <button id="btn-scan-ui" class="btn-sm btn-outline" title="Chụp cấu trúc giao diện để gửi dev">🔍 Quét UI</button>
+          <button id="btn-clear-map" class="btn-sm btn-outline" title="Xóa tất cả">🗑️ <span id="clear-map-label">Xóa</span></button>
+        </div>
+      </div>
+      <p class="setup-desc" id="setup-desc">Click "Teach" rồi click vào phần tử tương ứng trên trang Flow để gán. Mẹo: mở panel "Thêm vào câu lệnh" rồi bấm "🔍 Quét UI" để chụp cấu trúc gửi dev.</p>
+    </div>
+
+    <!-- DOM Setup Guide (collapsible, bilingual) -->
+    <div class="section">
+      <button id="btn-dom-guide-toggle" class="dom-guide-toggle">
+        📖 <span id="dom-guide-toggle-label">Hướng dẫn thiết lập</span>
+        <span id="dom-guide-arrow" class="dom-guide-arrow">▾</span>
+      </button>
+      <div id="dom-guide-content" class="dom-guide-content">
+
+        <!-- English -->
+        <div id="dom-guide-en" class="dom-guide-lang hidden">
+          <div class="dom-guide-block">
+            <div class="dom-guide-heading">🎯 What is DOM Setup?</div>
+            <p>DOM Setup teaches the extension WHERE to find elements on Google Flow. Since Google updates their UI frequently, you need to manually map each element once so the extension can interact with it.</p>
+          </div>
+
+          <div class="dom-guide-block">
+            <div class="dom-guide-heading">📋 How to Teach</div>
+            <ol>
+              <li>Open <b>Google Flow</b> (<code>labs.google.com/fx</code>) in a Chrome tab</li>
+              <li>Open this extension's side panel</li>
+              <li>Go to the <b>"Cài đặt DOM"</b> (Setup) tab</li>
+              <li>Click the <b>"Teach"</b> button next to the element you want to map</li>
+              <li>The page will show a blue overlay — click the matching element on the Flow page</li>
+              <li>The status changes to <b class="mapped-text">✅ mapped</b> when successful</li>
+              <li>Repeat for all elements. You need at least: <b>Prompt Input</b>, <b>Submit Button</b></li>
+            </ol>
+          </div>
+
+          <div class="dom-guide-block">
+            <div class="dom-guide-heading">🔧 Elements Explained</div>
+            <div class="dom-guide-table">
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">⚙️</span>
+                <div><b>Settings Toggle</b><br><span class="dom-guide-hint">The gear/settings button that opens the settings popup on Flow</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">✏️</span>
+                <div><b>Prompt Input</b> ⭐<br><span class="dom-guide-hint">The text box where you type prompts. Required for queue to work</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">▶</span>
+                <div><b>Submit Button</b> ⭐<br><span class="dom-guide-hint">The arrow/send button that submits the prompt. Required</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">🎬</span>
+                <div><b>Video Tab</b><br><span class="dom-guide-hint">Tab to switch Flow to video generation mode</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">🖼️</span>
+                <div><b>Image Tab</b><br><span class="dom-guide-hint">Tab to switch Flow to image generation mode</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">📋</span>
+                <div><b>Model Dropdown</b><br><span class="dom-guide-hint">Dropdown to select AI model (Veo 3.1, Imagen 4, etc.)</span></div>
+              </div>
+              <div class="dom-guide-row dom-guide-row-divider">
+                <span class="dom-guide-icon">➕</span>
+                <div><b>Create New (+)</b><br><span class="dom-guide-hint">Storyboard: the "+" button to create a new generation card</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">⋮</span>
+                <div><b>Card 3-dot Menu</b><br><span class="dom-guide-hint">Storyboard: the "⋮" menu on a gallery card</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">📎</span>
+                <div><b>Add to Prompt</b><br><span class="dom-guide-hint">Storyboard: "Add to prompt" option in the 3-dot menu</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">📤</span>
+                <div><b>File Upload</b><br><span class="dom-guide-hint">Storyboard: the file/image upload button on Flow</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dom-guide-tips">
+            <div class="dom-guide-tips-title">💡 Tips</div>
+            <ul>
+              <li>You only need to teach once — mappings are saved permanently</li>
+              <li>If Flow updates its UI, re-teach the changed elements</li>
+              <li>Minimum required: <b>Prompt Input</b> + <b>Submit Button</b></li>
+              <li>Map <b>Settings Toggle</b> + <b>Model Dropdown</b> for auto model/aspect selection</li>
+              <li>Storyboard elements only needed if you use image+prompt queue mode</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Vietnamese -->
+        <div id="dom-guide-vi" class="dom-guide-lang">
+          <div class="dom-guide-block">
+            <div class="dom-guide-heading">🎯 DOM Setup là gì?</div>
+            <p>DOM Setup dạy extension BIẾT tìm các phần tử ở đâu trên trang Google Flow. Vì Google thường cập nhật giao diện, bạn cần gán thủ công mỗi phần tử một lần để extension tương tác được.</p>
+          </div>
+
+          <div class="dom-guide-block">
+            <div class="dom-guide-heading">📋 Cách Teach (Dạy)</div>
+            <ol>
+              <li>Mở <b>Google Flow</b> (<code>labs.google.com/fx</code>) trong tab Chrome</li>
+              <li>Mở side panel của extension này</li>
+              <li>Vào tab <b>"Cài đặt DOM"</b></li>
+              <li>Bấm nút <b>"Teach"</b> bên cạnh phần tử muốn gán</li>
+              <li>Trang hiện lớp phủ xanh — bấm vào phần tử tương ứng trên trang Flow</li>
+              <li>Trạng thái đổi thành <b class="mapped-text">✅ đã gán</b> khi thành công</li>
+              <li>Lặp lại cho tất cả. Tối thiểu cần: <b>Ô nhập Prompt</b> + <b>Nút Submit</b></li>
+            </ol>
+          </div>
+
+          <div class="dom-guide-block">
+            <div class="dom-guide-heading">🔧 Giải Thích Các Phần Tử</div>
+            <div class="dom-guide-table">
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">⚙️</span>
+                <div><b>Nút mở Settings</b><br><span class="dom-guide-hint">Nút bánh răng mở popup cài đặt trên Flow</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">✏️</span>
+                <div><b>Ô nhập Prompt</b> ⭐<br><span class="dom-guide-hint">Ô text nơi nhập prompt. Bắt buộc phải gán để queue hoạt động</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">▶</span>
+                <div><b>Nút Submit</b> ⭐<br><span class="dom-guide-hint">Nút mũi tên/gửi để submit prompt. Bắt buộc</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">🎬</span>
+                <div><b>Tab Video</b><br><span class="dom-guide-hint">Tab chuyển Flow sang chế độ tạo video</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">🖼️</span>
+                <div><b>Tab Hình ảnh</b><br><span class="dom-guide-hint">Tab chuyển Flow sang chế độ tạo hình ảnh</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">📋</span>
+                <div><b>Dropdown Model</b><br><span class="dom-guide-hint">Dropdown chọn model AI (Veo 3.1, Imagen 4, v.v.)</span></div>
+              </div>
+              <div class="dom-guide-row dom-guide-row-divider">
+                <span class="dom-guide-icon">➕</span>
+                <div><b>Nút tạo mới (+)</b><br><span class="dom-guide-hint">Storyboard: nút "+" tạo card mới trên gallery</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">⋮</span>
+                <div><b>Menu 3 chấm</b><br><span class="dom-guide-hint">Storyboard: menu "⋮" trên card trong gallery</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">📎</span>
+                <div><b>Thêm vào câu lệnh</b><br><span class="dom-guide-hint">Storyboard: mục "Thêm vào câu lệnh" trong menu 3 chấm</span></div>
+              </div>
+              <div class="dom-guide-row">
+                <span class="dom-guide-icon">📤</span>
+                <div><b>Nút upload file</b><br><span class="dom-guide-hint">Storyboard: nút tải file/hình lên trên Flow</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dom-guide-tips">
+            <div class="dom-guide-tips-title">💡 Mẹo</div>
+            <ul>
+              <li>Chỉ cần teach 1 lần — mapping được lưu vĩnh viễn</li>
+              <li>Nếu Flow cập nhật giao diện, teach lại những phần tử bị đổi</li>
+              <li>Tối thiểu bắt buộc: <b>Ô nhập Prompt</b> + <b>Nút Submit</b></li>
+              <li>Gán thêm <b>Settings Toggle</b> + <b>Model Dropdown</b> để tự chọn model/tỷ lệ</li>
+              <li>Các phần tử Storyboard chỉ cần nếu dùng chế độ hình+prompt</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="teach-list">
+        <div class="teach-item" data-target="settingsToggle">
+          <div class="teach-info">
+            <span class="teach-icon">⚙️</span>
+            <div>
+              <span class="teach-name" id="teach-settingsToggle-name">Nút mở Settings</span>
+              <span class="teach-status" id="teach-settingsToggle-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="settingsToggle">Teach</button>
+        </div>
+
+        <div class="teach-item" data-target="promptInput">
+          <div class="teach-info">
+            <span class="teach-icon">✏️</span>
+            <div>
+              <span class="teach-name" id="teach-promptInput-name">Ô nhập Prompt</span>
+              <span class="teach-status" id="teach-promptInput-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="promptInput">Teach</button>
+        </div>
+
+        <div class="teach-item" data-target="submitButton">
+          <div class="teach-info">
+            <span class="teach-icon">▶</span>
+            <div>
+              <span class="teach-name" id="teach-submitButton-name">Nút Submit</span>
+              <span class="teach-status" id="teach-submitButton-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="submitButton">Teach</button>
+        </div>
+
+        <div class="teach-item" data-target="modeVideo">
+          <div class="teach-info">
+            <span class="teach-icon">🎬</span>
+            <div>
+              <span class="teach-name" id="teach-modeVideo-name">Tab Video</span>
+              <span class="teach-status" id="teach-modeVideo-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="modeVideo">Teach</button>
+        </div>
+
+        <div class="teach-item" data-target="modeImage">
+          <div class="teach-info">
+            <span class="teach-icon">🖼️</span>
+            <div>
+              <span class="teach-name" id="teach-modeImage-name">Tab Hình ảnh</span>
+              <span class="teach-status" id="teach-modeImage-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="modeImage">Teach</button>
+        </div>
+
+        <div class="teach-item" data-target="modelDropdown">
+          <div class="teach-info">
+            <span class="teach-icon">📋</span>
+            <div>
+              <span class="teach-name" id="teach-modelDropdown-name">Dropdown Model</span>
+              <span class="teach-status" id="teach-modelDropdown-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="modelDropdown">Teach</button>
+        </div>
+
+        <!-- Storyboard / Image upload teach targets -->
+        <div class="teach-divider"><span>Storyboard</span></div>
+
+        <div class="teach-item" data-target="galleryMenu">
+          <div class="teach-info">
+            <span class="teach-icon">⋮</span>
+            <div>
+              <span class="teach-name" id="teach-galleryMenu-name">Menu 3 chấm trên card</span>
+              <span class="teach-status" id="teach-galleryMenu-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="galleryMenu">Teach</button>
+        </div>
+
+        <div class="teach-item" data-target="promptPlus">
+          <div class="teach-info">
+            <span class="teach-icon">➕</span>
+            <div>
+              <span class="teach-name" id="teach-promptPlus-name">Dấu "+" ở ô prompt (mở kho ảnh)</span>
+              <span class="teach-status" id="teach-promptPlus-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="promptPlus">Teach</button>
+        </div>
+
+        <div class="teach-item" data-target="addToPrompt">
+          <div class="teach-info">
+            <span class="teach-icon">📎</span>
+            <div>
+              <span class="teach-name" id="teach-addToPrompt-name">Thêm vào câu lệnh</span>
+              <span class="teach-status" id="teach-addToPrompt-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="addToPrompt">Teach</button>
+        </div>
+
+        <div class="teach-item" data-target="fileUpload">
+          <div class="teach-info">
+            <span class="teach-icon">📤</span>
+            <div>
+              <span class="teach-name" id="teach-fileUpload-name">Nút upload file</span>
+              <span class="teach-status" id="teach-fileUpload-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="fileUpload">Teach</button>
+        </div>
+
+        <!-- Omni character-creation flow -->
+        <div class="teach-item" data-target="charNew">
+          <div class="teach-info">
+            <span class="teach-icon">👤</span>
+            <div>
+              <span class="teach-name">Nút "Nhân vật mới" (+)</span>
+              <span class="teach-status" id="teach-charNew-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="charNew">Teach</button>
+        </div>
+        <div class="teach-item" data-target="charUpload">
+          <div class="teach-info">
+            <span class="teach-icon">📤</span>
+            <div>
+              <span class="teach-name">Nút "Tải lên" (trang nhân vật mới)</span>
+              <span class="teach-status" id="teach-charUpload-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="charUpload">Teach</button>
+        </div>
+        <div class="teach-item" data-target="charName">
+          <div class="teach-info">
+            <span class="teach-icon">✏️</span>
+            <div>
+              <span class="teach-name">Ô TÊN nhân vật (sau khi tải ảnh)</span>
+              <span class="teach-status" id="teach-charName-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="charName">Teach</button>
+        </div>
+        <div class="teach-item" data-target="charVoice">
+          <div class="teach-info">
+            <span class="teach-icon">🎙️</span>
+            <div>
+              <span class="teach-name">Dropdown Voice nhân vật</span>
+              <span class="teach-status" id="teach-charVoice-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="charVoice">Teach</button>
+        </div>
+        <div class="teach-item" data-target="charDone">
+          <div class="teach-info">
+            <span class="teach-icon">✅</span>
+            <div>
+              <span class="teach-name">Nút "Xong" (góc phải)</span>
+              <span class="teach-status" id="teach-charDone-status">Chưa gán</span>
+            </div>
+          </div>
+          <button class="btn-teach" data-target="charDone">Teach</button>
+        </div>
+      </div>
+    </div>
+
+    </div><!-- /legacy-teach (ẩn) -->
+
+    <!-- ===== Nhân vật (tải ảnh + tên → tự tham chiếu @Tên / đính ảnh) ===== -->
+    <div class="section">
+      <div class="section-header">
+        <span class="section-title" id="char-section-title">👥 Nhân vật</span>
+      </div>
+      <p class="setup-desc" data-i18n="char_desc">2 chế độ nhân vật. Chế độ ref sẽ tải ảnh nhân vật kèm @Tên khi tạo video. Chế độ entity sẽ thử tạo hẳn nhân vật trong mục Nhân vật của Flow để gán voice.</p>
+
+      <p class="setup-desc" id="char-voice-hint" style="margin:4px 0 8px">🎙️ Mỗi nhân vật chọn giọng riêng bên dưới ảnh: 👨 = giọng NAM (cho nhân vật nam) · 👩 = giọng NỮ (cho nhân vật nữ).</p>
+      <div class="char-slot">
+        <label class="char-upload" id="char1-upload">
+          <span id="char1-thumb-wrap" data-i18n="char1_ph_label">📷 Ảnh nhân vật 1</span>
+          <input type="file" id="char1-file" accept="image/*" hidden>
+        </label>
+        <div style="flex:1;display:flex;flex-direction:column;gap:6px;min-width:0">
+          <input type="text" id="char1-name" class="char-name-input" data-i18n-ph="char1_name_ph" placeholder="Tên NV 1 (vd: Hoà)">
+          <select id="char1-voice" class="char-name-input" title="Giọng nói riêng của nhân vật 1"></select>
+        </div>
+      </div>
+      <div class="char-slot">
+        <label class="char-upload" id="char2-upload">
+          <span id="char2-thumb-wrap" data-i18n="char2_ph_label">📷 Ảnh nhân vật 2 (tuỳ chọn)</span>
+          <input type="file" id="char2-file" accept="image/*" hidden>
+        </label>
+        <div style="flex:1;display:flex;flex-direction:column;gap:6px;min-width:0">
+          <input type="text" id="char2-name" class="char-name-input" data-i18n-ph="char2_name_ph" placeholder="Tên NV 2">
+          <select id="char2-voice" class="char-name-input" title="Giọng nói riêng của nhân vật 2"></select>
+        </div>
+      </div>
+      <div class="char-slot">
+        <label class="char-upload" id="char3-upload">
+          <span id="char3-thumb-wrap" data-i18n="char3_ph_label">📷 Ảnh nhân vật 3 (tuỳ chọn)</span>
+          <input type="file" id="char3-file" accept="image/*" hidden>
+        </label>
+        <div style="flex:1;display:flex;flex-direction:column;gap:6px;min-width:0">
+          <input type="text" id="char3-name" class="char-name-input" data-i18n-ph="char3_name_ph" placeholder="Tên NV 3">
+          <select id="char3-voice" class="char-name-input" title="Giọng nói riêng của nhân vật 3"></select>
+        </div>
+      </div>
+
+      <div class="char-mode-choice" role="radiogroup" aria-label="Character mode">
+        <label class="char-mode-option" data-char-mode-option="ref">
+          <input type="radio" name="character-mode" value="ref" id="character-mode-ref">
+          <span data-i18n="char_mode_ref">📎 Ảnh ref + @Tên</span>
+        </label>
+        <label class="char-mode-option" data-char-mode-option="entity">
+          <input type="radio" name="character-mode" value="entity" id="character-mode-entity">
+          <span data-i18n="char_mode_entity">👤 Entity + voice</span>
+        </label>
+      </div>
+
+      <button id="btn-create-character-entities" class="btn-primary btn-block" style="margin-top:8px;background:linear-gradient(135deg,#16a34a,#15803d)">👤 Tạo nhân vật entity trong Flow</button>
+      <button id="btn-reset-characters" class="btn-sm btn-outline btn-block" style="margin-top:8px;justify-content:center">♻️ <span id="reset-char-label" data-i18n="char_reset">Xoá nhân vật đã nạp</span></button>
+      <label class="char-inline-toggle hidden">
+        <input type="checkbox" id="toggle-auto-entity">
+        <span data-i18n="char_auto_entity">Tự tạo entity + voice trước khi Bắt đầu</span>
+      </label>
+      <p class="setup-desc" id="char-status" style="margin-top:6px"></p>
+    </div>
+
+  </div>
+
+  <!-- ==================== TAB: QUEUE ==================== -->
+  <div id="tab-queue" class="tab-panel active">
+    <!-- Project selector -->
+    <div class="section">
+      <div class="qs-item">
+        <label id="project-label">Dự án</label>
+        <select id="project-select" class="select-sm"></select>
+      </div>
+      <div class="qs-item script-title-row">
+        <label id="script-title-label" for="script-title">Tên kịch bản / tên file</label>
+        <input id="script-title" class="char-name-input" type="text" placeholder="Ví dụ: Family">
+        <span class="setting-desc">File tải về: Family 1.mp4, Family 2.mp4…</span>
+      </div>
+    </div>
+    <!-- Mode Selection -->
+    <div class="section">
+      <div class="mode-switch">
+        <button id="mode-video" class="mode-btn active" data-mode="video">
+          🎬 <span id="mode-video-text">Video</span>
+        </button>
+        <button id="mode-image" class="mode-btn" data-mode="image">
+          🖼️ <span id="mode-image-text">Hình ảnh</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Quick Settings Row -->
+    <div class="section">
+      <div class="quick-settings">
+        <div class="qs-item">
+          <label id="qs-model-label">Model</label>
+          <select id="select-model" class="select-sm"></select>
+        </div>
+        <div class="qs-item">
+          <label id="qs-ratio-label">Tỷ lệ</label>
+          <select id="select-aspect" class="select-sm"></select>
+        </div>
+        <div class="qs-item">
+          <label id="qs-qty-label">SL</label>
+          <select id="select-qty" class="select-sm">
+            <option value="1">1x</option>
+            <option value="2" selected>x2</option>
+            <option value="3">x3</option>
+            <option value="4">x4</option>
+          </select>
+        </div>
+        <div class="qs-item">
+          <label id="qs-duration-label">Giây</label>
+          <select id="select-duration" class="select-sm">
+            <option value="4">4s</option>
+            <option value="6">6s</option>
+            <option value="8">8s</option>
+            <option value="10" selected>10s</option>
+          </select>
+        </div>
+        <div class="qs-item">
+          <label id="qs-voice-label">Voice</label>
+          <select id="select-voice" class="select-sm"></select>
+        </div>
+      </div>
+      <div id="voice-desc" class="voice-desc">Flow tự chọn giọng phù hợp</div>
+    </div>
+
+    <!-- Input Mode Toggle: Text Only / Storyboard -->
+    <div class="section">
+      <div class="mode-switch input-mode-switch">
+        <button id="input-mode-text" class="mode-btn active" data-inputmode="text">
+          ✏️ <span id="input-mode-text-label">Chỉ Text</span>
+        </button>
+        <button id="input-mode-storyboard" class="mode-btn" data-inputmode="storyboard">
+          🎬 <span id="input-mode-sb-label">Storyboard</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ===== TEXT MODE ===== -->
+    <div id="text-mode-section">
+      <div class="section">
+        <div class="prompt-header">
+          <span id="prompt-title" class="section-title">Danh sách Prompt</span>
+          <span id="prompt-counter" class="counter">0</span>
+        </div>
+        <textarea id="prompt-textarea" rows="8" placeholder="TXT: mỗi dòng 1 prompt. JSON nhiều dòng: cách prompt bằng 1 dòng trắng..."></textarea>
+        <div class="prompt-toolbar">
+          <label class="btn-sm btn-outline" id="btn-load">
+            📁 <span id="load-label">Tải TXT / JSON</span>
+            <input type="file" id="file-input" accept=".txt,.json,text/plain,application/json" hidden>
+          </label>
+          <button class="btn-sm btn-outline" id="btn-paste">
+            📋 <span id="paste-label">Dán</span>
+          </button>
+          <button class="btn-sm btn-outline" id="btn-clear">
+            🗑️ <span id="clear-label">Xóa</span>
+          </button>
+        </div>
+        <div id="result-preview" class="result-preview hidden">
+          <div class="result-preview-title" id="results-title">Kết quả Flow</div>
+          <div id="result-preview-list" class="result-preview-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== STORYBOARD MODE ===== -->
+    <div id="storyboard-mode-section" class="hidden">
+      <div class="section">
+        <div class="prompt-header">
+          <span id="sb-title" class="section-title">Storyboard Queue</span>
+          <span id="sb-counter" class="counter">0</span>
+        </div>
+        <p class="setup-desc" id="sb-desc">Mỗi hàng là 1 prompt. Bấm Thêm hình để gắn nhiều hình vào cùng hàng.</p>
+      </div>
+
+      <!-- Drop Zone -->
+      <div class="section">
+        <div id="sb-dropzone" class="sb-dropzone">
+          <div class="sb-drop-content">
+            <span class="sb-drop-icon">📸</span>
+            <span id="sb-drop-text" class="sb-drop-text">Kéo thả hình vào đây<br>hoặc click để chọn</span>
+          </div>
+          <input type="file" id="sb-file-input" accept="image/*" multiple hidden>
+        </div>
+        <div class="prompt-toolbar" style="margin-top:8px;">
+          <label class="btn-sm btn-outline" id="btn-sb-add">
+            🖼️ <span id="sb-add-label">Thêm hình</span>
+            <input type="file" id="sb-file-add" accept="image/*" multiple hidden>
+          </label>
+          <label class="btn-sm btn-outline" id="btn-sb-import">
+            📄 <span id="sb-import-label">Ghép TXT / JSON</span>
+            <input type="file" id="sb-import-input" accept=".txt,.json,text/plain,application/json" hidden>
+          </label>
+          <button class="btn-sm btn-outline" id="btn-sb-sort">
+            🔢 <span id="sb-sort-label">Sắp theo tên</span>
+          </button>
+          <button class="btn-sm btn-outline" id="btn-sb-clear">
+            🗑️ <span id="sb-clear-label">Xóa hết</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Paste prompts inline (auto-split per line → images in order) -->
+      <div class="section">
+        <p class="sb-paste-hint" id="sb-paste-hint">💡 Nhập mỗi dòng 1 prompt — tự ghép vào hình theo thứ tự. Cách 1 dòng trống nếu prompt dài nhiều dòng.</p>
+        <textarea id="sb-paste-input" rows="4" placeholder="Prompt cho hình 1&#10;Prompt cho hình 2&#10;Prompt cho hình 3..."></textarea>
+        <div class="prompt-toolbar" style="margin-top:8px;">
+          <button class="btn-sm btn-outline" id="btn-sb-paste-apply">
+            ✍️ <span id="sb-paste-apply-label">Ghép prompt vào hình</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Storyboard Items List -->
+      <div class="section">
+        <div id="sb-list" class="sb-list"></div>
+
+        <!-- Nano Flow: import a manifest from Storyboard AI (M2) -->
+        <div id="nano-flow-block" style="margin-top:14px;border-top:1px solid var(--border,#333);padding-top:12px;">
+          <div class="section-header" style="display:flex;align-items:center;gap:8px;">
+            <span id="nf-title" class="section-title">⚡ Nano Flow (beta)</span>
+            <span id="nf-counter" class="counter">0</span>
+          </div>
+          <p class="setup-desc" id="nf-desc">Nút <b>Nạp manifest</b> thay dự án hiện tại để không dùng nhầm dữ liệu cũ. Chỉ nút <b>Thêm dự án</b> mới nối thêm vào danh sách 1–6 dự án. Mỗi lượt chạy được cô lập bằng project/run riêng. Model/độ dài video lấy ở ⚙️ Cài đặt. (Bản DEV.)</p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0;">
+            <label class="btn-sm btn-outline" id="btn-nf-import">
+              📥 <span id="nf-import-label">Nạp manifest (thay hiện tại)</span>
+              <input type="file" id="nf-import-input" accept=".json,.nanoflow.json,application/json" hidden>
+            </label>
+            <label class="btn-sm btn-outline" id="btn-nf-add">
+              ➕ <span>Thêm dự án</span>
+              <input type="file" id="nf-add-input" accept=".json,.nanoflow.json,application/json" hidden>
+            </label>
+            <button class="btn-sm btn-outline" id="btn-nf-dryrun">▶️ <span id="nf-dryrun-label">Chạy thử (dry-run)</span></button>
+            <button class="btn-sm btn-outline" id="btn-nf-generate">🍌 <span id="nf-generate-label">Chỉ tạo ảnh</span></button>
+            <button class="btn-sm btn-outline" id="btn-nf-video">🎬 <span id="nf-video-label">Chỉ tạo video</span></button>
+            <button class="btn-sm btn-outline" id="btn-nf-runall">⏩ <span id="nf-runall-label">Chạy tất cả dự án</span></button>
+            <button class="btn-sm btn-outline" id="btn-nf-clear" title="Xoá TẤT CẢ manifest/dự án đã nạp">🗑️ <span id="nf-clear-label">Xoá tất cả manifest</span></button>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0;">
+            <span class="setup-desc">Khung:</span>
+            <select id="nf-aspect" class="btn-sm btn-outline" style="padding:4px 8px;">
+              <option value="">Theo manifest</option>
+              <option value="IMAGE_ASPECT_RATIO_LANDSCAPE">16:9 ngang</option>
+              <option value="IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE">4:3</option>
+              <option value="IMAGE_ASPECT_RATIO_SQUARE">1:1</option>
+              <option value="IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR">3:4</option>
+              <option value="IMAGE_ASPECT_RATIO_PORTRAIT">9:16 dọc</option>
+            </select>
+            <span class="setup-desc">Model:</span>
+            <select id="nf-model" class="btn-sm btn-outline" style="padding:4px 8px;">
+              <option value="GEM_PIX_2">Nano Banana Pro</option>
+              <option value="GEM_PIX_2_FLASH">Nano Banana 2</option>
+              <option value="GEM_PIX_2_FLASH_LITE">Nano Banana 2 Lite</option>
+            </select>
+          </div>
+          <p class="setup-desc" style="margin:2px 0;opacity:.75;">🎬 Video dùng <b>model + độ dài ở Cài đặt tổng</b> (gồm cả Omni). Đổi ở tab ⚙️ Cài đặt.</p>
+          <p id="nf-status" class="setup-desc"></p>
+          <div id="nf-projects"></div>
+          <div id="nf-assets"></div>
+          <div id="nf-boards"></div>
+          <div id="nf-list" class="sb-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Queue List (shows during run) -->
+    <div id="queue-list-section" class="section hidden">
+      <div class="section-title" id="queue-title">Tiến trình</div>
+      <div id="queue-list" class="queue-list"></div>
+    </div>
+
+    <!-- Resume Banner (shows if saved queue exists) -->
+    <div id="resume-banner" class="resume-banner hidden">
+      <div class="resume-info">
+        <span class="resume-icon">💾</span>
+        <div>
+          <span id="resume-text" class="resume-title">Có queue chưa hoàn thành. Tiếp tục?</span>
+          <span id="resume-detail" class="resume-detail"></span>
+        </div>
+      </div>
+      <div class="resume-actions">
+        <button id="btn-resume-yes" class="btn-sm btn-resume-yes">Tiếp tục</button>
+        <button id="btn-resume-no" class="btn-sm btn-outline">Bỏ qua</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== TAB: SETTINGS ==================== -->
+  <div id="tab-settings" class="tab-panel">
+    <div class="section">
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label" id="s-delay-label">Delay giữa prompt</span>
+          <span class="setting-desc" id="s-delay-desc">Thời gian chờ giữa mỗi prompt (giây)</span>
+        </div>
+        <input type="number" id="input-delay" class="input-num" value="10" min="0" max="300" step="5">
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label" id="s-imgsettle-label">Chờ ảnh hiện trước khi Tạo</span>
+          <span class="setting-desc" id="s-imgsettle-desc">Giây chờ ảnh (storyboard/sản phẩm/nhân vật) hiện RÕ trong ô prompt rồi mới bấm Tạo. Để dài nếu mạng chậm.</span>
+        </div>
+        <input type="number" id="input-imgsettle" class="input-num" value="5" min="1" max="30" step="1">
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label" id="s-download-label">Tự động tải về</span>
+          <span class="setting-desc" id="s-download-desc">Tải video/ảnh khi hoàn thành</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-download" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label" id="s-dlq-label">Chất lượng tải về</span>
+          <span class="setting-desc" id="s-dlq-desc">720p: tải gốc, nhanh. 1080p/4K: tự upscale rồi tải (cần gói trả phí, lâu hơn); nếu 4K không được hỗ trợ sẽ tự hạ xuống 1080p.</span>
+        </div>
+        <select id="select-dlquality" class="input-num" style="width:auto;min-width:88px">
+          <option value="720">720p</option>
+          <option value="1080">1080p</option>
+          <option value="4k">4K</option>
+        </select>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label" id="s-retry-label">Tự động thử lại</span>
+          <span class="setting-desc" id="s-retry-desc">Thử lại khi bị lỗi hoặc quá tải</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-retry" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label" id="s-retrydelay-label">Delay thử lại (giây)</span>
+          <span class="setting-desc" id="s-retrydelay-desc">Thời gian chờ trước khi thử lại</span>
+        </div>
+        <input type="number" id="input-retry-delay" class="input-num" value="30" min="10" max="120" step="10">
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label" id="s-timeout-label">Timeout (phút)</span>
+          <span class="setting-desc" id="s-timeout-desc">Thời gian tối đa chờ mỗi prompt</span>
+        </div>
+        <input type="number" id="input-timeout" class="input-num" value="10" min="3" max="30" step="1">
+      </div>
+
+      <!-- Divider -->
+      <div class="setting-divider"></div>
+
+      <!-- Overnight / Keep-alive settings -->
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label" id="s-keepalive-label">Chạy qua đêm</span>
+          <span class="setting-desc" id="s-keepalive-desc">Giữ extension hoạt động liên tục</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-keepalive">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label" id="s-autoresume-label">Tự phục hồi</span>
+          <span class="setting-desc" id="s-autoresume-desc">Tự tiếp tục nếu bị gián đoạn</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-autoresume" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label" id="s-notify-label">Thông báo khi xong</span>
+          <span class="setting-desc" id="s-notify-desc">Hiện notification khi hoàn thành</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-notify" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- ==================== SUPPORT / CONTACT ==================== -->
+    <div class="section">
+      <div class="support-box">
+        <div class="support-title" id="support-title">💬 Cần hỗ trợ? Liên hệ với chúng tôi</div>
+        <div class="support-desc" id="support-desc">Hỗ trợ kích hoạt license, thanh toán & xử lý sự cố</div>
+        <div class="support-links">
+          <a class="support-link sl-messenger" href="https://m.me/nguyenduchoa87" target="_blank" rel="noopener">
+            <span class="sl-icon">💬</span><span>Messenger</span>
+          </a>
+          <a class="support-link sl-whatsapp" href="https://wa.me/84931767767" target="_blank" rel="noopener">
+            <span class="sl-icon">📱</span><span>WhatsApp</span>
+          </a>
+          <a class="support-link sl-zalo" href="https://zalo.me/0931767767" target="_blank" rel="noopener">
+            <span class="sl-icon">🇻🇳</span><span>Zalo</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== TAB: AI (Storyboard AI) ==================== -->
+  <div id="tab-ai" class="tab-panel tab-panel-ai">
+    <!-- Toolbar -->
+    <div class="vf-toolbar">
+      <div class="vf-toolbar-left">
+        <div class="vf-subtab-switch">
+          <button class="ai-subtab active" data-aitab="app">🧠 App</button>
+          <button class="ai-subtab" data-aitab="guide">📖 Guide</button>
+        </div>
+      </div>
+      <div class="vf-toolbar-right" id="ai-app-toolbar">
+        <button id="btn-ai-analyze" class="btn-sm btn-outline" title="Phân tích Video → Storyboard">🎬 Phân tích</button>
+        <button id="btn-ai-generate" class="btn-sm btn-outline" title="Tạo Storyboard">🎨 Storyboard</button>
+        <button id="btn-ai-reload" class="btn-sm btn-outline" title="Reload">🔄</button>
+        <button id="btn-ai-open-tab" class="btn-sm btn-outline" title="Open in new tab">↗️</button>
+      </div>
+      <div class="vf-toolbar-right hidden" id="ai-guide-toolbar">
+        <button id="btn-ai-guide-lang" class="btn-sm btn-outline">🌐 EN / VI</button>
+      </div>
+    </div>
+
+    <!-- Sub-panel: App (iframe) -->
+    <div id="ai-panel-app" class="vf-iframe-wrapper">
+      <div id="ai-loading" class="vf-loading">
+        <div class="vf-loading-spinner"></div>
+        <span id="ai-loading-text">Đang tải Storyboard AI...</span>
+      </div>
+      <iframe
+        id="storyboard-ai-iframe"
+        src="https://storyboard.aiglobal.com/analyze"
+        allow="clipboard-read; clipboard-write"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+      ></iframe>
+    </div>
+
+    <!-- Sub-panel: Guide (bilingual) -->
+    <div id="ai-panel-guide" class="vf-guide-panel hidden">
+
+      <!-- ENGLISH Guide -->
+      <div id="ai-guide-en" class="vf-guide-content">
+        <div class="vf-guide-header">
+          <h3>📖 Storyboard AI Guide</h3>
+          <p>Create professional storyboards with AI assistance</p>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">01</span> Story & Script</div>
+          <ol class="vf-guide-steps">
+            <li>Open the <b>Storyboard AI</b> app from the AI tab</li>
+            <li>Enter your story concept or paste a full script</li>
+            <li>AI analyzes your story and prepares scene breakdowns</li>
+            <li>Review the generated scenes before proceeding</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">02</span> Characters & Products</div>
+          <ol class="vf-guide-steps">
+            <li>Define your characters with descriptions and traits</li>
+            <li>Upload reference images for visual consistency</li>
+            <li>Add product placements if needed for commercial content</li>
+            <li>AI ensures characters stay consistent across all scenes</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">03</span> Background & Style</div>
+          <ol class="vf-guide-steps">
+            <li>Choose background settings for your scenes</li>
+            <li>Select a visual style (cinematic, anime, realistic, etc.)</li>
+            <li>AI generates storyboard images matching your style</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">04</span> Generate & Export</div>
+          <ol class="vf-guide-steps">
+            <li>Click <b>"Generate"</b> to create your storyboard</li>
+            <li>Review all generated scenes and images</li>
+            <li>Export as <b>PDF</b> or <b>ZIP</b> for your production team</li>
+            <li>Re-generate individual scenes if needed</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-tips">
+          <div class="vf-tips-title">💡 Pro Tips</div>
+          <ul>
+            <li>Be specific with character descriptions for better consistency</li>
+            <li>Use reference images whenever possible</li>
+            <li>Short, clear scene descriptions produce better results</li>
+            <li>Export PDF for client presentations, ZIP for production</li>
+            <li>You can regenerate individual scenes without affecting others</li>
+          </ul>
+        </div>
+
+        <div class="vf-guide-faq">
+          <div class="vf-faq-title">❓ FAQ</div>
+          <div class="vf-faq-item">
+            <b>What AI model is used?</b>
+            <p>Uses advanced AI models for text and image generation. API keys are secured server-side.</p>
+          </div>
+          <div class="vf-faq-item">
+            <b>Can I use my own images?</b>
+            <p>Yes! Upload reference images for characters and backgrounds to ensure consistency.</p>
+          </div>
+          <div class="vf-faq-item">
+            <b>What export formats are available?</b>
+            <p>PDF for presentations and ZIP with individual scene images for production use.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIETNAMESE Guide -->
+      <div id="ai-guide-vi" class="vf-guide-content hidden">
+        <div class="vf-guide-header">
+          <h3>📖 Hướng Dẫn Storyboard AI</h3>
+          <p>Tạo storyboard chuyên nghiệp với hỗ trợ AI</p>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">01</span> Câu Chuyện & Kịch Bản</div>
+          <ol class="vf-guide-steps">
+            <li>Mở ứng dụng <b>Storyboard AI</b> từ tab AI</li>
+            <li>Nhập ý tưởng câu chuyện hoặc dán kịch bản đầy đủ</li>
+            <li>AI phân tích câu chuyện và chia thành các cảnh</li>
+            <li>Xem lại các cảnh được tạo trước khi tiếp tục</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">02</span> Nhân Vật & Sản Phẩm</div>
+          <ol class="vf-guide-steps">
+            <li>Định nghĩa nhân vật với mô tả và đặc điểm</li>
+            <li>Tải ảnh tham khảo để đảm bảo nhất quán</li>
+            <li>Thêm sản phẩm nếu cần cho nội dung quảng cáo</li>
+            <li>AI đảm bảo nhân vật nhất quán xuyên suốt các cảnh</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">03</span> Bối Cảnh & Phong Cách</div>
+          <ol class="vf-guide-steps">
+            <li>Chọn bối cảnh cho các cảnh quay</li>
+            <li>Chọn phong cách (cinematic, anime, thực tế, v.v.)</li>
+            <li>AI tạo hình storyboard phù hợp phong cách đã chọn</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">04</span> Tạo & Xuất Kết Quả</div>
+          <ol class="vf-guide-steps">
+            <li>Bấm <b>"Generate"</b> để tạo storyboard</li>
+            <li>Xem lại tất cả cảnh và hình ảnh được tạo</li>
+            <li>Xuất <b>PDF</b> hoặc <b>ZIP</b> cho đội sản xuất</li>
+            <li>Tạo lại từng cảnh riêng nếu cần</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-tips">
+          <div class="vf-tips-title">💡 Mẹo Hay</div>
+          <ul>
+            <li>Mô tả nhân vật chi tiết để AI tạo nhất quán hơn</li>
+            <li>Sử dụng ảnh tham khảo bất cứ khi nào có thể</li>
+            <li>Mô tả cảnh ngắn gọn, rõ ràng cho kết quả tốt nhất</li>
+            <li>Xuất PDF cho khách hàng, ZIP cho đội sản xuất</li>
+            <li>Có thể tạo lại từng cảnh mà không ảnh hưởng cảnh khác</li>
+          </ul>
+        </div>
+
+        <div class="vf-guide-faq">
+          <div class="vf-faq-title">❓ Câu Hỏi Thường Gặp</div>
+          <div class="vf-faq-item">
+            <b>Dùng AI model nào?</b>
+            <p>Sử dụng các model AI tiên tiến cho tạo văn bản và hình ảnh. API key được bảo mật trên server.</p>
+          </div>
+          <div class="vf-faq-item">
+            <b>Có thể dùng ảnh riêng không?</b>
+            <p>Có! Tải ảnh tham khảo cho nhân vật và bối cảnh để đảm bảo nhất quán.</p>
+          </div>
+          <div class="vf-faq-item">
+            <b>Xuất được định dạng nào?</b>
+            <p>PDF cho thuyết trình và ZIP với từng ảnh cảnh riêng cho sản xuất.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== TAB: VEOFLOW ==================== -->
+  <div id="tab-veoflow" class="tab-panel tab-panel-veoflow">
+    <!-- Sub-tab toggle: App / Guide -->
+    <div class="vf-toolbar">
+      <div class="vf-toolbar-left">
+        <div class="vf-subtab-switch">
+          <button class="vf-subtab active" data-vftab="app">🎬 App</button>
+          <button class="vf-subtab" data-vftab="guide">📖 Guide</button>
+        </div>
+      </div>
+      <div class="vf-toolbar-right" id="vf-app-toolbar">
+        <button id="btn-vf-reload" class="btn-sm btn-outline" title="Reload">🔄</button>
+        <button id="btn-vf-open-tab" class="btn-sm btn-outline" title="Mở trong tab mới">↗️</button>
+        <button id="btn-vf-pull" class="btn-sm btn-veoflow" title="Lấy prompts từ VeoFlow">📥 Pull</button>
+      </div>
+      <div class="vf-toolbar-right hidden" id="vf-guide-toolbar">
+        <button id="btn-guide-lang" class="btn-sm btn-outline">🌐 EN / VI</button>
+      </div>
+    </div>
+
+    <!-- Sub-panel: App (iframe) -->
+    <div id="vf-panel-app" class="vf-iframe-wrapper">
+      <div id="vf-loading" class="vf-loading">
+        <div class="vf-loading-spinner"></div>
+        <span id="vf-loading-text">Đang tải VeoFlow...</span>
+      </div>
+      <iframe
+        id="veoflow-iframe"
+        src="https://flowveo.nguyenduchoa.com/"
+        allow="clipboard-read; clipboard-write"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+      ></iframe>
+    </div>
+
+    <!-- Sub-panel: Guide (bilingual) -->
+    <div id="vf-panel-guide" class="vf-guide-panel hidden">
+
+      <!-- ENGLISH Guide -->
+      <div id="vf-guide-en" class="vf-guide-content">
+        <div class="vf-guide-header">
+          <h3>📖 VeoFlow User Guide</h3>
+          <p>Complete guide to create professional video prompts</p>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">01</span> Script & Prompt</div>
+          <ol class="vf-guide-steps">
+            <li>Open <b>"1. Script & Prompt"</b> from the left sidebar</li>
+            <li>Choose a visual style (Cinematic 8K, Realistic Life, etc.)</li>
+            <li>Paste your full script — separate scenes with blank lines</li>
+            <li>Click <b>"INIT PROJECT DNA"</b> → AI creates Master Manifest</li>
+            <li>Wait for green <b>"DNA LOCKED"</b> indicator</li>
+            <li>Click <b>"ANALYZE SCRIPT"</b> → AI splits into 8-sec clips</li>
+            <li>Click <b>"RESUME GENERATION"</b> → creates Veo 3 prompts</li>
+            <li>Each clip shows PASS ✅ or VIOLATION ❌. Click to expand</li>
+            <li>Use <b>"FORCE STOP"</b> to halt mid-generation</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">02</span> Characters</div>
+          <ol class="vf-guide-steps">
+            <li>Open <b>"2. Characters"</b> tab</li>
+            <li>Enter characters: <code>Name | Hair | Outfit | Voice</code></li>
+            <li>Example: <code>Sarah | Long brown hair | Red dress | soft_trust</code></li>
+            <li>Click <b>"SYNC CHARACTER DATABASE"</b></li>
+            <li>Upload reference images (+ button) to lock faces</li>
+            <li>Characters auto-referenced in all generated prompts</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">03</span> Export & AutoFlow</div>
+          <ol class="vf-guide-steps">
+            <li>Open <b>"3. Export Prompts"</b> to see completed clips</li>
+            <li><b>COPY ALL PROMPTS</b> — all prompts to clipboard</li>
+            <li><b>EXPORT .TXT / .JSON</b> — download files</li>
+            <li><b>PUSH TO AUTOFLOW</b> — sends to this extension's Queue</li>
+            <li><b>AF JSON</b> — copy AutoFlow-compatible JSON</li>
+            <li>Individual clips have COPY PROMPT & JSON buttons</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-tips">
+          <div class="vf-tips-title">💡 Pro Tips</div>
+          <ul>
+            <li>Each paragraph = one 8-second clip</li>
+            <li>Use character names matching your Character Database</li>
+            <li>Re-init DNA if you make major script changes</li>
+            <li>Failed clips can be regenerated individually (refresh icon)</li>
+            <li>Choose visual style BEFORE generating for best results</li>
+            <li>AutoFlow = script → prompts → video without manual copy</li>
+          </ul>
+        </div>
+
+        <div class="vf-guide-faq">
+          <div class="vf-faq-title">❓ FAQ</div>
+          <div class="vf-faq-item">
+            <b>What AI model?</b>
+            <p>GPT-4o for all processing. API key secured on Vercel.</p>
+          </div>
+          <div class="vf-faq-item">
+            <b>How long per clip?</b>
+            <p>8 seconds, optimized for Veo 3 Flow on Google Labs.</p>
+          </div>
+          <div class="vf-faq-item">
+            <b>What is Master Manifest?</b>
+            <p>A DNA lock ensuring character, environment & camera stay consistent across all clips.</p>
+          </div>
+          <div class="vf-faq-item">
+            <b>How does AutoFlow work?</b>
+            <p>VeoFlow creates prompts → pushes to extension → extension auto-submits to Google Flow.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIETNAMESE Guide -->
+      <div id="vf-guide-vi" class="vf-guide-content hidden">
+        <div class="vf-guide-header">
+          <h3>📖 Hướng Dẫn Sử Dụng VeoFlow</h3>
+          <p>Hướng dẫn đầy đủ tạo prompt video chuyên nghiệp</p>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">01</span> Script & Prompt — Viết Kịch Bản</div>
+          <ol class="vf-guide-steps">
+            <li>Mở tab <b>"1. Script & Prompt"</b> từ thanh bên trái</li>
+            <li>Chọn phong cách (Cinematic 8K, Realistic Life, v.v.)</li>
+            <li>Dán kịch bản — ngăn cách cảnh bằng dòng trống</li>
+            <li>Bấm <b>"INIT PROJECT DNA"</b> → AI tạo Master Manifest</li>
+            <li>Chờ đèn xanh <b>"DNA LOCKED"</b></li>
+            <li>Bấm <b>"ANALYZE SCRIPT"</b> → AI chia thành clip 8 giây</li>
+            <li>Bấm <b>"RESUME GENERATION"</b> → tạo prompt Veo 3</li>
+            <li>Mỗi clip hiện PASS ✅ hoặc VIOLATION ❌. Bấm để xem chi tiết</li>
+            <li>Dùng <b>"FORCE STOP"</b> để dừng giữa chừng</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">02</span> Characters — Thiết Lập Nhân Vật</div>
+          <ol class="vf-guide-steps">
+            <li>Mở tab <b>"2. Characters"</b></li>
+            <li>Nhập nhân vật: <code>Tên | Tóc | Trang phục | Voice</code></li>
+            <li>Ví dụ: <code>Mai | Tóc dài nâu | Đầm đỏ | soft_trust</code></li>
+            <li>Bấm <b>"SYNC CHARACTER DATABASE"</b></li>
+            <li>Tải ảnh tham khảo (nút +) để khóa ngoại hình</li>
+            <li>Nhân vật tự động xuất hiện trong mọi prompt tạo ra</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-section">
+          <div class="vf-guide-step-title"><span class="vf-step-num">03</span> Export & AutoFlow — Xuất Kết Quả</div>
+          <ol class="vf-guide-steps">
+            <li>Mở tab <b>"3. Export Prompts"</b> xem clip hoàn thành</li>
+            <li><b>COPY ALL PROMPTS</b> — sao chép tất cả vào clipboard</li>
+            <li><b>EXPORT .TXT / .JSON</b> — tải file</li>
+            <li><b>PUSH TO AUTOFLOW</b> — gửi thẳng vào Queue extension</li>
+            <li><b>AF JSON</b> — sao chép JSON tương thích AutoFlow</li>
+            <li>Từng clip có nút COPY PROMPT & JSON riêng</li>
+          </ol>
+        </div>
+
+        <div class="vf-guide-tips">
+          <div class="vf-tips-title">💡 Mẹo Hay</div>
+          <ul>
+            <li>Mỗi đoạn văn = 1 clip 8 giây</li>
+            <li>Tên nhân vật trong kịch bản phải khớp Character Database</li>
+            <li>Khởi tạo lại DNA nếu thay đổi kịch bản lớn</li>
+            <li>Clip lỗi tạo lại riêng bằng nút refresh, không ảnh hưởng clip khác</li>
+            <li>Chọn phong cách TRƯỚC khi tạo clip để kết quả tốt nhất</li>
+            <li>AutoFlow = kịch bản → prompt → video không cần copy thủ công</li>
+          </ul>
+        </div>
+
+        <div class="vf-guide-faq">
+          <div class="vf-faq-title">❓ Câu Hỏi Thường Gặp</div>
+          <div class="vf-faq-item">
+            <b>Dùng AI model nào?</b>
+            <p>GPT-4o cho mọi xử lý. API key bảo mật trên Vercel.</p>
+          </div>
+          <div class="vf-faq-item">
+            <b>Mỗi clip dài bao lâu?</b>
+            <p>8 giây, tối ưu cho Veo 3 Flow trên Google Labs.</p>
+          </div>
+          <div class="vf-faq-item">
+            <b>Master Manifest là gì?</b>
+            <p>File khóa DNA đảm bảo nhân vật, môi trường, camera nhất quán xuyên suốt dự án.</p>
+          </div>
+          <div class="vf-faq-item">
+            <b>AutoFlow hoạt động thế nào?</b>
+            <p>VeoFlow tạo prompt → đẩy sang extension → extension tự submit lên Google Flow.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== TAB: LOG ==================== -->
+  <div id="tab-log" class="tab-panel">
+    <div class="log-header">
+      <span id="log-title" class="section-title">Nhật ký hoạt động</span>
+      <button id="btn-clear-log" class="btn-sm btn-outline">🗑️</button>
+    </div>
+    <!-- Nút vận hành: LUÔN hiển thị, không cần mật khẩu -->
+    <button id="btn-gen-bulk" class="btn-primary btn-block" style="margin:8px 0;background:linear-gradient(135deg,#7c3aed,#6d28d9);font-weight:700" title="Tạo hàng loạt: mỗi dòng prompt = 1 video, qua API cổ điển (không đụng UI)">🚀 TẠO HÀNG LOẠT (tất cả prompt)</button>
+    <button id="btn-gen-test" class="btn-primary btn-block" style="margin:0 0 8px;background:linear-gradient(135deg,#16a34a,#15803d)" title="Tạo thử 1 video bằng API cổ điển video:batchAsyncGenerateVideoText (giống TurboFlow)">🎬 TEST TẠO 1 VIDEO</button>
+    <button id="btn-dl-1080p" class="btn-primary btn-block" style="margin:0 0 8px;background:linear-gradient(135deg,#0ea5e9,#0369a1);font-weight:700" title="Tải tất cả video đã sinh ở 1080p qua API: tự upsample → chờ xong → tải (không đụng UI)">⬇️ TẢI TẤT CẢ VIDEO 1080P</button>
+    <button id="btn-dl-720p" class="btn-primary btn-block" style="margin:0 0 8px;background:linear-gradient(135deg,#475569,#334155)" title="Tải nhanh tất cả video đã sinh ở 720p gốc qua API (không cần upsample)">⬇️ TẢI NHANH 720P</button>
+
+    <!-- Nhật ký hoạt động: LUÔN hiển thị, không cần mật khẩu -->
+    <div id="log-container" class="log-container"></div>
+
+    <!-- Khu vực KỸ THUẬT bắt/copy API: có mật khẩu để tránh lộ code -->
+    <div id="log-lock" class="log-lock" style="margin-top:12px">
+      <div class="log-lock-icon">🔒</div>
+      <div class="log-lock-title" id="log-lock-title">Khu vực bắt API (kỹ thuật)</div>
+      <input type="password" id="log-password" class="log-password" placeholder="Mật khẩu">
+      <button id="btn-unlock-log" class="btn-primary btn-block">Mở khu vực bắt API</button>
+    </div>
+    <div id="log-private" class="hidden" style="margin-top:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 8px">
+        <button id="btn-trace-start" class="btn-primary btn-block" title="Bắt đầu ghi API Flow bằng hook trang, webRequest và Network/CDP">⏺️ GHI API SÂU</button>
+        <button id="btn-trace-copy" class="btn-primary btn-block" title="Dừng ghi và sao chép trace API đã che token">📋 COPY TRACE</button>
+      </div>
+      <button id="btn-trace-clear" class="btn-primary btn-block" style="margin:0 0 8px;background:linear-gradient(135deg,#52525b,#3f3f46)" title="Xoá trace API đang lưu để bắt lại từ đầu">🧹 XOÁ TRACE API</button>
+      <button id="btn-copy-api" class="btn-primary btn-block" style="margin:0 0 8px" title="Sao chép request API Flow đã bắt (token đã che) để gửi dev">📋 SAO CHÉP API ĐÃ BẮT — gửi dev</button>
+      <button id="btn-replay-api" class="btn-primary btn-block" style="margin:0 0 8px" title="Phát lại nguyên văn request API đã bắt để kiểm tra token còn dùng được không">🧪 TEST PHÁT LẠI API (kiểm tra token)</button>
+      <p class="setup-desc" id="trace-hint" style="margin:0 0 8px">Bấm <b>⏺️ GHI API SÂU</b>, thao tác tay trên Flow, rồi bấm <b>📋 COPY TRACE</b>. Token/cookie/base64 sẽ được che.</p>
+    </div>
+  </div>
+
+  <!-- ==================== TAB: GEN IMAGE (live web app via iframe) ==================== -->
+  <div id="tab-genimg" class="tab-panel tab-panel-genimg">
+    <div class="vf-toolbar">
+      <div class="vf-toolbar-left">
+        <span style="font-weight:700;font-size:13px">🖼️ Gen Image</span>
+      </div>
+      <div class="vf-toolbar-right">
+        <button id="btn-genimg-reload" class="btn-sm btn-outline" title="Reload">🔄</button>
+        <button id="btn-genimg-open-tab" class="btn-sm btn-outline" title="Mở trong tab mới">↗️</button>
+      </div>
+    </div>
+    <div class="vf-iframe-wrapper">
+      <div id="genimg-loading" class="vf-loading">
+        <div class="vf-loading-spinner"></div>
+        <span id="genimg-loading-text">Đang tải Gen Image...</span>
+      </div>
+      <iframe
+        id="genimg-iframe"
+        src="https://gen-image-wheat.vercel.app"
+        allow="clipboard-read; clipboard-write"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+      ></iframe>
+    </div>
+  </div>
+
+  <!-- ==================== TAB: VIDEO MERGER (Cutflow, live web app via iframe) ==================== -->
+  <div id="tab-vidmerge" class="tab-panel tab-panel-vidmerge">
+    <div class="vf-toolbar">
+      <div class="vf-toolbar-left">
+        <span style="font-weight:700;font-size:13px">✂️ <span id="vidmerge-title">Cắt ghép video</span></span>
+      </div>
+      <div class="vf-toolbar-right">
+        <button id="btn-vidmerge-local" class="btn-sm btn-outline" title="Chuyển giữa bản cloud và localhost:3000 (dev)">☁️</button>
+        <button id="btn-vidmerge-reload" class="btn-sm btn-outline" title="Reload">🔄</button>
+        <button id="btn-vidmerge-open-tab" class="btn-sm btn-outline" title="Mở trong tab mới">↗️</button>
+      </div>
+    </div>
+    <div class="vf-iframe-wrapper">
+      <div id="vidmerge-loading" class="vf-loading">
+        <div class="vf-loading-spinner"></div>
+        <span id="vidmerge-loading-text">Đang tải Video Merger...</span>
+      </div>
+      <iframe
+        id="vidmerge-iframe"
+        src="https://cutflow-video-studio.vercel.app"
+        allow="clipboard-read; clipboard-write"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+      ></iframe>
+    </div>
+  </div>
+
+  <!-- ==================== PROGRESS BAR ==================== -->
+  <div id="progress-section" class="progress-section hidden">
+    <div class="progress-info">
+      <span id="progress-label">Tiến trình</span>
+      <span id="progress-text">0 / 0</span>
+      <span id="progress-pct">0%</span>
+    </div>
+    <div class="progress-track">
+      <div id="progress-fill" class="progress-fill"></div>
+    </div>
+  </div>
+
+  <!-- ==================== CONTROL BAR ==================== -->
+  <footer class="control-bar">
+    <button id="btn-start" class="btn-ctrl btn-start">
+      <span class="btn-ctrl-icon">▶</span>
+      <span id="start-label">Bắt đầu</span>
+    </button>
+    <button id="btn-start-all-projects" class="btn-ctrl btn-start">
+      <span class="btn-ctrl-icon">▶</span>
+      <span>5 dự án</span>
+    </button>
+    <button id="btn-pause" class="btn-ctrl btn-pause hidden">
+      <span class="btn-ctrl-icon">⏸</span>
+      <span id="pause-label">Tạm dừng</span>
+    </button>
+    <button id="btn-resume" class="btn-ctrl btn-resume hidden">
+      <span class="btn-ctrl-icon">▶</span>
+      <span id="resume-label">Tiếp tục</span>
+    </button>
+    <button id="btn-stop" class="btn-ctrl btn-stop hidden">
+      <span class="btn-ctrl-icon">⏹</span>
+      <span id="stop-label">Dừng</span>
+    </button>
+  </footer>
+
+  <!-- ==================== LICENSE GATE OVERLAY ==================== -->
+  <div id="license-gate" class="license-gate hidden">
+    <div class="license-gate-inner">
+      <div class="license-logo">
+        <div class="license-logo-icon">AF</div>
+        <div class="license-logo-text">
+          <span class="license-logo-title">AutoFlow Reel</span>
+          <span class="license-logo-sub">MEMBERSHIP</span>
+        </div>
+      </div>
+
+      <div id="license-status-box" class="license-status-box">
+        <span id="license-status-icon">🔒</span>
+        <span id="license-status-text">Nhập License Key để sử dụng</span>
+      </div>
+
+      <!-- PRIMARY: free trial by email (no signup link, instant) -->
+      <div class="trial-email-group">
+        <label id="trial-email-label" class="trial-email-label">🎁 Nhập email để dùng thử 7 ngày miễn phí</label>
+        <input type="email" id="trial-email-input" class="license-key-input" placeholder="email@cua-ban.com" spellcheck="false" autocomplete="email">
+        <button id="btn-trial-claim" class="btn-demo-try">
+          <span id="trial-claim-label">Dùng thử miễn phí 7 ngày</span>
+        </button>
+        <div id="trial-email-hint" class="demo-try-hint">Chỉ cần email — không cần mật khẩu, không cần thẻ</div>
+      </div>
+
+      <div class="license-divider"><span id="license-or-label">hoặc đã có mã kích hoạt</span></div>
+
+      <!-- For users who already have a license code -->
+      <div class="license-input-group">
+        <input type="text" id="license-key-input" class="license-key-input" placeholder="AF-XXXX-XXXX-XXXX" spellcheck="false" autocomplete="off">
+        <button id="btn-license-verify" class="btn-license-verify">
+          <span id="license-verify-label">Xác thực</span>
+        </button>
+      </div>
+
+      <div id="license-info" class="license-info hidden">
+        <div class="license-info-row">
+          <span id="license-plan-label">Plan</span>
+          <span id="license-plan-value">—</span>
+        </div>
+        <div class="license-info-row">
+          <span id="license-expires-label">Expires</span>
+          <span id="license-expires-value">—</span>
+        </div>
+      </div>
+
+      <div class="license-actions">
+        <a id="license-get-key-link" href="https://member.nguyenduchoa.com/login" target="_blank" class="license-get-key">
+          <span id="license-get-key-label">Đăng ký nhận License Key miễn phí</span> →
+        </a>
+        <a id="license-dashboard-link" href="https://member.nguyenduchoa.com/dashboard" target="_blank" class="license-dashboard-link hidden">
+          <span id="license-dashboard-label">Mở Dashboard</span> ↗
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script src="nano_session.js"></script>
+  <script src="nano_manifest.js"></script>
+  <script src="nano_pipeline.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

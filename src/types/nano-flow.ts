@@ -65,6 +65,9 @@ export interface NanoFlowAsset {
   id: string;
   name: string;
   image: string | null;
+  /** Optional ordered reference angles. `image` remains the first-angle
+   * compatibility field for older installed extensions. */
+  images?: string[];
   required?: boolean;
   /** Characters only: the story-locked outfit for this character. The extension
    * generates a full-body "wardrobe sheet" (identity photo + this outfit) once,
@@ -269,6 +272,13 @@ export interface NanoFlowProject {
   character_style?: {
     id: string;
     prompt: string;
+  };
+  /** Additive commercial metadata. Older extension versions safely ignore it. */
+  commercial_content?: {
+    affiliate: boolean;
+    disclosure_required: boolean;
+    suggested_disclosure?: string;
+    product_ir?: import("@/lib/product-ir").ProductIR;
   };
 }
 

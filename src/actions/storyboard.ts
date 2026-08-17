@@ -814,7 +814,7 @@ async function runAnalysis(
   // so it must never trigger analysis or a wasted vision call.
   const hasImages =
     (input.character_images ?? []).some((c) => (c.images?.length ?? 0) > 0) ||
-    (input.product_images ?? []).some((p) => (p.images?.length ?? 0) > 0) ||
+    (!input.product_ir && (input.product_images ?? []).some((p) => (p.images?.length ?? 0) > 0)) ||
     (input.ingredient_images?.length ?? 0) > 0 ||
     (input.background_images ?? []).some((b) => (b.images?.length ?? 0) > 0);
 
@@ -822,7 +822,9 @@ async function runAnalysis(
     try {
       const a = await analyzeReferenceImages({
         characters: input.character_images?.filter((c) => (c.images?.length ?? 0) > 0),
-        products: input.product_images,
+        // Affiliate Product IR was already produced by one explicit, reviewable
+        // vision pass. Never charge for a second product-analysis call here.
+        products: input.product_ir ? undefined : input.product_images,
         ingredients: input.ingredient_images,
         backgrounds: input.background_images,
         provider,
@@ -838,6 +840,14 @@ async function runAnalysis(
       warnings.push(`Image analysis failed: ${msg}`);
       console.error("[Storyboard] Image analysis failed:", err);
     }
+  }
+
+  if (input.product_ir?.review_status === "approved") {
+    const productKey = input.product_images?.[0]?.name || input.product_ir.product_name;
+    analysis.productDescriptions[productKey] = [
+      input.product_ir.product_reference_lock,
+      ...input.product_ir.visible_features,
+    ].filter(Boolean).join(" ");
   }
 
   // Cách 1 — per-scene location SETS (upload mode). Analyze each uploaded place
@@ -874,6 +884,37 @@ async function runAnalysis(
   }
 
   return analysis;
+}
+
+/** Affiliate delivery durations are a user choice, not a model inference. Keep
+ * the existing 10s pipeline for every other project and deterministically stamp
+ * only affiliate clips after the storyboard JSON returns. */
+function enforceAffiliateDeliveryDuration(
+  input: StoryboardGenerationInput,
+  breakdown: StoryboardGenerationOutput
+): void {
+  if (input.content_subtype !== "affiliate_short") return;
+  const plan = input.affiliate_duration_seconds === 15
+    ? [10, 5]
+    : input.affiliate_duration_seconds === 30
+      ? [10, 10, 10]
+      : [10, 10];
+  breakdown.segments = breakdown.segments.slice(0, plan.length);
+  breakdown.segments.forEach((segment, index) => {
+    segment.segment_number = index + 1;
+    segment.duration_seconds = plan[index]!;
+    if (Array.isArray(segment.dialogue_lines)) {
+      segment.dialogue_lines = segment.dialogue_lines
+        .filter((line) => Number(line.start_s ?? 0) < plan[index]!)
+        .map((line) => ({
+          ...line,
+          start_s: Math.max(0, Math.min(Number(line.start_s ?? 0), plan[index]! - 0.5)),
+          end_s: Math.max(0.5, Math.min(Number(line.end_s ?? plan[index]!), plan[index]!)),
+        }))
+        .filter((line) => line.end_s > line.start_s);
+    }
+  });
+  breakdown.total_duration_seconds = plan.reduce((sum, duration) => sum + duration, 0);
 }
 
 function buildIngredientsText(
@@ -1962,6 +2003,11 @@ function validatePreRenderGates(
       anonymousNarration:
         input.anonymous_characters ?? input.anonymous_narration === true,
       veoClips,
+      productNames: (input.product_images ?? []).map((product) => product.name),
+      productReferences:
+        input.product_ir?.review_status === "approved" ? input.product_images : undefined,
+      affiliateProductIR: input.product_ir,
+      affiliateDisclosure: input.affiliate_disclosure,
       // Cách 1 — embed uploaded location photos into the manifest per shot.
       locationSets: input.location_mode === "upload" ? input.location_sets : undefined,
     });
@@ -2459,6 +2505,7 @@ export async function generateStoryboardPlan(
     if (!Array.isArray(breakdown.segments) || breakdown.segments.length === 0) {
       return { success: false, error: "AI không trả về cảnh nào. Vui lòng thử lại." };
     }
+    enforceAffiliateDeliveryDuration(input, breakdown);
     if (!Array.isArray(breakdown.character_locks)) breakdown.character_locks = [];
 
     // Deterministic post-model guard: menu names/photo groups win over any

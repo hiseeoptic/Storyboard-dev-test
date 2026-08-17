@@ -35,6 +35,7 @@ import {
 import type { WorldContext } from "@/types";
 import { isStylizedCharacterRepresentation } from "@/lib/creative-routing";
 import { compileCookingRecipeDigest } from "@/lib/cooking";
+import { compileProductIRDigest } from "@/lib/product-ir";
 import { resolveSpeechMode } from "@/lib/storyboard/anonymous-narration";
 import {
   inferRevolvingDoorOperation,
@@ -690,9 +691,18 @@ CAPTION: <ready-to-post caption + 4-6 hashtags>
 No camera directions, no image prompts, no JSON — only the creative script above.`;
 }
 
+function affiliateClipDurations(input: StoryboardGenerationInput): number[] | null {
+  if (input.content_subtype !== "affiliate_short") return null;
+  if (input.affiliate_duration_seconds === 15) return [10, 5];
+  if (input.affiliate_duration_seconds === 20) return [10, 10];
+  if (input.affiliate_duration_seconds === 30) return [10, 10, 10];
+  return [10, 10];
+}
+
 export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): string {
   const creativeRouteDirective = renderCreativeRouteDirective(input);
   const segmentCount = input.segment_count ?? 5;
+  const affiliateDurations = affiliateClipDurations(input);
   const goal = input.video_goal ?? "marketing_general";
   const lang = input.dialogue_language ?? "Vietnamese";
   const isNumerology = goal === "numerology" || input.genre === "numerology";
@@ -721,6 +731,11 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   if (input.target_audience) brief.push(`- Audience: ${input.target_audience}`);
   if (input.key_message) brief.push(`- Key message: ${input.key_message}`);
   if (input.call_to_action) brief.push(`- CTA: ${input.call_to_action}`);
+  if (input.product_ir?.review_status === "approved") {
+    brief.push(compileProductIRDigest(input.product_ir));
+    brief.push(`- Affiliate treatment: ${input.affiliate_video_style ?? "problem_solution"}`);
+    if (input.affiliate_disclosure) brief.push(`- Disclosure metadata: ${input.affiliate_disclosure}`);
+  }
   if (input.main_character) brief.push(`- Main character: ${input.main_character}`);
   if (input.central_conflict) brief.push(`- Conflict: ${input.central_conflict}`);
   const characterDescriptions = input.character_descriptions ?? [];
@@ -761,7 +776,7 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   const speechDirective = speechModeDirective(input, lang);
   const genreScriptDirective = compactGenreScriptDirective(input);
 
-  return `Write a ${segmentCount}-segment short-video script.
+  return `Write a ${segmentCount}-segment short-video script.${affiliateDurations ? ` The exact clip durations are ${affiliateDurations.join("s + ")}s (total ${affiliateDurations.reduce((sum, value) => sum + value, 0)}s); the shorter final clip uses proportionally fewer spoken words.` : ""}
 
 ${creativeRouteDirective}
 ${genreScriptDirective}
@@ -934,6 +949,10 @@ export function buildStoryboardUserPrompt(
   if (input.target_audience) briefLines.push(`- Target audience: ${input.target_audience}`);
   if (input.key_message) briefLines.push(`- Key message: ${input.key_message}`);
   if (input.call_to_action) briefLines.push(`- Call to action (CTA): ${input.call_to_action}`);
+  if (input.product_ir?.review_status === "approved") {
+    briefLines.push(compileProductIRDigest(input.product_ir));
+    briefLines.push(`- Affiliate treatment: ${input.affiliate_video_style ?? "problem_solution"}`);
+  }
   const productBriefBlock =
     briefLines.length > 0
       ? `\n\nPRODUCT / TVC BRIEF — this is a product advertisement; build the whole script around it:\n${briefLines.join(
@@ -1000,6 +1019,11 @@ ${JSON.stringify(resolvedContextForPrompt, null, 2)}
     : "";
 
   const segmentCount = input.segment_count ?? 5;
+  const affiliateDurations = affiliateClipDurations(input);
+  const totalDuration = affiliateDurations?.reduce((sum, value) => sum + value, 0) ?? segmentCount * 10;
+  const clipDurationDescription = affiliateDurations
+    ? affiliateDurations.map((duration, index) => `segment ${index + 1}=${duration}s`).join(", ")
+    : `${segmentCount} × 10s`;
   const beatsPerSegment = Math.min(5, Math.max(3, input.beats_per_segment ?? 3));
   const goal = input.video_goal ?? "marketing_general";
   const goalGuidance = GOAL_GUIDANCE[goal];
@@ -1102,17 +1126,17 @@ Story / Product Idea: ${input.story_idea}
 Video Goal: ${goal} — ${goalGuidance}
 Genre: ${input.genre}
 Visual Style: ${input.style}
-Number of 10-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 10} seconds)
+Number of SEGMENTS: ${segmentCount} (${clipDurationDescription}; exact total ${totalDuration} seconds)
 Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${anonymousNarrationBlock}${characterBlock}${settingBlock}${shotLocationBlock}${toneBlock}${customBlock}${actionDramaBlock}
 
-Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Beats preserve a clear chronological order while the subject, props and locked physics stay continuous, but beats and camera notes contain NO numeric timecodes. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" describes that ONE continuous action as an untimed ordered physical sequence using deliberate, specific verbs (body part + verb + manner) plus an explicit final state/anchor. dialogue_lines.start_s/end_s is the clip's ONLY clock. Keep ONE primary action per clip — never stack multiple actions beyond the model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. ${firstFrameIdentityRule} Inside the motion_prompt use only the exact name plus position, action and expression for an uploaded-reference character.
+Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous take of its declared duration (${clipDurationDescription}) showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Beats preserve a clear chronological order while the subject, props and locked physics stay continuous, but beats and camera notes contain NO numeric timecodes. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" describes that ONE continuous action as an untimed ordered physical sequence using deliberate, specific verbs (body part + verb + manner) plus an explicit final state/anchor. dialogue_lines.start_s/end_s is the clip's ONLY clock. Keep ONE primary action per clip — never stack multiple actions beyond the model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. ${firstFrameIdentityRule} Inside the motion_prompt use only the exact name plus position, action and expression for an uploaded-reference character.
 
 Return a JSON object with this EXACT structure (the "beats" array must contain EXACTLY ${beatsPerSegment} items):
 {
   "schema_version": "4.0",
   "title": "string — catchy title",
   "synopsis": "string — 2-3 sentences",
-  "total_duration_seconds": ${segmentCount * 10},
+  "total_duration_seconds": ${totalDuration},
   "mood_tags": ["3-4 mood keywords"],
   "world_context": {
     "world_type": "string — realistic | cinematic realistic | stylized | fantasy | sci-fi | historical | mythological | surreal | commercial | documentary | animation | hybrid — RESOLVED from the brief, never a blind default",
@@ -1190,7 +1214,7 @@ Return a JSON object with this EXACT structure (the "beats" array must contain E
   "segments": [
     {
       "segment_number": 1,
-      "duration_seconds": 8,
+      "duration_seconds": ${affiliateDurations?.[0] ?? 10},
       "title": "string — short segment title",
       "marketing_role": "hook|problem|solution|body|cta — the clip's function; segment 1 opens/hooks, the last segment carries any CTA the project needs",
       "beats": [

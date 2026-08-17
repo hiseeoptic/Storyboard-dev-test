@@ -18,3 +18,4 @@ export { analyzeVideoFrames, type VideoAnalysisResult } from "./analyze-video";
 export { generateSceneKeyframe, type KeyframeResult } from "./generate-keyframe";
 export { getTopicLibrary } from "./topics";
 export { analyzeCookingRecipe } from "./cooking";
+export { analyzeAffiliateProduct } from "./product";

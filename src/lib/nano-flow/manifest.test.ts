@@ -416,6 +416,43 @@ test("video_refs default policy: keyframe on, environments/products off", () => 
   }
 });
 
+test("approved affiliate Product IR embeds product refs and opts every shot into board/video product authority", () => {
+  const productIR = {
+    version: "1.0" as const,
+    product_name: "Kềm cắt cành X1",
+    detected_category: "manual pruning shears",
+    confidence: 0.94,
+    visible_features: ["orange handles", "curved steel blades"],
+    probable_uses: ["cut small garden stems"],
+    approved_claims: ["compact hand tool"],
+    prohibited_claims: ["do not state a maximum cutting diameter"],
+    handling_contract: ["right hand grips both handles; blades close around one stem"],
+    demo_actions: ["align blades around one thin stem", "close handles once"],
+    recommended_environments: ["home garden"],
+    safety_notes: ["keep the free hand away from blades"],
+    product_reference_lock: "Preserve exact orange handles, blade geometry, logo and scale.",
+    review_status: "approved" as const,
+  };
+  const m = buildNanoFlowManifest(fixture(), {
+    productNames: ["Kềm cắt cành X1"],
+    productReferences: [{ name: "Kềm cắt cành X1", images: ["BASE64_HERO", "BASE64_SIDE"] }],
+    affiliateProductIR: productIR,
+    affiliateDisclosure: "Có liên kết tiếp thị.",
+  });
+
+  assert.equal(m.assets.products?.length, 1);
+  assert.equal(m.assets.products?.[0]?.required, true);
+  assert.equal(m.assets.products?.[0]?.image, "BASE64_HERO");
+  assert.deepEqual(m.assets.products?.[0]?.images, ["BASE64_HERO", "BASE64_SIDE"]);
+  const productId = m.assets.products?.[0]?.id;
+  for (const shot of m.shots) {
+    assert.deepEqual(shot.image_refs?.products, [productId]);
+    assert.deepEqual(shot.video_refs?.products, [productId]);
+  }
+  assert.equal(m.project.commercial_content?.affiliate, true);
+  assert.equal(m.project.commercial_content?.product_ir?.review_status, "approved");
+});
+
 test("shot ids and storyboard names are ordered", () => {
   const m = buildNanoFlowManifest(fixture());
   const [shot1, shot2] = m.shots;

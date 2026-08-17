@@ -3,7 +3,8 @@
 // the AutoFlow Reel extension consumes. Pure + side-effect free so it is easy
 // to unit-test and for Codex to reason about. See DESIGN.md §4.1.
 
-import type { CharacterRepresentation, LocationSet, StoryboardGenerationOutput } from "@/types";
+import type { CharacterRepresentation, ImageReference, LocationSet, StoryboardGenerationOutput } from "@/types";
+import type { ProductIR } from "@/lib/product-ir";
 import type {
   NanoFlowAsset,
   NanoFlowManifest,
@@ -51,6 +52,11 @@ export interface BuildNanoFlowManifestOptions {
   generatedAt?: string;
   /** Optional product reference names to declare as shared assets. */
   productNames?: string[];
+  /** Embedded affiliate product refs. This is opt-in; legacy Nano Flow projects
+   * continue to declare extension-side empty slots exactly as before. */
+  productReferences?: ImageReference[];
+  affiliateProductIR?: ProductIR;
+  affiliateDisclosure?: string;
   /** Explicit character medium selected in the app (one of the ten locked video
    * styles). Copied into the manifest and hard-locked into every board image +
    * Veo video prompt. Photoreal representations (auto/uploaded/human/none) leave
@@ -875,7 +881,18 @@ export function buildNanoFlowManifest(
   // ── Product assets: from explicit names, else one slot if a product DNA
   //    was locked. Images are attached on the extension side. ──
   const products: NanoFlowAsset[] = [];
-  if (opts.productNames?.length) {
+  if (opts.productReferences?.length) {
+    for (const reference of opts.productReferences) {
+      const images = (reference.images ?? []).filter(Boolean).slice(0, 4);
+      products.push({
+        id: `prod_${slugify(reference.name) || products.length + 1}`,
+        name: reference.name,
+        image: images[0] ?? null,
+        ...(images.length ? { images } : {}),
+        required: true,
+      });
+    }
+  } else if (opts.productNames?.length) {
     for (const name of opts.productNames) {
       products.push({ id: `prod_${slugify(name) || products.length + 1}`, name, image: null });
     }
@@ -1067,10 +1084,13 @@ export function buildNanoFlowManifest(
     const envRef = (seg.location_id ?? seg.environment_ref ?? "").trim();
     const envIds = envRef && envRef !== "custom" ? [envRef] : [];
 
+    const affiliateProductIds = opts.affiliateProductIR?.review_status === "approved"
+      ? products.map((product) => product.id)
+      : [];
     const image_refs: NanoFlowRefSelector = {
       characters: charIds(inScene),
       environments: envIds,
-      products: [], // step A default: leave product to the user/Storyboard to opt in per shot
+      products: affiliateProductIds,
     };
 
     // The boundary entering this shot (reused for scene 1 below).
@@ -1171,12 +1191,12 @@ export function buildNanoFlowManifest(
       video_prompt: primaryVideoPrompt,
       characters_in_scene: inScene,
       video_refs: {
-        // DESIGN.md §6: keyframe = first frame; characters = identity ref;
-        // environments/products OFF (already baked into the keyframe).
+        // Legacy projects keep products OFF. Affiliate shots opt in explicitly
+        // so the extension can preserve exact geometry/logo in board and Veo.
         use_generated_storyboard: true,
         characters: charIds(inScene),
         environments: [],
-        products: [],
+        products: affiliateProductIds,
       },
 
       // Structured video_prompt.dialogue is the one Veo-facing spoken payload.
@@ -1214,6 +1234,16 @@ export function buildNanoFlowManifest(
       thumbnail_aspect_ratio: thumbnailAspect,
       ...(characterRepresentation && visualMediumLock
         ? { character_style: { id: characterRepresentation, prompt: visualMediumLock } }
+        : {}),
+      ...(opts.affiliateProductIR?.review_status === "approved"
+        ? {
+            commercial_content: {
+              affiliate: true,
+              disclosure_required: true,
+              suggested_disclosure: opts.affiliateDisclosure || "Nội dung có liên kết tiếp thị / affiliate.",
+              product_ir: opts.affiliateProductIR,
+            },
+          }
         : {}),
       thumbnail_prompt: buildThumbnailPrompt({
         headline: breakdown.thumbnail_title || title,

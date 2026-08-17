@@ -131,6 +131,7 @@ function profile(
 }
 
 const AD_SUBTYPES = [
+  "affiliate_short",
   "problem_solution", "product_demonstration", "testimonial", "product_lifestyle",
   "emotional_brand_film", "luxury_commercial", "direct_response", "fast_promo", "ugc_unboxing",
 ];
@@ -178,6 +179,7 @@ export const GENRE_PRODUCTION_PROFILES: Record<Genre, GenreProductionProfile> = 
 };
 
 export const ADVERTISING_SUBTYPE_LABELS: Record<string, { vi: string; en: string }> = {
+  affiliate_short: { vi: "Affiliate 15–30s từ ảnh sản phẩm", en: "15–30s affiliate from product images" },
   problem_solution: { vi: "TVC vấn đề → giải pháp", en: "Problem → solution TVC" },
   product_demonstration: { vi: "Trình diễn sản phẩm", en: "Product demonstration" },
   testimonial: { vi: "Testimonial / trải nghiệm", en: "Testimonial / experience" },
@@ -190,6 +192,13 @@ export const ADVERTISING_SUBTYPE_LABELS: Record<string, { vi: string; en: string
 };
 
 const ADVERTISING_SUBTYPE_DIRECTIONS: Record<string, Partial<LockedGenreProductionProfile>> = {
+  affiliate_short: {
+    script_direction: "open on one recognisable user problem, reveal the product by 3-5 seconds, demonstrate one real operation, show an observable result, state only a human-approved claim and close on one exact CTA",
+    voice_direction: "fast clear benefit-led delivery with exact product and CTA pronunciation; no unsupported superlatives or feature-list recital",
+    camera_direction: "problem evidence, canonical product reveal, exact hand-to-product operation, visible result and a clean conversion frame; product geometry and branding remain image-locked",
+    edit_rhythm: "15s = two ordered clips; 20s = two clips; 30s = three clips; every cut advances problem, operation, proof or CTA",
+    sound_direction: "tactile product-operation foley and clean speech; music ducks under every claim and CTA",
+  },
   problem_solution: {
     script_direction: "open on a recognisable problem, show the mechanism of relief, prove one benefit and end on an earned CTA",
     voice_direction: "empathetic problem recognition, then confident benefit emphasis without alarmism",

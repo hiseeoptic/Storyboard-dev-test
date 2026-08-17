@@ -254,6 +254,12 @@ export interface StoryboardGenerationInput {
   character_dialogue_style?: string;
   /** Stable production-profile selections. Optional for legacy projects. */
   content_subtype?: string;
+  /** Affiliate product-video authority. The app requires human approval before
+   * generation; legacy and non-affiliate projects omit it entirely. */
+  product_ir?: import("@/lib/product-ir").ProductIR;
+  affiliate_video_style?: import("@/lib/product-ir").AffiliateVideoStyle;
+  affiliate_duration_seconds?: 15 | 20 | 30;
+  affiliate_disclosure?: string;
   dialogue_style_id?: string;
   narrator_voice_style_id?: string;
   camera_profile_custom?: string;

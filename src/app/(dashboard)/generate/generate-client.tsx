@@ -39,6 +39,7 @@ import { Progress } from "@/components/ui/progress";
 import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploader";
 import {
   generateStoryboardPlan,
+  analyzeAffiliateProduct,
   analyzeCookingRecipe,
   generateBoardImage,
   finalizeScript,
@@ -89,6 +90,7 @@ import type {
   Genre,
 } from "@/types";
 import type { CookingRecipeIR, CookingStyle } from "@/lib/cooking";
+import type { AffiliateVideoStyle, ProductIR } from "@/lib/product-ir";
 import {
   AUDIENCE_GOAL_OPTIONS as CREATIVE_GOAL_OPTIONS,
   STORY_FORMAT_OPTIONS as CREATIVE_FORMAT_OPTIONS,
@@ -1267,11 +1269,20 @@ function ProjectWorkspace() {
   const [targetAudience, setTargetAudience] = useState("");
   const [keyMessage, setKeyMessage] = useState("");
   const [callToAction, setCallToAction] = useState("");
+  const [affiliateDuration, setAffiliateDuration] = useState<15 | 20 | 30>(20);
+  const [affiliateVideoStyle, setAffiliateVideoStyle] = useState<AffiliateVideoStyle>("problem_solution");
+  const [affiliateVerifiedUses, setAffiliateVerifiedUses] = useState("");
+  const [affiliateVerifiedClaims, setAffiliateVerifiedClaims] = useState("");
+  const [affiliateDisclosure, setAffiliateDisclosure] = useState("Nội dung có liên kết tiếp thị / affiliate.");
+  const [productIR, setProductIR] = useState<ProductIR | null>(null);
+  const [productAnalyzing, setProductAnalyzing] = useState(false);
+  const [productAnalysisError, setProductAnalysisError] = useState<string | null>(null);
   // Story / film brief
   const [mainCharacter, setMainCharacter] = useState("");
   const [centralConflict, setCentralConflict] = useState("");
 
   const isAdGenre = AD_GENRES.has(genre);
+  const isAffiliateMode = genre === "advertising" && contentSubtype === "affiliate_short";
 
   // Resolve dropdown selection (or custom text) into the value sent to the AI.
   const effectiveSetting =
@@ -1501,6 +1512,7 @@ function ProjectWorkspace() {
     setProdDesc("");
     setProdDescSel("");
     setProdImages([]);
+    setProductIR(null);
   };
 
   const addIngredient = () => {
@@ -1564,9 +1576,55 @@ function ProjectWorkspace() {
     }
   };
 
+  const runProductAnalysis = async (): Promise<ProductIR | null> => {
+    const candidate = products[0] ?? (prodImages.length > 0
+      ? { name: prodName.trim() || productName.trim() || "Product", description: effectiveProdDesc, images: prodImages }
+      : null);
+    if (!candidate || candidate.images.length === 0) {
+      setProductAnalysisError(lang === "vi" ? "Hãy tải ít nhất một ảnh sản phẩm rõ." : "Upload at least one clear product image.");
+      return null;
+    }
+    setProductAnalyzing(true);
+    setProductAnalysisError(null);
+    try {
+      const compressed = await downscaleRefImages([{
+        name: candidate.name,
+        description: candidate.description,
+        images: candidate.images.slice(0, 4).map((image) => image.base64),
+      }]);
+      const response = await analyzeAffiliateProduct({
+        product_name: productName.trim() || candidate.name,
+        user_description: candidate.description,
+        verified_uses: affiliateVerifiedUses,
+        verified_claims: affiliateVerifiedClaims,
+        images: compressed[0]?.images ?? [],
+      });
+      if (!response.success) {
+        setProductAnalysisError(response.error);
+        return null;
+      }
+      setProductIR(response.data);
+      if (!productName.trim()) setProductName(response.data.product_name);
+      return response.data;
+    } catch (analysisError) {
+      const message = analysisError instanceof Error ? analysisError.message : "Could not analyze product";
+      setProductAnalysisError(message);
+      return null;
+    } finally {
+      setProductAnalyzing(false);
+    }
+  };
+
   // ─── Generate ────────────────────────────────────────────────────
 
   const handleGenerate = async () => {
+    if (isAffiliateMode && productIR?.review_status !== "approved") {
+      setError(lang === "vi"
+        ? "Hãy phân tích ảnh sản phẩm, kiểm tra công dụng/claim rồi tích xác nhận Product IR trước khi dựng."
+        : "Analyze the product images, review uses/claims and approve Product IR before generation.");
+      setStep(2);
+      return;
+    }
     setPhase("generating");
     setError(null);
     setExportAttempted(false);
@@ -1734,6 +1792,10 @@ function ProjectWorkspace() {
       });
       return out.filter((r) => r.images.length > 0);
     };
+    // Affiliate reference authority: preserve at least the canonical product
+    // image before optional extra character/location angles. Other modes keep
+    // the established character-first budget policy unchanged.
+    const affiliateProductImages = isAffiliateMode ? fitRefs(productImages, true) : [];
     const cappedCharacterImages = fitCharacterRefs(characterImages);
     // Nano Flow "has real photo" characters carry NO bytes in-app (the photo is
     // attached later in the extension), so the downscale/fit passes above drop
@@ -1743,7 +1805,9 @@ function ProjectWorkspace() {
       .filter((c) => !!c.hasRealPhoto && (c.images?.length ?? 0) === 0)
       .map((c) => ({ name: c.name, images: [], isReference: true }));
     const finalCharacterImages = [...cappedCharacterImages, ...referenceOnlyChars];
-    const cappedProductImages = fitRefs(productImages, false);
+    const cappedProductImages = isAffiliateMode
+      ? affiliateProductImages
+      : fitRefs(productImages, false);
     const cappedBackgroundImages = fitRefs(backgroundImages, false);
     const cappedIngredientImages = fitRefs(ingredientImages, false);
     // Cách 1 — per-shot location sets (upload mode): pair each capped background
@@ -1784,8 +1848,8 @@ function ProjectWorkspace() {
       story_idea: storyIdea.trim() || recipeForInput?.dish_name || "",
       genre: genre as StoryboardGenerationInput["genre"],
       style,
-      scene_count: segmentCount,
-      segment_count: segmentCount,
+      scene_count: isAffiliateMode ? (affiliateDuration === 30 ? 3 : 2) : segmentCount,
+      segment_count: isAffiliateMode ? (affiliateDuration === 30 ? 3 : 2) : segmentCount,
       beats_per_segment: beatsPerSegment,
       video_goal: genre === "cooking" ? "cooking" : videoGoal,
       audience_goal: audienceGoal,
@@ -1819,6 +1883,10 @@ function ProjectWorkspace() {
         ? TONE_PROFILE_ALIAS[toneSel] ?? "auto"
         : undefined,
       content_subtype: isAdGenre ? contentSubtype || undefined : undefined,
+      product_ir: isAffiliateMode ? productIR ?? undefined : undefined,
+      affiliate_video_style: isAffiliateMode ? affiliateVideoStyle : undefined,
+      affiliate_duration_seconds: isAffiliateMode ? affiliateDuration : undefined,
+      affiliate_disclosure: isAffiliateMode ? affiliateDisclosure.trim() || undefined : undefined,
       camera_profile_custom: cameraProfileCustom.trim() || undefined,
       voice_performance: voiceOverEnabled
         ? {
@@ -2358,6 +2426,11 @@ function ProjectWorkspace() {
       anonymousNarration:
         genInput?.anonymous_characters ?? genInput?.anonymous_narration === true,
       veoClips,
+      productNames: (genInput?.product_images ?? []).map((product) => product.name),
+      productReferences:
+        genInput?.product_ir?.review_status === "approved" ? genInput.product_images : undefined,
+      affiliateProductIR: genInput?.product_ir,
+      affiliateDisclosure: genInput?.affiliate_disclosure,
       // Cách 1 — embed uploaded location photos into the downloadable manifest.
       locationSets: genInput?.location_mode === "upload" ? genInput?.location_sets : undefined,
     });
@@ -4586,6 +4659,44 @@ function ProjectWorkspace() {
                       <p className="text-xs text-muted-foreground">{L("productBriefHint")}</p>
                     </div>
                   </div>
+                  {isAffiliateMode && (
+                    <div className="space-y-3 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-3">
+                      <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                        {lang === "vi" ? "Affiliate AI — ảnh sản phẩm là nguồn hình chính" : "Affiliate AI — product images are the visual authority"}
+                      </p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium">{lang === "vi" ? "Thời lượng chính xác" : "Exact duration"}</label>
+                          <Select
+                            value={String(affiliateDuration)}
+                            onChange={(e) => setAffiliateDuration(Number(e.target.value) as 15 | 20 | 30)}
+                            options={[{ value: "15", label: "15s (10s + 5s)" }, { value: "20", label: "20s (10s + 10s)" }, { value: "30", label: "30s (10s + 10s + 10s)" }]}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium">{lang === "vi" ? "Cách thể hiện" : "Treatment"}</label>
+                          <Select
+                            value={affiliateVideoStyle}
+                            onChange={(e) => setAffiliateVideoStyle(e.target.value as AffiliateVideoStyle)}
+                            options={[
+                              { value: "problem_solution", label: lang === "vi" ? "Vấn đề → giải pháp" : "Problem → solution" },
+                              { value: "hands_on_demo", label: lang === "vi" ? "Thao tác thực tế" : "Hands-on demo" },
+                              { value: "ugc", label: "UGC" },
+                              { value: "before_after", label: lang === "vi" ? "Trước / sau" : "Before / after" },
+                              { value: "expert", label: lang === "vi" ? "Chuyên gia" : "Expert" },
+                              { value: "lifestyle", label: "Lifestyle" },
+                              { value: "fast_promo", label: lang === "vi" ? "Khuyến mãi nhanh" : "Fast promo" },
+                            ]}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {lang === "vi"
+                          ? "Cấu trúc khóa: bất lợi 0–3s → sản phẩm xuất hiện trước giây 5 → thao tác thật → kết quả nhìn thấy → lợi ích đã duyệt → CTA."
+                          : "Locked arc: problem 0–3s → product by second 5 → real operation → visible proof → approved benefit → CTA."}
+                      </p>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <label className="text-sm font-medium">{L("productName")}</label>
                     <Input value={productName} onChange={(e) => setProductName(e.target.value)} placeholder={L("productNamePlaceholder")} />
@@ -5177,7 +5288,7 @@ function ProjectWorkspace() {
                           <p className="text-xs text-muted-foreground">{p.images.length} {L("photos")}</p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm" onClick={() => setProducts((prev) => prev.filter((_, j) => j !== i))}>
+                      <Button variant="ghost" size="sm" onClick={() => { setProducts((prev) => prev.filter((_, j) => j !== i)); setProductIR(null); }}>
                         {L("remove")}
                       </Button>
                     </div>
@@ -5186,7 +5297,7 @@ function ProjectWorkspace() {
               )}
 
               <div className="space-y-3 rounded-lg border border-dashed p-4">
-                <Input value={prodName} onChange={(e) => setProdName(e.target.value)} placeholder={L("prodName")} />
+                <Input value={prodName} onChange={(e) => { setProdName(e.target.value); setProductIR(null); }} placeholder={L("prodName")} />
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-muted-foreground">
                     {lang === "vi" ? "Mô tả sản phẩm (chọn nhanh)" : "Product description (quick pick)"}
@@ -5203,12 +5314,12 @@ function ProjectWorkspace() {
                 </div>
                 {/* Nano Flow: real product photos are attached in the extension;
                     here the product is declared by name + description only. */}
-                {!NANO_FLOW_TEXT_ONLY && (
+                {(!NANO_FLOW_TEXT_ONLY || isAffiliateMode) && (
                   <>
                     <ImageUploader
                       images={prodImages}
-                      onChange={setProdImages}
-                      maxImages={3}
+                      onChange={(images) => { setProdImages(images); setProductIR(null); }}
+                      maxImages={isAffiliateMode ? 4 : 3}
                       label={L("prodPhotos")}
                       hint={L("prodPhotosHint")}
                     />
@@ -5225,6 +5336,70 @@ function ProjectWorkspace() {
                   {L("addProduct")}
                 </Button>
               </div>
+
+              {isAffiliateMode && (
+                <div className="space-y-3 rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-4">
+                  <div>
+                    <p className="text-sm font-semibold">{lang === "vi" ? "Phân tích & duyệt Product IR (bắt buộc)" : "Analyze & approve Product IR (required)"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {lang === "vi" ? "Chỉ gọi Vision một lần. Sau đó bạn kiểm tra công dụng và claim; bước dựng không phân tích ảnh sản phẩm lần hai." : "Vision runs once. Review uses and claims; storyboard generation will not analyze the product again."}
+                    </p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Textarea value={affiliateVerifiedUses} onChange={(e) => { setAffiliateVerifiedUses(e.target.value); setProductIR(null); }} rows={3} placeholder={lang === "vi" ? "Công dụng đã biết / cách dùng đúng" : "Verified uses / correct operation"} />
+                    <Textarea value={affiliateVerifiedClaims} onChange={(e) => { setAffiliateVerifiedClaims(e.target.value); setProductIR(null); }} rows={3} placeholder={lang === "vi" ? "Claim được phép nói (không có thì để trống)" : "Approved claims (leave blank if none)"} />
+                  </div>
+                  <Button type="button" onClick={runProductAnalysis} disabled={productAnalyzing || (products.length === 0 && prodImages.length === 0)} className="gap-2">
+                    {productAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    {lang === "vi" ? "Phân tích ảnh sản phẩm 1 lần" : "Analyze product images once"}
+                  </Button>
+                  {productAnalysisError && <p className="text-xs font-medium text-red-600">{productAnalysisError}</p>}
+                  {productIR && (
+                    <div className="space-y-3 rounded-lg border bg-background p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold">{productIR.product_name}</p>
+                          <p className="text-xs text-muted-foreground">{productIR.detected_category} · {Math.round(productIR.confidence * 100)}% vision confidence</p>
+                        </div>
+                        <Badge variant={productIR.review_status === "approved" ? "default" : "secondary"}>
+                          {productIR.review_status === "approved" ? (lang === "vi" ? "Đã duyệt" : "Approved") : (lang === "vi" ? "Chờ duyệt" : "Pending")}
+                        </Badge>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium">{lang === "vi" ? "Công dụng sẽ dùng trong kịch bản" : "Uses allowed in script"}</label>
+                          <Textarea rows={4} value={productIR.probable_uses.join("\n")} onChange={(e) => setProductIR({ ...productIR, probable_uses: e.target.value.split("\n").map((v) => v.trim()).filter(Boolean), review_status: "pending" })} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium">{lang === "vi" ? "Claim được phép" : "Approved claims"}</label>
+                          <Textarea rows={4} value={productIR.approved_claims.join("\n")} onChange={(e) => setProductIR({ ...productIR, approved_claims: e.target.value.split("\n").map((v) => v.trim()).filter(Boolean), review_status: "pending" })} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium">{lang === "vi" ? "Cách thao tác vật lý" : "Physical handling"}</label>
+                          <Textarea rows={4} value={productIR.handling_contract.join("\n")} onChange={(e) => setProductIR({ ...productIR, handling_contract: e.target.value.split("\n").map((v) => v.trim()).filter(Boolean), review_status: "pending" })} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium">{lang === "vi" ? "Bối cảnh sử dụng phù hợp" : "Recommended use settings"}</label>
+                          <Textarea rows={4} value={productIR.recommended_environments.join("\n")} onChange={(e) => setProductIR({ ...productIR, recommended_environments: e.target.value.split("\n").map((v) => v.trim()).filter(Boolean), review_status: "pending" })} />
+                        </div>
+                      </div>
+                      {productIR.prohibited_claims.length > 0 && (
+                        <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-800 dark:text-amber-300">
+                          <span className="font-semibold">{lang === "vi" ? "Không được nói: " : "Do not claim: "}</span>{productIR.prohibited_claims.join("; ")}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setProductIR({ ...productIR, review_status: productIR.review_status === "approved" ? "pending" : "approved" })}
+                        className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${productIR.review_status === "approved" ? "border-emerald-600 bg-emerald-600 text-white" : "border-input hover:border-emerald-500"}`}
+                      >
+                        {productIR.review_status === "approved" ? "✅" : "⬜"} {lang === "vi" ? "Tôi đã kiểm tra công dụng và claim quảng cáo" : "I reviewed product uses and advertising claims"}
+                      </button>
+                      <Input value={affiliateDisclosure} onChange={(e) => setAffiliateDisclosure(e.target.value)} placeholder={lang === "vi" ? "Nhãn công khai affiliate" : "Affiliate disclosure"} />
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Non-cooking auxiliary object/component references (named) */}
               <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">

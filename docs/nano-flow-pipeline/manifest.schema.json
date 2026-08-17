@@ -29,6 +29,11 @@
           "type": "object",
           "description": "Reuses the existing Storyboard SocialPosts shape verbatim (tiktok / youtube_shorts / facebook_reel)."
         },
+        "commercial_content": {
+          "type": "object",
+          "description": "Additive affiliate/disclosure metadata and the human-approved Product IR.",
+          "additionalProperties": true
+        },
         "character_style": {
           "type": "object",
           "required": ["id", "prompt"],
@@ -103,6 +108,7 @@
         "id":       { "type": "string", "description": "Stable id referenced by shots, e.g. char_lan" },
         "name":     { "type": "string", "description": "Human label, e.g. Lan" },
         "image":    { "type": ["string", "null"], "description": "data: URI or null (user attaches later in extension)" },
+        "images":   { "type": "array", "items": { "type": "string" }, "maxItems": 4, "description": "Ordered embedded reference angles; image remains the first-angle compatibility field." },
         "required": { "type": "boolean", "default": false },
         "wardrobe": { "type": "string", "description": "Characters only — the story-locked outfit. The extension builds one full-body wardrobe sheet (identity photo + this outfit) and reuses it as the reference for every keyframe so face AND clothes stay identical. Empty ⇒ extension derives an outfit from the scene." },
         "location_views": { "type": "array", "items": { "$ref": "#/definitions/locationView" }, "description": "Legacy environments-only A2 pair. Kept for compatibility." },
