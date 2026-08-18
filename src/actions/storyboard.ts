@@ -1834,9 +1834,23 @@ function synchronizeContinuityContracts(
   if (breakdown.context_ir?.segment_contract_version === "1.0") {
     breakdown.schema_version = "4.0";
   }
-  for (const segment of breakdown.segments) {
-    if (segment.transition_in) {
-      segment.continuity_mode = segment.transition_in.mode;
+  const segments = breakdown.segments;
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i]!;
+    if (!segment.transition_in) continue;
+    segment.continuity_mode = segment.transition_in.mode;
+    // Deterministic location wiring for the edit boundary. The transition's
+    // DESTINATION is this segment's own location and its ORIGIN is the previous
+    // segment's location. Models routinely leave these undefined or stale, which
+    // trips TRANS-003 ("transition_in.to_location_id disagrees with
+    // segment.location_id"). Re-derive them from the authoritative segment
+    // location_ids so the boundary contract is always self-consistent.
+    if (segment.location_id) {
+      segment.transition_in.to_location_id = segment.location_id;
+    }
+    const previousLocationId = i > 0 ? segments[i - 1]?.location_id : undefined;
+    if (previousLocationId) {
+      segment.transition_in.from_location_id = previousLocationId;
     }
   }
 }

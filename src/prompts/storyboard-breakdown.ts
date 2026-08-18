@@ -3123,7 +3123,15 @@ export function buildVeoJson(
     const environmentSoundBed = scrub(
       contextLocation?.sound_bed || env?.sound_bed || opts.ambientAudio || ""
     );
-    const environmentReverb = scrub(contextLocation?.reverb_profile || "");
+    // Reverb authority MUST be non-empty: it is emitted both as the scene-bible
+    // "reverb" token and as audio_transition.reverb_profile, and the final prompt
+    // gate (BIBLE-001 / AUDIO-004) rejects a clip whose reverb authority is blank.
+    // The Context IR location wins when it declares one; otherwise fall back to a
+    // space-agnostic natural profile that stays correct for any set.
+    const environmentReverb = scrub(
+      contextLocation?.reverb_profile ||
+        "natural acoustic reverb matching the visible space; short untreated room tone, no synthetic reverb"
+    );
     const previousLocationId =
       segIndex > 0 ? oneLine(breakdown.segments[segIndex - 1]?.location_id) : "";
     const locationChanged =

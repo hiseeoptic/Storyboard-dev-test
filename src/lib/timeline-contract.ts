@@ -74,7 +74,17 @@ export function dialogueClockErrors(
   return errors;
 }
 
-/** Preserve a valid user/model clock; otherwise create one compact clock once. */
+/** Preserve a valid user/model clock; otherwise create one compact clock once.
+ *
+ * The old normalizer scaled every turn UNIFORMLY down to fill the clip window,
+ * which pushed dense turns far past the 190-wpm limit (e.g. 20 words squeezed
+ * into 3s = 400 wpm) — exactly the DLG-006 / DIALOGUE_SPEECH_RATE_EXCEEDED
+ * findings. It now allocates time so no turn drops below its own 190-wpm floor
+ * whenever the words physically fit inside the clip; only a genuinely
+ * over-written clip (more words than any ≤190-wpm delivery could voice in the
+ * window) falls back to an equal-rate split, and even then no single turn
+ * spikes above the segment's unavoidable average. Dialogue TEXT is never
+ * trimmed — content is preserved. */
 export function ensureDialogueClock(
   turns: DialogueTurn[],
   durationSeconds = 10
@@ -84,17 +94,46 @@ export function ensureDialogueClock(
   }
   const gap = 0.4;
   const usable = Math.max(1, durationSeconds - 0.5);
-  const natural = turns.map((turn) =>
-    Math.max(1.2, turn.text.trim().split(/\s+/).filter(Boolean).length * 0.42)
+  const wordCounts = turns.map(
+    (turn) => turn.text.trim().split(/\s+/).filter(Boolean).length
   );
-  const rawTotal = natural.reduce((sum, value) => sum + value, 0) + gap * (turns.length - 1);
-  const scale = rawTotal > usable ? usable / rawTotal : 1;
+  // Per-turn minimum seconds to stay AT/UNDER the limit. Target 180 wpm (not the
+  // hard 190) so the 0.1s rounding below can never nudge a turn back over 190.
+  // A short human floor keeps 1-2 word turns from reading as a blip.
+  const floor = wordCounts.map((w) => Math.max(0.8, (w / 180) * 60));
+  // Relaxed, natural pace (~142 wpm) used when the clip has room to breathe.
+  const natural = wordCounts.map((w) => Math.max(1.2, w * 0.42));
+
+  const gaps = gap * (turns.length - 1);
+  const floorTotal = floor.reduce((sum, value) => sum + value, 0) + gaps;
+  const naturalTotal = natural.reduce((sum, value) => sum + value, 0) + gaps;
+
+  let seconds: number[];
+  if (naturalTotal <= usable) {
+    // Room for a natural delivery — well under the limit.
+    seconds = natural.slice();
+  } else if (floorTotal <= usable) {
+    // Tight, but every turn can still stay ≤190 wpm: seat each turn on its floor,
+    // then hand the leftover time out toward the natural pace, proportionally.
+    const leftover = usable - floorTotal;
+    const want = natural.map((n, i) => Math.max(0, n - floor[i]!));
+    const wantTotal = want.reduce((sum, value) => sum + value, 0) || 1;
+    seconds = floor.map((f, i) => f + leftover * (want[i]! / wantTotal));
+  } else {
+    // Genuinely over-written for this clip length: no clock can keep it ≤190 wpm.
+    // Split the window in proportion to word count so every turn carries the same
+    // (minimum possible) rate instead of a few turns spiking to 400-500 wpm.
+    const speaking = Math.max(0.5, usable - gaps);
+    const totalWords = wordCounts.reduce((sum, value) => sum + value, 0) || 1;
+    seconds = wordCounts.map((w) => Math.max(0.4, (w / totalWords) * speaking));
+  }
+
   let cursor = 0;
   return turns.map((turn, index) => {
     const start = Math.round(cursor * 10) / 10;
-    cursor += natural[index]! * scale;
+    cursor += seconds[index]!;
     const end = Math.round(Math.min(cursor, usable) * 10) / 10;
-    cursor += gap * scale;
+    cursor += gap;
     return { ...turn, start_s: start, end_s: end };
   });
 }
