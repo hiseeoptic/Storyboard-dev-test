@@ -45,6 +45,7 @@ const REAL_WORLD_PROFILES = new Set<DirectingProfileId>([
 
 function inferAudienceGoal(input: StoryboardGenerationInput): AudienceGoal {
   if (input.audience_goal) return input.audience_goal;
+  if (input.genre === "talking_head") return "reflection";
   if (["product_ad", "promo_sale", "marketing_general"].includes(input.video_goal ?? "")) return "action";
   if (["review", "testimonial", "brand_story"].includes(input.video_goal ?? "")) return "trust";
   if (["educational", "cooking", "fitness"].includes(input.video_goal ?? "")) return "explain";
@@ -59,6 +60,7 @@ function inferAudienceGoal(input: StoryboardGenerationInput): AudienceGoal {
 
 function inferStoryFormat(input: StoryboardGenerationInput, goal: AudienceGoal): StoryFormat {
   if (input.story_format && input.story_format !== "auto") return input.story_format;
+  if (input.genre === "talking_head") return "short_insight";
   if (input.genre === "life_wisdom") return "parable";
   if (["education", "finance", "tech", "health", "numerology", "psychology"].includes(input.genre) || goal === "explain") return "explainer";
   if (["documentary", "mockumentary", "travel", "nature"].includes(input.genre)) return "observational";
@@ -113,6 +115,7 @@ function inferDirectingProfile(
   character: CharacterRepresentation,
 ): DirectingProfileId {
   if (input.directing_profile && input.directing_profile !== "auto") return input.directing_profile;
+  if (input.genre === "talking_head") return "everyday_naturalism";
   if (interpretation === "nature_analogy" || input.genre === "travel" || input.genre === "nature") return "natural_history";
   if (input.genre === "documentary" || input.genre === "mockumentary") return "observational_documentary";
   if (input.genre === "psychology") return "psychological_metaphor";

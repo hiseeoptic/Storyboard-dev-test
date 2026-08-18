@@ -103,6 +103,8 @@ export type Genre =
   | "education" // giáo dục
   | "finance"
   | "tech"
+  // ─── Presenter / talking-head (person speaking to camera) ────────────
+  | "talking_head" // chia sẻ / nói trước camera (đạo lý, bài học, trend)
   // ─── Lifestyle / demonstration content ───────────────────────────────
   | "cooking"
   | "fitness"

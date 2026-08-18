@@ -463,6 +463,8 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "education", label: "📚 Giáo dục" },
     { value: "finance", label: "📚 Tài chính" },
     { value: "tech", label: "📚 Công nghệ" },
+    // ── Nói trước camera / Presenter ──
+    { value: "talking_head", label: "🎤 Chia sẻ trước camera (đạo lý · bài học · trend)" },
     // ── Lifestyle / thực hành ──
     { value: "cooking", label: "🍳 Món ăn / Nấu ăn" },
     { value: "fitness", label: "🍳 Thể hình / Tập luyện" },
@@ -501,6 +503,7 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "education", label: "📚 Education" },
     { value: "finance", label: "📚 Finance" },
     { value: "tech", label: "📚 Technology" },
+    { value: "talking_head", label: "🎤 Talking-head / Speaking to camera" },
     { value: "cooking", label: "🍳 Food / Cooking" },
     { value: "fitness", label: "🍳 Fitness / Workout" },
     { value: "lifestyle", label: "🍳 Lifestyle" },

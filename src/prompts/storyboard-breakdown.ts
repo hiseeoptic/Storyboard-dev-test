@@ -520,6 +520,28 @@ FITNESS / WORKOUT SHORT FRAMEWORK (follow this EXACTLY — motivate, demonstrate
   KẾT QUẢ + CTA: "Kết hợp với ăn uống là bụng xẹp dần. Lưu lại tập theo nhé!" (realistic payoff + save)
 - Fill "marketing_structure" (hook/problem/solution/cta) from beats 1/2/3-4/5. Ready-to-post caption + 4-6 hashtags at END of "synopsis".`;
 
+const TALKING_HEAD_FRAMEWORK = `
+TALKING-HEAD / SPEAKING-TO-CAMERA SHORT FRAMEWORK (follow this EXACTLY — one person shares a truth straight to camera; đạo lý · bài học · nội dung trend):
+- FORMAT: ONE presenter speaks DIRECTLY to the viewer ("bạn"), seated or standing still with a VISIBLE microphone (lav clip or podcast/handheld mic), in ONE beautiful, consistent background. A genuine personal SHARE — never a lecture, never a hard sell.
+- SPEAKER = the uploaded/locked person: keep the SAME face, hair, outfit and voice identical in EVERY segment (face comes from the attached reference; do not restate facial traits in prose). If no reference is attached, invent ONE warm, credible presenter and keep them identical throughout.
+- SETTING = A SINGLE, LOCKED, AESTHETIC BACKGROUND: the whole video happens in ONE fixed attractive space chosen from the idea/brief (a warm study with soft shelves and plants, a cozy cafe corner with gentle bokeh, a clean modern room with warm practical lights, a calm balcony at golden hour…). LOCK it into scene_bible.backdrop and repeat the SAME space verbatim in every segment's first_frame_prompt — same furniture, same props, same light, same mic. There are NO scene changes and NO spatial transitions in this format; every transition_in stays in the same location.
+- SHOT LANGUAGE: intimate, eye-level, focus on the eyes; the presenter looks INTO the lens (direct address). Alternate gently between MEDIUM (MS) and MEDIUM CLOSE-UP (MCU) across segments for life. Each 10s clip is ONE continuous take of the person talking — beats are only SMOOTH reframings (a slow push-in, a small angle change), never cuts, never a new place.
+- DELIVERY IS THE STORY: because the frame barely moves, the ENERGY comes from the words, the face and the hands. Pair EACH line with a matching micro-gesture and expression (a lean-in on the key point, an open palm on the reveal, a pause and a knowing smile on the punchline). Never a frozen, idle presenter.
+- VOICE = ONE locked, warm, sincere, conversational voice, identical in every clip (timbre / natural F0 / rate / accent locked). Speak like a real person confiding a lesson, not an announcer.
+- DIALOGUE PACING (CRITICAL — the whole video is spoken): each 10s clip carries ONE natural spoken passage of about 20-26 words (comfortably under ~190 wpm with real pauses). NEVER cram more than ~28 words into a 10s clip — split the message across segments instead. Under ~12 words leaves dead air; expand it. Distribute the talk evenly so no clip is rushed or empty.
+- STRUCTURE (retention-first):
+  1) HOOK (0-3s, segment 1) — open on a line that stops the scroll: a bold claim, a relatable confession, a sharp question or a trend hook, spoken straight to camera. NO "hôm nay mình sẽ nói về…", no slow intro.
+  2) SET-UP — ground the idea in a concrete moment, story or example the viewer recognises.
+  3+) DEVELOP — deliver the lesson one clear step per clip; each clip turns the screw (a reveal, a reframe, a "hóa ra…"), adding NEW value, never repeating the premise.
+  LAST) PAYOFF + soft CTA — land ONE "đắt giá" screenshot-worthy line that reframes everything, then a gentle CTA ("lưu lại", "gửi cho người cần", "theo dõi để nghe tiếp").
+- PICK ONE CONTENT ANGLE (vary across videos): personal confession ("Mình từng…"), một bài học đắt giá, đập tan lầm tưởng ("Hóa ra điều ai cũng tin là sai"), góc nhìn ngược dòng về một trend đang nóng, "3 điều mình ước biết sớm hơn" (listicle), câu hỏi khiến người xem tự soi lại.
+- 🏆 GOLD-STANDARD EXAMPLE (đạo lý "im lặng" — learn the voice, don't copy):
+  HOOK: "Người khôn ngoan nhất mình từng gặp… gần như không bao giờ tranh cãi." (scroll-stopper, straight to camera)
+  SET-UP: "Không phải vì họ yếu. Mà vì họ hiểu một điều hầu hết chúng ta bỏ qua." (turn)
+  DEVELOP: "Mỗi lần cố thắng một cuộc cãi vã, bạn đang dạy người kia phòng thủ — chứ không phải lắng nghe." (insight)
+  PAYOFF + CTA: "Im lặng đúng lúc không phải là thua — đó là giữ sức cho điều quan trọng hơn. Lưu lại nếu hôm nay bạn cần nghe điều này." (reframe + soft CTA)
+- Fill "marketing_structure" (hook/problem/solution/cta) from the hook / set-up / develop / payoff beats. End "synopsis" with a ready-to-post caption + 4-6 hashtags.`;
+
 /** Genre-appropriate ambient sound for the Veo clip (Veo generates audio). */
 export function genreAmbientAudio(genre?: string, _goal?: string): string | undefined {
   // Genre is the hard routing boundary. A stale UI goal must never leak a
@@ -534,6 +556,8 @@ export function genreAmbientAudio(genre?: string, _goal?: string): string | unde
     return "location-authentic natural soundscape only — layered wind, leaves, water, insects, birds or distant weather according to the declared habitat, season, time and camera distance; no generic stock jungle bed, no music";
   if (/\b(?:action|thriller|crime|rescue|martial|fight|combat)\b|hành động|giật gân|đánh nhau|giải cứu|tự vệ/iu.test(genre ?? ""))
     return "location-authentic high-stakes action sound — urgent breathing, accelerating footfalls, cloth strain, body weight shifting, one sharp impact for each visible contact, nearby objects rattling from force, and a brief breathless aftermath; no generic stock punches, no triumphant superhero music, and no sound without an on-screen cause";
+  if (genre === "talking_head")
+    return "clean close-mic spoken voice as the clear foreground — a real person talking to camera — over a quiet, credible indoor room tone (soft air, faint room ambience); intimate and warm, no music, no stock bed, nothing that competes with the voice";
   return undefined;
 }
 
@@ -623,6 +647,7 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   const isHealth = goal === "health" || input.genre === "health";
   const isCooking = input.genre === "cooking";
   const isFitness = goal === "fitness" || input.genre === "fitness";
+  const isTalkingHead = input.genre === "talking_head";
   const framework = isNumerology
     ? numerologyFramework(input.numerology_hook_mode) +
       numerologyToneDirective(input.numerology_style) +
@@ -637,7 +662,9 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
           }`
         : isFitness
           ? FITNESS_FRAMEWORK
-          : "";
+          : isTalkingHead
+            ? TALKING_HEAD_FRAMEWORK
+            : "";
 
   const brief: string[] = [];
   if (input.product_name) brief.push(`- Product/Service: ${input.product_name}`);
@@ -947,6 +974,11 @@ ${JSON.stringify(input.resolved_context, null, 2)}
           ? `\n${FITNESS_FRAMEWORK}`
           : "";
 
+  const isTalkingHead = input.genre === "talking_head";
+  const talkingHeadBlock = isTalkingHead
+    ? `\nTALKING-HEAD / PRESENTER LOCK: ONE person speaks straight to camera (direct address, eyes into the lens) with a VISIBLE microphone, in ONE fixed, attractive background that is IDENTICAL in every segment (same room, furniture, props, light, mic — lock it in scene_bible.backdrop and repeat it verbatim). NO scene/location changes and NO spatial transitions — every transition_in stays in the same location. Framing is intimate MS↔MCU at eye level; each 10s clip is ONE continuous take of the person talking, beats are only smooth reframings (a slow push-in or a small angle change), never cuts. Energy comes from delivery: pair each spoken line with a matching micro-gesture and expression; never a frozen presenter. Keep the SAME locked face (from the attached reference) and the SAME locked voice in every clip.`
+    : "";
+
   const dialogueLanguage = input.dialogue_language ?? "Vietnamese";
   const cookingAsmr =
     isCooking &&
@@ -996,7 +1028,7 @@ Video Goal: ${goal} — ${goalGuidance}
 Genre: ${input.genre}
 Visual Style: ${input.style}
 Number of 10-second SEGMENTS: ${segmentCount} (total ≈ ${segmentCount * 10} seconds)
-Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${characterBlock}${settingBlock}${shotLocationBlock}${toneBlock}${customBlock}${actionDramaBlock}
+Beats per segment: ${beatsPerSegment} progressive camera framings of ONE continuous action inside each 10s clip${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${talkingHeadBlock}${dialogueBlock}${characterBlock}${settingBlock}${shotLocationBlock}${toneBlock}${customBlock}${actionDramaBlock}
 
 Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous 10s take showing a SINGLE primary action, filmed as EXACTLY ${beatsPerSegment} progressive camera framings (${beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Beats preserve a clear chronological order while the subject, props and locked physics stay continuous, but beats and camera notes contain NO numeric timecodes. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" describes that ONE continuous action as an untimed ordered physical sequence using deliberate, specific verbs (body part + verb + manner) plus an explicit final state/anchor. dialogue_lines.start_s/end_s is the clip's ONLY clock. Keep ONE primary action per clip — never stack multiple actions beyond the model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. ${firstFrameIdentityRule} Inside the motion_prompt use only the exact name plus position, action and expression for an uploaded-reference character.
 
