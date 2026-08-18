@@ -603,6 +603,12 @@ function normalizeDialogue(
     .map((c) => ({ name: c.name.trim() }));
   const scriptIndex = scriptSpeakerIndex(sourceScript);
   for (const seg of breakdown.segments) {
+    // Time the dialogue against THIS segment's real clip length. The model can
+    // set a non-10s duration_seconds per segment; a hardcoded 10s here would
+    // leave a shorter clip's lines timed past its end and over the wpm limit —
+    // exactly what buildVeoJson and the production-state validator (both of
+    // which read seg.duration_seconds) then flag as out-of-bounds / too fast.
+    const clipSeconds = Math.max(1, seg.duration_seconds || 10);
     let turns = Array.isArray(seg.dialogue_lines) ? seg.dialogue_lines : [];
     // Seed from the single-line form when the model only filled that.
     if (turns.length === 0 && seg.dialogue && seg.dialogue.trim()) {
@@ -659,7 +665,7 @@ function normalizeDialogue(
     // Use the same >190 wpm boundary as Layer A. Previously this normalizer
     // preserved 200 wpm windows while the validator rejected them, forcing
     // Layer C to spend two repair calls on a purely mechanical clock.
-    turns = ensureDialogueClock(turns, 10);
+    turns = ensureDialogueClock(turns, clipSeconds);
 
     // Bind every on-screen voice to one concrete storyboard camera beat. The
     // beat itself must name that speaker; otherwise the compiled prompt cannot
@@ -731,7 +737,7 @@ function normalizeDialogue(
       if (only.start_s == null || only.end_s == null || only.end_s <= only.start_s) {
         const dur = Math.max(1.2, only.text.split(/\s+/).length * 0.42);
         only.start_s = 0.3;
-        only.end_s = Math.round(Math.min(0.3 + dur, 9.5) * 10) / 10;
+        only.end_s = Math.round(Math.min(0.3 + dur, Math.max(1, clipSeconds - 0.5)) * 10) / 10;
       }
       seg.dialogue_lines = [only];
       seg.dialogue = only.text;
@@ -740,7 +746,7 @@ function normalizeDialogue(
       seg.dialogue_lines = undefined;
     }
 
-    const clockErrors = dialogueClockErrors(seg.dialogue_lines, 10);
+    const clockErrors = dialogueClockErrors(seg.dialogue_lines, clipSeconds);
     if (clockErrors.length > 0) {
       throw new Error(
         `Invalid dialogue clock in segment ${seg.segment_number}: ${clockErrors.join("; ")}`

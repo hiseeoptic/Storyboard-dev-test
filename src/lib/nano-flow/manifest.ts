@@ -276,7 +276,7 @@ function buildLocationBoardPrompt(
   addCandidate("video_prompt", clipStr(sceneAction.start_state), "start");
   addCandidate(
     "video_prompt",
-    clipStr(sceneAction.ordered_action) || clipStr(sceneAction.action) || clipStr(clip?.motion_prompt),
+    clipStr(sceneAction.motion) || clipStr(sceneAction.ordered_action) || clipStr(sceneAction.action) || clipStr(clip?.motion_prompt),
     "transition"
   );
   for (const action of stateAuthority.actions) {

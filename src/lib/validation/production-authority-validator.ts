@@ -148,6 +148,7 @@ export function validateProductionPromptAuthority(
         ...(authority.script_contract.beats ?? []).map((beat) => beat.beat ?? ""),
         ...authority.actions.flatMap((action) => [action.evidence, action.verb]),
         str(sceneAction.start_state),
+        str(sceneAction.motion),
         str(sceneAction.ordered_action),
         str(sceneAction.action),
         str(sceneAction.end_state),
