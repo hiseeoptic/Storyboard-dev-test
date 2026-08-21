@@ -20,6 +20,14 @@ function namedInText(entry: ProductionRegistryEntry, text: string): boolean {
     .some((name) => value.includes(lower(name)));
 }
 
+function hasPositiveReflection(text: string): boolean {
+  // Negative prompt clauses such as "no reflections" and "never duplicate a
+  // character in a reflection" describe exclusions, not visible instances.
+  // The old generic /reflections?/ match turned those guards into phantom
+  // reflected people with no mirror source.
+  return /\b(?:in|inside|seen in|visible in)\s+(?:the\s+)?(?:[\p{L}-]+\s+){0,2}(?:mirror|reflective surface|window glass)\b|\b(?:[\p{L}'’-]+['’]s reflection|mirror image|visible reflection|reflection of|reflected (?:in|on|by))\b|\b(?:trong gương|hiện trong gương|ảnh gương|bóng phản chiếu của|phản chiếu (?:trong|trên))\b/iu.test(text);
+}
+
 function compileSnapshot(
   snapshot: ProductionSnapshot,
   text: string,
@@ -27,8 +35,8 @@ function compileSnapshot(
   boundary: "start" | "end"
 ): void {
   const byId = new Map(registry.map((entry) => [entry.entity_id, entry]));
-  const mirror = registry.find(
-    (entry) => /\b(?:mirror|reflective surface)\b|\b(?:gương|bề mặt phản chiếu)\b/iu.test(entry.display_name)
+  const reflectiveSurface = registry.find(
+    (entry) => /\b(?:mirror|reflective surface|window glass|glass pane|polished glass)\b|\b(?:gương|bề mặt phản chiếu|kính cửa sổ|mặt kính)\b/iu.test(entry.display_name)
   );
   for (const entity of snapshot.entities.filter((entry) => entry.kind === "character")) {
     const registryEntry = byId.get(entity.entity_id);
@@ -56,14 +64,14 @@ function compileSnapshot(
     if (
       registryEntry &&
       namedInText(registryEntry, text) &&
-      /\b(?:mirror image|reflections?|reflected)\b|\b(?:ảnh gương|phản chiếu|trong gương)\b/iu.test(text)
+      hasPositiveReflection(text)
     ) {
       snapshot.visual_instances.push({
         instance_id: `${entity.entity_id}_${boundary}_reflection`,
         entity_id: entity.entity_id,
         classification: "reflection",
         visible: true,
-        source_surface_id: mirror?.entity_id ?? null,
+        source_surface_id: reflectiveSurface?.entity_id ?? null,
       });
     }
     if (

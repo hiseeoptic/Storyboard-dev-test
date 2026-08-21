@@ -157,6 +157,24 @@ test("continuous boundary treats null-to-known zone metadata as enrichment when 
   );
 });
 
+test("continuous boundary treats null-to-known zone metadata as enrichment despite prose detail drift", () => {
+  const first = segment(1, {
+    characters_in_scene: ["Lan", "Minh"],
+    spatial_layout: twoPersonLayout("Lan at sink front right; Minh at sink left near Lan"),
+  });
+  const second = segment(2, {
+    characters_in_scene: ["Lan", "Minh"],
+    continuity_mode: "continuous",
+    spatial_layout: twoPersonLayout("Lan and Minh remain beside the sink in the same room"),
+  });
+  const state = buildProductionState(breakdown([first, second]));
+  state.shots[0]!.end_snapshot.placements.forEach((placement) => { placement.zone_id = null; });
+  assert.equal(
+    validateSpatialState(state).some((item) => item.code === "SPATIAL_TELEPORT_OR_SWAP"),
+    false
+  );
+});
+
 test("an intentional scene cut does not treat changed placement as teleport", () => {
   const first = segment(1, {
     characters_in_scene: ["Lan", "Minh"],

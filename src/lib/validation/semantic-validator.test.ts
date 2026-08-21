@@ -508,6 +508,39 @@ test("continuous start state is inherited locally before the validator", () => {
   );
 });
 
+test("legacy continuity_mode inherits the previous end even without transition_in", () => {
+  const bd = twoSegFixture();
+  bd.segments[0]!.state_ledger = {
+    start: [{ entity_id: "cup", state: "cool", position: "table" }],
+    changes: [],
+    end: [{ entity_id: "cup", state: "cool", position: "table" }],
+  };
+  bd.segments[1]!.continuity_mode = "continuous";
+  delete bd.segments[1]!.transition_in;
+  bd.segments[1]!.state_ledger = {
+    start: [{ entity_id: "cup", state: "cool", position: "counter" }],
+    changes: [],
+    end: [{ entity_id: "cup", state: "cool", position: "counter" }],
+  };
+  const normalized = normalizeProductionContracts(bd);
+  assert.equal(normalized.continuous_start_entries_inherited, 1);
+  assert.equal(bd.segments[1]!.state_ledger!.start[0]!.position, "table");
+});
+
+test("static set dressing does not consume the high-fidelity entity budget", () => {
+  const bd = cleanFixture();
+  const entries = ["Minh", "Lan", "table", "chair", "door", "window", "lamp", "wall"].map(
+    (entity_id) => ({ entity_id, state: "unchanged", position: `set ${entity_id}` })
+  );
+  bd.segments[0]!.state_ledger = {
+    start: structuredClone(entries),
+    changes: [],
+    end: structuredClone(entries),
+  };
+  const report = validateStoryboardSemantics(bd);
+  assert.equal(report.findings.some((finding) => finding.code === "STATE-002"), false);
+});
+
 test("state ledger separates intrinsic condition from touch, holder and position", () => {
   const bd = addContextContracts(twoSegFixture());
   bd.segments.push({

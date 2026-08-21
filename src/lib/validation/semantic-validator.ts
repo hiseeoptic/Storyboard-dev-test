@@ -647,14 +647,32 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
       ...changeEntries.map((entry) => entry.entity_id),
       ...endEntries.map((entry) => entry.entity_id),
     ].filter(Boolean));
-    if (ids.size > maxTracked || ids.size > 6) {
+    const characterIds = new Set(
+      (out.character_locks ?? []).flatMap((lock) =>
+        [lock.character_id, lock.display_name, lock.name].map(lc).filter(Boolean)
+      )
+    );
+    // The high-fidelity budget concerns active story entities, not every static
+    // piece of furniture copied into a compatibility ledger. Count characters,
+    // changed entities and held/manipulated objects. Static doors, tables,
+    // chairs and set dressing remain available in the ledger without falsely
+    // consuming the 3–6 primary simulation slots.
+    const activeIds = new Set<string>();
+    for (const id of ids) {
+      if (characterIds.has(lc(id))) activeIds.add(id);
+    }
+    for (const change of changeEntries) activeIds.add(change.entity_id);
+    for (const entry of [...startEntries, ...endEntries]) {
+      if (norm(entry.holder)) activeIds.add(entry.entity_id);
+    }
+    if (activeIds.size > maxTracked || activeIds.size > 6) {
       push({
         code: "STATE-002",
         severity: "high",
         scope: "segment",
         segment_number: seg.segment_number,
         message: "State ledger exceeds the approved 3-6 high-fidelity entity budget.",
-        evidence: `tracked=${ids.size}, max=${Math.min(6, maxTracked)}`,
+        evidence: `active_tracked=${activeIds.size}, declared_total=${ids.size}, max=${Math.min(6, maxTracked)}`,
       });
     }
 

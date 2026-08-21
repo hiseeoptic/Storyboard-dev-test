@@ -82,24 +82,30 @@ export function ensureDialogueClock(
   if (turns.length === 0 || dialogueClockErrors(turns, durationSeconds).length === 0) {
     return turns;
   }
-  const gap = 0.5;
-  const usable = Math.max(1, durationSeconds - 0.5);
+  const requestedGap = 0.5;
+  const tailRoom = Math.min(0.5, Math.max(0, durationSeconds * 0.05));
+  const usable = Math.max(0.1, durationSeconds - tailRoom);
   const natural = turns.map((turn) =>
     Math.max(1.2, turn.text.trim().split(/\s+/).filter(Boolean).length * 0.4)
   );
-  const rawTotal = natural.reduce((sum, value) => sum + value, 0) + gap * (turns.length - 1);
-  // Never "repair" an overloaded clip by accelerating the voice. The old
-  // scale-to-fit branch could squeeze 35-45 words into 10 seconds and create
-  // 300-600 WPM dialogue. When the approved text is physically too long we
-  // keep a natural clock (which deliberately extends past the clip boundary),
-  // allowing the existing validator/editor to report the real capacity defect
-  // without corrupting the spoken performance. Fresh generated scripts are
-  // prevented from reaching this branch by the hard prompt budget.
+  const naturalTotal = natural.reduce((sum, value) => sum + value, 0);
+  const maxGap = turns.length > 1
+    ? Math.max(0, (usable - turns.length * 0.4) / (turns.length - 1))
+    : 0;
+  const gap = Math.min(requestedGap, maxGap);
+  const speechBudget = Math.max(0.1, usable - gap * (turns.length - 1));
+  const scale = naturalTotal > speechBudget ? speechBudget / naturalTotal : 1;
+  // The production clock is a structural boundary contract, so it must always
+  // stay inside the clip. If approved dialogue is too dense, preserve every
+  // word and its relative speaking share, fit the windows deterministically,
+  // and let the WPM advisory report the capacity issue. Emitting end_s=13 for a
+  // 10-second shot used to create two blocking errors and an unrepairable JSON.
   let cursor = 0;
   return turns.map((turn, index) => {
     const start = Math.round(cursor * 10) / 10;
-    cursor += natural[index]!;
-    const end = Math.round((rawTotal <= usable ? Math.min(cursor, usable) : cursor) * 10) / 10;
+    cursor += natural[index]! * scale;
+    const isLast = index === turns.length - 1;
+    const end = Math.round((isLast ? usable : Math.min(cursor, usable)) * 10) / 10;
     cursor += gap;
     return { ...turn, start_s: start, end_s: end };
   });

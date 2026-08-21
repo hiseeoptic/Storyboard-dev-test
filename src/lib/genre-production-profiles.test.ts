@@ -112,6 +112,9 @@ test("advanced voice settings stay compact and preserve relative controls", () =
 
 test("compiled prompt directives remain concise", () => {
   const project = input({ genre: "advertising", content_subtype: "product_demonstration" });
-  assert.ok(compactGenreScriptDirective(project).length < 700);
+  const scriptDirective = compactGenreScriptDirective(project);
+  assert.ok(scriptDirective.length < 700);
+  assert.match(scriptDirective, /SOFT GENRE LENS/);
+  assert.match(scriptDirective, /Story truth.*outrank genre convention/);
   assert.ok(compactGenreStoryboardDirective(project).length < 1400);
 });

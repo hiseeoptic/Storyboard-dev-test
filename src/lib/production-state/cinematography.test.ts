@@ -239,6 +239,28 @@ test("explicit mirror prose registers its reflective surface without a ledger ob
   );
 });
 
+test("negative reflection guards do not create phantom reflected characters", () => {
+  const state = buildProductionState(
+    breakdown(
+      [segment(1, {
+        characters_in_scene: ["Lan", "Minh"],
+        first_frame_prompt: "Lan and Minh stand together. No reflections, never duplicate either character in a reflection.",
+      })],
+      { names: ["Lan", "Minh"] }
+    )
+  );
+  assert.equal(
+    state.shots[0]!.start_snapshot.visual_instances.some(
+      (instance) => instance.classification === "reflection"
+    ),
+    false
+  );
+  assert.equal(
+    validateCinematographyState(state).some((item) => item.code === "REFLECTION_SOURCE_MISSING"),
+    false
+  );
+});
+
 test("reflection without a mirror source is reported, and a background clone is critical", () => {
   const state = buildProductionState(
     breakdown(

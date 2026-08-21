@@ -455,6 +455,29 @@ test("wallet resting on a bed compiles as supported instead of a false blocker",
   assert.equal(validatePhysicalState(compiled).some((item) => item.code === "OBJECT_SUPPORT_MISSING"), false);
 });
 
+test("machine-style surface labels and fixed furniture compile with support", () => {
+  const legacySegment = {
+    segment_number: 1, duration_seconds: 10, title: "Table props", marketing_role: "body",
+    beats: [], first_frame_prompt: "A container is on the dining table beside a chair", motion_prompt: "",
+    dialogue: null, continuity_note: "",
+    state_ledger: {
+      start: [
+        { entity_id: "food_container", state: "closed", position: "location_01+dining_table_center" },
+        { entity_id: "dining_chair", state: "intact", position: "location_01+dining_table_edge" },
+        { entity_id: "oil_bottle", state: "closed", position: "nightstand_oak" },
+      ],
+      changes: [],
+      end: [
+        { entity_id: "food_container", state: "closed", position: "location_01+dining_table_center" },
+        { entity_id: "dining_chair", state: "intact", position: "location_01+dining_table_edge" },
+        { entity_id: "oil_bottle", state: "closed", position: "nightstand_oak" },
+      ],
+    },
+  } satisfies VideoSegment;
+  const compiled = buildProductionState({ character_locks: [], segments: [legacySegment], total_duration_seconds: 10 });
+  assert.equal(validatePhysicalState(compiled).some((item) => item.code === "OBJECT_SUPPORT_MISSING"), false);
+});
+
 test("legacy sitting-to-standing boundary receives deterministic body mechanics", () => {
   const minh = {
     name: "Minh", gender_age: "adult", build: "average", skin_tone: "natural", hair: "black",

@@ -140,8 +140,11 @@ function canonicalPlacementSignature(value: unknown): string {
         str(placement.entity_id),
         str(placement.zone_id),
         str(placement.anchor_id),
-        str(placement.position_label).toLocaleLowerCase(),
-        str(placement.facing_entity_id),
+        str(placement.position_label)
+          .toLocaleLowerCase()
+          .replace(/\b(?:facing|faces|looking|looks|gaze|hướng về|đối diện|nhìn|ánh mắt)\b[^,;]*/giu, "")
+          .replace(/\s+/g, " ")
+          .trim(),
         str(placement.world_side),
         str(placement.screen_side),
       ].join("|");
