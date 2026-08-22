@@ -10,7 +10,7 @@
     "type-check": "tsc --noEmit",
     "test:timeline": "node --experimental-strip-types --test src/lib/timeline-contract.test.ts src/lib/storyboard/audio-authority.test.ts",
     "test:veo-json": "node --test src/prompts/veo-json-structure.test.cjs",
-    "test:nano-flow": "node --experimental-strip-types --test src/lib/nano-flow/manifest.test.ts src/lib/nano-flow/board-image-validator.test.ts",
+    "test:nano-flow": "node --experimental-strip-types --test src/lib/nano-flow/manifest.test.ts src/lib/nano-flow/board-image-validator.test.ts src/lib/nano-flow/frame-mode-policy.test.ts",
     "test:validate": "node --experimental-strip-types --test src/lib/genre-production-profiles.test.ts src/lib/validation/semantic-validator.test.ts src/lib/validation/prompt-validator.test.ts src/lib/validation/repair-loop.test.ts src/lib/validation/input-validator.test.ts src/lib/validation/context-validator.test.ts src/lib/validation/validation-fingerprint.test.ts src/lib/validation/export-readiness.test.ts src/lib/validation/export-policy.test.ts",
     "test:ai-cost": "node --experimental-strip-types --test src/lib/ai/retry-policy.test.ts src/lib/storyboard/source-script.test.ts src/lib/storyboard/anonymous-narration.test.ts",
     "test:plan-cache": "node --experimental-strip-types --test src/lib/storyboard/plan-cache.test.ts",

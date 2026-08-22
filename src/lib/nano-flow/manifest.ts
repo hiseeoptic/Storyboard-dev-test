@@ -24,6 +24,11 @@ import {
   normalizeBoardImagePanels,
   type BoardPlacementContract,
 } from "./board-image-validator.ts";
+import {
+  decideFrameMode,
+  type FrameMode,
+  type FrameModeOverride,
+} from "./frame-mode-policy.ts";
 
 export interface BuildNanoFlowManifestOptions {
   /** VIDEO aspect ratio (the frame Veo renders). The BOARD is always 16:9. */
@@ -79,6 +84,26 @@ export interface BuildNanoFlowManifestOptions {
    * extension board uses the REAL photo without a second upload. A set with no
    * scene_indices acts as the fallback place for any otherwise-unassigned shot. */
   locationSets?: LocationSet[];
+  /**
+   * Keyframe rendering mode for what feeds Veo:
+   * - "clean" (default): each shot's `storyboard_prompt` is ONE clean cinematic
+   *   film still (a real Veo first frame), and a `end_storyboard_prompt` is
+   *   emitted for shots the frame-mode policy marks as a transform (Veo then
+   *   interpolates start→end). §6.2.
+   * - "board": the legacy multi-panel storyboard board (contact sheet). Kept
+   *   for backward-compat / A-B testing; never emits an end keyframe.
+   */
+  keyframeMode?: "clean" | "board";
+  /** Project genre — feeds the start/start_end frame-mode policy. */
+  genre?: string;
+  /** Resolved directing profile id — the strongest frame-mode policy signal. */
+  directingProfile?: string;
+  /**
+   * Per-shot manual frame-mode override from the UI, keyed by segment_number
+   * (1-based). "start" forces a single keyframe; "start_end" forces two;
+   * "auto"/absent defers to the genre + transform-score policy.
+   */
+  frameModeOverrides?: Record<number, FrameModeOverride>;
 }
 
 /** Extract a trimmed string field from an unknown clip sub-object. */
@@ -481,6 +506,298 @@ function buildLocationBoardPrompt(
         : "No visual-medium drift, no accidental photoreal conversion, no inconsistent character design; the only text is the specified per-panel captions; consistent location across every panel.",
   };
   // JSON.stringify drops the undefined-valued keys, leaving a clean payload.
+  return JSON.stringify(prompt);
+}
+
+// Verbs / phrases signalling a real physical change across the 10s (locomotion,
+// entering/leaving, standing/sitting, big object interaction, reveals) — the cue
+// that a start→end keyframe PAIR is worth generating instead of a single frame.
+const LOCOMOTION_RE =
+  /\b(walks?|walking|runs?|running|stands? up|standing up|sits? down|sitting down|enters?|entering|exits?|leaves?|leaving|approach(?:es)?|crosses?|crossing|steps?|turns? around|rises?|falls?|falling|jumps?|climbs?|moves? to|walk(?:s)? to|reach(?:es)? for|picks? up|puts? down|hands? over|opens?|closes?|pours?|lifts?|drops?|throws?|catches?|transforms?|reveals?)\b/i;
+const STRONG_TRANSFORM_RE =
+  /\b(walks? to|walk(?:s)? toward|crosses? the|enters?|exits?|leaves?|stands? up and|transforms? into|reveals?|reaches? the|arrives?)\b/i;
+
+function transformTokens(text: string): Set<string> {
+  return new Set(
+    (text || "")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2)
+  );
+}
+function transformJaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 1;
+  let inter = 0;
+  for (const w of a) if (b.has(w)) inter++;
+  const union = a.size + b.size - inter;
+  return union === 0 ? 1 : inter / union;
+}
+
+/**
+ * Estimate how much a shot physically changes from second 0 → second 10 (0..1),
+ * from data already present on the segment: locomotion/big-change verbs, the
+ * start↔end state divergence, and the state_ledger change count. Drives the
+ * frame-mode policy — static shots stay ONE keyframe, transform shots get a
+ * start+end pair. Heuristic and conservative (text divergence alone is capped so
+ * it never flips a shot to two-frame without real movement or a state change).
+ */
+function computeTransformScore(
+  seg: {
+    motion_prompt?: string;
+    beats?: Array<{ beat?: string }>;
+    state_ledger?: { changes?: unknown[] } | null;
+  },
+  clip: Record<string, unknown> | string | undefined
+): number {
+  const clipObjLocal = clip && typeof clip === "object" ? clip : undefined;
+  const sceneAction = clipObj(clipObjLocal?.scene_action);
+  const start = clipStr(sceneAction.start_state);
+  const end = clipStr(sceneAction.end_state);
+  const motion = [
+    seg.motion_prompt ?? "",
+    ...(seg.beats ?? []).map((b) => b?.beat ?? ""),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  let score = 0;
+  if (STRONG_TRANSFORM_RE.test(motion) || STRONG_TRANSFORM_RE.test(end)) score = Math.max(score, 0.85);
+  else if (LOCOMOTION_RE.test(motion) || LOCOMOTION_RE.test(end)) score = Math.max(score, 0.6);
+
+  if (start && end) {
+    const divergence = 1 - transformJaccard(transformTokens(start), transformTokens(end));
+    score = Math.max(score, Math.min(0.35, divergence)); // mild signal, capped
+  }
+
+  const changes = Array.isArray(seg.state_ledger?.changes) ? seg.state_ledger!.changes!.length : 0;
+  if (changes >= 2) score = Math.max(score, 0.6);
+  else if (changes === 1) score = Math.max(score, 0.35);
+
+  return score < 0 ? 0 : score > 1 ? 1 : score;
+}
+
+/**
+ * Compose a CLEAN SINGLE-FRAME keyframe image prompt — the actual image fed to
+ * Veo as the first (or, for a transform shot, the last) frame. Unlike
+ * buildLocationBoardPrompt this is ONE photographic film still of ONE moment,
+ * never a multi-panel contact sheet, so Veo receives a real cinematic frame.
+ *
+ * `moment: "start"` renders the shot's opening composition; `moment: "end"`
+ * renders its final composition for start_end_frame interpolation — and bakes in
+ * a "same scene, only the pose advances" contract so the end frame stays
+ * consistent with the start (Veo can then interpolate cleanly). All scene locks
+ * (setting, cast, wardrobe, lighting, style, negative) mirror the board builder
+ * so the image stays faithful to the same primary video contract.
+ */
+function buildKeyframePrompt(params: {
+  moment: "start" | "end";
+  primaryVideoPrompt: Record<string, unknown> | string;
+  stateAuthority: NanoFlowShotStateAuthority;
+  fallbackSceneText: string;
+  aspectRatio: string;
+  envName: string;
+  wardrobeClause: string;
+  realityMode: string;
+  beats: Array<{ beat?: string; camera?: string }>;
+  hasLocationPhoto: boolean;
+  resolvedLighting: string;
+  characterStyleLock?: string;
+  anonymousNarration?: boolean;
+  fallbackCast?: Array<Record<string, string>>;
+  continuityId?: string;
+  persistentPropIds?: string[];
+  lockedSetting?: string;
+  lockedScenery?: string;
+  continueFromPrevious?: string;
+  lockedTimeOfDay?: string;
+  placementContract?: BoardPlacementContract;
+}): string {
+  const {
+    moment,
+    primaryVideoPrompt,
+    stateAuthority,
+    fallbackSceneText,
+    aspectRatio,
+    envName,
+    wardrobeClause,
+    realityMode,
+    beats,
+    hasLocationPhoto,
+    resolvedLighting,
+    characterStyleLock = "",
+    anonymousNarration = false,
+    fallbackCast = [],
+    continuityId = "project_set_01",
+    persistentPropIds = [],
+    lockedSetting = "",
+    lockedScenery = "",
+    continueFromPrevious = "",
+    lockedTimeOfDay = "",
+    placementContract,
+  } = params;
+
+  const clip =
+    primaryVideoPrompt && typeof primaryVideoPrompt === "object"
+      ? primaryVideoPrompt
+      : undefined;
+  const bg = clipObj(clip?.background_lock);
+  const setting = lockedSetting || clipStr(bg.setting) || fallbackSceneText || envName;
+  const scenery = lockedScenery || clipStr(bg.scenery);
+  const lighting = resolvedLighting;
+  const visualStyle = clipStr(clip?.visual_style);
+
+  const locks = clipObj(clip?.character_lock);
+  const cast: Array<Record<string, string>> = [];
+  for (const key of Object.keys(locks)) {
+    const c = clipObj(locks[key]);
+    const name = clipStr(c.name);
+    if (!name) continue;
+    const appearance = anonymousNarration
+      ? [clipStr(c.design_markers), clipStr(c.signature_marker)].filter(Boolean).join("; ")
+      : [
+          meaningful(clipStr(c.gender)),
+          meaningful(clipStr(c.age)),
+          meaningful(clipStr(c.body_build)),
+          meaningful(clipStr(c.hair)) ? `hair ${clipStr(c.hair)}` : "",
+          meaningful(clipStr(c.skin_or_fur_color)),
+        ].filter(Boolean).join(", ");
+    const wardrobe = anonymousNarration
+      ? meaningful(clipStr(c.wardrobe_or_role_marker))
+      : [clipStr(c.outfit_top), clipStr(c.outfit_bottom)].map(meaningful).filter(Boolean).join(", ");
+    const entry: Record<string, string> = { name };
+    if (appearance) entry.appearance = appearance;
+    if (wardrobe) entry.wardrobe = wardrobe;
+    cast.push(entry);
+  }
+  if (cast.length === 0) cast.push(...fallbackCast);
+
+  const sceneAction = clipObj(clip?.scene_action);
+  const startText =
+    clipStr(sceneAction.start_state) ||
+    stateAuthority.script_contract.first_frame_prompt ||
+    fallbackSceneText ||
+    setting;
+  const endText =
+    clipStr(sceneAction.end_state) ||
+    clipStr(sceneAction.ordered_action) ||
+    stateAuthority.script_contract.motion_prompt ||
+    startText;
+  const beatList = (Array.isArray(beats) ? beats : []).filter((b) => clipStr(b?.beat));
+  const firstCam = clipStr(beatList[0]?.camera);
+  const lastCam = clipStr(beatList[beatList.length - 1]?.camera);
+  const normalizeCam = (raw: string, fallback: string): string =>
+    raw ? (/^\[[A-Z_ -]+\]/.test(raw) ? raw : `[MEDIUM] ${raw}`) : fallback;
+
+  const isEnd = moment === "end";
+  const momentAction = (isEnd ? endText : startText).trim();
+  const momentCamera = isEnd
+    ? normalizeCam(lastCam || firstCam, "[EYE] settle on the shot's final composition")
+    : normalizeCam(firstCam, "[EYE] eye-level opening composition");
+
+  const liveAction =
+    !characterStyleLock &&
+    ["documentary", "cinematic", "commercial"].includes(realityMode);
+
+  const prompt: Record<string, unknown> = {
+    authority_fingerprint: stateAuthority.authority_fingerprint,
+    authority_order: stateAuthority.authority_order,
+    semantic_authority:
+      "This keyframe is a SINGLE film still — a STATIC VISUAL PROJECTION of the script-derived primary video prompt. It MAY NOT add, remove, reinterpret or override any action, camera intent, state transition or ending it declares.",
+    production_state_authority: compactBoardAuthority(stateAuthority),
+    video_prompt_projection: clip
+      ? {
+          scene_action: clip.scene_action,
+          camera: clip.camera,
+          background_lock: clip.background_lock,
+          spatial_topology: clip.spatial_topology,
+          continuity_mode: clip.continuity_mode,
+        }
+      : { exact_primary_video_prompt: primaryVideoPrompt },
+    type: characterStyleLock
+      ? "styled_keyframe"
+      : liveAction ? "photoreal_keyframe" : `${slugify(realityMode)}_keyframe`,
+    aspect_ratio: aspectRatio,
+    output_count: 1,
+    interpolation_role: isEnd ? "end" : "start",
+    layout:
+      `ONE single ${aspectRatio} cinematic film still — a single continuous photographic frame that FILLS the whole image. This is NOT a storyboard, NOT a grid, NOT a contact sheet: no panels, no dividers, no split frames, no collage, no caption strips, no numbers and NO text of any kind anywhere on the image.`,
+    moment: isEnd
+      ? `THE LAST FRAME of this ~10s shot: ${momentAction}`
+      : `THE FIRST FRAME of this ~10s shot: ${momentAction}`,
+    camera: momentCamera,
+    ...(isEnd
+      ? {
+          interpolation_pair_contract:
+            `This END frame is paired with THIS shot's START keyframe for Veo start→end interpolation. It MUST depict the EXACT SAME scene: same characters, same faces, same wardrobe, same location, same furniture and props, same time-of-day, same lighting and the same visual style as the start frame. ONLY the pose, action, expression and framing advance to the shot's end state: ${momentAction}. Do not change identity, outfit, set, weather/time or medium, and do not introduce a new character, place or object that was not in the start frame.`,
+        }
+      : {}),
+    character_cardinality_contract: {
+      identities: cast.map((entry) => ({
+        name: entry.name,
+        reference_binding: characterStyleLock
+          ? `Use ONLY the attached character/design sheet labelled ${entry.name} for ${entry.name}; keep the exact proportions, line/shape/material language, palette and identity markers.`
+          : `Use ONLY the attached wardrobe sheet labelled ${entry.name} for ${entry.name}.`,
+        maximum_instances_per_panel: 1,
+      })),
+      rule:
+        "Render each named identity at most once in this frame (0-or-1 instances). Never duplicate an identity, merge two characters or substitute one design for another. Multiple views inside a reference sheet are the SAME identity, not extra people.",
+    },
+    body_visibility_contract: characterStyleLock
+      ? "Every visible hand, limb or character part stays visibly connected to its named owner's head/body per the locked character-design grammar. Never render an isolated hand, arm, limb or headless fragment unless the script explicitly requires an object-only insert."
+      : "A visible hand, wrist, arm or finger stays anatomically connected to its named owner's visible face, shoulders and upper torso. Never render a hand-only, arm-only, headless or disembodied human crop as the Veo input frame.",
+    ...(placementContract
+      ? {
+          placement_continuity_contract: {
+            mode: placementContract.mode,
+            canonical_placements: placementContract.canonical_placements,
+            rule: placementContract.rule,
+            repaired_from_previous: placementContract.repaired_from_previous,
+          },
+        }
+      : {}),
+    setting_authority: hasLocationPhoto
+      ? "The SCRIPT defines what happens here and the ATTACHED location photo defines the exact geometry and landmarks. Reproduce that complete place in the project's locked visual medium; never relocate it or substitute a generic location."
+      : `The SCRIPT defines the location content. If a LOCATION REFERENCE image/sheet is attached, reproduce its exact terrain/architecture, boundaries, landmarks, anchors, materials, colours and lighting in the project's locked medium. If none is attached, build the complete setting faithfully from this description: ${setting}. Never replace it with a blank frame, empty studio or generic template.`,
+    staging: characterStyleLock
+      ? "Place only the characters the script names in this moment into the script-derived location, each rendered exactly once. Each visible character matches only its same-named ATTACHED character/design sheet and the whole environment/prop set stays in the locked medium."
+      : "Place only the characters the script names in this moment into the location, each rendered exactly once. Each visible character's face, hair and full outfit match only that same-named ATTACHED wardrobe sheet.",
+    render:
+      characterStyleLock ||
+      (liveAction
+        ? KEYFRAME_RENDER_NOTE
+        : `Reality-E still in the project's locked ${realityMode} medium. Preserve its exact design language, materials, proportions, lighting logic and internal physics; never convert it to live-action photorealism.`),
+    visual_style: characterStyleLock || visualStyle || undefined,
+    setting,
+    scenery: scenery && scenery !== setting ? scenery : undefined,
+    time_of_day: lockedTimeOfDay || undefined,
+    lighting: ((lockedTimeOfDay ? `${lockedTimeOfDay}: ` : "") + (lighting || "")) || undefined,
+    cast,
+    ...(continueFromPrevious
+      ? {
+          location_continuity_from_previous:
+            `LOCATION CONTINUITY: this shot continues the SAME set as the previous shot — same room, furniture, props, time-of-day and light. Previous shot's end-state: ${continueFromPrevious}. Face and outfit still come from each character's wardrobe sheet, never from the previous frame.`,
+        }
+      : {}),
+    consistency:
+      `PROJECT CONTINUITY LOCK ${continuityId}: every frame assigned to this location is the SAME physical set — same time-of-day, light direction, windows, doors, walls, floor, furniture geometry and camera-side orientation. Persistent props (${persistentPropIds.join(", ") || "every named story prop"}) keep one exact shape, material, colour and wear across shots. Only script-caused position, holder, open/closed state, pose and camera change.`,
+    persistent_prop_authority: persistentPropIds.length
+      ? persistentPropIds.map((id) => ({
+          entity_id: id,
+          rule: "The first generated/attached appearance is the immutable visual design authority for every later frame.",
+        }))
+      : undefined,
+    reference_authority: characterStyleLock
+      ? "Each attached character/design sheet controls only that same-named stylized identity's proportions, line/shape/material language, palette and role markers. The attached location sheet controls the script-derived terrain/architecture, landmarks, layout and light in the SAME locked medium. Never translate a sheet into another rendering medium."
+      : KEYFRAME_REFERENCE_AUTHORITY,
+    wardrobe_note: wardrobeClause ? wardrobeClause.trim() : undefined,
+    negative: characterStyleLock
+      ? "Stay strictly in the locked visual medium/style — do NOT drift to a different style and do NOT convert to live-action photography. This is ONE single frame: no storyboard grid, no panels, no split frames, no collage, no captions, no numbers, NO text of any kind. No identity drift; never duplicate a character; consistent location and style."
+      : liveAction
+        ? "Photorealistic only — NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT painting, NOT drawing. This is ONE single film frame: no storyboard grid, no panels, no split frames, no collage, no captions, no numbers, no watermark, no logo, NO text of any kind. No identity drift; never duplicate a character; never render disembodied hands, arm-only crops or headless people; no extra, missing or fused fingers."
+        : "No visual-medium drift, no accidental photoreal conversion, no inconsistent character design. This is ONE single frame: no storyboard grid, no panels, no split frames, no collage, no captions, no numbers, NO text of any kind. Consistent location and style.",
+  };
+  // JSON.stringify drops undefined-valued keys, leaving a clean single-frame payload.
   return JSON.stringify(prompt);
 }
 
@@ -1138,6 +1455,49 @@ export function buildNanoFlowManifest(
       motionText: seg.motion_prompt,
     });
 
+    // ── Frame-mode: ONE clean keyframe (start_frame) or TWO (start + end,
+    //    start_end_frame interpolation). Genre/directing-profile policy refined
+    //    by this shot's transform score; a per-shot manual override wins. §6.2.
+    const useCleanKeyframe = (opts.keyframeMode ?? "clean") !== "board";
+    const transformScore = computeTransformScore(seg, clip);
+    const frameMode: FrameMode = decideFrameMode({
+      genre: opts.genre,
+      directingProfile: opts.directingProfile,
+      transformScore,
+      override: opts.frameModeOverrides?.[index],
+    });
+    // Shared inputs for the clean START + END keyframes. Same scene locks the
+    // legacy board builder uses, so the image stays faithful to the same clip.
+    const keyframeArgs = {
+      primaryVideoPrompt,
+      stateAuthority,
+      fallbackSceneText: seg.first_frame_prompt || seg.motion_prompt || "",
+      aspectRatio: opts.aspectRatio ?? "9:16",
+      envName: humanizeEnvId((seg.location_id ?? seg.environment_ref ?? "").trim()),
+      wardrobeClause,
+      realityMode,
+      beats: seg.beats ?? [],
+      hasLocationPhoto: !!boardLocationImage,
+      resolvedLighting: boardLighting,
+      characterStyleLock: visualMediumLock,
+      anonymousNarration: opts.anonymousNarration === true,
+      fallbackCast: inScene.map((name) => {
+        const key = name.trim().toLowerCase();
+        const wardrobe = wardrobeOverride.get(key) ?? baseCostumeByName.get(key) ?? "";
+        return {
+          name: name.trim(),
+          ...(!opts.anonymousNarration && wardrobe ? { wardrobe } : {}),
+        };
+      }),
+      continuityId: `set_${slugify((seg.location_id ?? seg.environment_ref ?? "project_location").trim()) || "project_location"}`,
+      persistentPropIds,
+      lockedSetting: lockedBg.setting,
+      lockedScenery: lockedBg.scenery,
+      continueFromPrevious,
+      lockedTimeOfDay,
+      placementContract,
+    };
+
     return {
       shot_id: `SHOT_${String(index).padStart(3, "0")}`,
       index,
@@ -1145,11 +1505,13 @@ export function buildNanoFlowManifest(
       duration_seconds: seg.duration_seconds || 10,
       marketing_role: seg.marketing_role,
 
-      // LOCATION BOARD prompt for this 10s shot: ONE image, 4 panels of the SAME
-      // location from 4 angles, built from the SAME structured clip as the video
-      // (đồng bộ bối cảnh) and style-locked to photoreal. The PRIMARY video
-      // prompt drives semantics; this board is its downstream static projection.
-      storyboard_prompt: buildLocationBoardPrompt(
+      // STEP A image prompt — the image the extension feeds Veo as the FIRST
+      // FRAME. Default "clean" keyframe mode = ONE clean cinematic still (a real
+      // Veo first frame, no multi-panel contact sheet). Legacy "board" mode keeps
+      // the multi-panel storyboard board (unchanged) for backward-compat / A-B.
+      storyboard_prompt: useCleanKeyframe
+        ? buildKeyframePrompt({ moment: "start", ...keyframeArgs })
+        : buildLocationBoardPrompt(
         primaryVideoPrompt,
         stateAuthority,
         seg.first_frame_prompt || seg.motion_prompt || "",
@@ -1178,6 +1540,12 @@ export function buildNanoFlowManifest(
         lockedTimeOfDay,
         placementContract
       ),
+      // STEP A2 (clean keyframe mode only): the END keyframe for a transform
+      // shot. Its presence makes the extension run Veo start_end_frame
+      // interpolation (start→end); omitted ⇒ a normal single-keyframe shot. §6.2.
+      ...(useCleanKeyframe && frameMode === "start_end"
+        ? { end_storyboard_prompt: buildKeyframePrompt({ moment: "end", ...keyframeArgs }) }
+        : {}),
       continuity_mode: shotContinuity,
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
       image_refs,

@@ -87,7 +87,7 @@ test("manifest preserves the locked genre voice and directing profile", () => {
 });
 
 test("square video delivery remains 1:1 while every storyboard board remains 16:9", () => {
-  const m = buildNanoFlowManifest(fixture(), { aspectRatio: "1:1" });
+  const m = buildNanoFlowManifest(fixture(), { aspectRatio: "1:1", keyframeMode: "board" });
   assert.equal(m.project.aspect_ratio, "1:1");
   assert.equal(m.project.board_aspect_ratio, "16:9");
   for (const shot of m.shots) {
@@ -268,6 +268,7 @@ test("board panels come from beats with captions; uploaded photo ⇒ strict sett
   } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
   const veoClips = [{ background_lock: { setting: "family kitchen" }, character_lock: { A: { name: "Minh" } } }];
   const m = buildNanoFlowManifest(bd, {
+    keyframeMode: "board",
     veoClips,
     locationSets: [{ name: "Đoạn 1", images: ["data:image/png;base64,AAAA"], scene_indices: [1] }],
   });
@@ -297,6 +298,7 @@ test("board-to-board handoff: a same-location later board continues from the pre
     ],
   } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
   const m = buildNanoFlowManifest(bd, {
+    keyframeMode: "board",
     veoClips: [
       { background_lock: { setting: "kitchen" }, scene_action: { end_state: "Minh seated at the table" }, character_lock: { A: { name: "Minh" } } },
       { background_lock: { setting: "kitchen" }, character_lock: { A: { name: "Lan" } } },
@@ -501,6 +503,7 @@ test("structured keyframe respects a stylized Reality E context", () => {
     reality_profile: { mode: "stylized" },
   } as unknown as NonNullable<typeof bd.context_ir>;
   const m = buildNanoFlowManifest(bd, {
+    keyframeMode: "board",
     veoClips: [
       {
         visual_style: "stylized graphic world",
@@ -564,7 +567,7 @@ test("embeds the structured Veo clip as video_prompt and composes a rich keyfram
     },
   ] as Array<Record<string, unknown>>;
 
-  const m = buildNanoFlowManifest(bd, { veoClips });
+  const m = buildNanoFlowManifest(bd, { veoClips, keyframeMode: "board" });
   const [s1] = m.shots;
   assert.ok(s1);
 
@@ -710,6 +713,7 @@ test("Production State authority flows script -> video prompt -> storyboard boar
     }],
   } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
   const m = buildNanoFlowManifest(bd, {
+    keyframeMode: "board",
     beatsPerSegment: 3,
     veoClips: [{
       scene_id: "1",
@@ -775,6 +779,7 @@ test("authority validator detects a storyboard/video fingerprint mismatch", () =
     }],
   } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
   const m = buildNanoFlowManifest(bd, {
+    keyframeMode: "board",
     veoClips: [{
       character_lock: { MINH: { name: "Minh" } },
       background_lock: { setting: "quiet office" },
@@ -906,7 +911,7 @@ test("board prompt enforces numbered panels, one border system and a separate th
       },
     }],
   } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
-  const m = buildNanoFlowManifest(bd, { beatsPerSegment: 2, aspectRatio: "16:9", thumbnailAspectRatio: "9:16" });
+  const m = buildNanoFlowManifest(bd, { keyframeMode: "board", beatsPerSegment: 2, aspectRatio: "16:9", thumbnailAspectRatio: "9:16" });
   const board = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
   const panels = board.panels as Array<Record<string, unknown>>;
 
@@ -980,6 +985,7 @@ test("boards lock one set per location; time-of-day is monotonic; same-location 
     scene_action: { end_state: endState },
   });
   const m = buildNanoFlowManifest(bd, {
+    keyframeMode: "board",
     veoClips: [
       clip("living room with beige sofa", "warm daylight, bright", "Lan holds the red bag"),
       clip("kitchen at night", "dim night lamp", "Minh looks at the bag"),
@@ -1008,4 +1014,132 @@ test("boards lock one set per location; time-of-day is monotonic; same-location 
   assert.equal(boards[0]!.continue_from_previous, undefined);
   assert.ok(typeof boards[1]!.continue_from_previous === "string" && (boards[1]!.continue_from_previous as string).includes("red bag"));
   assert.ok(typeof boards[2]!.continue_from_previous === "string" && (boards[2]!.continue_from_previous as string).includes("Minh looks at the bag"));
+});
+
+// ─── Clean keyframe mode (default) + start/end frame policy (§6.2) ────────────
+
+function framesFixture() {
+  return {
+    title: "Frames",
+    total_duration_seconds: 20,
+    character_locks: [{ name: "Lan" }],
+    segments: [
+      {
+        segment_number: 1,
+        duration_seconds: 10,
+        marketing_role: "hook",
+        characters_in_scene: ["Lan"],
+        environment_ref: "room",
+        first_frame_prompt: "Lan stands by the door",
+        motion_prompt: "Lan walks to the window and looks out",
+        full_prompt: "v1",
+      },
+      {
+        segment_number: 2,
+        duration_seconds: 10,
+        marketing_role: "body",
+        characters_in_scene: ["Lan"],
+        environment_ref: "room",
+        first_frame_prompt: "Lan sits on the sofa",
+        motion_prompt: "Lan smiles softly at the camera",
+        full_prompt: "v2",
+      },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+}
+
+const framesClips = [
+  {
+    scene_id: "1",
+    character_lock: { L: { name: "Lan", gender: "Female", outfit_top: "cream blouse" } },
+    background_lock: { setting: "a quiet room", lighting: "soft daylight" },
+    scene_action: { start_state: "Lan stands by the door", end_state: "Lan stands at the window looking out" },
+    camera: { framing: "medium" },
+  },
+  {
+    scene_id: "2",
+    character_lock: { L: { name: "Lan", gender: "Female", outfit_top: "cream blouse" } },
+    background_lock: { setting: "a quiet room", lighting: "soft daylight" },
+    scene_action: { start_state: "Lan sits on the sofa", end_state: "Lan sits on the sofa, smiling" },
+    camera: { framing: "medium" },
+  },
+] as Array<Record<string, unknown>>;
+
+test("default keyframe mode emits a CLEAN single-frame keyframe (no board panels)", () => {
+  const m = buildNanoFlowManifest(framesFixture(), { genre: "drama", veoClips: framesClips });
+  const kf = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  // A single film still, never a multi-panel board.
+  assert.equal(kf.panels, undefined, "clean keyframe has no panels");
+  assert.match(String(kf.type), /keyframe$/);
+  assert.match(String(kf.layout), /single .*film still/i);
+  assert.match(String(kf.layout), /NOT a storyboard/i);
+  assert.match(String(kf.negative), /no panels|no storyboard grid/i);
+  // Still carries the same scene locks the board did.
+  assert.match(String(kf.setting), /quiet room/);
+  assert.equal(kf.interpolation_role, "start");
+  assert.ok(kf.authority_fingerprint, "keeps the shared authority fingerprint");
+  assert.ok(kf.video_prompt_projection, "keeps the video projection for the authority validator");
+  assert.match(String(kf.render), /photorealistic/i);
+  assert.match(String(kf.negative), /NOT cartoon/);
+});
+
+test("clean keyframe adds NO new export-blocking findings versus the board", () => {
+  const blocking = (m: ReturnType<typeof buildNanoFlowManifest>) =>
+    validatePromptExports(m).findings
+      .filter((f) => f.severity === "high" || f.severity === "critical")
+      .map((f) => f.code);
+  const boardCodes = blocking(
+    buildNanoFlowManifest(framesFixture(), { genre: "drama", veoClips: framesClips, keyframeMode: "board" })
+  );
+  const cleanCodes = blocking(
+    buildNanoFlowManifest(framesFixture(), { genre: "drama", veoClips: framesClips })
+  );
+  const added = cleanCodes.filter((c) => !boardCodes.includes(c));
+  assert.deepEqual(added, [], `clean keyframe must not trip new export gates: ${added.join(", ")}`);
+});
+
+test("a transform shot (locomotion) emits an end keyframe; a static shot does not", () => {
+  const m = buildNanoFlowManifest(framesFixture(), { genre: "drama", veoClips: framesClips });
+  // Shot 1 "walks to the window" → transform → start_end_frame.
+  assert.ok(m.shots[0]!.end_storyboard_prompt, "walking shot gets an end keyframe");
+  const endKf = JSON.parse(m.shots[0]!.end_storyboard_prompt!) as Record<string, unknown>;
+  assert.equal(endKf.interpolation_role, "end");
+  assert.match(String(endKf.interpolation_pair_contract), /SAME scene/i);
+  assert.match(String(endKf.moment), /window/i);
+  // Shot 2 "smiles softly" → static → single keyframe only.
+  assert.equal(m.shots[1]!.end_storyboard_prompt, undefined, "static shot stays single-frame");
+});
+
+test("manual override forces two-frame or one-frame regardless of policy", () => {
+  const m = buildNanoFlowManifest(framesFixture(), {
+    genre: "drama",
+    veoClips: framesClips,
+    // Flip both: force the static shot to two frames, the transform shot to one.
+    frameModeOverrides: { 1: "start", 2: "start_end" },
+  });
+  assert.equal(m.shots[0]!.end_storyboard_prompt, undefined, "override 'start' forces single-frame on a transform shot");
+  assert.ok(m.shots[1]!.end_storyboard_prompt, "override 'start_end' forces an end keyframe on a static shot");
+});
+
+test("talking-head directing profile stays single-frame even on a moving shot", () => {
+  const m = buildNanoFlowManifest(framesFixture(), {
+    directingProfile: "interview_expert",
+    veoClips: framesClips,
+  });
+  // Shot 1 literally walks, but a to-camera interview is locked to one keyframe
+  // (protects lip-sync + audio, avoids a face morph).
+  assert.equal(m.shots[0]!.end_storyboard_prompt, undefined, "talking-head is locked to a single keyframe");
+});
+
+test("legacy board mode never emits an end keyframe", () => {
+  const m = buildNanoFlowManifest(framesFixture(), {
+    genre: "action",
+    veoClips: framesClips,
+    keyframeMode: "board",
+  });
+  for (const shot of m.shots) {
+    assert.equal(shot.end_storyboard_prompt, undefined, "board mode is always single-image");
+    const board = JSON.parse(shot.storyboard_prompt) as Record<string, unknown>;
+    assert.ok(Array.isArray(board.panels), "board mode still renders panels");
+  }
 });

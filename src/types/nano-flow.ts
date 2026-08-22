@@ -195,6 +195,11 @@ export interface NanoFlowShot {
    * (no re-upload needed in the extension). Empty ⇒ the board is generated from
    * storyboard_prompt alone. */
   board_location_image?: string;
+  /** STEP A2 (optional, clean keyframe mode) — prompt for the END keyframe of a
+   * "transform" shot. When present the extension generates a second image
+   * (start + end) and drives Veo in start_end_frame mode (interpolate
+   * start→end). Omit for a normal single-keyframe shot. See DESIGN §6.2. */
+  end_storyboard_prompt?: string;
 
   // ─── STEP B: generate the video with Veo, using the STEP A image ───
   /** STEP B video payload, written 100% by Storyboard. Normally the STRUCTURED

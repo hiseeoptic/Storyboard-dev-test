@@ -54,6 +54,7 @@ import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
+import type { FrameModeOverride } from "@/lib/nano-flow/frame-mode-policy";
 import { buildSpeechManifestContract } from "@/lib/storyboard/anonymous-narration";
 import {
   validateExportReadiness,
@@ -288,11 +289,6 @@ const t = {
   segmentCountHint: {
     vi: "Mỗi đoạn = 1 clip 10s trên Omni Flash. Các đoạn được nối liền mạch (frame cuối → frame đầu) để video không bị khựng.",
     en: "Each segment = one 10s clip on Omni Flash. Segments are chained (last frame → next first frame) for seamless playback.",
-  },
-  beatsLabel: { vi: "Số cảnh nhỏ trong mỗi đoạn", en: "Shots per segment" },
-  beatsHint: {
-    vi: "Mỗi đoạn 10s được chia thành nhiều cảnh nhỏ theo từng mốc thời gian (3-5 cảnh).",
-    en: "Each 10s segment is split into several quick shots across time frames (3-5).",
   },
   forceDialogueLabel: { vi: "Bắt buộc lời thoại tiếng Việt", en: "Force Vietnamese dialogue" },
   forceDialogueHint: {
@@ -737,17 +733,18 @@ const SEGMENT_OPTIONS = [
   { value: "10", label: "10 (~100s)" },
 ];
 
-// Number of quick shots (mini-frames) inside each 10s segment.
-const BEATS_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
+// Per-shot manual frame-mode override (Auto / 1 frame / 2 frames). "auto" defers
+// to the genre + transform-score policy; the other two force the mode. §6.2.
+const FRAME_MODE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
   vi: [
-    { value: "3", label: "3 cảnh / đoạn" },
-    { value: "4", label: "4 cảnh / đoạn" },
-    { value: "5", label: "5 cảnh / đoạn" },
+    { value: "auto", label: "Khung: Tự động" },
+    { value: "start", label: "Khung: 1 ảnh" },
+    { value: "start_end", label: "Khung: 2 ảnh (đầu+cuối)" },
   ],
   en: [
-    { value: "3", label: "3 shots / segment" },
-    { value: "4", label: "4 shots / segment" },
-    { value: "5", label: "5 shots / segment" },
+    { value: "auto", label: "Frames: Auto" },
+    { value: "start", label: "Frames: 1" },
+    { value: "start_end", label: "Frames: 2 (start+end)" },
   ],
 };
 
@@ -1431,7 +1428,9 @@ function ProjectWorkspace() {
   // Character render mode: hard photoreal lock / stylized / auto (see types).
   const [characterRender, setCharacterRender] = useState<"auto" | "photo" | "stylized">("auto");
   const [segmentCount, setSegmentCount] = useState(4);
-  const [beatsPerSegment, setBeatsPerSegment] = useState(3);
+  // Per-shot manual frame-mode override, keyed by segment_number. Empty ⇒ every
+  // shot follows the automatic genre + transform-score policy.
+  const [frameModeOverrides, setFrameModeOverrides] = useState<Record<number, FrameModeOverride>>({});
   const [forceVietnameseDialogue, setForceVietnameseDialogue] = useState(true);
   const [videoGoal, setVideoGoal] = useState<VideoGoal>("product_ad");
   // Ordered creative route. Legacy videoGoal/style remain for compatibility,
@@ -1850,7 +1849,8 @@ function ProjectWorkspace() {
       style,
       scene_count: isAffiliateMode ? (affiliateDuration === 30 ? 3 : 2) : segmentCount,
       segment_count: isAffiliateMode ? (affiliateDuration === 30 ? 3 : 2) : segmentCount,
-      beats_per_segment: beatsPerSegment,
+      // beats_per_segment intentionally omitted — the app auto-splits each clip
+      // into 3-5 shots from the action (no fixed user-chosen count).
       video_goal: genre === "cooking" ? "cooking" : videoGoal,
       audience_goal: audienceGoal,
       story_format: storyFormat,
@@ -2416,8 +2416,9 @@ function ProjectWorkspace() {
     const manifest = buildNanoFlowManifest(result.breakdown, {
       aspectRatio: genInput?.aspect_ratio ?? "9:16",
       thumbnailAspectRatio: genInput?.thumbnail_aspect_ratio ?? thumbnailAspectRatio,
-      // Board vẽ ĐÚNG số cảnh người dùng chọn (3 cảnh ⇒ 3 frame).
-      beatsPerSegment: genInput?.beats_per_segment ?? beatsPerSegment,
+      // Legacy board mode only: honor a stored beats_per_segment if an older
+      // project has one; clean keyframe mode ignores it (single frame per shot).
+      beatsPerSegment: genInput?.beats_per_segment,
       dialogueLanguage: genInput?.dialogue_language ?? "Vietnamese",
       ...(speechContract ? { speechContract } : {}),
       // Selected video style → lock the manifest (board + video) to that medium.
@@ -2431,6 +2432,11 @@ function ProjectWorkspace() {
         genInput?.product_ir?.review_status === "approved" ? genInput.product_images : undefined,
       affiliateProductIR: genInput?.product_ir,
       affiliateDisclosure: genInput?.affiliate_disclosure,
+      // Frame-mode policy: genre + directing profile pick the default start vs
+      // start_end (2-frame) mode per shot; per-shot manual overrides win. §6.2.
+      genre: genInput?.genre,
+      directingProfile: genInput?.directing_profile,
+      frameModeOverrides,
       // Cách 1 — embed uploaded location photos into the downloadable manifest.
       locationSets: genInput?.location_mode === "upload" ? genInput?.location_sets : undefined,
     });
@@ -2474,7 +2480,7 @@ function ProjectWorkspace() {
     }
     // exportCheckVersion intentionally forces a free deterministic re-check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, genInput, beatsPerSegment, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
+  }, [result, genInput, frameModeOverrides, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
 
   const cleanManifestForExport = () => {
     if (!exportBundle?.manifest) {
@@ -2980,6 +2986,23 @@ function ProjectWorkspace() {
                 <div className="flex items-center gap-2">
                   <Badge>#{s.segment_number}</Badge>
                   <Badge variant="secondary" className="uppercase">{s.marketing_role}</Badge>
+                  {/* Per-shot frame mode: Auto (policy) / 1 frame / 2 frames (start+end). */}
+                  <Select
+                    value={frameModeOverrides[s.segment_number] ?? "auto"}
+                    onChange={(e) =>
+                      setFrameModeOverrides((prev) => ({
+                        ...prev,
+                        [s.segment_number]: e.target.value as FrameModeOverride,
+                      }))
+                    }
+                    options={FRAME_MODE_OPTIONS[lang]}
+                    className="h-7 w-auto text-xs"
+                    title={
+                      lang === "vi"
+                        ? "Tự động: app quyết 1 hay 2 khung theo thể loại + mức biến đổi của cảnh. 1 ảnh = chỉ khung đầu. 2 ảnh = khung đầu + khung cuối (Veo nội suy chuyển động)."
+                        : "Auto: the app picks 1 or 2 frames from genre + how much the shot changes. 1 = start frame only. 2 = start + end (Veo interpolates the motion)."
+                    }
+                  />
                   <div className="ml-auto">
                     <Button
                       variant="outline"
@@ -5498,19 +5521,12 @@ function ProjectWorkspace() {
                   {lang === "vi" ? "Nạp & phân tích ảnh bối cảnh" : "Upload & analyze locations"}
                 </Button>
               </div>
-              {/* Số đoạn 10s + số cảnh nhỏ mỗi đoạn — dời về đây, gắn trực tiếp với
-                  danh sách nạp ảnh bối cảnh theo từng đoạn bên dưới. */}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">{L("segmentCount")}</label>
-                  <Select value={String(segmentCount)} onChange={(e) => setSegmentCount(Number(e.target.value))} options={SEGMENT_OPTIONS} />
-                  <p className="text-xs text-muted-foreground">{L("segmentCountHint")}</p>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">{L("beatsLabel")}</label>
-                  <Select value={String(beatsPerSegment)} onChange={(e) => setBeatsPerSegment(Number(e.target.value))} options={BEATS_OPTIONS[lang]} />
-                  <p className="text-xs text-muted-foreground">{L("beatsHint")}</p>
-                </div>
+              {/* Số đoạn 10s. Số cảnh nhỏ trong mỗi đoạn giờ do app tự chia (3-5
+                  cảnh theo hành động) — không còn ô chọn tay, tránh ép số gây lỗi. */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">{L("segmentCount")}</label>
+                <Select value={String(segmentCount)} onChange={(e) => setSegmentCount(Number(e.target.value))} options={SEGMENT_OPTIONS} />
+                <p className="text-xs text-muted-foreground">{L("segmentCountHint")}</p>
               </div>
 
               {locationMode === "upload" && (

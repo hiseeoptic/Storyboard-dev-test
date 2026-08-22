@@ -1990,8 +1990,14 @@ function validatePreRenderGates(
     const manifest = buildNanoFlowManifest(breakdown, {
       aspectRatio: input.aspect_ratio ?? "9:16",
       thumbnailAspectRatio: input.thumbnail_aspect_ratio,
-      // Board vẽ ĐÚNG số cảnh người dùng chọn (3 cảnh ⇒ 3 frame).
+      // Legacy board mode only (clean keyframe mode ignores it): honor a stored
+      // beats_per_segment when an older project still carries one.
       beatsPerSegment: input.beats_per_segment,
+      // Frame-mode policy: genre + directing profile pick the default start vs
+      // start_end (2-frame) mode per shot; each shot is then refined by its
+      // transform score. §6.2.
+      genre: input.genre,
+      directingProfile: input.directing_profile,
       dialogueLanguage:
         input.dialogue_language ??
         breakdown.context_ir?.layers.audio_validation.language ??
