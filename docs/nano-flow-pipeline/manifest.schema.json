@@ -190,6 +190,7 @@
         "duration_seconds":{ "type": "number", "default": 10 },
         "marketing_role":  { "type": "string", "enum": ["hook", "problem", "solution", "body", "cta"] },
         "continuity_mode": { "type": "string", "enum": ["opening", "continuous", "scene_cut", "location_cut", "time_jump", "parallel_intercut", "match_cut", "montage", "flashback", "dream", "symbolic"], "description": "Schema 4.0 — continuity decision for the boundary entering this shot." },
+        "chain_from_prev": { "type": "boolean", "description": "Seamless flow (optional). When true the extension builds this shot's keyframe FROM the previous shot's last frame (its end keyframe when 2-frame). Emitted only for a truly continuous same-location shot; absent = a fresh independent keyframe (opening, cut or different place). §6.2." },
         "location_id":     { "type": "string", "description": "Environment asset id this shot's scenes default to (per-location memory/background ref)." },
 
         "storyboard_prompt": { "type": "string", "description": "STEP A — single-image FALLBACK keyframe prompt. When scenes[] is present the extension renders per-scene images instead; this is kept for consumers that ignore scenes." },

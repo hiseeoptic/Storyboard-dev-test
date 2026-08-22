@@ -748,6 +748,22 @@ const FRAME_MODE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
   ],
 };
 
+// Per-shot cross-shot chain override: "auto" follows the continuity policy
+// (chain only when the shot continues the previous one in the same place);
+// "on"/"off" force it. §6.2.
+const CHAIN_MODE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
+  vi: [
+    { value: "auto", label: "Nối cảnh: Tự động" },
+    { value: "on", label: "Nối cảnh: Bật" },
+    { value: "off", label: "Nối cảnh: Tắt" },
+  ],
+  en: [
+    { value: "auto", label: "Chain: Auto" },
+    { value: "on", label: "Chain: On" },
+    { value: "off", label: "Chain: Off" },
+  ],
+};
+
 const VIDEO_GOAL_OPTIONS: Record<Lang, { value: VideoGoal; label: string }[]> = {
   vi: [
     { value: "marketing_general", label: "Marketing tổng quát" },
@@ -1431,6 +1447,9 @@ function ProjectWorkspace() {
   // Per-shot manual frame-mode override, keyed by segment_number. Empty ⇒ every
   // shot follows the automatic genre + transform-score policy.
   const [frameModeOverrides, setFrameModeOverrides] = useState<Record<number, FrameModeOverride>>({});
+  // Per-shot cross-shot chain override ("auto" = continuity policy, "on"/"off"
+  // force it). Empty ⇒ chaining follows the automatic continuity policy.
+  const [chainModeOverrides, setChainModeOverrides] = useState<Record<number, "auto" | "on" | "off">>({});
   const [forceVietnameseDialogue, setForceVietnameseDialogue] = useState(true);
   const [videoGoal, setVideoGoal] = useState<VideoGoal>("product_ad");
   // Ordered creative route. Legacy videoGoal/style remain for compatibility,
@@ -2437,6 +2456,7 @@ function ProjectWorkspace() {
       genre: genInput?.genre,
       directingProfile: genInput?.directing_profile,
       frameModeOverrides,
+      chainModeOverrides,
       // Cách 1 — embed uploaded location photos into the downloadable manifest.
       locationSets: genInput?.location_mode === "upload" ? genInput?.location_sets : undefined,
     });
@@ -2480,7 +2500,7 @@ function ProjectWorkspace() {
     }
     // exportCheckVersion intentionally forces a free deterministic re-check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, genInput, frameModeOverrides, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
+  }, [result, genInput, frameModeOverrides, chainModeOverrides, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
 
   const cleanManifestForExport = () => {
     if (!exportBundle?.manifest) {
@@ -3001,6 +3021,23 @@ function ProjectWorkspace() {
                       lang === "vi"
                         ? "Tự động: app quyết 1 hay 2 khung theo thể loại + mức biến đổi của cảnh. 1 ảnh = chỉ khung đầu. 2 ảnh = khung đầu + khung cuối (Veo nội suy chuyển động)."
                         : "Auto: the app picks 1 or 2 frames from genre + how much the shot changes. 1 = start frame only. 2 = start + end (Veo interpolates the motion)."
+                    }
+                  />
+                  {/* Per-shot seamless chain: continue this shot from the previous shot's last frame. */}
+                  <Select
+                    value={chainModeOverrides[s.segment_number] ?? "auto"}
+                    onChange={(e) =>
+                      setChainModeOverrides((prev) => ({
+                        ...prev,
+                        [s.segment_number]: e.target.value as "auto" | "on" | "off",
+                      }))
+                    }
+                    options={CHAIN_MODE_OPTIONS[lang]}
+                    className="h-7 w-auto text-xs"
+                    title={
+                      lang === "vi"
+                        ? "Nối cảnh liền mạch: dựng khung đầu shot này TỪ frame cuối của shot trước. Tự động: chỉ nối khi cảnh tiếp diễn cùng một nơi (cut/khác nơi/đổi đồ = không nối)."
+                        : "Seamless chain: build this shot's first frame FROM the previous shot's last frame. Auto: chains only when the shot continues in the same place (a cut / different place / wardrobe change never chains)."
                     }
                   />
                   <div className="ml-auto">

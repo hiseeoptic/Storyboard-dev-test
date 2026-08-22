@@ -1143,3 +1143,64 @@ test("legacy board mode never emits an end keyframe", () => {
     assert.ok(Array.isArray(board.panels), "board mode still renders panels");
   }
 });
+
+// ─── Cross-shot chain (seamless story flow) ──────────────────────────────────
+
+test("continuous same-location shots chain from the previous frame; the opening does not", () => {
+  const m = buildNanoFlowManifest(framesFixture(), { genre: "drama", veoClips: framesClips });
+  assert.equal(m.shots[0]!.chain_from_prev, undefined, "the opening shot never chains");
+  assert.equal(m.shots[1]!.chain_from_prev, true, "a continuous same-location shot chains from the previous frame");
+});
+
+test("a cut to a different place does NOT chain", () => {
+  const bd = {
+    title: "Cut",
+    character_locks: [{ name: "Lan" }],
+    segments: [
+      { segment_number: 1, characters_in_scene: ["Lan"], environment_ref: "room",
+        first_frame_prompt: "Lan in the room", motion_prompt: "Lan waits", full_prompt: "v1" },
+      { segment_number: 2, characters_in_scene: ["Lan"], environment_ref: "street", continuity_mode: "location_cut",
+        first_frame_prompt: "Lan on the street", motion_prompt: "Lan walks", full_prompt: "v2" },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    genre: "drama",
+    veoClips: [
+      { background_lock: { setting: "a room" }, character_lock: { A: { name: "Lan" } } },
+      { background_lock: { setting: "a street" }, character_lock: { A: { name: "Lan" } } },
+    ],
+  });
+  assert.equal(m.shots[1]!.chain_from_prev, undefined, "a location cut to a different place never chains");
+});
+
+test("a scene_cut within the same place does NOT chain (only truly continuous shots do)", () => {
+  const bd = {
+    title: "SceneCut",
+    character_locks: [{ name: "Lan" }],
+    segments: [
+      { segment_number: 1, characters_in_scene: ["Lan"], environment_ref: "room",
+        first_frame_prompt: "a", motion_prompt: "b", full_prompt: "v1" },
+      { segment_number: 2, characters_in_scene: ["Lan"], environment_ref: "room", continuity_mode: "scene_cut",
+        first_frame_prompt: "c", motion_prompt: "d", full_prompt: "v2" },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    genre: "drama",
+    veoClips: [
+      { background_lock: { setting: "a room" }, character_lock: { A: { name: "Lan" } } },
+      { background_lock: { setting: "a room" }, character_lock: { A: { name: "Lan" } } },
+    ],
+  });
+  assert.equal(m.shots[1]!.chain_from_prev, undefined, "an editorial cut in the same place is not a seamless continuation");
+});
+
+test("manual chain override forces on/off regardless of the policy", () => {
+  const m = buildNanoFlowManifest(framesFixture(), {
+    genre: "drama",
+    veoClips: framesClips,
+    // Force the opening shot ON and the continuous shot OFF — the opposite of policy.
+    chainModeOverrides: { 1: "on", 2: "off" },
+  });
+  assert.equal(m.shots[0]!.chain_from_prev, true, "override 'on' forces chaining even on the opening shot");
+  assert.equal(m.shots[1]!.chain_from_prev, undefined, "override 'off' disables chaining on a continuous shot");
+});

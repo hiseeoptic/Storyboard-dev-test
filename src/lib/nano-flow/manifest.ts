@@ -104,6 +104,13 @@ export interface BuildNanoFlowManifestOptions {
    * "auto"/absent defers to the genre + transform-score policy.
    */
   frameModeOverrides?: Record<number, FrameModeOverride>;
+  /**
+   * Per-shot manual cross-shot-chain override, keyed by segment_number (1-based).
+   * "on" forces this shot to chain from the previous shot's last frame; "off"
+   * forces a fresh independent keyframe; "auto"/absent uses the continuity policy
+   * (chain only when the shot continues the previous one in the same location).
+   */
+  chainModeOverrides?: Record<number, "auto" | "on" | "off">;
 }
 
 /** Extract a trimmed string field from an unknown clip sub-object. */
@@ -1466,6 +1473,20 @@ export function buildNanoFlowManifest(
       transformScore,
       override: opts.frameModeOverrides?.[index],
     });
+    // ── Cross-shot continuity chain: when THIS shot continues the previous one
+    //    (same location AND continuity_mode "continuous"), tell the extension to
+    //    build this shot's keyframe FROM the previous shot's last frame (its END
+    //    keyframe when the previous shot was 2-frame) so the footage flows
+    //    seamlessly. A hard cut, a different place, or a wardrobe change never
+    //    chains (the extension also self-guards wardrobe changes). A per-shot
+    //    manual override wins. §6.2.
+    const chainOverride = opts.chainModeOverrides?.[index];
+    const chainFromPrev =
+      chainOverride === "on"
+        ? true
+        : chainOverride === "off"
+          ? false
+          : String(shotContinuity) === "continuous" && sameSetAsPrev;
     // Shared inputs for the clean START + END keyframes. Same scene locks the
     // legacy board builder uses, so the image stays faithful to the same clip.
     const keyframeArgs = {
@@ -1547,6 +1568,10 @@ export function buildNanoFlowManifest(
         ? { end_storyboard_prompt: buildKeyframePrompt({ moment: "end", ...keyframeArgs }) }
         : {}),
       continuity_mode: shotContinuity,
+      // Seamless story flow: chain this shot's keyframe from the previous shot's
+      // last frame. Present only for a truly continuous same-location shot;
+      // absent ⇒ a fresh independent keyframe (opening, cut or different place).
+      ...(chainFromPrev ? { chain_from_prev: true } : {}),
       ...(seg.location_id ? { location_id: seg.location_id } : {}),
       image_refs,
       // Cách 1 — embed the uploaded real location photo for this shot (if any).

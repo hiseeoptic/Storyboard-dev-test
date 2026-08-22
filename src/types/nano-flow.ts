@@ -182,6 +182,13 @@ export interface NanoFlowShot {
   marketing_role?: NanoFlowMarketingRole;
   /** Schema 4.0 continuity decision for the boundary entering this shot. */
   continuity_mode?: NanoFlowContinuityMode;
+  /** Seamless story flow: when true, the extension builds this shot's keyframe
+   * FROM the previous shot's last generated frame (its end keyframe when the
+   * previous shot was 2-frame), so continuous same-location shots flow without a
+   * visible jump. Emitted only for a truly continuous same-location shot; absent
+   * ⇒ a fresh independent keyframe (opening, cut or different place). The
+   * extension additionally skips chaining across a wardrobe change. */
+  chain_from_prev?: boolean;
   /** Project-local Context-IR location id used for per-location memory/audio. */
   location_id?: string;
 
