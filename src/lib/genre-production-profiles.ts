@@ -142,7 +142,7 @@ const AD_SUBTYPES = [
   "emotional_brand_film", "luxury_commercial", "direct_response", "fast_promo", "ugc_unboxing",
 ];
 
-export const GENRE_PRODUCTION_PROFILES: Record<Genre, GenreProductionProfile> = {
+const RAW_GENRE_PROFILES: Record<Genre, GenreProductionProfile> = {
   advertising: profile("advertising", { content_subtypes: AD_SUBTYPES, default_dialogue_style: "commercial", allowed_dialogue_styles: ["auto", "commercial", "direct", "everyday", "expert", "inspirational", "custom"], default_narrator_style: "commercial", allowed_narrator_styles: ["auto", "commercial", "warm", "expert", "inspirational", "custom"], default_camera_profile: "product_commercial", allowed_camera_profiles: ["auto", "product_commercial", "luxury_commercial", "creator_ugc", "premium_commercial"], script_profile: "persuasion follows one audience problem, one provable benefit, one proof moment and one earned CTA", voice_performance_profile: "confident benefit-led delivery with exact brand and CTA pronunciation", camera_profile: CAMERA.product_commercial!, edit_rhythm: "hook immediately, prove the benefit before the CTA, reveal brand assets at a memorable point", sound_profile: "clean dialogue, product foley, controlled music ducking and optional sonic-logo space", forbidden_patterns: ["unsupported claim", "feature-list recital", "brand-name repetition", "product geometry drift"] }),
   product_demo: profile("product_demo", { default_dialogue_style: "expert", allowed_dialogue_styles: ["auto", "direct", "expert", "commercial", "custom"], default_narrator_style: "expert", default_camera_profile: "technical_demo", allowed_camera_profiles: ["auto", "technical_demo", "product_commercial", "explainer_clarity"], script_profile: "state the task, demonstrate exact operation, show observable result and name limits", voice_performance_profile: "clear medium-paced instructional delivery with exact terminology", camera_profile: CAMERA.technical_demo!, forbidden_patterns: ["hidden operation", "impossible hand contact", "unproved result"] }),
   brand_film: profile("brand_film", { default_dialogue_style: "poetic", allowed_dialogue_styles: ["auto", "subtext", "inspirational", "poetic", "custom"], default_narrator_style: "poetic", allowed_narrator_styles: ["auto", "warm", "reflective", "inspirational", "poetic", "custom"], default_camera_profile: "cinematic_drama", allowed_camera_profiles: ["auto", "cinematic_drama", "luxury_commercial", "premium_commercial"], script_profile: "few words, human value and an emotional brand memory; brand meaning is earned by the story", voice_performance_profile: "restrained emotional cadence with space after meaningful words", camera_profile: "cinematic human-scale images, deliberate slow movement and one memorable brand reveal", edit_rhythm: "patient emotional build; no premature sales cadence", forbidden_patterns: ["constant product pushing", "unearned slogan", "generic stock montage"] }),
@@ -274,16 +274,20 @@ const RICH_DIALOGUE: Partial<Record<Genre, DialogueStyleId[]>> = {
   sports: ["live_commentary", "direct", "expert", "inspirational", "intense", "witty"],
   other: ALL_DIALOGUE,
 };
-{
+// Enrich DURING the export const's own initialization (not as a separate
+// top-level statement) so every reader sees the rich lists and bundler
+// scope-hoisting can never run it before the base object exists.
+export const GENRE_PRODUCTION_PROFILES: Record<Genre, GenreProductionProfile> = (() => {
   const uniq = <T>(xs: T[]): T[] => Array.from(new Set(xs));
-  (Object.keys(GENRE_PRODUCTION_PROFILES) as Genre[]).forEach((g) => {
-    const p = GENRE_PRODUCTION_PROFILES[g];
+  (Object.keys(RAW_GENRE_PROFILES) as Genre[]).forEach((g) => {
+    const p = RAW_GENRE_PROFILES[g];
     const cam = RICH_CAMERA[g];
     if (cam) p.allowed_camera_profiles = uniq<DirectingProfileId>(["auto", p.default_camera_profile, ...cam]);
     const dlg = RICH_DIALOGUE[g];
     if (dlg) p.allowed_dialogue_styles = uniq<DialogueStyleId>(["auto", p.default_dialogue_style, ...dlg, "custom"]);
   });
-}
+  return RAW_GENRE_PROFILES;
+})();
 
 export const ADVERTISING_SUBTYPE_LABELS: Record<string, { vi: string; en: string }> = {
   affiliate_short: { vi: "Affiliate 15–30s từ ảnh sản phẩm", en: "15–30s affiliate from product images" },

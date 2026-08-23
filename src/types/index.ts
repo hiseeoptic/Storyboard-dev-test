@@ -207,6 +207,23 @@ export type DirectingProfileId =
   | "aerial_drone"
   | "static_locked";
 
+/** User-selectable colour grade / film look applied to the whole video. */
+export type ColorLookId =
+  | "auto"
+  | "natural"
+  | "cinematic"
+  | "warm_nostalgic"
+  | "vintage_film"
+  | "bw_classic"
+  | "noir"
+  | "vibrant_pop"
+  | "pastel_soft"
+  | "moody_dark"
+  | "sunlit_golden"
+  | "clean_commercial"
+  | "neon_cyberpunk"
+  | "custom";
+
 export interface VoicePerformanceSettings {
   role?: "auto" | "narrator" | "presenter" | "expert" | "commentator" | "character";
   relative_pitch?: "auto" | "low" | "mid" | "high";
@@ -237,6 +254,10 @@ export interface StoryboardGenerationInput {
   visual_interpretation?: VisualInterpretation;
   character_representation?: CharacterRepresentation;
   directing_profile?: DirectingProfileId;
+  /** User-selected colour grade / film look (empty/"auto" ⇒ AI derives by genre). */
+  color_look?: ColorLookId;
+  /** Free-text colour look when color_look === "custom". */
+  color_look_custom?: string;
   /** Which model writes the SCRIPT (text). Images always stay on Gemini.
    * Defaults to the main provider. Switchable from the hidden admin panel. */
   script_provider?: AIProvider;

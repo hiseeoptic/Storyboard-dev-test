@@ -59,6 +59,8 @@ import {
   clearCharacterPreset,
   hasCharacterPreset,
 } from "@/lib/character-preset";
+import type { ColorLookId } from "@/types";
+import { COLOR_LOOK_OPTIONS, colorLooksForGenre } from "@/lib/color-look";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
 import type { FrameModeOverride } from "@/lib/nano-flow/frame-mode-policy";
 import { buildSpeechManifestContract } from "@/lib/storyboard/anonymous-narration";
@@ -1498,11 +1500,30 @@ function ProjectWorkspace() {
   const [visualInterpretation, setVisualInterpretation] = useState<VisualInterpretation>("auto");
   const [characterRepresentation, setCharacterRepresentation] = useState<CharacterRepresentation>("auto");
   const [directingProfile, setDirectingProfile] = useState<DirectingProfileId>("auto");
+  // Colour grade / film look for the whole video (separate axis from medium + camera).
+  const [colorLook, setColorLook] = useState<ColorLookId>("auto");
+  const [colorLookCustom, setColorLookCustom] = useState("");
+  // Colour look options for the current genre (default + genre-appropriate looks).
+  // Declared AFTER the colorLook state so the .find below never reads it in TDZ.
+  const allowedColorLooks = new Set(colorLooksForGenre(genre as Genre));
+  const colorLookSelectOptions = COLOR_LOOK_OPTIONS
+    .filter((option) => allowedColorLooks.has(option.value))
+    .map((option) => ({ value: option.value, label: lang === "vi" ? option.label_vi : option.label_en }));
+  const selectedColorLook = COLOR_LOOK_OPTIONS.find((option) => option.value === colorLook);
+  const selectedColorLookDesc = selectedColorLook
+    ? (lang === "vi" ? selectedColorLook.desc_vi : selectedColorLook.desc_en)
+    : "";
   // Fixed to "standard": the quality picker UI was removed (text-only Nano Flow
   // — the extension generates images for free), but the input contract keeps it.
   const [imageQuality] = useState<ImageQuality>("standard");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   const [thumbnailAspectRatio, setThumbnailAspectRatio] = useState<"16:9" | "9:16">("16:9");
+  // Keep the thumbnail ratio in step with the VIDEO ratio by default so the two
+  // are never mismatched (the source of the 9:16 vs 16:9 confusion); the user can
+  // still override the thumbnail ratio in its own selector afterwards.
+  useEffect(() => {
+    setThumbnailAspectRatio(aspectRatio === "9:16" ? "9:16" : "16:9");
+  }, [aspectRatio]);
   // Expression heads in each board's character-reference strip (0 = let Veo act
   // the emotion from the prompt; 2-3 = include a small fixed set).
   const [copiedSeg, setCopiedSeg] = useState<number | null>(null);
@@ -1945,6 +1966,8 @@ function ProjectWorkspace() {
             ? "uploaded_photoreal"
             : characterRepresentation,
       directing_profile: directingProfile,
+      color_look: colorLook !== "auto" ? colorLook : undefined,
+      color_look_custom: colorLook === "custom" ? colorLookCustom.trim() || undefined : undefined,
       script_provider: scriptProvider,
       script_treatment: scriptTreatment,
       // Keep the legacy combined flag only for the exact old configuration.
@@ -4587,6 +4610,27 @@ function ProjectWorkspace() {
                     <Input value={settingCustom} onChange={(e) => setSettingCustom(e.target.value)} placeholder={L("settingCustomPlaceholder")} />
                   )}
                 </div>
+              </div>
+              {/* Màu / Look phim — tông màu áp cho cả video (trục riêng với chất liệu + cách quay). */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  {lang === "vi" ? "🎨 Màu / Look phim" : "🎨 Colour / film look"}
+                </label>
+                <Select
+                  value={colorLook}
+                  onChange={(e) => setColorLook(e.target.value as ColorLookId)}
+                  options={colorLookSelectOptions}
+                />
+                {colorLook === "custom" && (
+                  <Input
+                    value={colorLookCustom}
+                    onChange={(e) => setColorLookCustom(e.target.value)}
+                    placeholder={lang === "vi" ? "VD: đen trắng, xước phim, tia flicker ngang kiểu cổ..." : "e.g. black & white, film scratches, horizontal flicker..."}
+                  />
+                )}
+                {selectedColorLookDesc && (
+                  <p className="text-xs font-medium text-foreground">{selectedColorLookDesc}</p>
+                )}
               </div>
               {genre === "advertising" && (
                 <div className="space-y-2">

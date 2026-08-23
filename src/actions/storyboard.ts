@@ -17,6 +17,7 @@ import {
 import { analyzeReferenceImages, analyzeLocationSets } from "@/services/image-analyzer";
 import { generateCompactCookingScenePlan } from "@/services/cooking-planner";
 import { compileCookingStoryboard } from "@/lib/cooking";
+import { colorLookDirective } from "@/lib/color-look";
 import {
   isAiBillingError,
   shouldAbortAiPipeline,
@@ -974,6 +975,11 @@ function enhanceInput(
   }
 
   const extra: string[] = [];
+
+  // COLOR / LOOK LOCK: the user picked a colour grade / film look → lock it into
+  // the script, keyframes and Veo prompts so the whole video carries that colour.
+  const colorDirective = colorLookDirective(input.color_look, input.color_look_custom);
+  if (colorDirective) extra.push(colorDirective);
 
   // LOCATION LOCK: a real location photo was uploaded — the whole video is
   // staged inside THAT place; the LLM must never invent a different set.
