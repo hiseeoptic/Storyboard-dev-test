@@ -631,6 +631,34 @@ function productionLanguageContract(
 - This language split changes wording only; it must not alter story facts, action order, locations, props, character identity or dialogue.`;
 }
 
+/** A stick-figure life-wisdom video is carried by one narrated story, not by a
+ * stack of unrelated quote cards. Keep this scoped to the explicit medium and
+ * genre so advertising, dialogue-led animation and other formats are untouched. */
+function stickFigureWisdomNarrationDirective(
+  input: StoryboardGenerationInput
+): string {
+  const representation = input.character_representation ?? "auto";
+  const explicitStickFigure =
+    representation === "stick_figure" ||
+    representation === "whiteboard_stick_figure" ||
+    /\b(?:stick figure|whiteboard stick figure)\b|người que/iu.test(
+      input.story_idea ?? ""
+    );
+  const wisdomStory =
+    input.genre === "life_wisdom" || input.genre === "psychology";
+  const speech = resolveSpeechMode(input);
+  if (!explicitStickFigure || !wisdomStory || !speech.voice_over) return "";
+
+  return `STICK-FIGURE LIFE-WISDOM NARRATION — LOCKED:
+- Write ONE continuous narrated story across the full requested duration. Read all VO rows in order: they must sound like one storyteller carrying one question, situation, change and earned insight—not separate slogans, captions, list items or five interchangeable moral quotes.
+- The opening creates a concrete curiosity or human dilemma. Each later segment begins from the NEW consequence, choice or understanding produced by the previous segment, then advances it. Use causal connective tissue without repeating the preceding sentence, premise or signature phrase.
+- Narration interprets what the visible action means; it never merely names the pose/object the viewer already sees. Let the character's choice and consequence prove the lesson before the narrator states it.
+- Vary sentence openings, cadence and syntax. Do not restart every clip with “Có những người…”, “Cuộc đời…”, “Đôi khi…”, “Nhưng rồi…” or another reusable template. Do not repeat a question, clause or conclusion to fill time.
+- In VOICE-OVER ONLY mode, the recurring narrator carries the story through almost the entire clip; visible stick figures never speak, converse or lip-sync. Give each clip one complete, naturally speakable narrated thought with enough causal detail, emotion and connective meaning to occupy most of its real duration. Do not leave an accidentally thin fragment as the whole clip and do not cram several conclusions into the final clip.
+- Before returning, silently read every VO row against its real clip duration at roughly 128 WPM. This is a delivery audit, not a fixed word quota: target about 8.5-9.5 seconds of purposeful narration in a 10-second clip, leaving only a brief natural breath/reaction at the end. Move a WHOLE sentence or idea to an adjacent compatible segment when it overruns; when it under-runs, deepen the causal bridge, concrete detail or emotional meaning instead of leaving dead air, stretching, looping or padding it. Compare all rows and remove any unintentional repeated clause or paraphrased duplicate.
+- The final line answers or reframes the opening and lands one concise earned principle. Add an engagement question only when the approved goal/source asks for it; never replace the emotional ending with generic comment bait.`;
+}
+
 // ─── Stage 1: Script writer (Claude) — creative script ONLY ─────────────────
 // When the user splits the pipeline (e.g. Claude writes the script, Gemini
 // builds the storyboard), Claude produces just the creative script text; the
@@ -773,6 +801,7 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
 
   const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
   const speechDirective = speechModeDirective(input, lang);
+  const stickFigureNarrationDirective = stickFigureWisdomNarrationDirective(input);
   const genreScriptDirective = compactGenreScriptDirective(input);
 
   return `Write a ${segmentCount}-segment short-video script.${affiliateDurations ? ` The exact clip durations are ${affiliateDurations.join("s + ")}s (total ${affiliateDurations.reduce((sum, value) => sum + value, 0)}s); the shorter final clip uses proportionally fewer spoken words.` : ""}
@@ -786,7 +815,7 @@ Dialogue language: ${
     isCooking && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")
       ? "NONE — every segment is wordless diegetic ASMR"
       : `${lang} (when dialogue is justified, write it naturally in ${lang})`
-  }.${briefBlock}${framework ? `\n${framework}` : ""}${actionDramaBlock}\n${speechDirective}
+  }.${briefBlock}${framework ? `\n${framework}` : ""}${actionDramaBlock}\n${speechDirective}${stickFigureNarrationDirective ? `\n\n${stickFigureNarrationDirective}` : ""}
 
 ${input.script_treatment === "polish" ? `EDITORIAL-POLISH MODE FOR A PASTED SCREENPLAY: preserve every character, relationship, location, prop identity, plot fact, causal reveal, emotional meaning and ending message from the supplied screenplay. You MAY and SHOULD restructure the first 30 seconds, merge or redistribute turns across the requested 10s segments, sharpen weak dialogue, add subtext and specify performance/action. Do not introduce a different story, product, setting, relationship or moral. The result must feel like the strongest filmed version of the same screenplay, not a summary and not a replacement premise.` : ""}
 
@@ -1110,6 +1139,7 @@ ${JSON.stringify(resolvedContextForPrompt, null, 2)}
   const anonymousNarrationBlock = speechMode.anonymous_characters
     ? `\n\nANONYMOUS CHARACTER AUTHORITY: audience-facing prose, captions and spoken lines use stable functional role labels only. Internal asset keys may retain the entered names solely to bind reference images. This changes labels only; speech ownership remains exactly the selected SPEECH MODE.`
     : "";
+  const stickFigureNarrationBlock = stickFigureWisdomNarrationDirective(input);
   const stylizedNarrationMetadata =
     speechMode.anonymous_characters &&
     speechMode.voice_over &&
@@ -1133,7 +1163,7 @@ Video Goal: ${goal} — ${goalGuidance}
 Genre: ${input.genre}
 Visual Style: ${input.style}
 Number of SEGMENTS: ${segmentCount} (${clipDurationDescription}; exact total ${totalDuration} seconds)
-Beats per segment: ${beatsExactText} progressive camera framings of ONE continuous action inside each 10s clip (use the number the action naturally needs)${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${anonymousNarrationBlock}${characterBlock}${settingBlock}${shotLocationBlock}${toneBlock}${customBlock}${actionDramaBlock}
+Beats per segment: ${beatsExactText} progressive camera framings of ONE continuous action inside each 10s clip (use the number the action naturally needs)${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${anonymousNarrationBlock}${stickFigureNarrationBlock ? `\n\n${stickFigureNarrationBlock}` : ""}${characterBlock}${settingBlock}${shotLocationBlock}${toneBlock}${customBlock}${actionDramaBlock}
 
 Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous take of its declared duration (${clipDurationDescription}) showing a SINGLE primary action, filmed as ${beatsExactText} progressive camera framings (${beatsIsAuto ? "3 to 5" : beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Beats preserve a clear chronological order while the subject, props and locked physics stay continuous, but beats and camera notes contain NO numeric timecodes. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" describes that ONE continuous action as an untimed ordered physical sequence using deliberate, specific verbs (body part + verb + manner) plus an explicit final state/anchor. dialogue_lines.start_s/end_s is the clip's ONLY clock. Keep ONE primary action per clip — never stack multiple actions beyond the model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. ${firstFrameIdentityRule} Inside the motion_prompt use only the exact name plus position, action and expression for an uploaded-reference character.
 

@@ -133,7 +133,9 @@ test("validator reports overlap, wrong lip authority and voice drift with patch 
     ] }),
   ]));
   const shot = state.shots[1]!;
-  shot.dialogue_state.turns[1]!.start_time_s = 2;
+  // Force a real overlap even after the production clock has tightened the
+  // first short utterance to its natural delivery duration.
+  shot.dialogue_state.turns[1]!.start_time_s = 0.5;
   shot.dialogue_state.turns[0]!.lip_sync_target_entity_id = "char_minh";
   shot.dialogue_state.turns[0]!.voice_profile = "changed voice";
   const findings = validateDialogueAudioState(state);

@@ -3,6 +3,7 @@ import test from "node:test";
 import type { StoryboardGenerationOutput } from "../../types/index.ts";
 import {
   buildStoryboardPromptPackage,
+  legacyDialogueSupplement,
   validateStoryboardPromptPackage,
 } from "./prompt-package.ts";
 
@@ -61,6 +62,16 @@ function breakdown(): StoryboardGenerationOutput {
     ],
   };
 }
+
+test("legacy master prompt never serializes the same spoken line twice", () => {
+  const line = "Đừng vội bỏ cuộc chỉ vì hôm nay bạn đi chậm.";
+  const fullPrompt = `MOTION: người que đứng dậy. DIALOGUE: VOICEOVER: "${line}"`;
+  assert.equal(legacyDialogueSupplement(fullPrompt, line, ""), null);
+  assert.equal(
+    legacyDialogueSupplement("MOTION: người que đứng dậy.", line, "VOICEOVER"),
+    `DIALOGUE (VOICEOVER): "${line}"`
+  );
+});
 
 test("compiler emits two environment views without changing the old manifest", () => {
   const pkg = buildStoryboardPromptPackage(breakdown(), {

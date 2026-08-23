@@ -60,6 +60,19 @@ test("creative writing has no fixed word quota while delivery remains timed", ()
   assert.doesNotMatch(promptSource, /AT MOST 18 TOTAL spoken words/i);
 });
 
+test("stick-figure life-wisdom narration is one causal story rather than quote cards", () => {
+  const promptSource = readFileSync(
+    new URL("../../prompts/storyboard-breakdown.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(promptSource, /STICK-FIGURE LIFE-WISDOM NARRATION/);
+  assert.match(promptSource, /ONE continuous narrated story/);
+  assert.match(promptSource, /not separate slogans, captions, list items/);
+  assert.match(promptSource, /visible stick figures never speak, converse or lip-sync/);
+  assert.match(promptSource, /8\.5-9\.5 seconds of purposeful narration/);
+  assert.match(promptSource, /instead of leaving dead air/);
+});
+
 test("the OpenAI script writer defaults to balanced Terra at low reasoning", () => {
   const engineSource = readFileSync(
     new URL("../../services/ai-engine.ts", import.meta.url),

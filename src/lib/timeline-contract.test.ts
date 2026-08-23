@@ -33,6 +33,21 @@ test("valid user dialogue windows are preserved exactly", () => {
   assert.deepEqual(ensureDialogueClock(turns), turns);
 });
 
+test("a short voice-over closes naturally instead of staying active until clip end", () => {
+  const turns = ensureDialogueClock([
+    {
+      speaker: "",
+      delivery: "voiceover",
+      text: "Bạn không luôn chọn được điều xảy ra, nhưng có thể chọn cách bước tiếp.",
+      start_s: 0,
+      end_s: 9.5,
+    },
+  ]);
+  assert.equal(turns[0]!.start_s, 0);
+  assert.ok(turns[0]!.end_s! < 8);
+  assert.deepEqual(dialogueClockErrors(turns), []);
+});
+
 test("valid but unnaturally fast dialogue windows are retimed locally", () => {
   const turns = ensureDialogueClock([
     {

@@ -74,6 +74,7 @@ import {
   fingerprintStoryboardPlan,
   StoryboardPlanCache,
 } from "@/lib/storyboard/plan-cache";
+import { legacyDialogueSupplement } from "@/lib/storyboard/prompt-package";
 import { wardrobeOptions, wardrobeGroupLabel } from "@/lib/nano-flow/wardrobe-catalog";
 import {
   NANO_FLOW_MESSAGE_SOURCE,
@@ -2741,14 +2742,18 @@ function ProjectWorkspace() {
         "",
       ];
       for (const seg of bd.segments) {
+        const legacyPrompt = oneLine(seg.full_prompt ?? seg.motion_prompt ?? "");
         masterLines.push(
           `[SEGMENT ${seg.segment_number} — ${(seg.marketing_role || "").toUpperCase()} — ${seg.duration_seconds ?? 10}s]`,
           `OPTIONAL START FRAME: ${seg.keyframe_url ? kf(seg.segment_number) : "crop the matching scene panel from storyboard_overview.png, or use Text-to-Video/Ingredients"}`,
-          `PROMPT: ${oneLine(seg.full_prompt ?? seg.motion_prompt ?? "")}`,
+          `PROMPT: ${legacyPrompt}`,
         );
-        if (seg.dialogue) {
-          masterLines.push(`DIALOGUE${seg.speaker ? ` (${seg.speaker})` : ""}: "${oneLine(seg.dialogue)}"`);
-        }
+        const dialogueSupplement = legacyDialogueSupplement(
+          legacyPrompt,
+          seg.dialogue,
+          seg.speaker
+        );
+        if (dialogueSupplement) masterLines.push(dialogueSupplement);
         masterLines.push("");
       }
       zip.file(`master_prompt.txt`, masterLines.join("\n"));
