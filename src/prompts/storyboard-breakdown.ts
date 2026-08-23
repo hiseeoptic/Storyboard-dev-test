@@ -896,6 +896,7 @@ DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlap
   8. QUIET WINDOW: never place a dialogue window over a loud or major physical event. Complete the crash/fall/impact first in the ordered action, then begin the reaction line; do not add event timecodes outside dialogue_lines.
   9. BALANCE SPEECH BY DELIVERY TIME, NOT WORD COUNT: preserve the approved script wording and assign realistic start_s/end_s windows at natural delivery speed for its language, emotion and performance. Leave a real reaction/breathing window and finish by 9.5s. If the approved exchange does not fit, move the last WHOLE approved thought or turn into the next compatible clip; never compress, paraphrase, duplicate, merge speakers, cut a sentence in half or repeat a line in motion_prompt.
   10. DELIVERY FEASIBILITY IS TECHNICAL, NOT CREATIVE: do not impose a fixed word ceiling while writing or expanding the script. The dialogue clock and WPM validator decide whether delivery fits. Never shorten a timing window or speed up a voice to force text into a clip; preserve meaningful pauses and intentional same-speaker line breaks.
+  11. FINAL CAPACITY AUDIT BEFORE RETURNING JSON: calculate every turn from its actual word count and declared window. No turn may exceed 190 wpm. When authoring from an idea rather than copying user-locked verbatim dialogue, rewrite or redistribute the same thought naturally before returning JSON; never knowingly emit an over-speed line for the validator to reject. Voice-over follows the same capacity rule.
 - SINGLE-LINE CLIPS: if a beat is just one line, you may use "dialogue_lines" with one entry OR the plain "dialogue"+"speaker" fields — both work. For a longer monologue that fills the clip, one speaker is correct.
 - Mirror the FIRST turn into the top-level "dialogue" (its text) and "speaker" (its name) for compatibility.
 - NAME TOKENS ARE LOCKED: every character name is a fixed token spelled EXACTLY as in character_locks, identical in every field (title, first_frame_prompt, motion_prompt, beats, camera notes, dialogue speaker, continuity_note). NEVER invent a spelling variant, nickname or near-miss — a near-miss name creates a THIRD person and breaks speaker mapping. Any name appearing inside a RULE EXAMPLE is a placeholder — NEVER copy an example name into your output; use ONLY the names defined in character_locks for THIS video.
@@ -3422,6 +3423,11 @@ export function buildVeoJson(
             `Locked ${opts.characterRepresentation} character-and-world medium`,
             "one consistent graphic line, shape, palette, texture and simplified anatomy language",
             "no live-action or photoreal conversion",
+            // The final consumer field repeats these exact scene-bible values so
+            // BIBLE-002 can prove that the exported clip, not just its adjacent
+            // metadata object, owns one stable camera and grade authority.
+            sceneBibleTokens.lens,
+            sceneBibleTokens.color_grade,
           ]
         : [
             scrub(breakdown.style_guide?.art_direction),

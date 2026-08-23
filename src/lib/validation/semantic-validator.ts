@@ -658,12 +658,24 @@ function checkContextContracts(out: StoryboardGenerationOutput, push: Push): voi
     // chairs and set dressing remain available in the ledger without falsely
     // consuming the 3–6 primary simulation slots.
     const activeIds = new Set<string>();
+    const declaredSalience = new Set(
+      [
+        ...(profile?.salience_policy.hero_entities ?? []),
+        ...(profile?.salience_policy.interaction_entities ?? []),
+      ].map(lc).filter(Boolean)
+    );
+    const isDeclaredHighFidelity = (id: string) => declaredSalience.has(lc(id));
     for (const id of ids) {
-      if (characterIds.has(lc(id))) activeIds.add(id);
+      if (characterIds.has(lc(id)) || isDeclaredHighFidelity(id)) activeIds.add(id);
     }
-    for (const change of changeEntries) activeIds.add(change.entity_id);
-    for (const entry of [...startEntries, ...endEntries]) {
-      if (norm(entry.holder)) activeIds.add(entry.entity_id);
+    // Older Context IR did not declare salience ids. Preserve that compatibility
+    // behaviour. New Context IR already owns this budget, so a simple graphic
+    // prop remains tracked without being miscounted as another hero entity.
+    if (declaredSalience.size === 0) {
+      for (const change of changeEntries) activeIds.add(change.entity_id);
+      for (const entry of [...startEntries, ...endEntries]) {
+        if (norm(entry.holder)) activeIds.add(entry.entity_id);
+      }
     }
     if (activeIds.size > maxTracked || activeIds.size > 6) {
       push({

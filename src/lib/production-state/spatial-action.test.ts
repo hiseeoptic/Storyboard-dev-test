@@ -297,6 +297,48 @@ test("compound legacy action is preserved as ordered atomic transitions with loc
   assert.equal(findings.some((item) => item.code === "ACTION_DURATION_MISSING"), false);
 });
 
+test("while choreography splits locally and manipulation receives hand-contact evidence", () => {
+  const state = buildProductionState(
+    breakdown(
+      [
+        segment(1, {
+          characters_in_scene: ["Lan"],
+          state_ledger: {
+            start: [
+              { entity_id: "Lan", state: "running", position: "path" },
+              { entity_id: "Tower", state: "upright", position: "path edge" },
+            ],
+            changes: [
+              {
+                entity_id: "Tower",
+                from: "upright",
+                action: "Lan runs forward while reaching toward and pushing the tower",
+                to: "tilted",
+                caused_by: "Lan",
+              },
+            ],
+            end: [
+              { entity_id: "Lan", state: "running", position: "path" },
+              { entity_id: "Tower", state: "tilted", position: "path edge" },
+            ],
+          },
+        }),
+      ],
+      ["Lan"]
+    )
+  );
+  const actions = state.shots[0]!.actions;
+  const contact = actions.find((action) => /push/iu.test(action.verb));
+  const findings = validateAtomicActions(state);
+
+  assert.equal(actions.length, 2);
+  assert.ok(actions.every((action) => action.is_atomic));
+  assert.equal(contact?.body_part, "right_hand");
+  assert.ok(contact?.contact_entity_ids.includes(contact.object_entity_id!));
+  assert.equal(findings.some((item) => item.code === "ACTION_NOT_ATOMIC"), false);
+  assert.equal(findings.some((item) => item.code === "ACTION_CONTACT_CONTRACT_INCOMPLETE"), false);
+});
+
 test("action duration validator rejects physically impossible shoe-removal timing", () => {
   const shoeState = buildProductionState(
     breakdown(

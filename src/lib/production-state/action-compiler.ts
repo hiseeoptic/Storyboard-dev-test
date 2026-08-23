@@ -39,7 +39,7 @@ function isAtomic(text: string): boolean {
  * the model's own semicolon/then/comma verb chain into separate records. */
 function splitAtomicAction(text: string): string[] {
   const primary = clean(text)
-    .split(/\s*;\s*|\s+(?:then|after that|next|sau đó|tiếp theo)\s+/iu)
+    .split(/\s*;\s*|\s+(?:then|after that|next|while|sau đó|tiếp theo|đồng thời)\s+/iu)
     .map(clean)
     .filter(Boolean);
   const verbContinuation = /^(?:turn(?:s|ed|ing)?|use(?:s|d|ing)?|reach(?:es|ed|ing)?|grip(?:s|ped|ping)?|grasp(?:s|ed|ing)?|lift(?:s|ed|ing)?|tap(?:s|ped|ping)?|smooth(?:s|ed|ing)?|place(?:s|d|ing)?|set(?:s|ting)?|release(?:s|d|ing)?|push(?:es|ed|ing)?|pull(?:s|ed|ing)?|open(?:s|ed|ing)?|close(?:s|d|ing)?|xoay|dùng|vươn|nắm|cầm|nhấc|chạm|vuốt|đặt|thả|đẩy|kéo|mở|đóng)\b/iu;
@@ -122,17 +122,26 @@ export function compileAtomicActions(
     const objectEntityId = changedEntity?.kind === "character" && change.entity_id === subject
       ? null
       : change.entity_id || null;
+    const contactVerb = /\b(?:touch(?:es|ed|ing)?|contact(?:s|ed|ing)?|cut(?:s|ting)?|grip(?:s|ped|ping)?|grasp(?:s|ed|ing)?|hold(?:s|ing)?|pick(?:s|ed|ing)?|lift(?:s|ed|ing)?|place(?:s|d|ing)?|release(?:s|d|ing)?|push(?:es|ed|ing)?|pull(?:s|ed|ing)?|reach(?:es|ed|ing)?|tap(?:s|ped|ping)?|smooth(?:s|ed|ing)?)\b|\b(?:chạm|tiếp xúc|cắt|cứa|nắm|cầm|nhấc|đặt|thả|đẩy|kéo|đưa tay|vươn tay|vuốt)\b/iu.test(verb);
+    const externalObjectId = objectEntityId && objectEntityId !== subject
+      ? objectEntityId
+      : null;
+    const bodyPart = change.body_part ?? (contactVerb && externalObjectId ? "right_hand" : null);
+    const contactEntityIds = [...(change.contact_entity_ids ?? [])];
+    if (contactVerb && externalObjectId && !contactEntityIds.includes(externalObjectId)) {
+      contactEntityIds.push(externalObjectId);
+    }
     return {
       action_id: `${shot.shot_id}_action_${String(index + 1).padStart(3, "0")}`,
       source_change_index: changeIndex,
       subject_entity_id: subject,
       verb,
       object_entity_id: objectEntityId,
-      body_part: change.body_part ?? null,
+      body_part: bodyPart,
       start_state: partIndex === 0 ? clean(change.from) : "",
       transition_states: [],
       end_state: partIndex === partCount - 1 ? clean(change.to) : "",
-      contact_entity_ids: [...(change.contact_entity_ids ?? [])],
+      contact_entity_ids: contactEntityIds,
       duration_s: Number.isFinite(duration) && duration > 0
         ? Math.round(duration * 10) / 10
         : null,

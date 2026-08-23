@@ -673,7 +673,10 @@ function normalizeDialogue(
     // Use the same >190 wpm boundary as Layer A. Previously this normalizer
     // preserved 200 wpm windows while the validator rejected them, forcing
     // Layer C to spend two repair calls on a purely mechanical clock.
-    turns = ensureDialogueClock(turns, 10);
+    const clipSeconds = Number.isFinite(seg.duration_seconds) && seg.duration_seconds > 0
+      ? seg.duration_seconds
+      : 10;
+    turns = ensureDialogueClock(turns, clipSeconds);
 
     // Bind every on-screen voice to one concrete storyboard camera beat. The
     // beat itself must name that speaker; otherwise the compiled prompt cannot
@@ -754,7 +757,7 @@ function normalizeDialogue(
       seg.dialogue_lines = undefined;
     }
 
-    const clockErrors = dialogueClockErrors(seg.dialogue_lines, 10);
+    const clockErrors = dialogueClockErrors(seg.dialogue_lines, clipSeconds);
     if (clockErrors.length > 0) {
       // Keep processing the remaining scenes. The semantic/export validators
       // still report this exact capacity defect, but one long line must never

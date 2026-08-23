@@ -190,13 +190,16 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
     // inside their own declared visual language.
     const render = str(imgJson.render).toLowerCase();
     const negative = str(imgJson.negative).toLowerCase();
+    const declaredRenderAuthority = `${str(imgJson.type)} ${render} ${str(imgJson.visual_style)}`.toLowerCase();
     const hasDeclaredMedium =
-      /\b(photoreal|live[- ]action|documentary|cinematic film|animation|anime|illustrat|stylized|3d|stop[- ]motion|cartoon)\b/.test(
-        render
+      /\b(photoreal|live[- ]action|documentary|cinematic film|animation|anime|illustrat|stylized|3d|stop[- ]motion|cartoon|stick[- ]figure|whiteboard|doodle|comic|paper[- ]cut|claymation|low[- ]poly|graphic medium|visual style)\b/.test(
+        declaredRenderAuthority
       );
-    const liveAction = /\b(photoreal|live[- ]action|documentary|cinematic film)\b/.test(
-      render
-    );
+    const declaredStylized =
+      /\b(animation|anime|illustrat|stylized|3d|stop[- ]motion|cartoon|stick[- ]figure|whiteboard|doodle|comic|paper[- ]cut|claymation|low[- ]poly|graphic medium|visual style)\b/.test(
+        declaredRenderAuthority
+      );
+    const liveAction = !declaredStylized && /\b(photoreal|live[- ]action|documentary|cinematic film)\b/.test(render);
     if (!hasDeclaredMedium || (liveAction && !/not cartoon/.test(negative))) {
       push({
         code: "IMG-001",
@@ -426,15 +429,16 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
   // STYLE-004 — a stylized medium must not inherit a live-action negative.
   const visualStyle = str(clip.visual_style);
   const negative = str(clip.negative_prompt);
-  const stylized = /\b(?:animation|anime|illustrat|stylized|cartoon|3d|stop[- ]motion)\b/i.test(
+  const stylized = /\b(?:animation|anime|illustrat|stylized|cartoon|3d|stop[- ]motion|stick[- ]figure|whiteboard|doodle|comic|paper[- ]cut|claymation|low[- ]poly|graphic medium)\b/i.test(
     `${visualStyle} ${str(imgJson?.render)}`
   );
-  if (
-    stylized &&
-    /\b(?:not cartoon|photoreal|live[- ]action|documentary realism)\b/i.test(
+  // "No photoreal/live-action" is the correct stylized exclusion. Only a
+  // positive photographic authority conflicts with a stylized render.
+  const positivePhotographicNegative =
+    /\b(?:photoreal(?:istic)?|live[- ]action|documentary realism)\s+(?:only|required|lock|look|style|render)\b|\b(?:strictly|must remain|keep)\s+(?:photoreal(?:istic)?|live[- ]action|documentary realism)\b/i.test(
       negative
-    )
-  ) {
+    ) || /\bnot cartoon\b/i.test(negative);
+  if (stylized && positivePhotographicNegative) {
     push({
       code: "STYLE-004",
       severity: "high",
