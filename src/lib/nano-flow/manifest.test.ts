@@ -409,11 +409,11 @@ test("environments carry a 2-angle character-free LOCATION SHEET (location_views
   assert.equal((m.assets.environments ?? []).some((e) => e.id === "custom"), false);
 });
 
-test("video_refs default policy: keyframe on, environments/products off", () => {
+test("video_refs keep keyframe, character and location authorities together", () => {
   const m = buildNanoFlowManifest(fixture());
   for (const shot of m.shots) {
     assert.equal(shot.video_refs?.use_generated_storyboard, true);
-    assert.deepEqual(shot.video_refs?.environments, []);
+    assert.deepEqual(shot.video_refs?.environments, shot.image_refs?.environments ?? []);
     assert.deepEqual(shot.video_refs?.products, []);
   }
 });

@@ -1609,11 +1609,12 @@ export function buildNanoFlowManifest(
       video_prompt: primaryVideoPrompt,
       characters_in_scene: inScene,
       video_refs: {
-        // Legacy projects keep products OFF. Affiliate shots opt in explicitly
-        // so the extension can preserve exact geometry/logo in board and Veo.
+        // Keep the generated opening frame, character sheets and the canonical
+        // location sheet together at video time. Product refs remain opt-in for
+        // approved affiliate projects so legacy product behaviour is unchanged.
         use_generated_storyboard: true,
         characters: charIds(inScene),
-        environments: [],
+        environments: envIds,
         products: affiliateProductIds,
       },
 
