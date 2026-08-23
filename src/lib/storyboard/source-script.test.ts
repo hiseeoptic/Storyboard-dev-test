@@ -68,7 +68,9 @@ test("stick-figure life-wisdom narration is one causal story rather than quote c
   assert.match(promptSource, /STICK-FIGURE LIFE-WISDOM NARRATION/);
   assert.match(promptSource, /ONE continuous narrated story/);
   assert.match(promptSource, /not separate slogans, captions, list items/);
-  assert.match(promptSource, /remaining clip is intentional silence/);
+  assert.match(promptSource, /visible stick figures never speak, converse or lip-sync/);
+  assert.match(promptSource, /8\.5-9\.5 seconds of purposeful narration/);
+  assert.match(promptSource, /instead of leaving dead air/);
 });
 
 test("the OpenAI script writer defaults to balanced Terra at low reasoning", () => {
