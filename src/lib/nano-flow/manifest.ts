@@ -1161,7 +1161,7 @@ export function buildNanoFlowManifest(
     const nm = (ref?.name ?? "").trim().toLowerCase();
     const imgs = (ref?.images ?? [])
       .filter((s): s is string => typeof s === "string" && s.length > 0)
-      .slice(0, 4);
+      .slice(0, 1);
     if (nm && imgs.length) characterImageByName.set(nm, imgs);
   }
   const addCharacter = (rawName: string, required: boolean) => {

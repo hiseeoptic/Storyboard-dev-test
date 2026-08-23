@@ -225,8 +225,8 @@ const t = {
 
   // Step 2: Characters
   charHint: {
-    vi: "Mỗi nhân vật tải tối đa 2 ảnh: ảnh 1 chính diện, ảnh 2 góc nghiêng/3-4. Mỗi người phải được thêm thành một nhân vật riêng.",
-    en: "Upload up to 2 photos per character: photo 1 front-facing, photo 2 profile/three-quarter. Add each person as a separate character.",
+    vi: "Mỗi nhân vật chỉ tải 1 ảnh chính diện rõ mặt. Mỗi người phải được thêm thành một nhân vật riêng.",
+    en: "Upload exactly one clear front-facing photo per character. Add each person as a separate character.",
   },
   charName: { vi: "Tên nhân vật", en: "Character name" },
   charRole: { vi: "Vai trò (VD: Nhân vật chính)", en: "Role (e.g. Main hero)" },
@@ -243,7 +243,7 @@ const t = {
   refExpr2: { vi: "2 biểu cảm", en: "2 expressions" },
   refExpr3: { vi: "3 biểu cảm", en: "3 expressions" },
   charPhotos: { vi: "Ảnh nhân vật", en: "Character Photos" },
-  charPhotosHint: { vi: "Ảnh 1: chính diện · Ảnh 2: nghiêng/3-4", en: "Photo 1: front · Photo 2: profile/three-quarter" },
+  charPhotosHint: { vi: "Một ảnh chính diện rõ toàn bộ khuôn mặt", en: "One clear, front-facing full-face photo" },
   addCharacter: { vi: "Thêm nhân vật", en: "Add Character" },
   photos: { vi: "ảnh", en: "photo(s)" },
   remove: { vi: "Xóa", en: "Remove" },
@@ -1456,7 +1456,7 @@ function ProjectWorkspace() {
       // locked references for the whole storyboard.
       if (h.characterImages && h.characterImages.length > 0) {
         setCharName("Nhân vật chính");
-        setCharImages(h.characterImages.slice(0, 4).map(toUploaded));
+        setCharImages(h.characterImages.slice(0, 1).map(toUploaded));
       }
       if (h.productImages && h.productImages.length > 0) {
         setProdName("Sản phẩm");
@@ -1564,7 +1564,8 @@ function ProjectWorkspace() {
         heightCm: charHeightCm,
         bodyType: charBodyType,
         isChild: charIsChild,
-        images: charImages,
+        // One frontal identity photo is the complete character reference.
+        images: charImages.slice(0, 1),
         hasRealPhoto: charHasRealPhoto,
       },
     ]);
@@ -1598,7 +1599,14 @@ function ProjectWorkspace() {
   };
   const loadCastPreset = async () => {
     const preset = await loadCharacterPreset<CharacterEntry[]>();
-    if (preset && preset.length > 0) setCharacters(preset);
+    if (preset && preset.length > 0) {
+      // Older presets may contain extra angles. Keep them readable while
+      // normalizing the active cast to the new one-frontal-photo contract.
+      setCharacters(preset.map((character) => ({
+        ...character,
+        images: (character.images ?? []).slice(0, 1),
+      })));
+    }
   };
   const clearCastPreset = async () => {
     await clearCharacterPreset();
@@ -1784,7 +1792,7 @@ function ProjectWorkspace() {
       .filter((c) => c.images.length > 0 || c.hasRealPhoto)
       .map((c) => ({
         name: c.name,
-        images: c.images.slice(0, 2).map((i) => i.base64),
+        images: c.images.slice(0, 1).map((i) => i.base64),
         isReference: c.hasRealPhoto || c.images.length > 0,
       }));
 
@@ -5014,8 +5022,8 @@ function ProjectWorkspace() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {lang === "vi"
-                    ? "Mỗi nhân vật: ① nhập TÊN → ② bật 👶 nếu là trẻ em → ③ tải ảnh 1 CHÍNH DIỆN và ảnh 2 NGHIÊNG/3-4 của đúng người đó → ④ bấm \"➕ Thêm nhân vật\". Người tiếp theo phải thêm thành một nhân vật riêng. Tên nên trùng với vai trong kịch bản để hệ thống gán đúng mặt và lời thoại."
-                    : "For each character: ① enter their NAME → ② toggle 👶 if needed → ③ upload photo 1 FRONT and photo 2 PROFILE/3-4 of that person → ④ click \"➕ Add character\". Add the next person separately. Match script names so faces and dialogue bind correctly."}
+                    ? "Mỗi nhân vật: ① nhập TÊN → ② bật 👶 nếu là trẻ em → ③ tải đúng 1 ảnh CHÍNH DIỆN rõ mặt → ④ bấm \"➕ Thêm nhân vật\". Người tiếp theo phải thêm thành một nhân vật riêng. Tên nên trùng với vai trong kịch bản để hệ thống gán đúng mặt và lời thoại."
+                    : "For each character: ① enter their NAME → ② toggle 👶 if needed → ③ upload exactly 1 clear FRONT-FACING photo → ④ click \"➕ Add character\". Add the next person separately. Match script names so faces and dialogue bind correctly."}
                 </p>
               </div>
 
@@ -5139,36 +5147,64 @@ function ProjectWorkspace() {
                     <Input value={charAppearance} onChange={(e) => setCharAppearance(e.target.value)} placeholder={L("charAppearance")} />
                   )}
                 </div>
-                {/* Nano Flow: real character photos are attached in the AutoFlow
-                    Reel extension, not here. The Storyboard app only DECLARES the
-                    character by name; tick "có ảnh thật" so the prompt keeps that
-                    person's identity image-only (no invented face) and the
-                    manifest marks a required reference slot for the extension. */}
+                {/* Nano Flow accepts one frontal identity photo directly in the
+                    Storyboard app and embeds it in the manifest. The legacy
+                    extension-side attachment remains available when no image is
+                    uploaded, preserving old projects and workflows. */}
                 {NANO_FLOW_TEXT_ONLY ? (
-                  <button
-                    type="button"
-                    onClick={() => setCharHasRealPhoto((v) => !v)}
-                    className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors ${
-                      charHasRealPhoto
-                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-700"
-                        : "border-input hover:border-primary/50"
-                    }`}
-                  >
-                    {charHasRealPhoto ? "✅" : "⬜"}{" "}
-                    {lang === "vi"
-                      ? "Nhân vật này CÓ ẢNH THẬT (sẽ gắn ở extension) — app không tự chế khuôn mặt"
-                      : "This character HAS a real photo (attached in the extension) — the app won't invent a face"}
-                  </button>
+                  <>
+                    <ImageUploader
+                      images={charImages}
+                      onChange={(images) => {
+                        const frontalImage = images.slice(0, 1);
+                        setCharImages(frontalImage);
+                        setCharHasRealPhoto(frontalImage.length > 0);
+                      }}
+                      maxImages={1}
+                      label={
+                        lang === "vi"
+                          ? `Ảnh chính diện của ${charName.trim() || "nhân vật này"} (1 ảnh duy nhất)`
+                          : `Frontal photo of ${charName.trim() || "this character"} (one image only)`
+                      }
+                      hint={
+                        lang === "vi"
+                          ? "Chọn ảnh rõ toàn bộ khuôn mặt, nhìn chính diện. Ảnh sẽ được nén và nhúng thẳng vào manifest."
+                          : "Choose one clear, front-facing full-face photo. It will be compressed and embedded directly in the manifest."
+                      }
+                    />
+                    {charImages.length > 0 ? (
+                      <p className="text-xs font-medium text-emerald-600">
+                        {lang === "vi"
+                          ? "Đã khóa ảnh chính diện: extension sẽ tự nạp ảnh này từ manifest."
+                          : "Frontal reference locked: the extension will load it automatically from the manifest."}
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setCharHasRealPhoto((v) => !v)}
+                        className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors ${
+                          charHasRealPhoto
+                            ? "border-emerald-500 bg-emerald-500/10 text-emerald-700"
+                            : "border-input hover:border-primary/50"
+                        }`}
+                      >
+                        {charHasRealPhoto ? "✅" : "⬜"}{" "}
+                        {lang === "vi"
+                          ? "Không tải ở đây — tôi sẽ gắn ảnh thật thủ công tại extension"
+                          : "Do not upload here — I will attach the real photo manually in the extension"}
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <>
                     <ImageUploader
                       images={charImages}
                       onChange={setCharImages}
-                      maxImages={2}
+                      maxImages={1}
                       label={
                         lang === "vi"
-                          ? `Ảnh của ${charName.trim() || "nhân vật này"} (tối đa 2: chính diện + nghiêng)`
-                          : `Photos of ${charName.trim() || "this character"} (max 2: front + profile)`
+                          ? `Ảnh chính diện của ${charName.trim() || "nhân vật này"} (1 ảnh duy nhất)`
+                          : `Frontal photo of ${charName.trim() || "this character"} (one image only)`
                       }
                       hint={L("charPhotosHint")}
                     />
@@ -5182,7 +5218,7 @@ function ProjectWorkspace() {
 
                     <CharacterStudio
                       sourceImages={charImages}
-                      onApprove={(img) => setCharImages((prev) => [...prev, img].slice(0, 2))}
+                      onApprove={(img) => setCharImages([img])}
                     />
                   </>
                 )}

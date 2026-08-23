@@ -1219,14 +1219,24 @@ test("uploaded character photos are embedded into the manifest assets", () => {
   const m = buildNanoFlowManifest(bd, {
     veoClips: [{ background_lock: { setting: "room" }, character_lock: { A: { name: "Kai" }, B: { name: "Mira" } } }],
     characterReferences: [
-      { name: "Kai", images: ["data:image/png;base64,AAAA"] },
+      {
+        name: "Kai",
+        images: [
+          "data:image/png;base64,AAAA",
+          "data:image/png;base64,LEGACY_SECOND_ANGLE",
+        ],
+      },
       { name: "Mira", images: [] }, // no photo uploaded → stays a null slot
     ],
   });
   const kai = (m.assets.characters ?? []).find((c) => c.name === "Kai")!;
   const mira = (m.assets.characters ?? []).find((c) => c.name === "Mira")!;
   assert.equal(kai.image, "data:image/png;base64,AAAA", "the uploaded frontal photo is embedded");
-  assert.deepEqual(kai.images, ["data:image/png;base64,AAAA"]);
+  assert.deepEqual(
+    kai.images,
+    ["data:image/png;base64,AAAA"],
+    "only the first frontal photo is embedded even when legacy input contains extra angles",
+  );
   assert.equal(mira.image, null, "a character with no uploaded photo keeps a null slot");
 });
 
