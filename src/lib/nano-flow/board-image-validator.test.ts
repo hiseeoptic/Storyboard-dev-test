@@ -84,6 +84,23 @@ test("allows a new chair only when a visible relocation is scripted", () => {
   assert.deepEqual(contract.canonical_placements, current);
 });
 
+test("allows a seated character to turn their gaze without treating it as a seat swap", () => {
+  const previous = [placement("char_lan", "bus_row", "window seat facing Minh", "left")];
+  const current = [{
+    ...placement("char_lan", "bus_row", "window seat facing window", "left"),
+    body_orientation: "seated facing window",
+    facing_entity_id: null,
+  }];
+  const contract = buildBoardPlacementContract({
+    previousEndPlacements: previous,
+    currentStartPlacements: current,
+    sameLocation: true,
+    actions: [action("Lan turns her head toward the window")],
+  });
+  assert.equal(contract.mode, "initial");
+  assert.equal(contract.repaired_from_previous, false);
+});
+
 test("widens a hand-only close-up and keeps the owner visibly connected", () => {
   const result = normalizeBoardImagePanels({
     castNames: ["Minh", "Lan"],

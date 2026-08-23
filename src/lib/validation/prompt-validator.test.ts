@@ -152,6 +152,34 @@ test("IMG-001: a declared stylized medium does not get forced into photoreal", (
   );
 });
 
+test("stick-figure board and anti-photoreal negative form one coherent medium lock", () => {
+  const m = cleanManifest();
+  m.shots[0]!.storyboard_prompt = imagePrompt({
+    type: "styled_storyboard_board",
+    render: "STICK-FIGURE STYLE LOCK with a stable graphic medium",
+    visual_style: "whiteboard stick-figure line art",
+    negative: "Do not convert to live-action photography or photoreal materials",
+  });
+  m.shots[0]!.video_prompt = videoClip({
+    visual_style:
+      "Locked stick_figure character-and-world medium; virtual camera with stable perspective in the locked graphic medium; palette and contrast native to the locked graphic medium; no live-action or photoreal grade",
+    scene_bible_tokens: {
+      lens: "virtual camera with stable perspective in the locked graphic medium",
+      color_grade: "palette and contrast native to the locked graphic medium; no live-action or photoreal grade",
+      lighting: "soft window light",
+      backdrop: "tiled walls, open shelving",
+      audio_bed: "quiet kitchen room tone",
+      reverb: "short furnished-room decay",
+    },
+    negative_prompt:
+      "no live-action hand, no photoreal human hand, no photographic material or sensor texture",
+  });
+  const r = validatePromptExports(m);
+  assert.equal(r.findings.some((f) => f.code === "IMG-001"), false, JSON.stringify(r.findings, null, 2));
+  assert.equal(r.findings.some((f) => f.code === "STYLE-004"), false, JSON.stringify(r.findings, null, 2));
+  assert.equal(r.findings.some((f) => f.code === "BIBLE-002"), false, JSON.stringify(r.findings, null, 2));
+});
+
 test("IMG-002: a cast member with no pinned wardrobe flags (advisory)", () => {
   const m = cleanManifest();
   m.shots[0]!.storyboard_prompt = imagePrompt({

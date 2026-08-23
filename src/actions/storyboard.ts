@@ -649,18 +649,20 @@ function normalizeDialogue(
     // speakers, so a wrong label would merge two different people's lines).
     repairTurnSpeakers(turns, cast, scriptIndex);
 
-    // MERGE CONSECUTIVE SAME-SPEAKER TURNS: two back-to-back turns by the same
-    // person read to Veo as "say it twice" and clutter the audio map — join
-    // them into one continuous line spanning both windows.
+    // Preserve intentional same-speaker line breaks and pauses: they carry
+    // performance rhythm. Remove only an exact consecutive duplicate instead
+    // of concatenating distinct thoughts into one flat delivery.
     const mergedTurns: typeof turns = [];
     for (const t of turns) {
       const last = mergedTurns[mergedTurns.length - 1];
       if (
         last &&
         last.speaker.toLowerCase() === t.speaker.toLowerCase() &&
-        last.delivery === t.delivery
+        last.delivery === t.delivery &&
+        last.text.trim().toLocaleLowerCase("vi") === t.text.trim().toLocaleLowerCase("vi")
       ) {
-        last.text = `${last.text} ${t.text}`.trim();
+        // Keep the first wording and extend its delivery window when the model
+        // emitted the exact same line twice.
         last.end_s = t.end_s ?? last.end_s;
       } else {
         mergedTurns.push({ ...t });
@@ -671,7 +673,10 @@ function normalizeDialogue(
     // Use the same >190 wpm boundary as Layer A. Previously this normalizer
     // preserved 200 wpm windows while the validator rejected them, forcing
     // Layer C to spend two repair calls on a purely mechanical clock.
-    turns = ensureDialogueClock(turns, 10);
+    const clipSeconds = Number.isFinite(seg.duration_seconds) && seg.duration_seconds > 0
+      ? seg.duration_seconds
+      : 10;
+    turns = ensureDialogueClock(turns, clipSeconds);
 
     // Bind every on-screen voice to one concrete storyboard camera beat. The
     // beat itself must name that speaker; otherwise the compiled prompt cannot
@@ -752,7 +757,7 @@ function normalizeDialogue(
       seg.dialogue_lines = undefined;
     }
 
-    const clockErrors = dialogueClockErrors(seg.dialogue_lines, 10);
+    const clockErrors = dialogueClockErrors(seg.dialogue_lines, clipSeconds);
     if (clockErrors.length > 0) {
       // Keep processing the remaining scenes. The semantic/export validators
       // still report this exact capacity defect, but one long line must never
@@ -2372,10 +2377,11 @@ export async function generateStoryboardPlan(
     }
     // Always run a dedicated creative SCRIPT stage (except cooking, which uses
     // its own Recipe-IR path). The script writer's dialogue-density rules
-    // (PACING AUDIT + LOAD BUDGET: no more than 18 spoken words per clip, short exchanges
-    // packed into one clip) ONLY run in this stage — a single storyboard call
+    // (PACING AUDIT + natural dramatic exchanges, without a creative word cap)
+    // ONLY runs in this stage — a single storyboard call
     // that also improvises the story produces thin, one-line-per-clip dialogue.
-    // On OpenAI the script is written by gpt-5-mini (rẻ+nhanh), then gpt-4.1-mini expands it.
+    // On OpenAI the script is written by gpt-5.6-terra (quality/cost balance),
+    // then the lower-cost structured stage expands it into storyboard JSON.
     if (!compiledCooking && !sourceScript) {
       // Script fallback chain — NEVER Claude (this deployment has no Anthropic
       // credit): if the chosen writer fails, try the other OpenAI/Gemini writer.

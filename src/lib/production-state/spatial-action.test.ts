@@ -157,6 +157,24 @@ test("continuous boundary treats null-to-known zone metadata as enrichment when 
   );
 });
 
+test("continuous boundary treats null-to-known zone metadata as enrichment despite prose detail drift", () => {
+  const first = segment(1, {
+    characters_in_scene: ["Lan", "Minh"],
+    spatial_layout: twoPersonLayout("Lan at sink front right; Minh at sink left near Lan"),
+  });
+  const second = segment(2, {
+    characters_in_scene: ["Lan", "Minh"],
+    continuity_mode: "continuous",
+    spatial_layout: twoPersonLayout("Lan and Minh remain beside the sink in the same room"),
+  });
+  const state = buildProductionState(breakdown([first, second]));
+  state.shots[0]!.end_snapshot.placements.forEach((placement) => { placement.zone_id = null; });
+  assert.equal(
+    validateSpatialState(state).some((item) => item.code === "SPATIAL_TELEPORT_OR_SWAP"),
+    false
+  );
+});
+
 test("an intentional scene cut does not treat changed placement as teleport", () => {
   const first = segment(1, {
     characters_in_scene: ["Lan", "Minh"],
@@ -277,6 +295,48 @@ test("compound legacy action is preserved as ordered atomic transitions with loc
   assert.equal(actions.reduce((sum, action) => sum + (action.duration_s ?? 0), 0), 10);
   assert.equal(findings.some((item) => item.code === "ACTION_NOT_ATOMIC"), false);
   assert.equal(findings.some((item) => item.code === "ACTION_DURATION_MISSING"), false);
+});
+
+test("while choreography splits locally and manipulation receives hand-contact evidence", () => {
+  const state = buildProductionState(
+    breakdown(
+      [
+        segment(1, {
+          characters_in_scene: ["Lan"],
+          state_ledger: {
+            start: [
+              { entity_id: "Lan", state: "running", position: "path" },
+              { entity_id: "Tower", state: "upright", position: "path edge" },
+            ],
+            changes: [
+              {
+                entity_id: "Tower",
+                from: "upright",
+                action: "Lan runs forward while reaching toward and pushing the tower",
+                to: "tilted",
+                caused_by: "Lan",
+              },
+            ],
+            end: [
+              { entity_id: "Lan", state: "running", position: "path" },
+              { entity_id: "Tower", state: "tilted", position: "path edge" },
+            ],
+          },
+        }),
+      ],
+      ["Lan"]
+    )
+  );
+  const actions = state.shots[0]!.actions;
+  const contact = actions.find((action) => /push/iu.test(action.verb));
+  const findings = validateAtomicActions(state);
+
+  assert.equal(actions.length, 2);
+  assert.ok(actions.every((action) => action.is_atomic));
+  assert.equal(contact?.body_part, "right_hand");
+  assert.ok(contact?.contact_entity_ids.includes(contact.object_entity_id!));
+  assert.equal(findings.some((item) => item.code === "ACTION_NOT_ATOMIC"), false);
+  assert.equal(findings.some((item) => item.code === "ACTION_CONTACT_CONTRACT_INCOMPLETE"), false);
 });
 
 test("action duration validator rejects physically impossible shoe-removal timing", () => {

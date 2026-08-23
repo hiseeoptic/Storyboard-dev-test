@@ -353,7 +353,7 @@ export function normalizeProductionContracts(
     if (
       !previous?.state_ledger ||
       !current?.state_ledger ||
-      current.transition_in?.mode !== "continuous"
+      (current.transition_in?.mode ?? current.continuity_mode) !== "continuous"
     ) {
       continue;
     }

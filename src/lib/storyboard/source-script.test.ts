@@ -48,3 +48,23 @@ test("all speech menu modes reach both script and storyboard prompts", () => {
   assert.match(promptSource, /ANONYMOUS CHARACTER AUTHORITY/);
   assert.match(promptSource, /speaker=\"\", delivery=\"voiceover\"/);
 });
+
+test("creative writing has no fixed word quota while delivery remains timed", () => {
+  const promptSource = readFileSync(
+    new URL("../../prompts/storyboard-breakdown.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(promptSource, /do NOT count words or force every clip/i);
+  assert.match(promptSource, /BALANCE SPEECH BY DELIVERY TIME, NOT WORD COUNT/);
+  assert.match(promptSource, /dialogue clock and WPM validator decide whether delivery fits/i);
+  assert.doesNotMatch(promptSource, /AT MOST 18 TOTAL spoken words/i);
+});
+
+test("the OpenAI script writer defaults to balanced Terra at low reasoning", () => {
+  const engineSource = readFileSync(
+    new URL("../../services/ai-engine.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(engineSource, /OPENAI_SCRIPT_MODEL \|\| "gpt-5\.6-terra"/);
+  assert.match(engineSource, /reasoning_effort: "low"/);
+});

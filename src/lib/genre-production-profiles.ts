@@ -347,7 +347,7 @@ export function lockGenreProductionProfile(
 
 export function compactGenreScriptDirective(input: StoryboardGenerationInput): string {
   const p = lockGenreProductionProfile(input);
-  return `GENRE SCRIPT PROFILE (${p.genre}${p.content_subtype ? `/${p.content_subtype}` : ""}): ${p.script_direction}. Preserve individual character voice; this profile controls sentence craft, not identity.`;
+  return `SOFT GENRE LENS (${p.genre}${p.content_subtype ? `/${p.content_subtype}` : ""}): ${p.script_direction}. Use only what serves this particular story. Story truth, the user's source, character-specific voice and natural Vietnamese speech outrank genre convention. Never force a template, slogan or uniform sentence rhythm.`;
 }
 
 export function compactGenreStoryboardDirective(input: StoryboardGenerationInput): string {

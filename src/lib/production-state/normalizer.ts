@@ -180,8 +180,7 @@ export function buildProductionState(breakdown: LegacyBreakdown): ProductionStat
       `${segment.first_frame_prompt} ${segment.motion_prompt} ${segment.continuity_note}`
     );
     if (
-      /\b(?:mirror image|reflections?|reflected|in the mirror|mirror|reflective surface)\b|\b(?:ảnh gương|phản chiếu|trong gương|gương|bề mặt phản chiếu)\b/iu.test(visualText) &&
-      /\b(?:mirror|reflective surface)\b|\b(?:gương|bề mặt phản chiếu)\b/iu.test(visualText) &&
+      /\b(?:in|inside|seen in|visible in)\s+(?:the\s+)?(?:[\p{L}-]+\s+){0,2}(?:mirror|reflective surface|window glass)\b|\b(?:mirror image|visible reflection|reflection of|reflected (?:in|on|by))\b|\b(?:trong gương|hiện trong gương|ảnh gương|bóng phản chiếu của|phản chiếu (?:trong|trên))\b/iu.test(visualText) &&
       !sourceToEntry.has("mirror")
     ) {
       const mirror = registry.register({

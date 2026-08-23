@@ -508,6 +508,69 @@ test("continuous start state is inherited locally before the validator", () => {
   );
 });
 
+test("legacy continuity_mode inherits the previous end even without transition_in", () => {
+  const bd = twoSegFixture();
+  bd.segments[0]!.state_ledger = {
+    start: [{ entity_id: "cup", state: "cool", position: "table" }],
+    changes: [],
+    end: [{ entity_id: "cup", state: "cool", position: "table" }],
+  };
+  bd.segments[1]!.continuity_mode = "continuous";
+  delete bd.segments[1]!.transition_in;
+  bd.segments[1]!.state_ledger = {
+    start: [{ entity_id: "cup", state: "cool", position: "counter" }],
+    changes: [],
+    end: [{ entity_id: "cup", state: "cool", position: "counter" }],
+  };
+  const normalized = normalizeProductionContracts(bd);
+  assert.equal(normalized.continuous_start_entries_inherited, 1);
+  assert.equal(bd.segments[1]!.state_ledger!.start[0]!.position, "table");
+});
+
+test("static set dressing does not consume the high-fidelity entity budget", () => {
+  const bd = cleanFixture();
+  const entries = ["Minh", "Lan", "table", "chair", "door", "window", "lamp", "wall"].map(
+    (entity_id) => ({ entity_id, state: "unchanged", position: `set ${entity_id}` })
+  );
+  bd.segments[0]!.state_ledger = {
+    start: structuredClone(entries),
+    changes: [],
+    end: structuredClone(entries),
+  };
+  const report = validateStoryboardSemantics(bd);
+  assert.equal(report.findings.some((finding) => finding.code === "STATE-002"), false);
+});
+
+test("declared salience authority excludes incidental manipulated graphic props from the high-fidelity budget", () => {
+  const bd = addContextContracts(cleanFixture());
+  const salience = bd.context_ir!.reality_profile.salience_policy;
+  salience.hero_entities = ["tower"];
+  salience.interaction_entities = ["Minh", "Lan"];
+  salience.max_high_fidelity_entities_per_clip = 3;
+  bd.segments[0]!.state_ledger = {
+    start: [
+      { entity_id: "Minh", state: "standing", position: "left" },
+      { entity_id: "Lan", state: "standing", position: "right" },
+      { entity_id: "tower", state: "upright", position: "center" },
+      { entity_id: "sign_a", state: "floating", position: "background" },
+      { entity_id: "sign_b", state: "floating", position: "background" },
+    ],
+    changes: [
+      { entity_id: "sign_a", from: "floating", action: "drifts left", to: "floating left", caused_by: "wind" },
+      { entity_id: "sign_b", from: "floating", action: "drifts right", to: "floating right", caused_by: "wind" },
+    ],
+    end: [
+      { entity_id: "Minh", state: "standing", position: "left" },
+      { entity_id: "Lan", state: "standing", position: "right" },
+      { entity_id: "tower", state: "upright", position: "center" },
+      { entity_id: "sign_a", state: "floating left", position: "background" },
+      { entity_id: "sign_b", state: "floating right", position: "background" },
+    ],
+  };
+  const report = validateStoryboardSemantics(bd);
+  assert.equal(report.findings.some((finding) => finding.code === "STATE-002"), false);
+});
+
 test("state ledger separates intrinsic condition from touch, holder and position", () => {
   const bd = addContextContracts(twoSegFixture());
   bd.segments.push({

@@ -39,7 +39,7 @@ const CONNECTED_BODY = /\b(face|head|shoulder|shoulders|torso|upper body|waist|c
 const CLOSE_FRAMING = /^\s*\[(?:CLOSE|CU|ECU|MACRO)\]|\b(?:close[- ]?up|macro|extreme close)\b/iu;
 const DANGLING_TARGET_SOURCE = "\\b(focus(?:ed|ing)?|camera focus(?:ed|ing)?|close[- ]?up|push(?:es)? in|pan(?:s)?|drift(?:s)?)\\s+(on|to|toward)\\s*(?=,|;|\\.|$)";
 const danglingTarget = (global = false) => new RegExp(DANGLING_TARGET_SOURCE, global ? "giu" : "iu");
-const RELOCATION = /\b(walk(?:s|ed|ing)?|move(?:s|d|ment|ing)?|step(?:s|ped|ping)?|stand(?:s|ing)? up|stood up|rise(?:s|n)?|sit(?:s|ting)? down|sat down|cross(?:es|ed|ing)?|approach(?:es|ed|ing)?|leave(?:s|ing)?|enter(?:s|ed|ing)?|change(?:s|d)? seats?|switch(?:es|ed)? seats?|slide(?:s|d)? (?:over|across)|đi|bước|di chuyển|đứng dậy|ngồi xuống|đổi chỗ|đổi ghế|rời|tiến lại)\b/iu;
+const RELOCATION = /\b(walk(?:s|ed|ing)?|move(?:s|d|ment|ing)?|step(?:s|ped|ping)?|stand(?:s|ing)? up|stood up|rise(?:s|n)?|sit(?:s|ting)? down|sat down|cross(?:es|ed|ing)?|approach(?:es|ed|ing)?|crouch(?:es|ed|ing)?|kneel(?:s|ed|ing)?|bend(?:s|ing)?|leave(?:s|ing)?|enter(?:s|ed|ing)?|change(?:s|d)? seats?|switch(?:es|ed)? seats?|slide(?:s|d)? (?:over|across)|đi|bước|di chuyển|đứng dậy|ngồi xuống|ngồi xổm|quỳ|cúi|đổi chỗ|đổi ghế|rời|tiến lại)\b/iu;
 
 function clean(value: unknown): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
@@ -90,9 +90,11 @@ function placementKey(placement: EntityPlacementState): string {
   return [
     placement.zone_id ?? "",
     placement.anchor_id ?? "",
-    clean(placement.position_label).toLocaleLowerCase(),
-    clean(placement.body_orientation).toLocaleLowerCase(),
-    placement.facing_entity_id ?? "",
+    clean(placement.position_label)
+      .toLocaleLowerCase()
+      .replace(/\b(?:facing|faces|looking|looks|gaze|hướng về|đối diện|nhìn|ánh mắt)\b[^,;]*/giu, "")
+      .replace(/\s+/g, " ")
+      .trim(),
     placement.world_side,
     placement.screen_side,
   ].join("|");

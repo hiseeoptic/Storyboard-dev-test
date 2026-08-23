@@ -99,12 +99,28 @@ function changedPlacement(before: EntityPlacementState, after: EntityPlacementSt
   ) {
     return false;
   }
+  const explicitWorldFlip =
+    before.world_side !== "unknown" &&
+    after.world_side !== "unknown" &&
+    before.world_side !== after.world_side;
+  const explicitScreenFlip =
+    before.screen_side !== "unknown" &&
+    after.screen_side !== "unknown" &&
+    before.screen_side !== after.screen_side;
+  // Unknown→known graph metadata is enrichment, not motion. A physical
+  // teleport requires two comparable anchors/zones (or an explicit side flip),
+  // not merely one LLM shot finally naming the shared room floor.
+  if (
+    (!before.zone_id || !after.zone_id) &&
+    (!before.anchor_id || !after.anchor_id) &&
+    !explicitWorldFlip &&
+    !explicitScreenFlip
+  ) return false;
   return (
     !sameZoneId(before.zone_id, after.zone_id) ||
     before.anchor_id !== after.anchor_id ||
-    (before.world_side !== "unknown" &&
-      after.world_side !== "unknown" &&
-      before.world_side !== after.world_side)
+    explicitWorldFlip ||
+    explicitScreenFlip
   );
 }
 
@@ -112,7 +128,7 @@ function hasMovementEvidence(shot: ShotState, entityId: string): boolean {
   return shot.changes.some(
     (change) =>
       change.entity_id === entityId &&
-      /\b(?:walk|move|cross|step|enter|exit|sit|stand|swap|change seats?)\b|\b(?:đi|di chuyển|bước|vào|ra|đổi chỗ|đổi ghế)\b/iu.test(
+      /\b(?:walk|move|cross|step|enter|exit|sit|stand|rise|turn|approach|crouch|kneel|bend|lean|swap|change seats?)\b|\b(?:đi|di chuyển|bước|vào|ra|ngồi|đứng|đứng dậy|quay|tiến lại|lại gần|ngồi xổm|quỳ|cúi|nghiêng người|đổi chỗ|đổi ghế)\b/iu.test(
         `${change.action} ${change.caused_by}`
       )
   );

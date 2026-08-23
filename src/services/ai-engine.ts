@@ -907,18 +907,17 @@ export async function generateScript(
           timeoutMs: boundedTimeoutMs(timing, 45_000, "Gemini script generation"),
         });
       } else {
-        // The script stage is high-volume structured creative work. Default is
-        // gpt-5-mini — RẺ + NHANH (chi phí thấp, ít chạm trần thời gian 300s của
-        // Vercel nên không bị "unexpected response" và không đốt token cho lần
-        // chạy hỏng). Trước đây mặc định là gpt-5.6-sol (reasoning, đắt + chậm
-        // nhất) khiến pipeline nhiều bước hay timeout và trừ tiền rất nhiều.
-        // Ai cần chất lượng cao nhất vẫn đặt lại OPENAI_SCRIPT_MODEL=gpt-5.6-sol.
+        // Script writing needs stronger character voice and dramatic judgment
+        // than the structured storyboard expansion stage. Terra is the balanced
+        // GPT-5.6 tier; callers can still select Sol or a cheaper model through
+        // OPENAI_SCRIPT_MODEL without changing downstream provider routing.
         // GPT-5-series models take `max_completion_tokens` (NOT `max_tokens`)
         // and only support the default temperature — sending either legacy
         // param 400s the request. Overridable via OPENAI_SCRIPT_MODEL.
         const openai = getOpenAIClient();
-        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5-mini";
+        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5.6-terra";
         const isGpt5 = scriptModel.startsWith("gpt-5") || scriptModel.startsWith("o");
+        const isGpt56 = scriptModel.startsWith("gpt-5.6");
         const completion = await openai.chat.completions.create(
           {
             model: scriptModel,
@@ -927,7 +926,10 @@ export async function generateScript(
               { role: "user", content: userPrompt },
             ],
             ...(isGpt5
-              ? { max_completion_tokens: 8000 }
+              ? {
+                  max_completion_tokens: 8000,
+                  ...(isGpt56 ? { reasoning_effort: "low" as const } : {}),
+                }
               : { temperature: 0.85, max_tokens: 4000 }),
           },
           { timeout: boundedTimeoutMs(timing, 60_000, "OpenAI script generation") }

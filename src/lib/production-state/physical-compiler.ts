@@ -147,7 +147,11 @@ function compileSnapshot(
       }
       if (support) snapshot.supports.push(support);
     } else if (entry.kind === "object" || entry.kind === "product") {
-      const text = lower(`${entry.state} ${entry.position}`);
+      // Model positions frequently arrive as machine labels such as
+      // `location_01+dining_table_center` or `nightstand_oak`. Treat separators
+      // as spaces before physical inference; underscores are word characters,
+      // so the old word-boundary regex missed these ordinary support surfaces.
+      const text = lower(`${entry.state} ${entry.position}`).replace(/[_+/.-]+/g, " ");
       entry.object_physics = {
         existence: /\b(?:does not exist|absent|destroyed)\b|\b(?:không tồn tại|biến mất)\b/iu.test(text)
           ? "does_not_exist"
@@ -163,11 +167,14 @@ function compileSnapshot(
               : "unknown",
         occupied_volume_id: null,
       };
-      if (
-        !entry.holder_entity_id &&
-        /^(?:on|in|inside|resting on|placed on)\b|^(?:trên|trong|bên trong|đặt trên)\b|\b(?:floor|ground|basin|sink|table|counter|worktop|shelf|tray|plate|chair|seat|bench|sofa|couch|bed|mattress|nightstand|box|container)\b|\b(?:sàn|đất|bồn rửa|chậu|bàn|kệ|khay|đĩa|ghế|sofa|giường|nệm|tủ đầu giường|hộp|thùng)\b/iu.test(text)
-      ) {
-        const isGround = /\b(?:floor|ground)\b|\b(?:sàn|đất)\b/iu.test(text);
+      if (!entry.holder_entity_id && entry.object_physics.existence === "exists" && entry.position) {
+        // Every visible, existing, non-held legacy object with a declared
+        // position is necessarily supported. Bind the named support when it is
+        // present; otherwise retain an active anonymous surface/ground relation
+        // instead of falsely claiming that a table, door, bowl or appliance is
+        // floating. Explicit structured unsupported states can still be caught
+        // by the validator when no compatibility compilation is involved.
+        const isGround = /\b(?:floor|ground|street|road|pavement|yard|garden)\b|\b(?:sàn|đất|đường|vỉa hè|sân|vườn)\b/iu.test(text);
         snapshot.supports.push({
           supported_entity_id: entry.entity_id,
           support_entity_id: findSupportEntity(entry.position, snapshot.entities, entry.entity_id),
