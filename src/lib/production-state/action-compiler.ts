@@ -29,7 +29,7 @@ function minimumDuration(text: string): number {
 }
 
 function isAtomic(text: string): boolean {
-  const explicitSequence = (text.match(/\b(?:then|after that|next|while)\b|\b(?:sau đó|tiếp theo|đồng thời)\b|(?:->|→)/giu) ?? []).length;
+  const explicitSequence = (text.match(/\b(?:then|after that|next|while|and then)\b|\b(?:sau đó|tiếp theo|đồng thời)\b|(?:->|→)/giu) ?? []).length;
   const clauses = text.split(/[;]+/).map(clean).filter(Boolean).length;
   return explicitSequence === 0 && clauses <= 1;
 }
@@ -38,8 +38,14 @@ function isAtomic(text: string): boolean {
  * This is deliberately syntax-led: it never invents an action, it only turns
  * the model's own semicolon/then/comma verb chain into separate records. */
 function splitAtomicAction(text: string): string[] {
+  const orderedVerb = "(?:sit(?:s|ting)?(?: down)?|stand(?:s|ing)?(?: up)?|walk(?:s|ed|ing)?|move(?:s|d|ing)?|turn(?:s|ed|ing)?|use(?:s|d|ing)?|reach(?:es|ed|ing)?|withdraw(?:s|n|ing)?|grip(?:s|ped|ping)?|grasp(?:s|ed|ing)?|lift(?:s|ed|ing)?|tap(?:s|ped|ping)?|smooth(?:s|ed|ing)?|place(?:s|d|ing)?|set(?:s|ting)?|release(?:s|d|ing)?|push(?:es|ed|ing)?|pull(?:s|ed|ing)?|open(?:s|ed|ing)?|close(?:s|d|ing)?|press(?:es|ed|ing)?|rotate(?:s|d|ing)?|ngồi(?: xuống)?|đứng(?: lên)?|đi|di chuyển|xoay|dùng|vươn|rút tay|nắm|cầm|nhấc|chạm|vuốt|đặt|thả|đẩy|kéo|mở|đóng|ấn)";
   const primary = clean(text)
-    .split(/\s*;\s*|\s+(?:then|after that|next|while|sau đó|tiếp theo|đồng thời)\s+/iu)
+    .split(
+      new RegExp(
+        `\\s*;\\s*|\\s+(?:then|after that|next|while|and then|sau đó|tiếp theo|đồng thời)\\s+|\\s+and\\s+(?=${orderedVerb}\\b)`,
+        "iu"
+      )
+    )
     .map(clean)
     .filter(Boolean);
   const verbContinuation = /^(?:turn(?:s|ed|ing)?|use(?:s|d|ing)?|reach(?:es|ed|ing)?|grip(?:s|ped|ping)?|grasp(?:s|ed|ing)?|lift(?:s|ed|ing)?|tap(?:s|ped|ping)?|smooth(?:s|ed|ing)?|place(?:s|d|ing)?|set(?:s|ting)?|release(?:s|d|ing)?|push(?:es|ed|ing)?|pull(?:s|ed|ing)?|open(?:s|ed|ing)?|close(?:s|d|ing)?|xoay|dùng|vươn|nắm|cầm|nhấc|chạm|vuốt|đặt|thả|đẩy|kéo|mở|đóng)\b/iu;

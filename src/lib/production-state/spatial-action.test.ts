@@ -297,6 +297,125 @@ test("compound legacy action is preserved as ordered atomic transitions with loc
   assert.equal(findings.some((item) => item.code === "ACTION_DURATION_MISSING"), false);
 });
 
+test("dialogue-heavy ten-second shot rejects more than three production-changing actions", () => {
+  const state = buildProductionState(
+    breakdown(
+      [
+        segment(1, {
+          characters_in_scene: ["Lan"],
+          dialogue_lines: [
+            {
+              speaker: "Lan",
+              delivery: "on_screen",
+              camera_beat: 1,
+              text: "Mình cứ để chiếc quạt ở giữa bàn như thế này, rồi cả hai chúng ta cùng dùng nhé.",
+              start_s: 0,
+              end_s: 8,
+            },
+          ],
+          beats: [
+            { beat: "Lan speaks", camera: "[MEDIUM] Lan visible while speaking" },
+          ],
+          state_ledger: {
+            start: [
+              { entity_id: "Lan", state: "standing", position: "beside table" },
+              { entity_id: "Fan", state: "off", position: "table edge" },
+              { entity_id: "Chair", state: "stationary", position: "beside table" },
+            ],
+            changes: [
+              {
+                entity_id: "Fan",
+                from: "off",
+                action: "Lan reaches for the fan then grips its base then lifts it then places it at table center",
+                to: "off",
+                caused_by: "Lan right hand",
+              },
+              {
+                entity_id: "Chair",
+                from: "stationary",
+                action: "Lan pulls the chair closer",
+                to: "stationary",
+                caused_by: "Lan right hand",
+              },
+              {
+                entity_id: "Lan",
+                from: "standing",
+                action: "Lan sits down on the chair",
+                to: "seated",
+                caused_by: "Lan body movement",
+              },
+              {
+                entity_id: "Fan",
+                from: "off",
+                action: "Lan presses the fan control",
+                to: "running low",
+                caused_by: "Lan right hand",
+              },
+            ],
+            end: [
+              { entity_id: "Lan", state: "seated", position: "on chair" },
+              { entity_id: "Fan", state: "running low", position: "table center" },
+              { entity_id: "Chair", state: "stationary", position: "beside table" },
+            ],
+          },
+        }),
+      ],
+      ["Lan"]
+    )
+  );
+  const findings = validateAtomicActions(state);
+  const density = findings.find((item) => item.code === "ACTION_DENSITY_EXCESSIVE");
+
+  assert.ok((state.shots[0]?.actions.length ?? 0) > 4);
+  assert.equal(density?.severity, "high");
+  assert.equal(density?.evidence.action_unit_count, 4);
+  assert.equal(density?.evidence.maximum_action_count, 3);
+  assert.equal(density?.suggested_patch?.preserve_dialogue_verbatim, true);
+});
+
+test("dialogue-heavy ten-second shot permits one three-step causal manipulation", () => {
+  const state = buildProductionState(
+    breakdown(
+      [
+        segment(1, {
+          characters_in_scene: ["Lan"],
+          dialogue_lines: [
+            {
+              speaker: "Lan",
+              delivery: "on_screen",
+              camera_beat: 1,
+              text: "Mình cứ để chiếc quạt ở giữa bàn như thế này, rồi cả hai chúng ta cùng dùng nhé.",
+              start_s: 0,
+              end_s: 8,
+            },
+          ],
+          beats: [
+            { beat: "Lan speaks", camera: "[MEDIUM] Lan visible while speaking" },
+          ],
+          state_ledger: {
+            start: [{ entity_id: "Fan", state: "high speed", position: "on table" }],
+            changes: [
+              {
+                entity_id: "Fan",
+                from: "high speed",
+                action: "Lan reaches for the fan then presses the control then withdraws her hand",
+                to: "low speed",
+                caused_by: "Lan right hand",
+              },
+            ],
+            end: [{ entity_id: "Fan", state: "low speed", position: "on table" }],
+          },
+        }),
+      ],
+      ["Lan"]
+    )
+  );
+  const findings = validateAtomicActions(state);
+
+  assert.equal(state.shots[0]?.actions.length, 3);
+  assert.equal(findings.some((item) => item.code === "ACTION_DENSITY_EXCESSIVE"), false);
+});
+
 test("while choreography splits locally and manipulation receives hand-contact evidence", () => {
   const state = buildProductionState(
     breakdown(
@@ -331,7 +450,7 @@ test("while choreography splits locally and manipulation receives hand-contact e
   const contact = actions.find((action) => /push/iu.test(action.verb));
   const findings = validateAtomicActions(state);
 
-  assert.equal(actions.length, 2);
+  assert.equal(actions.length, 3);
   assert.ok(actions.every((action) => action.is_atomic));
   assert.equal(contact?.body_part, "right_hand");
   assert.ok(contact?.contact_entity_ids.includes(contact.object_entity_id!));

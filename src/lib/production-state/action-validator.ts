@@ -230,6 +230,55 @@ export function validateAtomicActions(state: ProductionState): ProductionFinding
         })
       );
     }
+
+    const spokenDuration = shot.dialogue_state.turns.reduce((sum, turn) => {
+      if (turn.start_time_s === null || turn.end_time_s === null) return sum;
+      return sum + Math.max(0, turn.end_time_s - turn.start_time_s);
+    }, 0);
+    const dialogueHeavy = shotDuration > 0 && spokenDuration / shotDuration >= 0.55;
+    const maximumActionCount = dialogueHeavy
+      ? Math.max(1, Math.floor(shotDuration / 3))
+      : Math.max(1, Math.floor(shotDuration / 2));
+    // Reach/contact/transfer/release phases belong to one causal state change;
+    // density counts those phases as ONE action unit. A new prop change,
+    // furniture move, pose change or relocation is a separate unit.
+    const actionUnitCount = new Set(
+      shot.actions.map((action) => action.source_change_index)
+    ).size;
+    if (actionUnitCount > maximumActionCount) {
+      findings.push(
+        finding({
+          code: "ACTION_DENSITY_EXCESSIVE",
+          severity: "high",
+          message: dialogueHeavy
+            ? "Spoken audio and physical transitions cannot be performed clearly in one shot."
+            : "The shot contains too many production-changing actions for its duration.",
+          shot_id: shot.shot_id,
+          entity_ids: [
+            ...new Set(
+              shot.actions.flatMap((action) =>
+                [action.subject_entity_id, action.object_entity_id].filter(
+                  (value): value is string => Boolean(value)
+                )
+              )
+            ),
+          ],
+          evidence: {
+            action_unit_count: actionUnitCount,
+            atomic_phase_count: shot.actions.length,
+            maximum_action_count: maximumActionCount,
+            spoken_duration_s: Math.round(spokenDuration * 10) / 10,
+            shot_duration_s: shotDuration,
+            action_ids: shot.actions.map((action) => action.action_id),
+          },
+          suggested_patch: {
+            op: "reduce_to_one_ordered_action_unit",
+            maximum_action_count: maximumActionCount,
+            preserve_dialogue_verbatim: true,
+          },
+        })
+      );
+    }
   }
   return findings;
 }
