@@ -1608,15 +1608,10 @@
         return photoId;
       }
     };
-    // ── LOCATION SHEET (sheet bối cảnh): mỗi ĐỊA ĐIỂM được tạo 2 ẢNH NỀN
-    //    character-free (toàn cảnh + góc khác) TỪ prompt Storyboard khai trong
-    //    location_views, tạo 1 LẦN rồi đính CẢ HAI làm ref bối cảnh cho mọi scene
-    //    ở địa điểm đó → Veo/Nano không còn tự bịa hay trôi bối cảnh.
-    //    QUAN TRỌNG (theo yêu cầu user): nếu ĐỊA ĐIỂM CÓ ẢNH NẠP (r.locationSourceImage
-    //    hoặc r.data) thì DÙNG chính ảnh nạp làm reference để "quét" ra sheet 2 góc
-    //    — GIỐNG hệt trường hợp không ảnh, chỉ khác là bám theo ảnh thật — thay vì
-    //    đính ảnh nạp thô. Prompt (app viết) đã có 'source_authority' tự xử lý cả 2
-    //    trường hợp. Trống nếu manifest không khai location_views. ──
+    // ── CANONICAL LOCATION REFERENCE: mỗi địa điểm chỉ có ĐÚNG MỘT ảnh nền.
+    //    Có ảnh user nạp → tải và dùng TRỰC TIẾP, tuyệt đối không tái tạo.
+    //    Không có ảnh nạp → tạo đúng một ảnh toàn cảnh 16:9 từ location_views.
+    //    Cùng mediaId được tái dùng cho mọi keyframe và video tại địa điểm đó. ──
     const locationSheetCache = new Map();  // location id -> [mediaId,…] (ảnh nền)
     const ensureLocationSheet = async (r) => {
       const locId = r.id || r.name || 'location';
@@ -1630,33 +1625,37 @@
       if (srcData) {
         try {
           srcMediaId = await uploadRefOnce({ id: 'locsrc_' + locId, name: (r.name || locId) + ' (ảnh nạp)', data: srcData });
-          if (srcMediaId) post({ via: 'log', kind: 'log', message: `  🖼️ dùng ẢNH NẠP bối cảnh "${r.name || locId}" làm nguồn để quét ra sheet 2 góc.` });
+          if (srcMediaId) {
+            const directIds = [srcMediaId];
+            locationSheetCache.set(locId, directIds);
+            post({ via: 'log', kind: 'log', message: `  🖼️ dùng TRỰC TIẾP ảnh bối cảnh đã nạp "${r.name || locId}" — không tạo lại.` });
+            return directIds;
+          }
         } catch (e) { srcMediaId = ''; }
       }
-      const imageInputs = srcMediaId ? [{ imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: srcMediaId }] : [];
       const ids = [];
-      for (let vi = 0; vi < views.length; vi++) {
+      // New manifests contain one establishing prompt. slice(0, 1) also guards
+      // older manifests from generating multiple location images.
+      for (let vi = 0; vi < views.slice(0, 1).length; vi++) {
         const v = views[vi] || {};
-        const angle = v.angle || (vi === 0 ? 'wide' : 'alt');
+        const angle = v.angle || 'establishing';
         const vPrompt = String(v.prompt || '').trim();
         if (!vPrompt) continue;
         try {
-          post({ via: 'log', kind: 'log', message: `🏞️ Tạo SHEET BỐI CẢNH "${r.name || locId}" — góc ${angle} (${vi + 1}/${views.length})${srcMediaId ? ' · từ ảnh nạp' : ' · từ mô tả'}…` });
-          // Ảnh nền TRỐNG người: KHÔNG nạp ref nhân vật; luôn 16:9 (khớp board).
-          // Có ảnh nạp thì đính làm reference để bám đúng nơi thật.
+          post({ via: 'log', kind: 'log', message: `🏞️ Tạo MỘT ẢNH TOÀN CẢNH 16:9 "${r.name || locId}" từ mô tả…` });
           const g = await batchGenerateImages(pid, {
             prompt: vPrompt,
             aspect: 'IMAGE_ASPECT_RATIO_LANDSCAPE',
             model,
-            imageInputs,
+            imageInputs: [],
           });
-          try { await renameWorkflow(pid, g.workflowId, `🏞️ BỐI CẢNH · ${r.name || locId} — ${angle} (SHEET NỀN, KHÔNG nhân vật)`); } catch (e2) {}
+          try { await renameWorkflow(pid, g.workflowId, `🏞️ BỐI CẢNH · ${r.name || locId} — TOÀN CẢNH 16:9 (KHÔNG nhân vật)`); } catch (e2) {}
           if (g.mediaId) ids.push(g.mediaId);
-          post({ via: 'log', kind: 'log', message: `  ✅ sheet bối cảnh "${r.name || locId}" góc ${angle} → ${String(g.mediaId).slice(0, 10)} (dùng khóa bối cảnh)` });
+          post({ via: 'log', kind: 'log', message: `  ✅ ảnh bối cảnh chuẩn "${r.name || locId}" → ${String(g.mediaId).slice(0, 10)} (dùng khóa mọi cảnh)` });
           await new Promise((r2) => setTimeout(r2, 1200));
         } catch (e) {
           if (isQuotaError(e.message)) throw e; // hết quota → dừng cả loạt
-          post({ via: 'log', kind: 'log', message: `  ⚠️ sheet bối cảnh "${r.name || locId}" góc ${angle} lỗi (${String(e.message).slice(0, 60)}) — bỏ góc này.` });
+          post({ via: 'log', kind: 'log', message: `  ⚠️ ảnh bối cảnh "${r.name || locId}" lỗi (${String(e.message).slice(0, 60)}).` });
         }
       }
       locationSheetCache.set(locId, ids);
@@ -1665,7 +1664,6 @@
     // CHAINING (liên tục hoá): keyframe của shot TRƯỚC được nạp làm ref cho shot
     // SAU → cùng bộ quần áo, đầu tóc, địa điểm, đạo cụ xuyên suốt cả loạt.
     let prevKeyframeId = '';
-    const CHAIN_CLAUSE = ' CONTINUITY REFERENCE: one attached image is the PREVIOUS shot of this same story — use it to keep the SAME location, furniture, props and lighting visually consistent; only the action, pose and camera angle change. IDENTITY + WARDROBE AUTHORITY (B4): each character\'s face, hair AND full outfit must EXACTLY match THEIR attached character reference sheet (the full-body wardrobe sheet) — NOT the previous keyframe. If the previous keyframe shows a slightly different outfit, follow the character sheet and never drift the clothing. Treat all attachments as layout/identity references ONLY: render THIS frame as a brand-new, full-resolution photograph in sharp focus — do NOT blur, soften, haze or blend it toward the attached references.';
 
     // TẠO TRƯỚC TOÀN BỘ SHEET NHÂN VẬT (theo yêu cầu): gom mọi nhân vật (có ảnh)
     // từ TẤT CẢ shot rồi tạo sheet cho từng người NGAY TỪ ĐẦU, trước khi dựng bất
@@ -1783,7 +1781,7 @@
           });
         }
         // Shot này CÓ nối keyframe trước không? (dùng để bớt ref thừa bên dưới.)
-        const willChain = !!prevKeyframeId && d.chain !== false && it.chainFromPrev !== false && !wardrobeChangedThisShot;
+        const willChain = !!prevKeyframeId && d.chain !== false && it.chainFromPrev === true && !wardrobeChangedThisShot;
         // 1) Reference images (character → scene → product) → imageInputs.
         //    Confirmed Flow shape (from real trace):
         //    { imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: <mediaId> }.
@@ -1807,10 +1805,6 @@
         let shotLocationId = ''; // mediaId ảnh BỐI CẢNH user nạp → dùng cho bước video
         for (const r of (Array.isArray(it.refs) ? it.refs : [])) {
           try {
-            if (willChain && r && r.kind === 'environments') {
-              post({ via: 'log', kind: 'log', message: `  🌇 bỏ ref bối cảnh "${r.name || ''}" ở shot nối tiếp (đã có trong keyframe trước) — tránh ảnh nhoè.` });
-              continue;
-            }
             // Bối cảnh khai location_views → TẠO SHEET BỐI CẢNH 2 góc 1 lần cho địa
             // điểm này rồi đính CẢ HAI làm ref khóa bối cảnh. CÓ ảnh nạp
             // (locationSourceImage/data) thì ensureLocationSheet dùng chính ảnh nạp
@@ -1848,21 +1842,13 @@
           }
         }
         if (quotaExhausted) break;
-        // 1b) Keyframe shot trước làm ref liên tục (tắt bằng d.chain === false).
-        //     Prompt JSON đã có sẵn reference_authority nói "nếu có keyframe trước
-        //     đính kèm thì giữ nhất quán" → KHÔNG chèn prose (sẽ hỏng JSON), chỉ
-        //     đính ảnh ref. Prompt chuỗi cũ thì thêm CHAIN_CLAUSE như trước.
+        // 1b) Boundary continuity is exact media reuse, not loose image guidance.
         let prompt = String(it.prompt || '');
-        const isJsonPrompt = /^\s*\{/.test(prompt);
         // Nối tiếp keyframe trước để giữ liên tục bối cảnh/đạo cụ — TRỪ shot đổi
-        // trang phục: keyframe cũ mặc đồ CŨ, mà reference_authority/CHAIN_CLAUSE
-        // lại bảo "giữ nguyên trang phục như keyframe trước" → bộ đồ cũ sẽ đè
-        // lên ảnh bảng nhân vật (trang phục mới) khiến "đổi đồ không vào". Vậy
-        // shot đổi đồ chỉ dùng ảnh bảng nhân vật (trang phục mới) làm nguồn quần áo.
+        // A wardrobe change intentionally breaks boundary reuse so the new
+        // character sheet remains the clothing authority.
         if (willChain) {
-          imageInputs.push({ imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: prevKeyframeId });
-          if (!isJsonPrompt) prompt += CHAIN_CLAUSE;
-          post({ via: 'log', kind: 'log', message: `  🔗 nối tiếp keyframe trước (${String(prevKeyframeId).slice(0, 10)}) làm ref liên tục.` });
+          post({ via: 'log', kind: 'log', message: `  🔗 dùng CHÍNH XÁC khung cuối cảnh trước (${String(prevKeyframeId).slice(0, 10)}) làm khung đầu cảnh này — không tạo ảnh đầu mới.` });
         } else if (prevKeyframeId && wardrobeChangedThisShot) {
           post({ via: 'log', kind: 'log', message: `  👕 shot đổi trang phục — KHÔNG nối keyframe cũ (tránh đè đồ cũ); chỉ dùng ảnh bảng nhân vật trang phục mới.` });
         }
@@ -1872,7 +1858,9 @@
         post({ via: 'log', kind: 'log', message: `🖼️ [${i + 1}/${items.length}] "${label}" — đang tạo ảnh…` });
         let g;
         try {
-          g = await batchGenerateImages(pid, { prompt, aspect, model, imageInputs });
+          g = willChain
+            ? { mediaId: prevKeyframeId, workflowId: '', raw: { reusedBoundary: true } }
+            : await batchGenerateImages(pid, { prompt, aspect, model, imageInputs });
         } catch (e1) {
           if (/HTTP 429/.test(e1.message)) {
             // Hết lượt tạm thời → nghỉ 30s rồi thử lại 1 lần.
@@ -1896,9 +1884,11 @@
           post({ via: 'log', kind: 'log', message: `  🔎 wf=${String(g.workflowId || '∅').slice(0, 14)} · media=${String(g.mediaId || '∅').slice(0, 18)} · fields=[${Object.keys(m0).join(',')}] · topKeys=[${Object.keys(g.raw || {}).join(',')}]` });
         } catch (e) {}
         // 3) Name it after the shot.
-        const renamed = await renameWorkflow(pid, g.workflowId, label);
+        const renamed = g.workflowId ? await renameWorkflow(pid, g.workflowId, label) : false;
         const result = { shotId: it.shotId || null, index: it.index || (i + 1), resultKey: it.resultKey, ...context, name: label, mediaId: g.mediaId, workflowId: g.workflowId, renamed: !!renamed, sheetMediaIds: shotSheetIds.slice(), productMediaIds: shotProductIds.slice(), locationMediaId: shotLocationId, locationSheetIds: shotLocationSheetIds.slice() };
-        post({ via: 'log', kind: 'log', message: `  ✅ "${label}" → ${String(g.mediaId).slice(0, 12)} ${renamed ? '(đã đặt tên)' : '(⚠️ chưa đặt tên được — workflowId có thể trống)'}` });
+        post({ via: 'log', kind: 'log', message: willChain
+          ? `  ✅ "${label}" dùng lại boundary → ${String(g.mediaId).slice(0, 12)}`
+          : `  ✅ "${label}" → ${String(g.mediaId).slice(0, 12)} ${renamed ? '(đã đặt tên)' : '(⚠️ chưa đặt tên được — workflowId có thể trống)'}` });
         if (g.mediaId) prevKeyframeId = g.mediaId; // shot sau nối tiếp từ ảnh này
 
         // Preserve the optional legacy CLEAN frame artifact when the manifest
@@ -1932,19 +1922,15 @@
           post({ via: 'log', kind: 'log', message: '  🎞️ Shot không có video_keyframe_prompt riêng — dùng ảnh board làm khung đầu cho video (bình thường).' });
         }
 
-        // 4) END keyframe (transform shot): generate a second image with the same
-        //    refs + the START keyframe itself as continuity ref → Veo will
-        //    interpolate start→end at the video step. §6.2.
+        // 4) END keyframe: use only canonical character/product/location refs.
+        //    Do not feed the start image back as a loose style reference; the
+        //    structured end prompt already carries the exact boundary contract.
         const endPrompt = String(it.endPrompt || '').trim();
         if (endPrompt) {
           try {
             post({ via: 'log', kind: 'log', message: `  🎞️ [${i + 1}/${items.length}] "${label}" — tạo KHUNG CUỐI…` });
-            const endInputs = imageInputs.slice();
+            const endInputs = imageInputs.filter((input) => input && input.name !== g.mediaId);
             let endP = endPrompt;
-            if (g.mediaId && d.chain !== false) {
-              endInputs.push({ imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: g.mediaId });
-              if (!/^\s*\{/.test(endP)) endP += CHAIN_CLAUSE;
-            }
             let ge;
             try {
               ge = await batchGenerateImages(pid, { prompt: endP, aspect, model, imageInputs: endInputs });
@@ -2151,7 +2137,10 @@
           referenceImages: refImageIds.map((id) => ({ mediaId: id, imageUsageType: 'IMAGE_USAGE_TYPE_ASSET' })),
         });
         // Đường cũ: keyframe = khung đầu (i2v). Transform shot có khung CUỐI → nội suy.
-        const sendStart = () => {
+        const supplementalRefIds = refIds
+          .filter((id) => id && id !== startImageMediaId && id !== endImageMediaId)
+          .slice(0, 3);
+        const sendStart = (includeSupplementalRefs = true) => {
           const vMode = endImageMediaId ? 'start_end_frame' : 'start_frame';
           const item = {
             aspectRatio: aspectEnum,
@@ -2162,25 +2151,35 @@
             startImage: { mediaId: startImageMediaId, cropCoordinates: { top: 0, left: 0, bottom: 1, right: 1 } },
           };
           if (endImageMediaId) item.endImage = { mediaId: endImageMediaId, cropCoordinates: { top: 0, left: 0, bottom: 1, right: 1 } };
+          if (includeSupplementalRefs && supplementalRefIds.length) {
+            item.referenceImages = supplementalRefIds.map((id) => ({ mediaId: id, imageUsageType: 'IMAGE_USAGE_TYPE_ASSET' }));
+          }
           return postVideo(vMode, item);
         };
 
         post({ via: 'log', kind: 'log', message: `🎬 [${i + 1}/${items.length}] "${label}" — dựng video (${useRefMode ? `bảng nhân vật×${refIds.length} + keyframe làm ref (r2v)` : (endImageMediaId ? 'khung ĐẦU+CUỐI' : 'keyframe')})…` });
-        let r = await (useRefMode ? sendRef() : sendStart());
+        let r = await (useRefMode ? sendRef() : sendStart(true));
         // 429 (hết lượt tạm thời) → nghỉ rồi thử lại 1 lần.
         if (!r.ok && r.status === 429) {
           post({ via: 'log', kind: 'log', message: `  ⏳ 429 hết lượt tạm thời — nghỉ 30s rồi thử lại "${label}"…` });
           await new Promise((res2) => setTimeout(res2, 30000));
-          r = await (useRefMode ? sendRef() : sendStart());
+          r = await (useRefMode ? sendRef() : sendStart(true));
         }
         // r2v bị từ chối (không phải hết quota) → quay về start_frame chỉ-keyframe.
         if (!r.ok && useRefMode && !isQuotaError(r.text)) {
           post({ via: 'log', kind: 'log', message: `  ↩️ r2v bị từ chối (HTTP ${r.status}) — thử lại chế độ keyframe (start_frame). Lỗi: ${r.text.slice(0, 80)}` });
-          r = await sendStart();
+          r = await sendStart(true);
           if (!r.ok && r.status === 429) {
             await new Promise((res2) => setTimeout(res2, 30000));
-            r = await sendStart();
+            r = await sendStart(true);
           }
+        }
+        // Some Flow model configurations reject supplemental referenceImages on
+        // start/end requests. Retry the same temporal pair without extras rather
+        // than silently dropping the entire video job.
+        if (!r.ok && !useRefMode && supplementalRefIds.length && !isQuotaError(r.text)) {
+          post({ via: 'log', kind: 'log', message: `  ↩️ Flow từ chối ref nhân vật/bối cảnh kèm khung thời gian (HTTP ${r.status}) — giữ nguyên START/END và thử lại không ref phụ.` });
+          r = await sendStart(false);
         }
         if (!r.ok) {
           if (isQuotaError(r.text)) { quotaExhausted = true; break; }

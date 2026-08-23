@@ -134,7 +134,7 @@ function buildLocationContinuitySheetPrompt(params: {
   visualMediumLock: string;
 }): string {
   return JSON.stringify({
-    type: "location_continuity_sheet",
+    type: "canonical_location_establishing_frame",
     aspect_ratio: "16:9",
     output_count: 1,
     location_name: params.name,
@@ -142,16 +142,12 @@ function buildLocationContinuitySheetPrompt(params: {
     scenery: params.scenery || undefined,
     lighting: params.lighting || undefined,
     layout:
-      "ONE single 16:9 image split into EXACTLY TWO equal side-by-side panels with one thin divider; no third panel, no collage, no captions, labels, people or products.",
-    panel_1:
-      "WIDE establishing view showing the complete script-defined place: terrain and route for an exterior, or architecture and circulation for an interior, plus every fixed landmark, prop-support surface and main spatial anchor required by the story.",
-    panel_2:
-      "A genuinely different reverse three-quarter view from another connected camera position, rotated roughly 90-135 degrees from panel 1, revealing the reverse relationships between the SAME immutable terrain, architecture, landmarks and anchors. It must not be a crop, zoom, duplicate or tiny variation of panel 1.",
+      "ONE single clean 16:9 WIDE establishing frame filling the entire canvas. Show the complete script-defined place: terrain and route for an exterior, or architecture and circulation for an interior, plus every fixed landmark, support surface and main spatial anchor required by the story. No panels, divider, grid, collage, inset, caption or label.",
     continuity:
-      "Both panels depict the exact same empty script-derived place at the same moment: identical terrain/architecture, boundaries, landmarks, support surfaces, materials, colours, prop design, time of day and light direction. Only camera position and viewing direction differ.",
+      "This image becomes the canonical spatial authority for every storyboard keyframe and video shot assigned to this location. Preserve its exact terrain/architecture, boundaries, landmark positions, support surfaces, circulation paths, materials, colours, time of day and light direction. Later prompts may change camera position only; they may not move, mirror, replace or redesign the place.",
     render: params.visualMediumLock || KEYFRAME_RENDER_NOTE,
     negative:
-      "No people, characters, hands, products, readable text, watermark, duplicated room, mirrored layout, moved furniture, changed weather/time, two separate image files or near-identical camera angles.",
+      "No people, characters, hands, products, readable text, watermark, split panels, contact sheet, duplicated or mirrored room, moved furniture, changed geometry, changed weather or changed time of day.",
   });
 }
 
@@ -867,11 +863,9 @@ function buildThumbnailPrompt(params: {
 }
 
 /**
- * Build the LOCATION SHEET (`location_views`) for ONE environment — the user's
- * "tạo sheet bối cảnh" approach. It is now a SINGLE character-free image holding
- * THREE framings of the SAME empty set (a large OVERVIEW + a smaller right→left
- * pan + a smaller left→right pan), mirroring the character sheet's one-image form
- * (user asked for one image, not two). The extension generates it once per
+ * Build the canonical location reference (`location_views`) for ONE environment.
+ * It is one clean, character-free 16:9 establishing image — never a board or
+ * multi-angle sheet. The extension generates it once per
  * location and attaches it as the background authority for every board AND every
  * Veo clip set here, so Nano Banana and Veo pin the identical set instead of
  * inventing or drifting the location. When the user uploaded a real location
@@ -902,31 +896,28 @@ function buildLocationSheetViews(params: {
     : liveAction
       ? "Empty location only — absolutely NO people, NO characters, NO animals, NO product in frame. NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT painting. No text, UI, watermark or logo."
       : "Empty location in the locked medium — NO people, NO characters, NO product, NO text. No accidental photoreal conversion, no medium drift.";
-  // ONE image (user request): a single location sheet holding THREE framings of
-  // the SAME empty set — a large OVERVIEW + a smaller right→left pan + a smaller
-  // left→right pan — mirroring the character sheet's one-image, three-framing form.
   const prompt = JSON.stringify({
     type: characterStyleLock
-      ? "styled_location_sheet"
+      ? "styled_location_establishing_frame"
       : liveAction
-        ? "photoreal_location_sheet"
-        : `${slugify(realityMode)}_location_sheet`,
+        ? "photoreal_location_establishing_frame"
+        : `${slugify(realityMode)}_location_establishing_frame`,
     goal:
-      "ONE character-free LOCATION REFERENCE SHEET of the EMPTY place — a SINGLE image holding THREE framings of the SAME set — the background authority reused to keep every shot on the SAME location. No people or product anywhere.",
+      "ONE clean character-free 16:9 WIDE ESTABLISHING IMAGE of the EMPTY place. It is the canonical background authority reused by every keyframe and video shot assigned to this location. No people or product anywhere.",
     source_authority:
       "The SCRIPT is the semantic authority for what this place contains. If a LOCATION PHOTO is attached, preserve its actual geometry and landmarks while rendering it in the locked project medium. If NO photo is attached, build the complete location from the setting/scenery description below. Never replace an exterior with a room, an interior with a blank canvas, or a specific scripted place with a generic template.",
     layout:
-      "A SINGLE 16:9 image divided into THREE framings of the SAME empty location: (1) a LARGE WIDE OVERVIEW establishing the complete terrain/architecture, boundaries, route, landmarks and anchors; (2) a SMALLER right-to-left view from a connected camera position; (3) a SMALLER left-to-right reverse view. No labels or captions—just three views of the one script-defined place.",
+      "A SINGLE full-bleed 16:9 WIDE establishing frame showing the complete terrain/architecture, boundaries, circulation route, fixed landmarks, support surfaces and spatial anchors. No panels, grid, divider, collage, inset, labels or captions.",
     setting: setting || "the scripted location",
     scenery: scenery && scenery !== setting ? scenery : undefined,
     lighting: lighting || undefined,
     visual_style: characterStyleLock || visualStyle || undefined,
     consistency:
-      "All three framings are the EXACT SAME script-derived place—identical terrain/architecture, boundaries, route, landmarks, anchor geometry, materials, colours, time-of-day and light direction; ONLY the camera vantage differs. This is the immutable story world every scene here must reuse.",
+      "This exact image is the immutable spatial source of truth: terrain/architecture, boundaries, route, landmark positions, anchor geometry, materials, colours, time-of-day and light direction must remain unchanged. Later shot cameras may view the place from another valid position but may not move, mirror, add, remove or redesign fixed elements.",
     render,
     negative,
   });
-  return [{ angle: "sheet", prompt }];
+  return [{ angle: "establishing", prompt }];
 }
 
 /** Turn a display name into a stable ascii slug id (Vietnamese-aware). */
@@ -1199,9 +1190,9 @@ export function buildNanoFlowManifest(
   }
 
   // ── Environment assets: unique non-custom environment_ref ids. Each declared
-  //    environment also gets a 2-angle LOCATION SHEET (location_views, attached
-  //    below once the per-location setting is locked) — a character-free wide +
-  //    alt plate the extension generates ONCE and reuses as the background
+  //    environment also gets one canonical 16:9 establishing image prompt
+  //    (location_views, attached below once the per-location setting is locked).
+  //    The extension generates it ONCE and reuses it as the background
   //    authority for every board and Veo clip here, so the set never drifts. A
   //    user-uploaded location photo (Cách 1) still takes priority when present.
   const envIdSeen = new Set<string>();
@@ -1333,11 +1324,10 @@ export function buildNanoFlowManifest(
     lockedBgByLocation.set(loc, { setting: clipStr(bg.setting), scenery: clipStr(bg.scenery) });
   });
 
-  // Attach the LOCATION SHEET to every declared environment so the extension
-  // generates each set ONCE as a SINGLE character-free image (overview + right→left
-  // + left→right) and locks every board AND Veo clip to it — the user's "tạo sheet
-  // bối cảnh" approach (a real reference image, one image), NOT a wide panel inside
-  // the board. Uses the per-location locked setting/scenery so the sheet matches
+  // Attach one canonical establishing-image prompt to every declared environment
+  // so the extension generates each set ONCE as a SINGLE character-free 16:9
+  // image and locks every keyframe AND Veo clip to it. This is never a board or
+  // multi-angle sheet. Uses the per-location locked setting/scenery so it matches
   // the boards exactly;
   // falls back to the humanized location name when no clip described the set. The
   // extension prefers a user-uploaded location photo over these when one exists;
@@ -1401,7 +1391,30 @@ export function buildNanoFlowManifest(
     const monOrd = monotonicTimeOrds[i] ?? -1;
     const detOrd = detectedTimeOrds[i] ?? -1;
     const lockedTimeOfDay = timeOfDayLabel(monOrd);
-    const rawClip = opts.veoClips?.[i];
+    const envRef = (seg.location_id ?? seg.environment_ref ?? "").trim();
+    const envIds = envRef && envRef !== "custom" ? [envRef] : [];
+    const lockedBg = lockedBgByLocation.get(envRef) ?? { setting: "", scenery: "" };
+    const sourceClip = opts.veoClips?.[i];
+    const sourceBackground = clipObj(sourceClip?.background_lock);
+    // The video prompt and both keyframe prompts consume the SAME canonical
+    // location contract. This prevents the video compiler from quietly changing
+    // furniture/landmarks after the background reference has already been made.
+    const rawClip = sourceClip
+      ? {
+          ...sourceClip,
+          background_lock: {
+            ...sourceBackground,
+            setting: lockedBg.setting || clipStr(sourceBackground.setting),
+            scenery: lockedBg.scenery || clipStr(sourceBackground.scenery),
+          },
+          location_authority: {
+            location_id: envRef || "custom",
+            reference_policy: boardLocationImage
+              ? "Use the attached uploaded location image directly as the immutable geometry and landmark authority; do not regenerate, redesign, mirror or relocate it."
+              : "Use the single attached canonical 16:9 establishing image as the immutable geometry and landmark authority; do not redesign, mirror or relocate it.",
+          },
+        }
+      : undefined;
     // If this shot's own time was clamped FORWARD (its text implied an earlier time
     // than the running story time), its raw lighting is stale — drop it so the
     // locked time-of-day drives the board's look; otherwise keep the shot's own
@@ -1430,9 +1443,6 @@ export function buildNanoFlowManifest(
           stateAuthority,
           visualMediumLock
         );
-    const envRef = (seg.location_id ?? seg.environment_ref ?? "").trim();
-    const envIds = envRef && envRef !== "custom" ? [envRef] : [];
-
     const affiliateProductIds = opts.affiliateProductIR?.review_status === "approved"
       ? products.map((product) => product.id)
       : [];
@@ -1449,8 +1459,6 @@ export function buildNanoFlowManifest(
       (i === 0 ? "opening" : "continuous");
 
     // Per-location locked room description (every board of this location = one set).
-    const lockedBg = lockedBgByLocation.get((seg.location_id ?? seg.environment_ref ?? "").trim())
-      ?? { setting: "", scenery: "" };
     // Board-to-board handoff (user): PANEL 1 of this board = the LAST panel of the
     // previous board whenever the two boards share the SAME location (same set) and
     // this shot is not a hard break (real location change / time jump / flashback /

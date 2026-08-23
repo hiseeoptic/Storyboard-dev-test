@@ -145,9 +145,9 @@
         shotId: shotId,
         parentShotId: shotId,
         sceneNo: null,
-        // Board model: 1 ảnh board bối cảnh / shot 10s — KHÔNG nối keyframe trước
-        // (bỏ end/start frame chaining theo yêu cầu). Mỗi board độc lập.
-        chainFromPrev: false,
+        // Preserve the app-authored cross-shot boundary contract. Missing on old
+        // manifests stays false, so legacy projects keep their prior behaviour.
+        chainFromPrev: s.chain_from_prev === true,
         // Ảnh bối cảnh user nạp cho RIÊNG board này (nút nạp theo từng board). Có
         // thì đính làm ref khóa bối cảnh (ưu tiên), không có thì tạo board từ prompt.
         boardLocationImage: s.board_location_image || null,

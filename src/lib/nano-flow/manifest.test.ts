@@ -366,7 +366,7 @@ test("environment_ref becomes an asset except when custom", () => {
   assert.deepEqual(shot2.image_refs?.environments, []);
 });
 
-test("environments carry a 2-angle character-free LOCATION SHEET (location_views)", () => {
+test("environments carry one clean character-free 16:9 establishing reference", () => {
   const m = buildNanoFlowManifest(fixture(), {
     veoClips: [
       {
@@ -381,32 +381,54 @@ test("environments carry a 2-angle character-free LOCATION SHEET (location_views
   });
   const env = (m.assets.environments ?? []).find((e) => e.id === "living_room_1");
   assert.ok(env, "living_room_1 must be declared");
-  // New extensions prefer one 16:9 two-panel sheet. Keep the legacy two-view
-  // pair as a compatibility fallback for already-installed extension versions.
   const locationSheet = JSON.parse(env.location_sheet_prompt ?? "{}") as Record<string, unknown>;
   assert.equal(locationSheet.output_count, 1);
   assert.equal(locationSheet.aspect_ratio, "16:9");
-  assert.match(String(locationSheet.panel_2), /90-135|opposite/i);
+  assert.match(String(locationSheet.type), /establishing/i);
+  assert.match(String(locationSheet.layout), /single clean 16:9 wide/i);
+  assert.doesNotMatch(String(locationSheet.layout), /side-by-side|split into|two equal/i);
   assert.equal(env.image, null);
-  // The app now emits a SINGLE character-free location sheet image (overview +
-  // right→left + left→right), so the extension generates each set ONCE and locks
-  // every board/video to it — the user's "tạo sheet bối cảnh" approach (one image).
+  // The compatibility field remains an array, but carries exactly one clean
+  // establishing image prompt rather than a multi-angle sheet.
   assert.ok(Array.isArray(env.location_views) && env.location_views.length === 1);
-  assert.deepEqual((env.location_views ?? []).map((v) => v.angle), ["sheet"]);
+  assert.deepEqual((env.location_views ?? []).map((v) => v.angle), ["establishing"]);
   const sheet = JSON.parse((env.location_views ?? [])[0]!.prompt) as Record<string, unknown>;
-  // The sheet uses the per-location LOCKED setting so it matches the boards.
+  // The establishing image uses the per-location LOCKED setting so it matches
+  // both keyframes and the structured Veo prompt.
   assert.match(String(sheet.setting), /cozy northern living room/);
-  // Character-free: the negative must forbid people in the sheet.
+  assert.match(String(sheet.layout), /single full-bleed 16:9 wide/i);
+  assert.doesNotMatch(String(sheet.layout), /three framings|right-to-left|left-to-right/i);
   assert.match(String(sheet.negative), /no people/i);
-  // Three framings in ONE image (overview + right→left + left→right).
-  assert.match(String(sheet.layout), /overview/i);
-  assert.match(String(sheet.layout), /right-to-left/i);
-  assert.match(String(sheet.layout), /left-to-right/i);
   // The setting also still lives in the shot's location board (unchanged).
   const board = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
   assert.match(String(board.setting), /cozy northern living room/);
   // "custom" locations declare no environment asset.
   assert.equal((m.assets.environments ?? []).some((e) => e.id === "custom"), false);
+});
+
+test("image and video prompts share the same canonical location authority", () => {
+  const m = buildNanoFlowManifest(fixture(), {
+    veoClips: [
+      {
+        background_lock: {
+          setting: "cozy northern living room",
+          scenery: "carved wooden furniture",
+          lighting: "warm afternoon",
+        },
+        scene_action: { start_state: "Lan sits by the table", end_state: "Lan looks up" },
+      },
+    ],
+  });
+  const shot = m.shots[0]!;
+  const keyframe = JSON.parse(shot.storyboard_prompt) as Record<string, unknown>;
+  const video = shot.video_prompt as Record<string, unknown>;
+  const videoBackground = video.background_lock as Record<string, unknown>;
+  const locationAuthority = video.location_authority as Record<string, unknown>;
+  assert.equal(keyframe.setting, "cozy northern living room");
+  assert.equal(videoBackground.setting, "cozy northern living room");
+  assert.equal(videoBackground.scenery, "carved wooden furniture");
+  assert.equal(locationAuthority.location_id, "living_room_1");
+  assert.match(String(locationAuthority.reference_policy), /canonical 16:9 establishing image/i);
 });
 
 test("video_refs keep keyframe, character and location authorities together", () => {
