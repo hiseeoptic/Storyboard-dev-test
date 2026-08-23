@@ -409,6 +409,7 @@ test("Veo JSON keeps the stable structure with contextual outfits and local voic
     "scene_role",
   ]);
   assert.equal(Object.hasOwn(clip.scene_action, "wardrobe_lock"), false);
+  assert.match(clip.scene_action.execution_contract, /at most three production-changing atomic transitions/i);
   assert.equal(Object.hasOwn(clip.dialogue[0], "voice_personality"), true);
   assert.equal(
     clip.dialogue[0].voice_personality,
