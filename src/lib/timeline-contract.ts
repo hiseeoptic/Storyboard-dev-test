@@ -79,15 +79,33 @@ export function ensureDialogueClock(
   turns: DialogueTurn[],
   durationSeconds = 10
 ): DialogueTurn[] {
-  if (turns.length === 0 || dialogueClockErrors(turns, durationSeconds).length === 0) {
+  const naturalSeconds = (turn: DialogueTurn): number => {
+    const words = turn.text.trim().split(/\s+/).filter(Boolean).length;
+    // The locked narrator is directed at about 128 WPM. Character dialogue can
+    // breathe a little faster, but both clocks must close when the utterance
+    // actually ends; leaving a short line active until 9.5s invites a video
+    // model to loop it to fill the still-open speech window.
+    const secondsPerWord = turn.delivery === "voiceover" ? 60 / 128 : 0.4;
+    return Math.max(1.2, words * secondsPerWord);
+  };
+  const hasLoopRiskWindow = turns.some((turn) => {
+    if (typeof turn.start_s !== "number" || typeof turn.end_s !== "number") {
+      return false;
+    }
+    const declared = turn.end_s - turn.start_s;
+    const natural = naturalSeconds(turn);
+    return declared - natural > 1.25;
+  });
+  if (
+    turns.length === 0 ||
+    (dialogueClockErrors(turns, durationSeconds).length === 0 && !hasLoopRiskWindow)
+  ) {
     return turns;
   }
   const requestedGap = 0.5;
   const tailRoom = Math.min(0.5, Math.max(0, durationSeconds * 0.05));
   const usable = Math.max(0.1, durationSeconds - tailRoom);
-  const natural = turns.map((turn) =>
-    Math.max(1.2, turn.text.trim().split(/\s+/).filter(Boolean).length * 0.4)
-  );
+  const natural = turns.map(naturalSeconds);
   const naturalTotal = natural.reduce((sum, value) => sum + value, 0);
   const maxGap = turns.length > 1
     ? Math.max(0, (usable - turns.length * 0.4) / (turns.length - 1))
@@ -104,8 +122,7 @@ export function ensureDialogueClock(
   return turns.map((turn, index) => {
     const start = Math.round(cursor * 10) / 10;
     cursor += natural[index]! * scale;
-    const isLast = index === turns.length - 1;
-    const end = Math.round((isLast ? usable : Math.min(cursor, usable)) * 10) / 10;
+    const end = Math.round(Math.min(cursor, usable) * 10) / 10;
     cursor += gap;
     return { ...turn, start_s: start, end_s: end };
   });

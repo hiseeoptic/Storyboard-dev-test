@@ -78,6 +78,23 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/** Legacy text exports used to append a second DIALOGUE line even though the
+ * canonical full prompt already contained the same spoken sentence. Keep the
+ * fallback for genuinely motion-only prompts, but never serialize one line
+ * twice—the duplicate instruction can make a video model repeat it. */
+export function legacyDialogueSupplement(
+  prompt: string,
+  dialogue?: string | null,
+  speaker?: string | null
+): string | null {
+  const cleanDialogue = (dialogue ?? "").replace(/\s+/g, " ").trim();
+  if (!cleanDialogue) return null;
+  const foldedPrompt = prompt.replace(/\s+/g, " ").trim().toLocaleLowerCase("vi");
+  if (foldedPrompt.includes(cleanDialogue.toLocaleLowerCase("vi"))) return null;
+  const cleanSpeaker = (speaker ?? "").replace(/\s+/g, " ").trim();
+  return `DIALOGUE${cleanSpeaker ? ` (${cleanSpeaker})` : ""}: "${cleanDialogue}"`;
+}
+
 function slug(value: string): string {
   return value
     .normalize("NFD")
