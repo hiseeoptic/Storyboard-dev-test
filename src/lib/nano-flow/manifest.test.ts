@@ -1204,3 +1204,33 @@ test("manual chain override forces on/off regardless of the policy", () => {
   assert.equal(m.shots[0]!.chain_from_prev, true, "override 'on' forces chaining even on the opening shot");
   assert.equal(m.shots[1]!.chain_from_prev, undefined, "override 'off' disables chaining on a continuous shot");
 });
+
+// ─── Embedded character reference photos (auto-loaded by the extension) ───────
+
+test("uploaded character photos are embedded into the manifest assets", () => {
+  const bd = {
+    title: "Cast",
+    character_locks: [{ name: "Kai" }, { name: "Mira" }],
+    segments: [
+      { segment_number: 1, characters_in_scene: ["Kai", "Mira"], environment_ref: "room",
+        first_frame_prompt: "a", motion_prompt: "b", full_prompt: "v1" },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    veoClips: [{ background_lock: { setting: "room" }, character_lock: { A: { name: "Kai" }, B: { name: "Mira" } } }],
+    characterReferences: [
+      { name: "Kai", images: ["data:image/png;base64,AAAA"] },
+      { name: "Mira", images: [] }, // no photo uploaded → stays a null slot
+    ],
+  });
+  const kai = (m.assets.characters ?? []).find((c) => c.name === "Kai")!;
+  const mira = (m.assets.characters ?? []).find((c) => c.name === "Mira")!;
+  assert.equal(kai.image, "data:image/png;base64,AAAA", "the uploaded frontal photo is embedded");
+  assert.deepEqual(kai.images, ["data:image/png;base64,AAAA"]);
+  assert.equal(mira.image, null, "a character with no uploaded photo keeps a null slot");
+});
+
+test("without characterReferences the character assets stay null slots (backward compatible)", () => {
+  const m = buildNanoFlowManifest(framesFixture(), { veoClips: framesClips });
+  for (const c of m.assets.characters ?? []) assert.equal(c.image, null);
+});

@@ -2017,6 +2017,9 @@ function validatePreRenderGates(
       productNames: (input.product_images ?? []).map((product) => product.name),
       productReferences:
         input.product_ir?.review_status === "approved" ? input.product_images : undefined,
+      // Embed each uploaded character frontal photo so the extension auto-loads
+      // it (no manual per-image attach). No photo ⇒ a null slot as before.
+      characterReferences: input.character_images,
       affiliateProductIR: input.product_ir,
       affiliateDisclosure: input.affiliate_disclosure,
       // Cách 1 — embed uploaded location photos into the manifest per shot.

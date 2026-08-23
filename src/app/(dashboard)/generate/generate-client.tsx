@@ -53,6 +53,12 @@ import type { TopicCategory } from "@/services/topics";
 import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { loadHandoff } from "@/lib/handoff";
+import {
+  saveCharacterPreset,
+  loadCharacterPreset,
+  clearCharacterPreset,
+  hasCharacterPreset,
+} from "@/lib/character-preset";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
 import type { FrameModeOverride } from "@/lib/nano-flow/frame-mode-policy";
 import { buildSpeechManifestContract } from "@/lib/storyboard/anonymous-narration";
@@ -1318,6 +1324,8 @@ function ProjectWorkspace() {
 
   // Step 2: Characters
   const [characters, setCharacters] = useState<CharacterEntry[]>([]);
+  // Whether a reusable cast preset is currently saved (drives the preset buttons).
+  const [hasPreset, setHasPreset] = useState(false);
   const [charName, setCharName] = useState("");
   // Nano Flow: the user ticks this instead of uploading a photo in-app. The
   // real photo is attached later in the extension; here it only tells the
@@ -1519,6 +1527,32 @@ function ProjectWorkspace() {
     setCharAppearance("");
     setCharApprSel("");
     setCharImages([]);
+  };
+
+  // ── Cast preset (reuse the same characters across several projects) ──
+  useEffect(() => {
+    hasCharacterPreset().then(setHasPreset).catch(() => setHasPreset(false));
+  }, []);
+  const saveCastPreset = async () => {
+    if (characters.length === 0) return;
+    try {
+      await saveCharacterPreset(characters);
+      setHasPreset(true);
+    } catch {
+      alert(
+        lang === "vi"
+          ? "Không lưu được preset (bộ nhớ trình duyệt có thể đã đầy)."
+          : "Could not save the preset (browser storage may be full)."
+      );
+    }
+  };
+  const loadCastPreset = async () => {
+    const preset = await loadCharacterPreset<CharacterEntry[]>();
+    if (preset && preset.length > 0) setCharacters(preset);
+  };
+  const clearCastPreset = async () => {
+    await clearCharacterPreset();
+    setHasPreset(false);
   };
 
   const addProduct = () => {
@@ -2450,6 +2484,9 @@ function ProjectWorkspace() {
       productNames: (genInput?.product_images ?? []).map((product) => product.name),
       productReferences:
         genInput?.product_ir?.review_status === "approved" ? genInput.product_images : undefined,
+      // Embed each uploaded character frontal photo so the extension auto-loads
+      // it (no manual per-image attach). No photo ⇒ a null slot as before.
+      characterReferences: genInput?.character_images,
       affiliateProductIR: genInput?.product_ir,
       affiliateDisclosure: genInput?.affiliate_disclosure,
       // Frame-mode policy: genre + directing profile pick the default start vs
@@ -4888,6 +4925,29 @@ function ProjectWorkspace() {
                     ? "Mỗi nhân vật: ① nhập TÊN → ② bật 👶 nếu là trẻ em → ③ tải ảnh 1 CHÍNH DIỆN và ảnh 2 NGHIÊNG/3-4 của đúng người đó → ④ bấm \"➕ Thêm nhân vật\". Người tiếp theo phải thêm thành một nhân vật riêng. Tên nên trùng với vai trong kịch bản để hệ thống gán đúng mặt và lời thoại."
                     : "For each character: ① enter their NAME → ② toggle 👶 if needed → ③ upload photo 1 FRONT and photo 2 PROFILE/3-4 of that person → ④ click \"➕ Add character\". Add the next person separately. Match script names so faces and dialogue bind correctly."}
                 </p>
+              </div>
+
+              {/* Preset dàn nhân vật — dùng lại cast cho nhiều dự án giống nhau. */}
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed p-3">
+                <span className="text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Preset dàn nhân vật (dùng lại cho nhiều dự án):"
+                    : "Cast preset (reuse across projects):"}
+                </span>
+                <Button type="button" variant="outline" size="sm" disabled={characters.length === 0} onClick={saveCastPreset}>
+                  💾 {lang === "vi" ? "Lưu preset" : "Save preset"}
+                </Button>
+                <Button type="button" variant="outline" size="sm" disabled={!hasPreset} onClick={loadCastPreset}>
+                  📥 {lang === "vi" ? "Nạp preset" : "Load preset"}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" disabled={!hasPreset} onClick={clearCastPreset}>
+                  🗑️ {lang === "vi" ? "Xóa preset" : "Clear preset"}
+                </Button>
+                {hasPreset && (
+                  <span className="text-xs text-emerald-600">
+                    {lang === "vi" ? "• đã có preset đang lưu" : "• a preset is saved"}
+                  </span>
+                )}
               </div>
 
               {characters.length > 0 && (

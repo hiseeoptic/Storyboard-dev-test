@@ -57,6 +57,11 @@ export interface BuildNanoFlowManifestOptions {
   generatedAt?: string;
   /** Optional product reference names to declare as shared assets. */
   productNames?: string[];
+  /** Uploaded character reference photos (each name → its frontal photo bytes).
+   * When present, the character asset embeds the photo (image/images) so the
+   * extension auto-loads it and builds the wardrobe sheet without a manual
+   * attach — the same as product/environment reference images. */
+  characterReferences?: ImageReference[];
   /** Embedded affiliate product refs. This is opt-in; legacy Nano Flow projects
    * continue to declare extension-side empty slots exactly as before. */
   productReferences?: ImageReference[];
@@ -1146,6 +1151,19 @@ export function buildNanoFlowManifest(
   const referenceNames = new Set(
     (breakdown.character_locks ?? []).map((l) => l.name?.trim()).filter(Boolean) as string[]
   );
+  // Embedded character reference photos (the user's uploaded frontal photo),
+  // keyed by character name. When present the extension auto-loads them and
+  // builds the wardrobe sheet without a manual attach — the same way product and
+  // environment reference images are already embedded. Empty ⇒ the asset keeps a
+  // null slot (declared, attached later in the extension) exactly as before.
+  const characterImageByName = new Map<string, string[]>();
+  for (const ref of opts.characterReferences ?? []) {
+    const nm = (ref?.name ?? "").trim().toLowerCase();
+    const imgs = (ref?.images ?? [])
+      .filter((s): s is string => typeof s === "string" && s.length > 0)
+      .slice(0, 4);
+    if (nm && imgs.length) characterImageByName.set(nm, imgs);
+  }
   const addCharacter = (rawName: string, required: boolean) => {
     const name = (rawName || "").trim();
     if (!name) return;
@@ -1164,7 +1182,14 @@ export function buildNanoFlowManifest(
     while (usedCharacterAssetIds.has(id)) id = `${baseId}_${suffix++}`;
     usedCharacterAssetIds.add(id);
     charIdByName.set(key, id);
-    characters.push({ id, name, image: null, required });
+    const embedded = characterImageByName.get(key) ?? [];
+    characters.push({
+      id,
+      name,
+      image: embedded[0] ?? null,
+      ...(embedded.length ? { images: embedded } : {}),
+      required,
+    });
   };
   for (const lock of breakdown.character_locks ?? []) addCharacter(lock.name, true);
   for (const seg of segments) {
