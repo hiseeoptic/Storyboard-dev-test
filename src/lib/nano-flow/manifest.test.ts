@@ -1124,12 +1124,14 @@ test("a transform shot (locomotion) emits an end keyframe; a static shot does no
   const m = buildNanoFlowManifest(framesFixture(), { genre: "drama", veoClips: framesClips });
   // Shot 1 "walks to the window" → transform → start_end_frame.
   assert.ok(m.shots[0]!.end_storyboard_prompt, "walking shot gets an end keyframe");
+  assert.equal(m.shots[0]!.frame_mode, "start_end");
   const endKf = JSON.parse(m.shots[0]!.end_storyboard_prompt!) as Record<string, unknown>;
   assert.equal(endKf.interpolation_role, "end");
   assert.match(String(endKf.interpolation_pair_contract), /SAME scene/i);
   assert.match(String(endKf.moment), /window/i);
   // Shot 2 "smiles softly" → static → single keyframe only.
   assert.equal(m.shots[1]!.end_storyboard_prompt, undefined, "static shot stays single-frame");
+  assert.equal(m.shots[1]!.frame_mode, "start");
 });
 
 test("manual override forces two-frame or one-frame regardless of policy", () => {
@@ -1140,7 +1142,50 @@ test("manual override forces two-frame or one-frame regardless of policy", () =>
     frameModeOverrides: { 1: "start", 2: "start_end" },
   });
   assert.equal(m.shots[0]!.end_storyboard_prompt, undefined, "override 'start' forces single-frame on a transform shot");
+  assert.equal(m.shots[0]!.frame_mode, "start");
   assert.ok(m.shots[1]!.end_storyboard_prompt, "override 'start_end' forces an end keyframe on a static shot");
+  assert.equal(m.shots[1]!.frame_mode, "start_end");
+});
+
+test("close framing may exclude other cast without moving opposite seats", () => {
+  const bd = {
+    title: "Opposite seats",
+    character_locks: [{ name: "Lan" }, { name: "Minh" }],
+    segments: [{
+      segment_number: 1,
+      characters_in_scene: ["Lan", "Minh"],
+      environment_ref: "living_room",
+      first_frame_prompt: "Lan sits on the sofa while Minh remains seated in the opposite armchair",
+      motion_prompt: "Lan looks down at the phone",
+      full_prompt: "Lan reacts quietly",
+      beats: [{ beat: "Lan reacts quietly", camera: "[CLOSE] front-left close-up on Lan" }],
+      spatial_layout: {
+        character_placement: "Lan on sofa left wall, Minh on armchair right wall opposite Lan",
+      },
+    }],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    veoClips: [{
+      character_lock: { A: { name: "Lan" }, B: { name: "Minh" } },
+      background_lock: { setting: "living room with sofa left and armchair right" },
+      scene_action: {
+        start_state: "Lan sitting on sofa while Minh remains on the opposite armchair",
+        end_state: "continues from previous segment",
+      },
+      camera: { framing: "close" },
+    }],
+    frameModeOverrides: { 1: "start_end" },
+  });
+  const start = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  const end = JSON.parse(m.shots[0]!.end_storyboard_prompt!) as Record<string, unknown>;
+  const cameraContract = start.camera_subject_contract as Record<string, unknown>;
+  const supportContract = start.support_surface_contract as Record<string, unknown>;
+  assert.deepEqual(cameraContract.required_on_camera, ["Lan"]);
+  assert.deepEqual(cameraContract.permitted_off_camera, ["Minh"]);
+  assert.match(String(cameraContract.rule), /never pull them closer|move their chair/i);
+  assert.match(String(start.staging), /remain off-frame at their canonical world positions/i);
+  assert.match(JSON.stringify(supportContract), /sofa/i);
+  assert.doesNotMatch(String(end.moment), /continues from previous segment/i);
 });
 
 test("talking-head directing profile stays single-frame even on a moving shot", () => {
@@ -1216,14 +1261,14 @@ test("a scene_cut within the same place does NOT chain (only truly continuous sh
   assert.equal(m.shots[1]!.chain_from_prev, undefined, "an editorial cut in the same place is not a seamless continuation");
 });
 
-test("manual chain override forces on/off regardless of the policy", () => {
+test("manual chain override cannot chain an opening without a previous frame", () => {
   const m = buildNanoFlowManifest(framesFixture(), {
     genre: "drama",
     veoClips: framesClips,
-    // Force the opening shot ON and the continuous shot OFF — the opposite of policy.
+    // An opening has no previous frame, while the continuous shot can be forced off.
     chainModeOverrides: { 1: "on", 2: "off" },
   });
-  assert.equal(m.shots[0]!.chain_from_prev, true, "override 'on' forces chaining even on the opening shot");
+  assert.equal(m.shots[0]!.chain_from_prev, undefined, "opening never declares an impossible previous-frame chain");
   assert.equal(m.shots[1]!.chain_from_prev, undefined, "override 'off' disables chaining on a continuous shot");
 });
 

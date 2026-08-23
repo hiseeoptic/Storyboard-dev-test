@@ -159,6 +159,8 @@
         // Clean SINGLE full-bleed frame dedicated to Veo. The multi-panel board
         // remains a review artifact and is never used as video conditioning.
         videoKeyframePrompt: String(s.video_keyframe_prompt || '').trim(),
+        frameMode: s.frame_mode === 'start_end' ? 'start_end'
+          : (s.frame_mode === 'start' ? 'start' : null),
         // Optional END keyframe (start_end_frame mode): when present, the shot
         // has a "transform" — Veo interpolates start→end. See DESIGN §6.2.
         endStoryboardPrompt: String(s.end_storyboard_prompt || '').trim(),

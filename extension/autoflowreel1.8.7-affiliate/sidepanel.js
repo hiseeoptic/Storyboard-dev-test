@@ -3423,6 +3423,7 @@ async function runNanoImages(options = {}) {
       name: p.name,
       // Board model: KHÔNG nối keyframe trước (bỏ end/start frame chaining).
       chainFromPrev: p.chainFromPrev,
+      frameMode: p.frameMode || (p.endImageStep ? 'start_end' : 'start'),
       frameRole: p.frameRole || null,
       prompt: p.imageStep.prompt,
       videoKeyframePrompt: p.videoKeyframeStep ? p.videoKeyframeStep.prompt : '',
@@ -3513,6 +3514,7 @@ function applyNanoImageResults(results) {
         videoKeyframeWorkflowId: r.videoKeyframeWorkflowId || '',
         // END keyframe of a transform shot (may be absent).
         endMediaId: r.endMediaId || '', endWorkflowId: r.endWorkflowId || '',
+        frameMode: r.frameMode || 'start', endError: r.endError || '',
         // Ảnh BẢNG NHÂN VẬT (wardrobe sheet) đã dùng cho keyframe này → bước video
         // nạp lại cùng keyframe làm reference asset (r2v) để khóa mặt + trang phục.
         sheetMediaIds: Array.isArray(r.sheetMediaIds) ? r.sheetMediaIds : [],
@@ -3658,6 +3660,11 @@ async function runNanoVideos(options = {}) {
     // Clean keyframe chỉ dùng nếu sẵn có; KHÔNG bắt buộc, KHÔNG chặn video khi thiếu.
     const startImageMediaId = (gen && gen.mediaId) || (gen && gen.videoKeyframeMediaId) || '';
     if (!startImageMediaId) { skippedNoImage++; return; } // chưa tạo ảnh board → bỏ qua shot này
+    const expectedFrameMode = (gen && gen.frameMode) || p.frameMode || (p.endImageStep ? 'start_end' : 'start');
+    if (expectedFrameMode === 'start_end' && !(gen && gen.endMediaId)) {
+      addLog(`⚠️ ${p.name}: đã chọn 2 frame nhưng KHUNG CUỐI chưa tạo sạch${gen && gen.endError ? ' — ' + gen.endError : ''}. Chạy lại bước ảnh; không gửi nhầm video 1 frame.`, 'warning');
+      return;
+    }
     items.push(window.NanoSession.stampItem({
       shotId: p.shotId,
       index: p.index,
@@ -3668,6 +3675,7 @@ async function runNanoVideos(options = {}) {
       startImageMediaId,
       // Transform shot: end keyframe → start_end_frame (Veo interpolates). §6.2
       endImageMediaId: (gen && gen.endMediaId) || '',
+      frameMode: expectedFrameMode,
       // ẢNH BẢNG NHÂN VẬT (wardrobe sheet) của shot này → bước video nạp CÙNG
       // keyframe làm reference asset (r2v), đúng như Flow tự làm khi bấm tay
       // (trace 24/7): mặt + BỘ ĐỒ KHÓA của nhân vật bám chắc trong clip thay vì

@@ -160,6 +160,25 @@ function meaningful(v: string): string {
   return v && !GENERIC_LOCK_VALUE.test(v) ? v : "";
 }
 
+const GENERIC_SCENE_STATE = /^(opening shot|opening|continues? from (?:the )?previous (?:segment|scene|shot)|same as (?:the )?previous|continuation|transition|ending shot|end(?:ing)? state)$/i;
+function specificSceneState(v: unknown): string {
+  const value = clipStr(v);
+  return value && !GENERIC_SCENE_STATE.test(value) ? value : "";
+}
+
+function namesMentioned(text: string, cast: Array<Record<string, string>>): string[] {
+  return cast
+    .map((entry) => entry.name)
+    .filter((name): name is string => Boolean(name))
+    .filter((name) => new RegExp(`(^|[^\\p{L}\\p{N}_])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^\\p{L}\\p{N}_]|$)`, "iu").test(text));
+}
+
+function supportSurfaceFor(name: string, text: string): string | undefined {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const afterName = text.match(new RegExp(`${escaped}[\\s\\S]{0,100}?(?:sits?|sitting|seated|ngồi)?[\\s\\S]{0,35}?(?:on|in|at|trên|ở)\\s+(?:the\\s+|a\\s+)?(sofa|couch|armchair|chair|bench|stool|bed|floor|ground|ghế bành|ghế sofa|ghế|giường|sàn)`, "iu"));
+  return afterName?.[1];
+}
+
 // ── Time-of-day continuity (day↔night) ──────────────────────────────────────
 // A script may legitimately move across the day (e.g. daytime early → evening
 // late), but boards must NEVER oscillate (day, then night, then day again). We
@@ -681,14 +700,19 @@ function buildKeyframePrompt(params: {
   if (cast.length === 0) cast.push(...fallbackCast);
 
   const sceneAction = clipObj(clip?.scene_action);
+  const finalAtomicAction = [...stateAuthority.actions]
+    .reverse()
+    .map((action) => action.evidence || action.verb)
+    .find(Boolean) ?? "";
   const startText =
-    clipStr(sceneAction.start_state) ||
+    specificSceneState(sceneAction.start_state) ||
     stateAuthority.script_contract.first_frame_prompt ||
     fallbackSceneText ||
     setting;
   const endText =
-    clipStr(sceneAction.end_state) ||
-    clipStr(sceneAction.ordered_action) ||
+    specificSceneState(sceneAction.end_state) ||
+    finalAtomicAction ||
+    specificSceneState(sceneAction.ordered_action) ||
     stateAuthority.script_contract.motion_prompt ||
     startText;
   const beatList = (Array.isArray(beats) ? beats : []).filter((b) => clipStr(b?.beat));
@@ -702,6 +726,25 @@ function buildKeyframePrompt(params: {
   const momentCamera = isEnd
     ? normalizeCam(lastCam || firstCam, "[EYE] settle on the shot's final composition")
     : normalizeCam(firstCam, "[EYE] eye-level opening composition");
+  const cameraSubjects = namesMentioned(momentCamera, cast);
+  const actionSubjects = namesMentioned(momentAction, cast);
+  const closeFraming = /\b(close|close-up|medium close|insert|reaction|CU|MCU)\b/i.test(momentCamera);
+  const requiredOnCamera = cameraSubjects.length
+    ? cameraSubjects
+    : actionSubjects.length
+      ? closeFraming ? actionSubjects.slice(0, 1) : actionSubjects
+      : cast.slice(0, 1).map((entry) => entry.name).filter((name): name is string => Boolean(name));
+  const permittedOffCamera = cast
+    .map((entry) => entry.name)
+    .filter((name): name is string => Boolean(name))
+    .filter((name) => !requiredOnCamera.includes(name));
+  const placementText = [
+    momentAction,
+    ...(placementContract?.canonical_placements ?? []).map((placement) => placement.position_label),
+  ].filter(Boolean).join("; ");
+  const seatedSupports = cast
+    .map((entry) => ({ name: entry.name, surface: entry.name ? supportSurfaceFor(entry.name, placementText) : undefined }))
+    .filter((entry): entry is { name: string; surface: string } => Boolean(entry.name && entry.surface));
 
   const liveAction =
     !characterStyleLock &&
@@ -754,6 +797,17 @@ function buildKeyframePrompt(params: {
     body_visibility_contract: characterStyleLock
       ? "Every visible hand, limb or character part stays visibly connected to its named owner's head/body per the locked character-design grammar. Never render an isolated hand, arm, limb or headless fragment unless the script explicitly requires an object-only insert."
       : "A visible hand, wrist, arm or finger stays anatomically connected to its named owner's visible face, shoulders and upper torso. Never render a hand-only, arm-only, headless or disembodied human crop as the Veo input frame.",
+    camera_subject_contract: {
+      required_on_camera: requiredOnCamera,
+      permitted_off_camera: permittedOffCamera,
+      rule:
+        "Camera framing decides who is visible; cast membership does NOT require everybody to appear in the frame. A CLOSE, MEDIUM CLOSE, insert or reaction frame shows only its declared focal subject unless the camera instruction explicitly names another visible person. Keep every off-camera character at the canonical world position—never pull them closer, move their chair or change opposite/adjacent seating merely to include them. If the camera explicitly requires two distant characters together, choose a physically valid WIDE, two-shot or over-the-shoulder position from the declared camera zone and preserve their real distance and eyeline.",
+    },
+    support_surface_contract: {
+      seated_characters: seatedSupports,
+      rule:
+        "Every seated character's pelvis and body weight must visibly rest on the declared sofa/chair/bench support. A table, coffee table, desk, armrest or unsupported edge is NEVER a seat unless the script explicitly says the character sits there. Do not move a seated character onto nearby furniture to improve composition.",
+    },
     ...(placementContract
       ? {
           placement_continuity_contract: {
@@ -768,8 +822,8 @@ function buildKeyframePrompt(params: {
       ? "The SCRIPT defines what happens here and the ATTACHED location photo defines the exact geometry and landmarks. Reproduce that complete place in the project's locked visual medium; never relocate it or substitute a generic location."
       : `The SCRIPT defines the location content. If a LOCATION REFERENCE image/sheet is attached, reproduce its exact terrain/architecture, boundaries, landmarks, anchors, materials, colours and lighting in the project's locked medium. If none is attached, build the complete setting faithfully from this description: ${setting}. Never replace it with a blank frame, empty studio or generic template.`,
     staging: characterStyleLock
-      ? "Place only the characters the script names in this moment into the script-derived location, each rendered exactly once. Each visible character matches only its same-named ATTACHED character/design sheet and the whole environment/prop set stays in the locked medium."
-      : "Place only the characters the script names in this moment into the location, each rendered exactly once. Each visible character's face, hair and full outfit match only that same-named ATTACHED wardrobe sheet.",
+      ? "Render only the camera-visible subject(s) required by camera_subject_contract, each at most once. Other cast members remain off-frame at their canonical world positions; never move them into shot. Each visible character matches only its same-named ATTACHED character/design sheet and the whole environment/prop set stays in the locked medium."
+      : "Render only the camera-visible subject(s) required by camera_subject_contract, each at most once. Other cast members remain off-frame at their canonical world positions; never move them into shot. Each visible character's face, hair and full outfit match only that same-named ATTACHED wardrobe sheet.",
     render:
       characterStyleLock ||
       (liveAction
@@ -1515,7 +1569,9 @@ export function buildNanoFlowManifest(
     //    manual override wins. §6.2.
     const chainOverride = opts.chainModeOverrides?.[index];
     const chainFromPrev =
-      chainOverride === "on"
+      i === 0
+        ? false
+        : chainOverride === "on"
         ? true
         : chainOverride === "off"
           ? false
@@ -1600,6 +1656,7 @@ export function buildNanoFlowManifest(
       ...(useCleanKeyframe && frameMode === "start_end"
         ? { end_storyboard_prompt: buildKeyframePrompt({ moment: "end", ...keyframeArgs }) }
         : {}),
+      frame_mode: useCleanKeyframe ? frameMode : "start",
       continuity_mode: shotContinuity,
       // Seamless story flow: chain this shot's keyframe from the previous shot's
       // last frame. Present only for a truly continuous same-location shot;

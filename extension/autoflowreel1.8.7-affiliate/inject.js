@@ -1885,7 +1885,7 @@
         } catch (e) {}
         // 3) Name it after the shot.
         const renamed = g.workflowId ? await renameWorkflow(pid, g.workflowId, label) : false;
-        const result = { shotId: it.shotId || null, index: it.index || (i + 1), resultKey: it.resultKey, ...context, name: label, mediaId: g.mediaId, workflowId: g.workflowId, renamed: !!renamed, sheetMediaIds: shotSheetIds.slice(), productMediaIds: shotProductIds.slice(), locationMediaId: shotLocationId, locationSheetIds: shotLocationSheetIds.slice() };
+        const result = { shotId: it.shotId || null, index: it.index || (i + 1), resultKey: it.resultKey, ...context, name: label, mediaId: g.mediaId, workflowId: g.workflowId, renamed: !!renamed, frameMode: it.frameMode === 'start_end' || it.endPrompt ? 'start_end' : 'start', sheetMediaIds: shotSheetIds.slice(), productMediaIds: shotProductIds.slice(), locationMediaId: shotLocationId, locationSheetIds: shotLocationSheetIds.slice() };
         post({ via: 'log', kind: 'log', message: willChain
           ? `  ✅ "${label}" dùng lại boundary → ${String(g.mediaId).slice(0, 12)}`
           : `  ✅ "${label}" → ${String(g.mediaId).slice(0, 12)} ${renamed ? '(đã đặt tên)' : '(⚠️ chưa đặt tên được — workflowId có thể trống)'}` });
@@ -1935,9 +1935,18 @@
             try {
               ge = await batchGenerateImages(pid, { prompt: endP, aspect, model, imageInputs: endInputs });
             } catch (e2) {
-              if (endInputs.length && /image_inputs|imageInputs|mediaId/i.test(e2.message)) {
+              if (/HTTP 429/.test(String(e2.message || ''))) {
+                post({ via: 'log', kind: 'log', message: `  ⏳ khung cuối bị 429 — nghỉ 30s rồi thử lại "${label}"…` });
+                await new Promise((r2) => setTimeout(r2, 30000));
+                ge = await batchGenerateImages(pid, { prompt: endP, aspect, model, imageInputs: endInputs });
+              } else if (endInputs.length && /image_inputs|imageInputs|mediaId/i.test(e2.message)) {
                 ge = await batchGenerateImages(pid, { prompt: endPrompt, aspect, model, imageInputs: [] });
-              } else { throw e2; }
+              } else {
+                // One controlled retry preserves the same prompt and canonical
+                // refs. A declared 2-frame shot must not silently degrade.
+                await new Promise((r2) => setTimeout(r2, 1500));
+                ge = await batchGenerateImages(pid, { prompt: endP, aspect, model, imageInputs: endInputs });
+              }
             }
             const endLabel = label + ' (end)';
             const renamedEnd = await renameWorkflow(pid, ge.workflowId, endLabel);
@@ -1947,7 +1956,8 @@
             if (ge.mediaId) prevKeyframeId = ge.mediaId; // trạng thái CUỐI của shot = mốc nối cho shot sau
             post({ via: 'log', kind: 'log', message: `  ✅ khung cuối "${endLabel}" → ${String(ge.mediaId).slice(0, 12)} ${renamedEnd ? '(đã đặt tên)' : ''}` });
           } catch (e2) {
-            post({ via: 'log', kind: 'log', message: `  ⚠️ khung cuối "${label}" lỗi: ${e2.message} — shot sẽ chỉ dùng khung đầu.` });
+            result.endError = String(e2 && e2.message || e2).slice(0, 180);
+            post({ via: 'log', kind: 'log', message: `  ⚠️ khung cuối "${label}" lỗi: ${e2.message} — giữ trạng thái CẦN TẠO LẠI, không hạ xuống video 1 frame.` });
           }
           await new Promise((r) => setTimeout(r, d.delayMs || 1500));
         }
