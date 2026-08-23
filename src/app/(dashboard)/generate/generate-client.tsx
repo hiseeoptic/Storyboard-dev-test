@@ -2491,6 +2491,18 @@ function ProjectWorkspace() {
   // ─── Nano Flow: export the manifest for the AutoFlow Reel extension ───────
   const buildResultManifest = () => {
     if (!result) return null;
+    // Character reference photos for the manifest come from the FULL-RES cast in
+    // client state (UploadedImage.base64), NOT the downscaled/budget-trimmed copy
+    // sent to the server — the manifest is exported client-side with no payload
+    // cap, so the extension receives the user's real photos and auto-loads them
+    // (no manual per-image attach). Falls back to the sent copy if state is empty.
+    const clientCharacterRefs: ImageReference[] = characters
+      .filter((c) => (c.images?.length ?? 0) > 0)
+      .map((c) => ({
+        name: c.name.trim(),
+        images: c.images.map((img) => img.base64).filter(Boolean),
+      }))
+      .filter((r) => r.images.length > 0);
     const speechContract = genInput
       ? buildSpeechManifestContract(genInput)
       : undefined;
@@ -2538,7 +2550,7 @@ function ProjectWorkspace() {
         genInput?.product_ir?.review_status === "approved" ? genInput.product_images : undefined,
       // Embed each uploaded character frontal photo so the extension auto-loads
       // it (no manual per-image attach). No photo ⇒ a null slot as before.
-      characterReferences: genInput?.character_images,
+      characterReferences: clientCharacterRefs.length > 0 ? clientCharacterRefs : genInput?.character_images,
       affiliateProductIR: genInput?.product_ir,
       affiliateDisclosure: genInput?.affiliate_disclosure,
       // Frame-mode policy: genre + directing profile pick the default start vs
@@ -2590,7 +2602,7 @@ function ProjectWorkspace() {
     }
     // exportCheckVersion intentionally forces a free deterministic re-check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, genInput, frameModeOverrides, chainModeOverrides, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
+  }, [result, genInput, characters, frameModeOverrides, chainModeOverrides, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
 
   const cleanManifestForExport = () => {
     if (!exportBundle?.manifest) {
