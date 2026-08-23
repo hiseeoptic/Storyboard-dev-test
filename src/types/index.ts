@@ -198,7 +198,14 @@ export type DirectingProfileId =
   | "broadcast_sports"
   | "cinematic_sports"
   | "rhythmic_music_video"
-  | "animation_kids";
+  | "animation_kids"
+  // ─── Common shooting grammars usable across many genres ──────────────
+  | "pov_first_person"
+  | "overhead_flatlay"
+  | "macro_detail"
+  | "handheld_vlog"
+  | "aerial_drone"
+  | "static_locked";
 
 export interface VoicePerformanceSettings {
   role?: "auto" | "narrator" | "presenter" | "expert" | "commentator" | "character";

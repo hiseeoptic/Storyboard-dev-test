@@ -162,6 +162,12 @@ export const DIRECTING_PROFILE_OPTIONS: CreativeOption<DirectingProfileId>[] = [
   { value: "cinematic_sports", label_vi: "Thể thao điện ảnh", label_en: "Cinematic sports", description_vi: "Quy mô vận động viên, tracking rõ và chi tiết ở cao trào thật.", description_en: "Athlete-scale tracking with selective detail at a genuine peak." },
   { value: "rhythmic_music_video", label_vi: "MV nhịp điệu", label_en: "Rhythmic music video", description_vi: "Máy và dựng theo cấu trúc nhạc, không cắt ngẫu nhiên.", description_en: "Camera and edits follow musical structure, never random beat spam." },
   { value: "animation_kids", label_vi: "Trẻ em / hoạt hình", label_en: "Kids / animation", description_vi: "Silhouette, pose và camera dễ đọc, không gây mất phương hướng.", description_en: "Readable silhouettes, poses and non-disorienting camera moves." },
+  { value: "pov_first_person", label_vi: "POV (góc nhìn thứ nhất)", label_en: "POV (first-person)", description_vi: "Máy đặt ở mắt người xem hoặc theo tay đang thao tác — kiểu dạy kỹ năng, nấu ăn, hành động, du lịch, game.", description_en: "Camera at the viewer's eye or following the working hands — for teaching a skill, cooking, action, travel and gaming." },
+  { value: "overhead_flatlay", label_vi: "Từ trên xuống (flat-lay)", label_en: "Overhead / flat-lay", description_vi: "Góc bird's-eye thẳng đứng, thấy trọn thao tác và bố cục — chuẩn cho công thức nấu ăn, handmade, tutorial.", description_en: "A straight-down bird's-eye view showing the whole action and layout — the recipe/craft/tutorial standard." },
+  { value: "macro_detail", label_vi: "Macro / ASMR", label_en: "Macro / ASMR detail", description_vi: "Cận cực đại vào chất liệu, kết cấu và chi tiết (sizzle, rót, sợi vải) — tôn texture, hợp ASMR và money-shot.", description_en: "Extreme close-ups on material, texture and detail (sizzle, pour, fabric weave) — texture-forward, ASMR and money-shots." },
+  { value: "handheld_vlog", label_vi: "Cầm tay / vlog", label_en: "Handheld / vlog", description_vi: "Máy cầm tay gần gũi, chân thật kiểu creator; rung nhẹ có chủ đích, không cẩu thả.", description_en: "Intimate, authentic creator-style handheld with intentional (not careless) motion." },
+  { value: "aerial_drone", label_vi: "Flycam / trên không", label_en: "Aerial / drone", description_vi: "Đại cảnh và thiết lập không gian từ trên cao, chuyển động bay mượt — hợp du lịch, thiên nhiên, thể thao.", description_en: "Aerial establishing scale with smooth flight moves — great for travel, nature and sports." },
+  { value: "static_locked", label_vi: "Khung tĩnh (tripod)", label_en: "Locked static (tripod)", description_vi: "Khung khóa cứng trên chân máy, không di chuyển — nói-với-máy, ASMR, sản phẩm, phỏng vấn.", description_en: "A locked tripod frame with no camera movement — talking-to-camera, ASMR, product and interviews." },
 ];
 
 export const GOAL_LAWS: Record<AudienceGoal, string[]> = {
@@ -310,6 +316,30 @@ export const DIRECTING_LAWS: Record<Exclude<DirectingProfileId, "auto">, string[
   animation_kids: [
     "Prioritise clear silhouettes, readable poses, simple screen direction and friendly non-disorienting camera moves.",
     "Keep action and emotion legible at a glance; no frantic cutting or live-action style drift.",
+  ],
+  pov_first_person: [
+    "Shoot from the subject's own eye-line or just behind their working hands; keep the horizon and hand positions consistent with a real first-person viewpoint.",
+    "Show the hands and tools performing the actual task in continuous contact; never reveal the operator's full face or an impossible third-person angle within the POV.",
+  ],
+  overhead_flatlay: [
+    "Camera points straight down (bird's-eye) over the work surface; keep the surface parallel to frame and the full action area in view.",
+    "Arrange ingredients, tools or components legibly on the surface; hands enter from the frame edges and never block the key action.",
+  ],
+  macro_detail: [
+    "Fill the frame with one material, texture or detail at close focusing distance with shallow depth of field; keep the hero detail tack-sharp.",
+    "Motivate the detail by the scene (a real sizzle, pour, seam or reaction); never invent a texture that the scene does not contain.",
+  ],
+  handheld_vlog: [
+    "Use intimate, motivated handheld with gentle natural sway; keep the subject readable and the horizon controlled — imperfection, not chaos.",
+    "Place the camera where a person could actually hold it (arm's length, over-shoulder, chest height); avoid impossible rigging.",
+  ],
+  aerial_drone: [
+    "Use aerial establishing scale and smooth flight moves (push-in, reveal, top-down, fly-over) that stay geographically consistent with the scene below.",
+    "Keep altitude, direction and the ground layout coherent across the shot; reserve the aerial for scale, geography or a reveal, not every beat.",
+  ],
+  static_locked: [
+    "Lock the camera on a tripod with no pan, tilt or move; let the subject and action carry the shot inside a stable, deliberately composed frame.",
+    "Keep the composition, eyeline and headroom consistent; motion belongs to the subject, never the camera.",
   ],
 };
 

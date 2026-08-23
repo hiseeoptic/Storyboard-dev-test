@@ -43,6 +43,8 @@ const PROFILE_LOCKED_START = new Set<string>([
   "creator_ugc",
   "explainer_clarity",
   "reaction_comedy",
+  // A locked tripod frame is a single deliberate composition — keep it one frame.
+  "static_locked",
 ]);
 const PROFILE_PREFER_START_END = new Set<string>([
   "immersive_action",
@@ -52,6 +54,8 @@ const PROFILE_PREFER_START_END = new Set<string>([
   "technical_demo",
   "natural_history",
   "poetic_nature",
+  // Aerial/drone shots carry real flight motion → interpolate start→end.
+  "aerial_drone",
 ]);
 const PROFILE_PREFER_START = new Set<string>([
   "product_commercial",

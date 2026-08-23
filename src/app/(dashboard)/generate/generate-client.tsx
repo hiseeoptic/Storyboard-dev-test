@@ -596,6 +596,34 @@ const TONE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
   ],
 };
 
+// User-facing description for each dialogue tone (shown under the selector so the
+// user knows what each style is).
+const TONE_DESC: Record<string, { vi: string; en: string }> = {
+  auto: { vi: "Tự động chọn theo thể loại.", en: "Auto-picked by genre." },
+  direct: { vi: "Câu ngắn, đi thẳng vào ý, dứt khoát.", en: "Short sentences, straight to the point." },
+  everyday: { vi: "Nói tự nhiên như đời thường, có ngập ngừng thật.", en: "Natural everyday speech with believable hesitation." },
+  witty: { vi: "Đối đáp có duyên: gài — bẻ hướng — chốt, chừa nhịp phản ứng.", en: "Setup, misdirection and payoff, with reaction space." },
+  subtext: { vi: "Ẩn ý, tiết chế — nghĩa nằm ở im lặng và cách né tránh.", en: "Restrained; meaning sits in silence and avoidance." },
+  intense: { vi: "Kịch tính dồn ép, câu ngắn dần, nhấn trước tin quan trọng.", en: "Pressurised; turns shorten before the decisive beat." },
+  expert: { vi: "Chuyên gia: thuật ngữ chính xác, nhân–quả rõ, nêu giới hạn.", en: "Precise terminology, clear cause→result, states limits." },
+  poetic: { vi: "Thơ, giàu hình ảnh, nhịp thong thả, một mô-típ xuyên suốt.", en: "Image-rich, spacious cadence, one coherent motif." },
+  live_commentary: { vi: "Bình luận trực tiếp, bám diễn biến, cao trào đúng lúc.", en: "Real-time commentary that tracks the live action." },
+  commercial: { vi: "Quảng cáo: một thông điệp lợi ích, USP/brand/CTA rõ nhịp.", en: "One benefit message with clear USP/brand/CTA timing." },
+  cheerful: { vi: "Vui tươi, năng lượng sáng, nhấn rõ, không gượng.", en: "Upbeat, bright energy, clear emphasis." },
+  emotional: { vi: "Cảm động, sâu lắng, nhiều khoảng lặng, ẩn ý trước lời.", en: "Heartfelt and restrained, subtext before explanation." },
+  humorous: { vi: "Hài hước vui nhộn: gài — lật — chốt nhanh, giữ nhịp cười.", en: "Quick setup–reversal–punchline, hold the laugh." },
+  luxury: { vi: "Sang trọng: ít lời, tự tin nhẹ, khoảng nghỉ có kiểm soát.", en: "Few precise words, low-key confidence, measured pauses." },
+  professional: { vi: "Chuyên nghiệp, chính xác, logic nhân–quả, không nói quá.", en: "Concise, accurate, cause→result, no overclaiming." },
+  dramatic: { vi: "Gay cấn, câu ngắn dần, nhấn trước từ quan trọng.", en: "High-stakes, shortening turns, a pause before impact." },
+  mysterious: { vi: "Bí ẩn, giấu thông tin, nhịp chậm có chủ đích.", en: "Withheld information, deliberate slow pacing." },
+  inspirational: { vi: "Truyền cảm hứng: ngôn từ tích cực, cao trào cảm xúc thật.", en: "Uplifting, active language, an earned emotional lift." },
+  relatable: { vi: "Gần gũi đời thường, phản hồi ngắn, không như quảng cáo.", en: "Everyday and relatable, never ad-like." },
+  trendy: { vi: "Trẻ trung bắt trend, nhịp nhanh, ngôn ngữ mạng vừa phải.", en: "Youthful and social-native with a quick rhythm." },
+  warm: { vi: "Ấm áp, tình cảm, chú ý lắng nghe, nhấn nhẹ.", en: "Gentle, attentive and warm, with soft emphasis." },
+  epic: { vi: "Hoành tráng, sử thi, diễn đạt trang trọng, dứt khoát.", en: "Elevated, epic diction with decisive emphasis." },
+  [CUSTOM]: { vi: "Tự nhập phong cách lời thoại của bạn.", en: "Type your own dialogue style." },
+};
+
 // English descriptor sent to the AI for each tone key.
 const TONE_PROMPT: Record<string, string> = {
   auto: "",
@@ -4605,6 +4633,9 @@ function ProjectWorkspace() {
                     options={filteredToneOptions}
                     placeholder={L("tonePlaceholder")}
                   />
+                  {toneSel && toneSel !== CUSTOM && TONE_DESC[toneSel] && (
+                    <p className="text-xs font-medium text-foreground">{TONE_DESC[toneSel][lang]}</p>
+                  )}
                   {toneSel === CUSTOM && (
                     <Input value={toneCustom} onChange={(e) => setToneCustom(e.target.value)} placeholder={L("toneCustomPlaceholder")} />
                   )}

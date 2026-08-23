@@ -97,6 +97,12 @@ const CAMERA: Partial<Record<DirectingProfileId, string>> = {
   cinematic_sports: "athlete-scale movement, spatially readable tracking and selective close detail around a real performance peak",
   rhythmic_music_video: "camera and cut points follow musical structure, recurring visual motif and minimal spoken coverage",
   animation_kids: "clear silhouettes, readable poses, friendly screen direction and simple non-disorienting camera moves",
+  pov_first_person: "first-person eye-line or over-the-hands coverage showing the real task in continuous contact, consistent horizon, no third-person cheat",
+  overhead_flatlay: "straight-down bird's-eye over the work surface, full action area in frame, hands entering from the edges without blocking the key action",
+  macro_detail: "extreme close macro on one motivated material or detail, shallow depth of field, hero detail tack-sharp",
+  handheld_vlog: "intimate motivated handheld with gentle natural sway, subject readable, camera where a person could actually hold it",
+  aerial_drone: "aerial establishing scale with smooth flight moves that stay geographically consistent with the ground layout",
+  static_locked: "locked tripod frame with no camera movement, deliberate stable composition, motion carried by the subject not the camera",
 };
 
 const ALL_DIALOGUE: DialogueStyleId[] = [
@@ -177,6 +183,107 @@ export const GENRE_PRODUCTION_PROFILES: Record<Genre, GenreProductionProfile> = 
   sports: profile("sports", { default_dialogue_style: "live_commentary", allowed_dialogue_styles: ["auto", "live_commentary", "direct", "expert", "inspirational", "custom"], default_narrator_style: "sports", allowed_narrator_styles: ["auto", "sports", "documentary", "inspirational", "custom"], default_camera_profile: "broadcast_sports", allowed_camera_profiles: ["auto", "broadcast_sports", "cinematic_sports", "immersive_action"], script_profile: "follow actual play, tactical change and consequence; reserve elevated language for the genuine peak", voice_performance_profile: "accurate names, scores and terminology with energy tracking real action", camera_profile: CAMERA.broadcast_sports!, edit_rhythm: "wide tactical context, action tracking, reaction and replay only when it clarifies", forbidden_patterns: ["invented score", "mispronounced athlete", "constant climax"] }),
   other: profile("other", { default_dialogue_style: "everyday", allowed_dialogue_styles: ALL_DIALOGUE, default_narrator_style: "auto", allowed_narrator_styles: ALL_VOICE, default_camera_profile: "cinematic_drama", script_profile: "derive sentence craft from the approved intent and cast without importing an unrelated genre formula", voice_performance_profile: "derive relative delivery from role, emotion and platform while preserving voice identity", camera_profile: "choose one coherent grammar from the story and preserve screen direction", forbidden_patterns: ["mixed incompatible genre grammar", "generic default country or setting"] }),
 };
+
+// ── Rich per-genre style coverage ────────────────────────────────────────────
+// Every genre is opened to the camera grammars and dialogue families actually
+// COMMON for it (curated but generous) instead of the thin 1–2 fallback. "auto"
+// and the genre's own default always stay available; dialogue always keeps
+// "custom". Kept as one central override so all coverage lives in a single place
+// and the profile() calls above remain the source of truth for everything else.
+const ALL_CAMERA_PROFILES: DirectingProfileId[] = [
+  "auto", "everyday_naturalism", "observational_documentary", "natural_history", "poetic_nature",
+  "psychological_metaphor", "anthropomorphic_fable", "creator_ugc", "cinematic_drama", "premium_commercial",
+  "explainer_clarity", "immersive_action", "reaction_comedy", "subjective_horror", "soft_romance",
+  "interview_expert", "product_commercial", "luxury_commercial", "technical_demo", "broadcast_sports",
+  "cinematic_sports", "rhythmic_music_video", "animation_kids", "pov_first_person", "overhead_flatlay",
+  "macro_detail", "handheld_vlog", "aerial_drone", "static_locked",
+];
+const RICH_CAMERA: Partial<Record<Genre, DirectingProfileId[]>> = {
+  action: ["immersive_action", "cinematic_drama", "pov_first_person", "aerial_drone", "handheld_vlog", "macro_detail"],
+  comedy: ["reaction_comedy", "everyday_naturalism", "handheld_vlog", "static_locked", "pov_first_person"],
+  drama: ["cinematic_drama", "soft_romance", "psychological_metaphor", "handheld_vlog", "static_locked"],
+  horror: ["subjective_horror", "cinematic_drama", "pov_first_person", "handheld_vlog", "static_locked", "macro_detail"],
+  romance: ["soft_romance", "cinematic_drama", "macro_detail", "handheld_vlog", "poetic_nature"],
+  "sci-fi": ["cinematic_drama", "immersive_action", "aerial_drone", "macro_detail", "premium_commercial"],
+  thriller: ["subjective_horror", "cinematic_drama", "immersive_action", "pov_first_person", "handheld_vlog"],
+  animation: ["animation_kids", "reaction_comedy", "cinematic_drama", "pov_first_person"],
+  documentary: ["observational_documentary", "interview_expert", "natural_history", "aerial_drone", "handheld_vlog", "static_locked"],
+  fantasy: ["cinematic_drama", "aerial_drone", "poetic_nature", "macro_detail", "immersive_action"],
+  historical: ["cinematic_drama", "observational_documentary", "aerial_drone", "static_locked"],
+  mythology: ["cinematic_drama", "aerial_drone", "immersive_action", "macro_detail"],
+  sitcom: ["reaction_comedy", "everyday_naturalism", "static_locked", "handheld_vlog"],
+  mockumentary: ["creator_ugc", "observational_documentary", "reaction_comedy", "handheld_vlog", "static_locked", "interview_expert"],
+  music_video: ["rhythmic_music_video", "cinematic_drama", "aerial_drone", "handheld_vlog", "macro_detail", "immersive_action"],
+  kids: ["animation_kids", "everyday_naturalism", "pov_first_person", "handheld_vlog", "overhead_flatlay"],
+  advertising: ["product_commercial", "luxury_commercial", "creator_ugc", "premium_commercial", "macro_detail", "handheld_vlog", "pov_first_person"],
+  product_demo: ["technical_demo", "product_commercial", "explainer_clarity", "macro_detail", "overhead_flatlay", "pov_first_person", "static_locked"],
+  brand_film: ["cinematic_drama", "luxury_commercial", "premium_commercial", "aerial_drone", "macro_detail"],
+  promo: ["product_commercial", "creator_ugc", "handheld_vlog", "rhythmic_music_video", "macro_detail"],
+  unboxing: ["creator_ugc", "technical_demo", "product_commercial", "overhead_flatlay", "macro_detail", "pov_first_person", "static_locked"],
+  luxury: ["luxury_commercial", "premium_commercial", "macro_detail", "cinematic_drama", "aerial_drone"],
+  numerology: ["explainer_clarity", "psychological_metaphor", "cinematic_drama", "static_locked"],
+  health: ["interview_expert", "technical_demo", "explainer_clarity", "static_locked", "macro_detail"],
+  psychology: ["psychological_metaphor", "cinematic_drama", "interview_expert", "static_locked"],
+  life_wisdom: ["anthropomorphic_fable", "psychological_metaphor", "cinematic_drama", "poetic_nature"],
+  education: ["explainer_clarity", "interview_expert", "technical_demo", "overhead_flatlay", "pov_first_person", "static_locked"],
+  finance: ["explainer_clarity", "interview_expert", "technical_demo", "static_locked"],
+  tech: ["technical_demo", "product_commercial", "explainer_clarity", "macro_detail", "pov_first_person", "overhead_flatlay", "static_locked"],
+  cooking: ["technical_demo", "pov_first_person", "overhead_flatlay", "macro_detail", "handheld_vlog", "everyday_naturalism", "static_locked"],
+  fitness: ["technical_demo", "everyday_naturalism", "pov_first_person", "handheld_vlog", "static_locked", "immersive_action"],
+  lifestyle: ["everyday_naturalism", "creator_ugc", "handheld_vlog", "pov_first_person", "macro_detail", "aerial_drone"],
+  travel: ["poetic_nature", "aerial_drone", "handheld_vlog", "pov_first_person", "observational_documentary", "everyday_naturalism", "macro_detail"],
+  nature: ["natural_history", "poetic_nature", "aerial_drone", "macro_detail", "pov_first_person"],
+  sports: ["broadcast_sports", "cinematic_sports", "immersive_action", "aerial_drone", "pov_first_person", "handheld_vlog", "macro_detail"],
+  other: ALL_CAMERA_PROFILES,
+};
+const RICH_DIALOGUE: Partial<Record<Genre, DialogueStyleId[]>> = {
+  action: ["direct", "intense", "witty", "subtext", "inspirational"],
+  comedy: ["witty", "everyday", "direct", "subtext"],
+  drama: ["subtext", "everyday", "intense", "witty", "poetic", "inspirational"],
+  horror: ["subtext", "direct", "intense"],
+  romance: ["subtext", "everyday", "poetic", "witty", "inspirational"],
+  "sci-fi": ["expert", "direct", "subtext", "witty", "inspirational"],
+  thriller: ["intense", "direct", "subtext", "expert"],
+  animation: ["witty", "direct", "everyday", "inspirational", "subtext"],
+  documentary: ["expert", "direct", "everyday", "subtext", "inspirational"],
+  fantasy: ["poetic", "subtext", "inspirational", "direct", "witty", "expert"],
+  historical: ["subtext", "direct", "poetic", "expert", "inspirational"],
+  mythology: ["poetic", "inspirational", "direct", "subtext"],
+  sitcom: ["everyday", "witty", "subtext", "direct", "inspirational"],
+  mockumentary: ["everyday", "witty", "subtext", "direct"],
+  music_video: ["poetic", "direct", "subtext", "witty", "inspirational"],
+  kids: ["direct", "everyday", "witty", "inspirational"],
+  advertising: ["commercial", "direct", "everyday", "expert", "inspirational", "witty"],
+  product_demo: ["expert", "direct", "commercial", "everyday", "witty", "inspirational"],
+  brand_film: ["subtext", "inspirational", "poetic", "everyday", "commercial"],
+  promo: ["direct", "commercial", "witty", "everyday", "inspirational"],
+  unboxing: ["everyday", "witty", "direct", "commercial", "expert", "inspirational"],
+  luxury: ["subtext", "poetic", "commercial", "expert", "inspirational"],
+  numerology: ["inspirational", "expert", "everyday", "subtext", "witty"],
+  health: ["expert", "direct", "everyday", "inspirational"],
+  psychology: ["subtext", "everyday", "expert", "inspirational", "witty"],
+  life_wisdom: ["inspirational", "everyday", "subtext", "poetic", "witty"],
+  education: ["expert", "direct", "everyday", "witty", "inspirational"],
+  finance: ["expert", "direct", "everyday", "witty", "inspirational"],
+  tech: ["expert", "direct", "commercial", "everyday", "witty", "inspirational"],
+  cooking: ["direct", "expert", "everyday", "witty", "inspirational", "commercial"],
+  fitness: ["direct", "expert", "inspirational", "everyday", "witty"],
+  lifestyle: ["everyday", "witty", "subtext", "commercial", "direct", "inspirational"],
+  travel: ["everyday", "inspirational", "poetic", "expert", "witty", "direct"],
+  nature: ["expert", "poetic", "everyday", "inspirational"],
+  sports: ["live_commentary", "direct", "expert", "inspirational", "intense", "witty"],
+  other: ALL_DIALOGUE,
+};
+{
+  const uniq = <T>(xs: T[]): T[] => Array.from(new Set(xs));
+  (Object.keys(GENRE_PRODUCTION_PROFILES) as Genre[]).forEach((g) => {
+    const p = GENRE_PRODUCTION_PROFILES[g];
+    const cam = RICH_CAMERA[g];
+    if (cam) p.allowed_camera_profiles = uniq<DirectingProfileId>(["auto", p.default_camera_profile, ...cam]);
+    const dlg = RICH_DIALOGUE[g];
+    if (dlg) p.allowed_dialogue_styles = uniq<DialogueStyleId>(["auto", p.default_dialogue_style, ...dlg, "custom"]);
+  });
+}
 
 export const ADVERTISING_SUBTYPE_LABELS: Record<string, { vi: string; en: string }> = {
   affiliate_short: { vi: "Affiliate 15–30s từ ảnh sản phẩm", en: "15–30s affiliate from product images" },
