@@ -113,6 +113,23 @@ const PHOTOREAL_REALISM =
 const PHOTOREAL_MATERIAL_REALISM =
   "REAL MATERIALS: leather shows grain, creases, worn scuffs and stitching; denim shows twill weave; metal has physically plausible reflections and wear; wood has varied grain; fabric has real thread, nap, folds and weight. Physically accurate light, soft imperfect shadow edges, natural optical depth of field and fine organic sensor/film texture — no plastic, toy-like or CGI surfaces.";
 
+// CONTENT-SAFETY DOCTRINE — the finished script/storyboard text is fed straight
+// into Google Veo / Flow, whose content filter silently BLOCKS or refuses any
+// clip that reads as sexual, erotic or suggestive. This is the #1 reason a
+// bedroom / couple ("phòng ngủ", "vợ chồng") scene "bị Veo chặn". The fix is to
+// tell the SAME human story with wholesome, PG, safe-for-work staging so it
+// always passes — NOT to delete or relocate the setting. This directive is read
+// ONLY by the authoring model (script writer + storyboard). It is deliberately
+// NOT added to the negative list that Veo itself reads, because (per the note on
+// SHARED_NEGATIVE above) naming a forbidden concept back to Veo can backfire; the
+// reliable fix is to never author the suggestive wording in the first place.
+const FILTER_SAFE_CONTENT_DOCTRINE = `CONTENT-SAFETY / FILTER-SAFE STAGING (MANDATORY — this is what stops Google Veo/Flow silently BLOCKING or refusing a clip): the text you write is sent straight to an AI video model whose safety filter rejects anything that reads as sexual, erotic, sensual or suggestive. Tell the SAME human story, but keep every scene wholesome, PG, safe-for-work and family-friendly so it always renders.
+- KEEP THE SETTING, CLEAN THE STAGING: a bedroom, a bed, a married couple ("vợ chồng"), a honeymoon, a bathroom or a "morning in bed" beat is ALLOWED — never delete, relocate or refuse it. Re-stage it as ordinary warm domestic life: two people talking or laughing, a parent with a child, folding laundry, reading, a morning routine, sharing tea, sitting side by side, or a reassuring hug given OVER the blanket while both are sitting up. Preserve the emotional beat (love, care, reconciliation, tenderness, reunion) and drop ONLY the sensuality.
+- WARDROBE IS MODEST BY DEFAULT: everyone stays fully and modestly dressed in everyday clothes or full-coverage sleepwear (long pyjamas, a loose t-shirt and shorts). NEVER lingerie, underwear-only, a towel, a bare torso, an open robe or "wrapped in just a sheet". Nobody undresses, strips, or is caught mid-changing.
+- NEVER AUTHOR THESE BEATS OR WORDS (in ACTION, motion_prompt, first_frame_prompt, setting, camera OR dialogue — they are exactly what trips the filter): kissing on a bed, bodies pressed together or entwined, lying on top of / straddling / climbing over someone, caressing or stroking skin, a hand slipping under clothing, the camera lingering on lips, chest, thighs, hips or curves, and any "sexy", "seductive", "sensual", "steamy", "passionate", "sultry", "provocative", "erotic", "lustful", "aroused", "flirtatious-touch", "make love", "foreplay" or "heavy breathing as desire" framing, plus sheer or see-through fabric. Replace each with a wholesome equivalent (a warm smile, hands held above the covers, foreheads gently touching while both sit up and fully clothed, a shared laugh, a hand resting on a shoulder).
+- DIALOGUE STAYS PG: a couple may be loving, teasing and playful, but no sexual innuendo, no "bedroom talk", no seduction — warmth and care, never desire.
+- SCOPE (do not over-correct): this ONLY neutralises sexual/suggestive content. It does NOT dilute non-intimate genres — cooking, fitness, action, drama and comedy keep their full energy and their normal context-appropriate athletic / beach / swim wardrobe. Never bolt prudish disclaimers onto scenes that were never intimate.`;
+
 // Concise anti-artifact tail. Product-related negatives are included ONLY when
 // the clip actually has a product, so a person-only clip never mentions products.
 // The physics/camera/audio clauses are RENDERED FROM the frozen PRODUCTION_LAWS
@@ -694,6 +711,8 @@ DIALOGUE QUALITY DOCTRINE — MANDATORY (make every line worth quoting; this is 
 - BREATH BETWEEN ACTS: when the mood shifts between segments (an act turn), open the next segment's ACTION with one quiet beat (a pause, a held look, a breath) so the viewer's brain gets a half-second to reset — emotional continuity when the mood holds, a breathing beat when it turns.
 - MOOD→ATMOSPHERE HINT: let each ACTION carry one short atmosphere cue matching its mood — tense/dark: low-key light, controlled shadows; hopeful/calm: soft diffused light; release/payoff: a gentle warm lift — one phrase only, the storyboard stage translates it into exact Kelvin/Lux.
 
+${FILTER_SAFE_CONTENT_DOCTRINE}
+
 Output PLAIN TEXT in EXACTLY this shape (no markdown, no JSON):
 TITLE: <catchy title>
 CORE MESSAGE: <one-line takeaway>
@@ -935,6 +954,8 @@ DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlap
 - TWO-PERSON BLOCKING (conversation geometry): when two characters share a dialogue scene, their bodies and gazes are oriented TOWARD EACH OTHER per the scene geometry — never both facing the same direction or both facing the camera in parallel like news anchors, unless the script explicitly stages it (e.g. one turns away in refusal, both watching something). State each character's facing direction in the first_frame_prompt ("[A] faces [B] across the table; [B] stands half-turned toward [A]").
 - END-STATE FREEZE-FRAME: "continuity_note" = the physical freeze-frame at second 10 in ONE compact sentence (≤ 35 words) — who is where, facing which way, pose/expression, held props, light. The NEXT segment opens from it ONLY when transition_in.mode="continuous". Every other transition opens from its own declared start state and carries only transition_in.preserve. Never write a vague emotional summary; record the observable physical state.
 - PERFORMANCE DIRECTION: never stop at generic labels such as "smiles", "sad", "surprised" or "happy". Tie every expression to a visible micro-action caused by the preceding beat: a smile stalls before the eyes, fingers loosen on a prop, breath catches, gaze avoids then returns, shoulders settle, jaw unclenches. "motion_prompt" must show the action–reaction chain and the listener's silent response, not merely announce an emotion.
+
+${FILTER_SAFE_CONTENT_DOCTRINE}
 
 Camera codes: [EYE] eye-level, [LOW] low, [HIGH] high, [OVH] overhead, [DUTCH] dutch, [OTS] over-shoulder, [POV] first-person, [CLOSE] close-up, [SIDE] side profile.
 
