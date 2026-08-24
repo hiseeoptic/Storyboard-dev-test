@@ -11,6 +11,71 @@ const STORE = "kv";
 const KEY = "cast_preset";
 const LS_KEY = "sb_cast_preset";
 
+type PresetImage = {
+  id?: string;
+  preview?: string;
+  base64?: string;
+  fileName?: string;
+};
+
+type PresetCharacter = {
+  name?: string;
+  images?: PresetImage[];
+};
+
+type CharacterReference = {
+  name: string;
+  images: string[];
+};
+
+function stripDataUrl(value: string): string {
+  return value.replace(/^data:[^,]+,/, "");
+}
+
+/**
+ * Blob preview URLs only live for the current page session. Rebuild every
+ * loaded preview from the persisted base64 bytes so a preset remains visible
+ * and usable after refresh/reopen. Legacy multi-angle presets are reduced to
+ * the current one-frontal-photo contract.
+ */
+export function normalizeCharacterPreset<T extends PresetCharacter>(data: T[]): T[] {
+  return data.map((character) => ({
+    ...character,
+    images: (character.images ?? [])
+      .filter((image) => typeof image?.base64 === "string" && image.base64.length > 0)
+      .slice(0, 1)
+      .map((image, imageIndex) => {
+        const base64 = stripDataUrl(image.base64!);
+        return {
+          ...image,
+          id: image.id || `preset-${imageIndex + 1}`,
+          base64,
+          fileName: image.fileName || "character-preset.jpg",
+          preview: `data:image/jpeg;base64,${base64}`,
+        };
+      }),
+  })) as T[];
+}
+
+/** Merge manifest references by character name without dropping a draft cast
+ * member that was auto-included at generation time. Client/full-resolution
+ * references win; server/downscaled references fill missing names. */
+export function mergeCharacterReferences<T extends CharacterReference>(
+  clientReferences: T[],
+  generatedReferences: T[],
+): T[] {
+  const merged = new Map<string, T>();
+  for (const reference of generatedReferences) {
+    const key = reference.name.trim().toLowerCase();
+    if (key && reference.images.some(Boolean)) merged.set(key, reference);
+  }
+  for (const reference of clientReferences) {
+    const key = reference.name.trim().toLowerCase();
+    if (key && reference.images.some(Boolean)) merged.set(key, reference);
+  }
+  return Array.from(merged.values());
+}
+
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
