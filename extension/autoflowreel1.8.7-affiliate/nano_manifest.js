@@ -145,9 +145,9 @@
         shotId: shotId,
         parentShotId: shotId,
         sceneNo: null,
-        // Board model: 1 ảnh board bối cảnh / shot 10s — KHÔNG nối keyframe trước
-        // (bỏ end/start frame chaining theo yêu cầu). Mỗi board độc lập.
-        chainFromPrev: false,
+        // Preserve the app-authored cross-shot boundary contract. Missing on old
+        // manifests stays false, so legacy projects keep their prior behaviour.
+        chainFromPrev: s.chain_from_prev === true,
         // Ảnh bối cảnh user nạp cho RIÊNG board này (nút nạp theo từng board). Có
         // thì đính làm ref khóa bối cảnh (ưu tiên), không có thì tạo board từ prompt.
         boardLocationImage: s.board_location_image || null,
@@ -159,6 +159,8 @@
         // Clean SINGLE full-bleed frame dedicated to Veo. The multi-panel board
         // remains a review artifact and is never used as video conditioning.
         videoKeyframePrompt: String(s.video_keyframe_prompt || '').trim(),
+        frameMode: s.frame_mode === 'start_end' ? 'start_end'
+          : (s.frame_mode === 'start' ? 'start' : null),
         // Optional END keyframe (start_end_frame mode): when present, the shot
         // has a "transform" — Veo interpolates start→end. See DESIGN §6.2.
         endStoryboardPrompt: String(s.end_storyboard_prompt || '').trim(),

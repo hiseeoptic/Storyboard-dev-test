@@ -366,7 +366,7 @@ test("environment_ref becomes an asset except when custom", () => {
   assert.deepEqual(shot2.image_refs?.environments, []);
 });
 
-test("environments carry a 2-angle character-free LOCATION SHEET (location_views)", () => {
+test("environments carry one clean character-free 16:9 establishing reference", () => {
   const m = buildNanoFlowManifest(fixture(), {
     veoClips: [
       {
@@ -381,27 +381,24 @@ test("environments carry a 2-angle character-free LOCATION SHEET (location_views
   });
   const env = (m.assets.environments ?? []).find((e) => e.id === "living_room_1");
   assert.ok(env, "living_room_1 must be declared");
-  // New extensions prefer one 16:9 two-panel sheet. Keep the legacy two-view
-  // pair as a compatibility fallback for already-installed extension versions.
   const locationSheet = JSON.parse(env.location_sheet_prompt ?? "{}") as Record<string, unknown>;
   assert.equal(locationSheet.output_count, 1);
   assert.equal(locationSheet.aspect_ratio, "16:9");
-  assert.match(String(locationSheet.panel_2), /90-135|opposite/i);
+  assert.match(String(locationSheet.type), /establishing/i);
+  assert.match(String(locationSheet.layout), /single clean 16:9 wide/i);
+  assert.doesNotMatch(String(locationSheet.layout), /side-by-side|split into|two equal/i);
   assert.equal(env.image, null);
-  // The app now emits a SINGLE character-free location sheet image (overview +
-  // right→left + left→right), so the extension generates each set ONCE and locks
-  // every board/video to it — the user's "tạo sheet bối cảnh" approach (one image).
+  // The compatibility field remains an array, but carries exactly one clean
+  // establishing image prompt rather than a multi-angle sheet.
   assert.ok(Array.isArray(env.location_views) && env.location_views.length === 1);
-  assert.deepEqual((env.location_views ?? []).map((v) => v.angle), ["sheet"]);
+  assert.deepEqual((env.location_views ?? []).map((v) => v.angle), ["establishing"]);
   const sheet = JSON.parse((env.location_views ?? [])[0]!.prompt) as Record<string, unknown>;
-  // The sheet uses the per-location LOCKED setting so it matches the boards.
+  // The establishing image uses the per-location LOCKED setting so it matches
+  // both keyframes and the structured Veo prompt.
   assert.match(String(sheet.setting), /cozy northern living room/);
-  // Character-free: the negative must forbid people in the sheet.
+  assert.match(String(sheet.layout), /single full-bleed 16:9 wide/i);
+  assert.doesNotMatch(String(sheet.layout), /three framings|right-to-left|left-to-right/i);
   assert.match(String(sheet.negative), /no people/i);
-  // Three framings in ONE image (overview + right→left + left→right).
-  assert.match(String(sheet.layout), /overview/i);
-  assert.match(String(sheet.layout), /right-to-left/i);
-  assert.match(String(sheet.layout), /left-to-right/i);
   // The setting also still lives in the shot's location board (unchanged).
   const board = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
   assert.match(String(board.setting), /cozy northern living room/);
@@ -409,11 +406,36 @@ test("environments carry a 2-angle character-free LOCATION SHEET (location_views
   assert.equal((m.assets.environments ?? []).some((e) => e.id === "custom"), false);
 });
 
-test("video_refs default policy: keyframe on, environments/products off", () => {
+test("image and video prompts share the same canonical location authority", () => {
+  const m = buildNanoFlowManifest(fixture(), {
+    veoClips: [
+      {
+        background_lock: {
+          setting: "cozy northern living room",
+          scenery: "carved wooden furniture",
+          lighting: "warm afternoon",
+        },
+        scene_action: { start_state: "Lan sits by the table", end_state: "Lan looks up" },
+      },
+    ],
+  });
+  const shot = m.shots[0]!;
+  const keyframe = JSON.parse(shot.storyboard_prompt) as Record<string, unknown>;
+  const video = shot.video_prompt as Record<string, unknown>;
+  const videoBackground = video.background_lock as Record<string, unknown>;
+  const locationAuthority = video.location_authority as Record<string, unknown>;
+  assert.equal(keyframe.setting, "cozy northern living room");
+  assert.equal(videoBackground.setting, "cozy northern living room");
+  assert.equal(videoBackground.scenery, "carved wooden furniture");
+  assert.equal(locationAuthority.location_id, "living_room_1");
+  assert.match(String(locationAuthority.reference_policy), /canonical 16:9 establishing image/i);
+});
+
+test("video_refs keep keyframe, character and location authorities together", () => {
   const m = buildNanoFlowManifest(fixture());
   for (const shot of m.shots) {
     assert.equal(shot.video_refs?.use_generated_storyboard, true);
-    assert.deepEqual(shot.video_refs?.environments, []);
+    assert.deepEqual(shot.video_refs?.environments, shot.image_refs?.environments ?? []);
     assert.deepEqual(shot.video_refs?.products, []);
   }
 });
@@ -1102,12 +1124,14 @@ test("a transform shot (locomotion) emits an end keyframe; a static shot does no
   const m = buildNanoFlowManifest(framesFixture(), { genre: "drama", veoClips: framesClips });
   // Shot 1 "walks to the window" → transform → start_end_frame.
   assert.ok(m.shots[0]!.end_storyboard_prompt, "walking shot gets an end keyframe");
+  assert.equal(m.shots[0]!.frame_mode, "start_end");
   const endKf = JSON.parse(m.shots[0]!.end_storyboard_prompt!) as Record<string, unknown>;
   assert.equal(endKf.interpolation_role, "end");
   assert.match(String(endKf.interpolation_pair_contract), /SAME scene/i);
   assert.match(String(endKf.moment), /window/i);
   // Shot 2 "smiles softly" → static → single keyframe only.
   assert.equal(m.shots[1]!.end_storyboard_prompt, undefined, "static shot stays single-frame");
+  assert.equal(m.shots[1]!.frame_mode, "start");
 });
 
 test("manual override forces two-frame or one-frame regardless of policy", () => {
@@ -1118,7 +1142,50 @@ test("manual override forces two-frame or one-frame regardless of policy", () =>
     frameModeOverrides: { 1: "start", 2: "start_end" },
   });
   assert.equal(m.shots[0]!.end_storyboard_prompt, undefined, "override 'start' forces single-frame on a transform shot");
+  assert.equal(m.shots[0]!.frame_mode, "start");
   assert.ok(m.shots[1]!.end_storyboard_prompt, "override 'start_end' forces an end keyframe on a static shot");
+  assert.equal(m.shots[1]!.frame_mode, "start_end");
+});
+
+test("close framing may exclude other cast without moving opposite seats", () => {
+  const bd = {
+    title: "Opposite seats",
+    character_locks: [{ name: "Lan" }, { name: "Minh" }],
+    segments: [{
+      segment_number: 1,
+      characters_in_scene: ["Lan", "Minh"],
+      environment_ref: "living_room",
+      first_frame_prompt: "Lan sits on the sofa while Minh remains seated in the opposite armchair",
+      motion_prompt: "Lan looks down at the phone",
+      full_prompt: "Lan reacts quietly",
+      beats: [{ beat: "Lan reacts quietly", camera: "[CLOSE] front-left close-up on Lan" }],
+      spatial_layout: {
+        character_placement: "Lan on sofa left wall, Minh on armchair right wall opposite Lan",
+      },
+    }],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    veoClips: [{
+      character_lock: { A: { name: "Lan" }, B: { name: "Minh" } },
+      background_lock: { setting: "living room with sofa left and armchair right" },
+      scene_action: {
+        start_state: "Lan sitting on sofa while Minh remains on the opposite armchair",
+        end_state: "continues from previous segment",
+      },
+      camera: { framing: "close" },
+    }],
+    frameModeOverrides: { 1: "start_end" },
+  });
+  const start = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  const end = JSON.parse(m.shots[0]!.end_storyboard_prompt!) as Record<string, unknown>;
+  const cameraContract = start.camera_subject_contract as Record<string, unknown>;
+  const supportContract = start.support_surface_contract as Record<string, unknown>;
+  assert.deepEqual(cameraContract.required_on_camera, ["Lan"]);
+  assert.deepEqual(cameraContract.permitted_off_camera, ["Minh"]);
+  assert.match(String(cameraContract.rule), /never pull them closer|move their chair/i);
+  assert.match(String(start.staging), /remain off-frame at their canonical world positions/i);
+  assert.match(JSON.stringify(supportContract), /sofa/i);
+  assert.doesNotMatch(String(end.moment), /continues from previous segment/i);
 });
 
 test("talking-head directing profile stays single-frame even on a moving shot", () => {
@@ -1194,14 +1261,14 @@ test("a scene_cut within the same place does NOT chain (only truly continuous sh
   assert.equal(m.shots[1]!.chain_from_prev, undefined, "an editorial cut in the same place is not a seamless continuation");
 });
 
-test("manual chain override forces on/off regardless of the policy", () => {
+test("manual chain override cannot chain an opening without a previous frame", () => {
   const m = buildNanoFlowManifest(framesFixture(), {
     genre: "drama",
     veoClips: framesClips,
-    // Force the opening shot ON and the continuous shot OFF — the opposite of policy.
+    // An opening has no previous frame, while the continuous shot can be forced off.
     chainModeOverrides: { 1: "on", 2: "off" },
   });
-  assert.equal(m.shots[0]!.chain_from_prev, true, "override 'on' forces chaining even on the opening shot");
+  assert.equal(m.shots[0]!.chain_from_prev, undefined, "opening never declares an impossible previous-frame chain");
   assert.equal(m.shots[1]!.chain_from_prev, undefined, "override 'off' disables chaining on a continuous shot");
 });
 

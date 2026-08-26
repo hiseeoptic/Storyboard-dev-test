@@ -58,6 +58,8 @@ import {
   loadCharacterPreset,
   clearCharacterPreset,
   hasCharacterPreset,
+  mergeCharacterReferences,
+  normalizeCharacterPreset,
 } from "@/lib/character-preset";
 import type { ColorLookId } from "@/types";
 import { COLOR_LOOK_OPTIONS, colorLooksForGenre } from "@/lib/color-look";
@@ -1357,6 +1359,7 @@ function ProjectWorkspace() {
   const [characters, setCharacters] = useState<CharacterEntry[]>([]);
   // Whether a reusable cast preset is currently saved (drives the preset buttons).
   const [hasPreset, setHasPreset] = useState(false);
+  const [presetStatus, setPresetStatus] = useState<"saved" | "loaded" | null>(null);
   const [charName, setCharName] = useState("");
   // Nano Flow: the user ticks this instead of uploading a photo in-app. The
   // real photo is attached later in the extension; here it only tells the
@@ -1584,11 +1587,33 @@ function ProjectWorkspace() {
   useEffect(() => {
     hasCharacterPreset().then(setHasPreset).catch(() => setHasPreset(false));
   }, []);
+  const draftCharacterForPreset = (): CharacterEntry | null => {
+    if (!charName.trim()) return null;
+    return {
+      name: charName.trim(),
+      role: charRole,
+      appearance: effectiveCharAppearance,
+      heightCm: charHeightCm,
+      bodyType: charBodyType,
+      isChild: charIsChild,
+      images: charImages.slice(0, 1),
+      hasRealPhoto: charHasRealPhoto,
+    };
+  };
   const saveCastPreset = async () => {
-    if (characters.length === 0) return;
+    const draft = draftCharacterForPreset();
+    const castToSave = [...characters];
+    if (draft && !castToSave.some((character) =>
+      character.name.trim().toLowerCase() === draft.name.trim().toLowerCase()
+    )) castToSave.push(draft);
+    if (castToSave.length === 0) return;
     try {
-      await saveCharacterPreset(characters);
+      // Persist the compact blob preview plus the durable base64 bytes. Loading
+      // rebuilds a fresh data-URL preview; storing that duplicate here would
+      // unnecessarily double the preset's browser-storage footprint.
+      await saveCharacterPreset(castToSave);
       setHasPreset(true);
+      setPresetStatus("saved");
     } catch {
       alert(
         lang === "vi"
@@ -1600,17 +1625,25 @@ function ProjectWorkspace() {
   const loadCastPreset = async () => {
     const preset = await loadCharacterPreset<CharacterEntry[]>();
     if (preset && preset.length > 0) {
-      // Older presets may contain extra angles. Keep them readable while
-      // normalizing the active cast to the new one-frontal-photo contract.
-      setCharacters(preset.map((character) => ({
-        ...character,
-        images: (character.images ?? []).slice(0, 1),
-      })));
+      setCharacters(normalizeCharacterPreset(preset));
+      // Clear the draft form so generation cannot append a stale duplicate to
+      // the freshly loaded cast.
+      setCharName("");
+      setCharRole("");
+      setCharIsChild(false);
+      setCharHasRealPhoto(false);
+      setCharHeightCm("");
+      setCharBodyType("standard");
+      setCharAppearance("");
+      setCharApprSel("");
+      setCharImages([]);
+      setPresetStatus("loaded");
     }
   };
   const clearCastPreset = async () => {
     await clearCharacterPreset();
     setHasPreset(false);
+    setPresetStatus(null);
   };
 
   const addProduct = () => {
@@ -2511,6 +2544,12 @@ function ProjectWorkspace() {
         images: c.images.map((img) => img.base64).filter(Boolean),
       }))
       .filter((r) => r.images.length > 0);
+    const manifestCharacterRefs = mergeCharacterReferences(
+      clientCharacterRefs,
+      (genInput?.character_images ?? []).filter((reference) =>
+        (reference.images?.length ?? 0) > 0
+      ),
+    );
     const speechContract = genInput
       ? buildSpeechManifestContract(genInput)
       : undefined;
@@ -2558,7 +2597,7 @@ function ProjectWorkspace() {
         genInput?.product_ir?.review_status === "approved" ? genInput.product_images : undefined,
       // Embed each uploaded character frontal photo so the extension auto-loads
       // it (no manual per-image attach). No photo ⇒ a null slot as before.
-      characterReferences: clientCharacterRefs.length > 0 ? clientCharacterRefs : genInput?.character_images,
+      characterReferences: manifestCharacterRefs.length > 0 ? manifestCharacterRefs : undefined,
       affiliateProductIR: genInput?.product_ir,
       affiliateDisclosure: genInput?.affiliate_disclosure,
       // Frame-mode policy: genre + directing profile pick the default start vs
@@ -5034,7 +5073,7 @@ function ProjectWorkspace() {
                     ? "Preset dàn nhân vật (dùng lại cho nhiều dự án):"
                     : "Cast preset (reuse across projects):"}
                 </span>
-                <Button type="button" variant="outline" size="sm" disabled={characters.length === 0} onClick={saveCastPreset}>
+                <Button type="button" variant="outline" size="sm" disabled={characters.length === 0 && !charName.trim()} onClick={saveCastPreset}>
                   💾 {lang === "vi" ? "Lưu preset" : "Save preset"}
                 </Button>
                 <Button type="button" variant="outline" size="sm" disabled={!hasPreset} onClick={loadCastPreset}>
@@ -5045,7 +5084,11 @@ function ProjectWorkspace() {
                 </Button>
                 {hasPreset && (
                   <span className="text-xs text-emerald-600">
-                    {lang === "vi" ? "• đã có preset đang lưu" : "• a preset is saved"}
+                    {presetStatus === "saved"
+                      ? (lang === "vi" ? "• đã lưu cả ảnh chính diện" : "• preset and frontal photo saved")
+                      : presetStatus === "loaded"
+                        ? (lang === "vi" ? "• đã nạp preset và ảnh" : "• preset and photo loaded")
+                        : (lang === "vi" ? "• đã có preset đang lưu" : "• a preset is saved")}
                   </span>
                 )}
               </div>
