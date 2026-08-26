@@ -772,16 +772,16 @@ const SEGMENT_OPTIONS = [
   { value: "10", label: "10 (~100s)" },
 ];
 
-// Per-shot manual frame-mode override (Auto / 1 frame / 2 frames). "auto" defers
-// to the genre + transform-score policy; the other two force the mode. §6.2.
+// Per-shot manual frame-mode override. "auto" follows the PROJECT-WIDE frame
+// mode chosen at the top (default single); the other two force this one shot. §6.2.
 const FRAME_MODE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
   vi: [
-    { value: "auto", label: "Khung: Tự động" },
+    { value: "auto", label: "Khung: theo mặc định chung" },
     { value: "start", label: "Khung: 1 ảnh" },
     { value: "start_end", label: "Khung: 2 ảnh (đầu+cuối)" },
   ],
   en: [
-    { value: "auto", label: "Frames: Auto" },
+    { value: "auto", label: "Frames: project default" },
     { value: "start", label: "Frames: 1" },
     { value: "start_end", label: "Frames: 2 (start+end)" },
   ],
@@ -1487,8 +1487,13 @@ function ProjectWorkspace() {
   // Character render mode: hard photoreal lock / stylized / auto (see types).
   const [characterRender, setCharacterRender] = useState<"auto" | "photo" | "stylized">("auto");
   const [segmentCount, setSegmentCount] = useState(4);
+  // PROJECT-WIDE frame mode (control at the top). Default "single" = ONE clean
+  // keyframe per shot, two-frame OFF (Veo 3 lip-sync/motion is best from a single
+  // start frame). "auto" = genre policy; "double" = two frames everywhere. A
+  // per-shot override below still wins.
+  const [frameModeDefault, setFrameModeDefault] = useState<"single" | "auto" | "double">("single");
   // Per-shot manual frame-mode override, keyed by segment_number. Empty ⇒ every
-  // shot follows the automatic genre + transform-score policy.
+  // shot follows the project-wide frame mode above.
   const [frameModeOverrides, setFrameModeOverrides] = useState<Record<number, FrameModeOverride>>({});
   // Per-shot cross-shot chain override ("auto" = continuity policy, "on"/"off"
   // force it). Empty ⇒ chaining follows the automatic continuity policy.
@@ -2604,6 +2609,9 @@ function ProjectWorkspace() {
       // start_end (2-frame) mode per shot; per-shot manual overrides win. §6.2.
       genre: genInput?.genre,
       directingProfile: genInput?.directing_profile,
+      // Project-wide default = SINGLE keyframe (two-frame OFF) unless the user
+      // switches the top control to "auto"/"double"; per-shot overrides win.
+      frameModeDefault,
       frameModeOverrides,
       chainModeOverrides,
       // Cách 1 — embed uploaded location photos into the downloadable manifest.
@@ -2649,7 +2657,7 @@ function ProjectWorkspace() {
     }
     // exportCheckVersion intentionally forces a free deterministic re-check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, genInput, characters, frameModeOverrides, chainModeOverrides, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
+  }, [result, genInput, characters, frameModeDefault, frameModeOverrides, chainModeOverrides, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
 
   const cleanManifestForExport = () => {
     if (!exportBundle?.manifest) {
@@ -3172,8 +3180,8 @@ function ProjectWorkspace() {
                     className="h-7 w-auto text-xs"
                     title={
                       lang === "vi"
-                        ? "Tự động: app quyết 1 hay 2 khung theo thể loại + mức biến đổi của cảnh. 1 ảnh = chỉ khung đầu. 2 ảnh = khung đầu + khung cuối (Veo nội suy chuyển động)."
-                        : "Auto: the app picks 1 or 2 frames from genre + how much the shot changes. 1 = start frame only. 2 = start + end (Veo interpolates the motion)."
+                        ? "Theo mặc định chung: dùng lựa chọn 'Số khung mỗi cảnh' ở trên (mặc định 1 khung). 1 ảnh = chỉ khung đầu. 2 ảnh = khung đầu + khung cuối (Veo nội suy chuyển động) — chỉ ép cho riêng cảnh này."
+                        : "Project default: uses the 'Keyframes per shot' control above (default 1). 1 = start frame only. 2 = start + end (Veo interpolates the motion) — forces just this shot."
                     }
                   />
                   {/* Per-shot seamless chain: continue this shot from the previous shot's last frame. */}
@@ -4690,6 +4698,34 @@ function ProjectWorkspace() {
                 {selectedColorLookDesc && (
                   <p className="text-xs font-medium text-foreground">{selectedColorLookDesc}</p>
                 )}
+              </div>
+              {/* Số khung mỗi cảnh — mặc định 1 khung (tắt 2 frame). Trục toàn dự án. */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  {lang === "vi" ? "🎞️ Số khung mỗi cảnh (keyframe)" : "🎞️ Keyframes per shot"}
+                </label>
+                <Select
+                  value={frameModeDefault}
+                  onChange={(e) => setFrameModeDefault(e.target.value as "single" | "auto" | "double")}
+                  options={
+                    lang === "vi"
+                      ? [
+                          { value: "single", label: "1 khung / 1 keyframe (mặc định — khuyên dùng)" },
+                          { value: "auto", label: "Tự động theo thể loại (có thể ra 2 khung)" },
+                          { value: "double", label: "2 khung: đầu + cuối (tất cả cảnh)" },
+                        ]
+                      : [
+                          { value: "single", label: "1 keyframe (default — recommended)" },
+                          { value: "auto", label: "Auto by genre (may produce 2)" },
+                          { value: "double", label: "2 keyframes: start + end (all shots)" },
+                        ]
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Mặc định 1 khung cho mọi cảnh — TẮT chế độ 2 frame (start→end) vốn dễ méo mặt và phá lip-sync khi nhân vật đang nói. Vẫn có thể ép 2 khung cho từng cảnh riêng ở danh sách cảnh bên dưới."
+                    : "Defaults to one keyframe per shot — two-frame (start→end) is OFF because it can morph the face and break lip-sync while a character speaks. You can still force 2 frames on an individual shot in the shot list below."}
+                </p>
               </div>
               {genre === "advertising" && (
                 <div className="space-y-2">

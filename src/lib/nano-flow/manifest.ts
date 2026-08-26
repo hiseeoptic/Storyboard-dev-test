@@ -116,6 +116,17 @@ export interface BuildNanoFlowManifestOptions {
    * (chain only when the shot continues the previous one in the same location).
    */
   chainModeOverrides?: Record<number, "auto" | "on" | "off">;
+  /**
+   * PROJECT-WIDE default frame mode (the control at the top of the generator).
+   * - "single" (DEFAULT): every shot is ONE clean keyframe — two-frame is OFF.
+   *   This is the normal path: Veo 3 does native lip-sync/motion from a single
+   *   start frame, and a start→end interpolation risks face morph. A per-shot
+   *   override of "start_end" can still opt ONE shot into two frames.
+   * - "auto": defer to the genre + transform-score + dialogue policy per shot.
+   * - "double": force two frames on every shot (a per-shot "start" opts out).
+   * A per-shot frameModeOverride always wins over this default.
+   */
+  frameModeDefault?: "single" | "auto" | "double";
 }
 
 /** Extract a trimmed string field from an unknown clip sub-object. */
@@ -1569,13 +1580,27 @@ export function buildNanoFlowManifest(
     // physical transform — protects Veo 3 lip-sync and avoids start→end face
     // morph, so line-driven micro-drama shots produce ONE clean keyframe. §6.2.
     const hasDialogue = !!(stateAuthority.script_contract.dialogue ?? "").trim();
-    const frameMode: FrameMode = decideFrameMode({
-      genre: opts.genre,
-      directingProfile: opts.directingProfile,
-      transformScore,
-      hasDialogue,
-      override: opts.frameModeOverrides?.[index],
-    });
+    // PROJECT-WIDE default = SINGLE frame (two-frame OFF) unless the user picks
+    // "auto" (genre policy) or "double" at the top of the generator. A per-shot
+    // manual override always wins over the project default. §6.2.
+    const frameModeDefault = opts.frameModeDefault ?? "single";
+    const shotOverride = opts.frameModeOverrides?.[index];
+    const frameMode: FrameMode =
+      shotOverride === "start"
+        ? "start"
+        : shotOverride === "start_end"
+          ? "start_end"
+          : frameModeDefault === "single"
+            ? "start"
+            : frameModeDefault === "double"
+              ? "start_end"
+              : decideFrameMode({
+                  genre: opts.genre,
+                  directingProfile: opts.directingProfile,
+                  transformScore,
+                  hasDialogue,
+                  override: shotOverride,
+                });
     // ── Cross-shot continuity chain: when THIS shot continues the previous one
     //    (same location AND continuity_mode "continuous"), tell the extension to
     //    build this shot's keyframe FROM the previous shot's last frame (its END

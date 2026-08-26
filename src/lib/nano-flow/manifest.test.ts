@@ -1126,7 +1126,9 @@ test("clean keyframe adds NO new export-blocking findings versus the board", () 
 });
 
 test("a transform shot (locomotion) emits an end keyframe; a static shot does not", () => {
-  const m = buildNanoFlowManifest(framesFixture(), { genre: "drama", veoClips: framesClips });
+  // frameModeDefault "auto" opts INTO the genre + transform-score policy (the
+  // project default is now "single" = two-frame off).
+  const m = buildNanoFlowManifest(framesFixture(), { genre: "drama", veoClips: framesClips, frameModeDefault: "auto" });
   // Shot 1 "walks to the window" → transform → start_end_frame.
   assert.ok(m.shots[0]!.end_storyboard_prompt, "walking shot gets an end keyframe");
   assert.equal(m.shots[0]!.frame_mode, "start_end");
@@ -1150,6 +1152,35 @@ test("manual override forces two-frame or one-frame regardless of policy", () =>
   assert.equal(m.shots[0]!.frame_mode, "start");
   assert.ok(m.shots[1]!.end_storyboard_prompt, "override 'start_end' forces an end keyframe on a static shot");
   assert.equal(m.shots[1]!.frame_mode, "start_end");
+});
+
+test("project default is SINGLE frame — two-frame is OFF even for a transform shot", () => {
+  // No frameModeDefault ⇒ "single": the walking shot that the policy would make
+  // two-frame stays ONE clean keyframe (the top control is off by default).
+  const m = buildNanoFlowManifest(framesFixture(), { genre: "drama", veoClips: framesClips });
+  assert.equal(m.shots[0]!.frame_mode, "start");
+  assert.equal(m.shots[0]!.end_storyboard_prompt, undefined, "walking shot stays single by default");
+  assert.equal(m.shots[1]!.frame_mode, "start");
+  // A per-shot override still opts ONE shot into two frames despite the default.
+  const forced = buildNanoFlowManifest(framesFixture(), {
+    genre: "drama",
+    veoClips: framesClips,
+    frameModeOverrides: { 1: "start_end" },
+  });
+  assert.equal(forced.shots[0]!.frame_mode, "start_end");
+  assert.ok(forced.shots[0]!.end_storyboard_prompt, "override wins over the single default");
+});
+
+test("project default 'double' forces two frames on every shot (override still wins)", () => {
+  const m = buildNanoFlowManifest(framesFixture(), {
+    genre: "drama",
+    veoClips: framesClips,
+    frameModeDefault: "double",
+    frameModeOverrides: { 2: "start" }, // opt shot 2 back out
+  });
+  assert.equal(m.shots[0]!.frame_mode, "start_end", "static shot forced to two frames");
+  assert.ok(m.shots[0]!.end_storyboard_prompt);
+  assert.equal(m.shots[1]!.frame_mode, "start", "per-shot 'start' override still wins");
 });
 
 test("close framing may exclude other cast without moving opposite seats", () => {
