@@ -100,3 +100,38 @@ test("missing / out-of-range transform score is treated as static", () => {
   assert.equal(decideFrameMode({ genre: "drama", transformScore: -5 }), "start");
   assert.equal(decideFrameMode({ genre: "action", transformScore: 999 }), "start_end");
 });
+
+test("a talking shot holds on ONE frame unless it also has a STRONG transform", () => {
+  // Same moderate transform (locomotion-ish 0.6): SILENT → two frames; TALKING →
+  // one frame (lip-sync/face-morph safety). This is the dominant micro-drama case.
+  assert.equal(decideFrameMode({ genre: "romance", transformScore: 0.6 }), "start_end");
+  assert.equal(
+    decideFrameMode({ genre: "romance", transformScore: 0.6, hasDialogue: true }),
+    "start",
+    "a talking shot with only micro-motion stays single-frame",
+  );
+  // A genuine STRONG relocation/reveal (0.85) still earns a second frame even
+  // while talking.
+  assert.equal(
+    decideFrameMode({ genre: "romance", transformScore: 0.85, hasDialogue: true }),
+    "start_end",
+  );
+});
+
+test("the dialogue lock applies across tiers and still yields to a manual override", () => {
+  // Even a motion-forward tier (action, threshold 0.15) keeps a talking shot with
+  // mild motion single-framed.
+  assert.equal(
+    decideFrameMode({ genre: "action", transformScore: 0.6, hasDialogue: true }),
+    "start",
+  );
+  // Manual override beats the dialogue lock in both directions.
+  assert.equal(
+    decideFrameMode({ genre: "romance", transformScore: 0.1, hasDialogue: true, override: "start_end" }),
+    "start_end",
+  );
+  assert.equal(
+    decideFrameMode({ genre: "action", transformScore: 0.95, hasDialogue: true, override: "start" }),
+    "start",
+  );
+});

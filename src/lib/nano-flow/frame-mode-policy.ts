@@ -121,6 +121,14 @@ export function frameModePolicyTier(
   return "adaptive";
 }
 
+// A shot that carries spoken dialogue only earns a SECOND frame when it also
+// has a STRONG physical transform (real relocation / reveal ≈ 0.85). A talking
+// shot with mere micro-gestures (lean in, turn the head, hand on a phone) stays
+// SINGLE-frame: Veo 3 does native lip-sync + audio on the first frame, and a
+// near-identical start→end interpolation morphs the talking face and fights the
+// lip-sync. This is why almost every line-driven shot should be one keyframe.
+const DIALOGUE_TWO_FRAME_MIN = 0.8;
+
 export interface FrameModeDecisionInput {
   genre?: string | null;
   directingProfile?: string | null;
@@ -130,13 +138,21 @@ export interface FrameModeDecisionInput {
    * upstream from state_ledger / scene_action. Missing ⇒ treated as 0.
    */
   transformScore?: number;
+  /**
+   * True when the shot has spoken dialogue. A talking shot holds on a SINGLE
+   * frame unless it also has a strong physical transform — protecting Veo 3
+   * lip-sync/native audio and avoiding the face "morph" a near-identical
+   * start→end interpolation causes. See DIALOGUE_TWO_FRAME_MIN.
+   */
+  hasDialogue?: boolean;
   /** Manual per-shot override from the UI. "auto"/undefined ⇒ use the policy. */
   override?: FrameModeOverride;
 }
 
 /**
  * Decide the frame mode for ONE shot. Manual override wins; otherwise the tier
- * threshold is compared against the shot's transform score.
+ * threshold is compared against the shot's transform score — and a talking shot
+ * demands a STRONG transform before it splits into two frames.
  */
 export function decideFrameMode(input: FrameModeDecisionInput): FrameMode {
   // 3. Manual override always wins.
@@ -146,7 +162,12 @@ export function decideFrameMode(input: FrameModeDecisionInput): FrameMode {
   // 1. + 2. Tier default refined by the per-shot transform score.
   const tier = frameModePolicyTier(input.genre, input.directingProfile);
   const score = clamp01(input.transformScore);
-  return score >= TIER_THRESHOLD[tier] ? "start_end" : "start";
+  // A dialogue shot raises the bar to "strong transform only" so line-driven
+  // scenes stay single-frame (lip-sync safe); a manual override still wins above.
+  const threshold = input.hasDialogue
+    ? Math.max(TIER_THRESHOLD[tier], DIALOGUE_TWO_FRAME_MIN)
+    : TIER_THRESHOLD[tier];
+  return score >= threshold ? "start_end" : "start";
 }
 
 function clamp01(v?: number): number {

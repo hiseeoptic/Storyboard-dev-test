@@ -239,19 +239,24 @@ const KEYFRAME_RENDER_NOTE =
 // character reference (the wardrobe sheet) for BOTH face and outfit — this is the
 // clause the user asked for so the image obeys the reference, not a random outfit.
 const KEYFRAME_REFERENCE_AUTHORITY =
-  "For every character in cast: their face, hair and body build AND their FULL outfit " +
-  "must EXACTLY match that character's ATTACHED full-body character reference image " +
-  "(the wardrobe sheet) — copy the exact garments, colours and footwear; do NOT invent, " +
-  "restyle or swap clothing, and do NOT copy the reference's plain studio background. " +
-  "If a LOCATION photo is attached, it is the STRICT setting authority: stage the scene " +
-  "INSIDE that exact real place and faithfully reproduce its layout, furniture, landmarks, " +
-  "materials, colours and lighting — never invent a different room, relocate the scene or " +
-  "restyle the set; only pick the camera angle that best fits the described framing. If a previous " +
-  "shot's keyframe is attached, use it ONLY for LOCATION continuity — the same background, " +
-  "furniture, props and lighting — while FACE and OUTFIT still come from each character's " +
-  "wardrobe sheet, NOT from the previous keyframe (if the keyframe shows a slightly " +
-  "different outfit, follow the wardrobe sheet and never drift the clothing). Only the " +
-  "action, pose and camera angle change.";
+  "ABSOLUTE REFERENCE LAW — the ATTACHED reference images outrank every text description here; " +
+  "on any visual conflict, OBEY THE IMAGE. This binds EVERY named character, not just one: a frame " +
+  "that matches one character's reference but drifts another's face, or invents the place, is a FAILURE. " +
+  "(1) IDENTITY comes from the attached character reference: copy EACH character's face, skin tone, " +
+  "hair, eyebrows, eyelashes, facial structure and body build EXACTLY from that same-named attached " +
+  "reference. Never invent, age, slim, restyle, change ethnicity or blend two people. " +
+  "(2) WARDROBE comes from the STORY-LOCKED outfit in wardrobe_note — NOT from the reference image. " +
+  "The reference may show the person in unrelated everyday clothes and a plain studio backdrop; IGNORE " +
+  "that clothing and that background and dress each character in the exact story-locked garments, colours " +
+  "and footwear, identical across every shot. " +
+  "(3) LOCATION comes from the attached location reference — an uploaded location photo, a generated " +
+  "location plate/sheet, or (when attached) the previous shot's keyframe: reproduce its architecture, " +
+  "layout, furniture, landmarks, materials, colours and lighting EXACTLY; never relocate, restyle or " +
+  "substitute a generic room. If no location image is attached yet, build the place faithfully from the " +
+  "setting description and hold it as the lock for later shots. When a previous keyframe is attached, take " +
+  "LOCATION continuity from it but still take each face from the character reference and each outfit from " +
+  "the story-locked wardrobe, never from the previous frame. " +
+  "Only the action, pose, expression and camera angle change between frames.";
 
 /**
  * Compose the per-shot STORYBOARD BOARD image prompt from the structured Veo
@@ -755,6 +760,12 @@ function buildKeyframePrompt(params: {
     authority_order: stateAuthority.authority_order,
     semantic_authority:
       "This keyframe is a SINGLE film still — a STATIC VISUAL PROJECTION of the script-derived primary video prompt. It MAY NOT add, remove, reinterpret or override any action, camera intent, state transition or ending it declares.",
+    // High-salience restatement of the full reference_authority below — placed
+    // early so the model treats the attached refs as law, not a hint. Root fix
+    // for "some frames obey the character/location, some don't".
+    reference_fidelity_contract: characterStyleLock
+      ? "The attached character/design sheets and the location sheet are LAW: reproduce EVERY named identity's design and the attached location EXACTLY in the locked medium. Matching some sheets but not others, or inventing the place, is a rejection."
+      : "The attached character and location reference images are LAW and override any text here on conflict: copy EVERY named character's face/hair/build EXACTLY from their own same-named attached reference, and reproduce the attached location EXACTLY — while dressing each character in the story-locked wardrobe, never the clothes shown in the reference. Matching some characters but not others, drifting a face, or inventing the place is a rejection.",
     production_state_authority: compactBoardAuthority(stateAuthority),
     video_prompt_projection: clip
       ? {
@@ -1003,7 +1014,7 @@ export function withKeyframeAuthority(
       : {};
   rules.reference_priority = characterStyleLock
     ? "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT owns story action, timing, camera, state transition and ending. The selected STYLE LOCK owns the render medium for characters, the complete script-derived environment and props. Character sheets lock each design/identity; the location board locks the scripted terrain/architecture, landmarks, layout and light. Never replace the scripted location with a blank canvas, generic studio or unrelated template."
-    : "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT is the sole semantic authority for story action, timing, camera, state transition and ending. The generated STORYBOARD / LOCATION BOARD is only a visual continuity reference for the already-declared opening appearance and set geometry; it must never add, remove, replace or reinterpret video events. Each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop. Use the location board to keep the prompt-declared environment visually consistent (background, spatial layout, furniture, props, doors, windows, lighting and materials), but when any image detail conflicts with this structured prompt, FOLLOW THIS VIDEO PROMPT. Identity and clothing come from the sheets; semantics and motion come from the video prompt.";
+    : "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT is the sole semantic authority for story action, timing, camera, state transition and ending. The generated STORYBOARD / LOCATION BOARD is only a visual continuity reference for the already-declared opening appearance and set geometry; it must never add, remove, replace or reinterpret video events. Each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop. Use the location board to keep the prompt-declared environment visually consistent (background, spatial layout, furniture, props, doors, windows, lighting and materials), but when any image detail conflicts with this structured prompt, FOLLOW THIS VIDEO PROMPT. Identity and clothing come from the sheets; semantics and motion come from the video prompt. Bind EVERY named character to their OWN same-named wardrobe sheet and keep the set on the location board: reproduce every attached identity AND the location faithfully across the WHOLE clip — never drop a reference, never map one character's face onto another, and never let a face, outfit or the set drift mid-shot.";
   rules.storyboard_reference_role =
     "Visual continuity only. Do not infer new actions from the board and do not let the board override ordered actions, dialogue, camera intent, timing or end state in this video prompt.";
   // HARD LOCK (user): the multi-panel board must NEVER be rendered into the video.
@@ -1554,10 +1565,15 @@ export function buildNanoFlowManifest(
     //    by this shot's transform score; a per-shot manual override wins. §6.2.
     const useCleanKeyframe = (opts.keyframeMode ?? "clean") !== "board";
     const transformScore = computeTransformScore(seg, clip);
+    // A shot with spoken dialogue stays single-frame unless it also has a STRONG
+    // physical transform — protects Veo 3 lip-sync and avoids start→end face
+    // morph, so line-driven micro-drama shots produce ONE clean keyframe. §6.2.
+    const hasDialogue = !!(stateAuthority.script_contract.dialogue ?? "").trim();
     const frameMode: FrameMode = decideFrameMode({
       genre: opts.genre,
       directingProfile: opts.directingProfile,
       transformScore,
+      hasDialogue,
       override: opts.frameModeOverrides?.[index],
     });
     // ── Cross-shot continuity chain: when THIS shot continues the previous one

@@ -615,7 +615,12 @@ test("embeds the structured Veo clip as video_prompt and composes a rich keyfram
   assert.match(String(minh!.wardrobe), /grey cotton shirt/);
   assert.match(String(kf.render), /photorealistic/i);
   assert.match(String(kf.negative), /NOT cartoon/);
-  assert.match(String(kf.reference_authority), /wardrobe sheet/i);
+  // Reference law: IDENTITY from the attached character reference; WARDROBE from
+  // the story-lock, explicitly NOT from the reference image (removes the old
+  // "copy the outfit from the reference" contradiction).
+  assert.match(String(kf.reference_authority), /IDENTITY comes from the attached character reference/i);
+  assert.match(String(kf.reference_authority), /WARDROBE comes from the STORY-LOCKED outfit/i);
+  assert.match(String(kf.reference_authority), /NOT from the reference image/i);
 });
 
 test("keyframe carries the story-locked outfit (direction B) with wardrobe_state override", () => {
