@@ -772,6 +772,14 @@ const SEGMENT_OPTIONS = [
   { value: "10", label: "10 (~100s)" },
 ];
 
+// FEATURE FLAG — the frame-mode ("keyframes per shot") UI. false = HIDE both the
+// global control and the per-shot override, and LOCK the whole app to a SINGLE
+// keyframe. The controls, state and manifest plumbing all stay in the code (the
+// user asked to hide, not delete); flip to true to bring them back. While false,
+// buildResultManifest forces frameModeDefault "single" + no per-shot overrides so
+// no stale state can leak a two-frame shot.
+const SHOW_FRAME_MODE_CONTROLS = false;
+
 // Per-shot manual frame-mode override. "auto" follows the PROJECT-WIDE frame
 // mode chosen at the top (default single); the other two force this one shot. §6.2.
 const FRAME_MODE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
@@ -2611,8 +2619,11 @@ function ProjectWorkspace() {
       directingProfile: genInput?.directing_profile,
       // Project-wide default = SINGLE keyframe (two-frame OFF) unless the user
       // switches the top control to "auto"/"double"; per-shot overrides win.
-      frameModeDefault,
-      frameModeOverrides,
+      // While the frame-mode UI is HIDDEN (SHOW_FRAME_MODE_CONTROLS=false) the
+      // app is HARD-LOCKED to a single keyframe: ignore any stale state so a
+      // two-frame shot can never leak. Flip the flag to restore both.
+      frameModeDefault: SHOW_FRAME_MODE_CONTROLS ? frameModeDefault : "single",
+      frameModeOverrides: SHOW_FRAME_MODE_CONTROLS ? frameModeOverrides : {},
       chainModeOverrides,
       // Cách 1 — embed uploaded location photos into the downloadable manifest.
       locationSets: genInput?.location_mode === "upload" ? genInput?.location_sets : undefined,
@@ -3167,7 +3178,9 @@ function ProjectWorkspace() {
                 <div className="flex items-center gap-2">
                   <Badge>#{s.segment_number}</Badge>
                   <Badge variant="secondary" className="uppercase">{s.marketing_role}</Badge>
-                  {/* Per-shot frame mode: Auto (policy) / 1 frame / 2 frames (start+end). */}
+                  {/* Per-shot frame mode: Auto (policy) / 1 frame / 2 frames (start+end).
+                      HIDDEN via SHOW_FRAME_MODE_CONTROLS (locked to single keyframe). */}
+                  {SHOW_FRAME_MODE_CONTROLS && (
                   <Select
                     value={frameModeOverrides[s.segment_number] ?? "auto"}
                     onChange={(e) =>
@@ -3184,6 +3197,7 @@ function ProjectWorkspace() {
                         : "Project default: uses the 'Keyframes per shot' control above (default 1). 1 = start frame only. 2 = start + end (Veo interpolates the motion) — forces just this shot."
                     }
                   />
+                  )}
                   {/* Per-shot seamless chain: continue this shot from the previous shot's last frame. */}
                   <Select
                     value={chainModeOverrides[s.segment_number] ?? "auto"}
@@ -4699,7 +4713,10 @@ function ProjectWorkspace() {
                   <p className="text-xs font-medium text-foreground">{selectedColorLookDesc}</p>
                 )}
               </div>
-              {/* Số khung mỗi cảnh — mặc định 1 khung (tắt 2 frame). Trục toàn dự án. */}
+              {/* Số khung mỗi cảnh — mặc định 1 khung (tắt 2 frame). Trục toàn dự án.
+                  ẨN theo yêu cầu user (SHOW_FRAME_MODE_CONTROLS=false): khoá 1 keyframe,
+                  không xoá — bật lại khi cần. */}
+              {SHOW_FRAME_MODE_CONTROLS && (
               <div className="space-y-2">
                 <label className="text-sm font-medium">
                   {lang === "vi" ? "🎞️ Số khung mỗi cảnh (keyframe)" : "🎞️ Keyframes per shot"}
@@ -4727,6 +4744,7 @@ function ProjectWorkspace() {
                     : "Defaults to one keyframe per shot — two-frame (start→end) is OFF because it can morph the face and break lip-sync while a character speaks. You can still force 2 frames on an individual shot in the shot list below."}
                 </p>
               </div>
+              )}
               {genre === "advertising" && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium">
