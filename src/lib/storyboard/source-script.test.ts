@@ -54,7 +54,10 @@ test("creative writing has no fixed word quota while delivery remains timed", ()
     new URL("../../prompts/storyboard-breakdown.ts", import.meta.url),
     "utf8"
   );
-  assert.match(promptSource, /do NOT count words or force every clip/i);
+  // A soft delivery-rate cap (words that fit a natural ~150 wpm) replaces the old
+  // "do NOT count words" stance so dialogue is never compressed past 190 wpm.
+  assert.match(promptSource, /DELIVERY CAP/);
+  assert.match(promptSource, /150 words per minute/i);
   assert.match(promptSource, /BALANCE SPEECH BY DELIVERY TIME, NOT WORD COUNT/);
   assert.match(promptSource, /dialogue clock and WPM validator decide whether delivery fits/i);
   assert.doesNotMatch(promptSource, /AT MOST 18 TOTAL spoken words/i);
