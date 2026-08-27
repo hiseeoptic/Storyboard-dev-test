@@ -1249,10 +1249,24 @@ test("legacy board mode never emits an end keyframe", () => {
 
 // ─── Cross-shot chain (seamless story flow) ──────────────────────────────────
 
-test("continuous same-location shots chain from the previous frame; the opening does not", () => {
+test("single-keyframe production keeps every continuous shot independent", () => {
   const m = buildNanoFlowManifest(framesFixture(), { genre: "drama", veoClips: framesClips });
   assert.equal(m.shots[0]!.chain_from_prev, undefined, "the opening shot never chains");
-  assert.equal(m.shots[1]!.chain_from_prev, true, "a continuous same-location shot chains from the previous frame");
+  assert.equal(
+    m.shots[1]!.chain_from_prev,
+    undefined,
+    "a single-frame shot must not reuse the previous shot's opening image"
+  );
+});
+
+test("legacy double-frame mode may still chain from a real previous end frame", () => {
+  const m = buildNanoFlowManifest(framesFixture(), {
+    genre: "drama",
+    veoClips: framesClips,
+    frameModeDefault: "double",
+  });
+  assert.equal(m.shots[0]!.chain_from_prev, undefined);
+  assert.equal(m.shots[1]!.chain_from_prev, true);
 });
 
 test("a cut to a different place does NOT chain", () => {

@@ -3422,13 +3422,13 @@ async function runNanoImages(options = {}) {
       index: p.index,
       name: p.name,
       // Board model: KHÔNG nối keyframe trước (bỏ end/start frame chaining).
-      chainFromPrev: p.chainFromPrev,
-      frameMode: p.frameMode || (p.endImageStep ? 'start_end' : 'start'),
+      chainFromPrev: false,
+      frameMode: 'start',
       frameRole: p.frameRole || null,
       prompt: p.imageStep.prompt,
       videoKeyframePrompt: p.videoKeyframeStep ? p.videoKeyframeStep.prompt : '',
       // Transform shot: also generate the END keyframe (start_end_frame). §6.2
-      endPrompt: p.endImageStep ? p.endImageStep.prompt : '',
+      endPrompt: '',
       // Đổi trang phục từ shot này (nếu manifest khai) → tạo lại wardrobe sheet.
       wardrobeChange: p.wardrobeChange || null,
       refs: refs,
@@ -3660,11 +3660,7 @@ async function runNanoVideos(options = {}) {
     // Clean keyframe chỉ dùng nếu sẵn có; KHÔNG bắt buộc, KHÔNG chặn video khi thiếu.
     const startImageMediaId = (gen && gen.mediaId) || (gen && gen.videoKeyframeMediaId) || '';
     if (!startImageMediaId) { skippedNoImage++; return; } // chưa tạo ảnh board → bỏ qua shot này
-    const expectedFrameMode = (gen && gen.frameMode) || p.frameMode || (p.endImageStep ? 'start_end' : 'start');
-    if (expectedFrameMode === 'start_end' && !(gen && gen.endMediaId)) {
-      addLog(`⚠️ ${p.name}: đã chọn 2 frame nhưng KHUNG CUỐI chưa tạo sạch${gen && gen.endError ? ' — ' + gen.endError : ''}. Chạy lại bước ảnh; không gửi nhầm video 1 frame.`, 'warning');
-      return;
-    }
+    const expectedFrameMode = 'start';
     items.push(window.NanoSession.stampItem({
       shotId: p.shotId,
       index: p.index,
@@ -3674,7 +3670,7 @@ async function runNanoVideos(options = {}) {
       voice: p.videoStep.voice || null,
       startImageMediaId,
       // Transform shot: end keyframe → start_end_frame (Veo interpolates). §6.2
-      endImageMediaId: (gen && gen.endMediaId) || '',
+      endImageMediaId: '',
       frameMode: expectedFrameMode,
       // ẢNH BẢNG NHÂN VẬT (wardrobe sheet) của shot này → bước video nạp CÙNG
       // keyframe làm reference asset (r2v), đúng như Flow tự làm khi bấm tay
@@ -3682,18 +3678,16 @@ async function runNanoVideos(options = {}) {
       // trôi dạt từ mỗi keyframe. genNanoVideos tự fallback start_frame nếu bị từ chối.
       // Bước video đưa ẢNH BOARD vào Veo. Ref bổ sung:
       // SHEET NHÂN VẬT (khóa mặt/đồ) + SHEET BỐI CẢNH (khóa cảnh) — cùng keyframe
-      // genNanoVideos giới hạn tổng ref (BOARD + tối đa 3) nên nhân vật
-      // đứng trước, sheet bối cảnh bổ sung nếu còn chỗ; dù bị cắt, bối cảnh vẫn nằm
-      // và bối cảnh được bổ sung theo số slot còn lại.
-      // Affiliate priority under Flow's 4-ref ceiling: BOARD is first inside
-      // inject.js, then one canonical PRODUCT, then character sheets, then a
-      // location sheet only if a slot remains. Non-affiliate arrays are empty,
-      // preserving the exact 1.8.6 behaviour.
-      referenceMediaIds: [
+      // The BOARD is sent as startImage. Up to three supplemental references are
+      // attached in this deterministic order: product, character sheets, then
+      // the canonical location. Keep the full deduplicated list here; inject.js
+      // applies the API ceiling and logs exactly which ids reached Flow.
+      referenceMediaIds: Array.from(new Set([
         ...((gen && Array.isArray(gen.productMediaIds)) ? gen.productMediaIds.slice(0, 1) : []),
         ...((gen && Array.isArray(gen.sheetMediaIds)) ? gen.sheetMediaIds : []),
+        ...((gen && gen.locationMediaId) ? [gen.locationMediaId] : []),
         ...((gen && Array.isArray(gen.locationSheetIds)) ? gen.locationSheetIds : []),
-      ],
+      ].filter(Boolean))),
     }, runContext));
   });
 
@@ -3704,9 +3698,10 @@ async function runNanoVideos(options = {}) {
       'BOARD',
       ...((gen && gen.productMediaIds && gen.productMediaIds.length) ? ['PRODUCT'] : []),
       ...((gen && gen.sheetMediaIds) || []).map(() => 'CHARACTER_SHEET'),
+      ...((gen && gen.locationMediaId) ? ['LOCATION_REFERENCE'] : []),
       ...((gen && gen.locationSheetIds) || []).map(() => 'LOCATION_SHEET'),
     ].slice(0, 4);
-    addLog(`🔗 ${item.name}: Veo ref order = ${order.join(' → ')}`, 'info');
+    addLog(`🔗 ${item.name}: Veo inputs = ${order.join(' → ')} (BOARD + tối đa 3 ref phụ)`, 'info');
   });
 
   if (!items.length) {

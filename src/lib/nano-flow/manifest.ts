@@ -1028,9 +1028,11 @@ export function withKeyframeAuthority(
     : "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT is the sole semantic authority for story action, timing, camera, state transition and ending. The generated STORYBOARD / LOCATION BOARD is only a visual continuity reference for the already-declared opening appearance and set geometry; it must never add, remove, replace or reinterpret video events. Each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop. Use the location board to keep the prompt-declared environment visually consistent (background, spatial layout, furniture, props, doors, windows, lighting and materials), but when any image detail conflicts with this structured prompt, FOLLOW THIS VIDEO PROMPT. Identity and clothing come from the sheets; semantics and motion come from the video prompt. Bind EVERY named character to their OWN same-named wardrobe sheet and keep the set on the location board: reproduce every attached identity AND the location faithfully across the WHOLE clip — never drop a reference, never map one character's face onto another, and never let a face, outfit or the set drift mid-shot.";
   rules.storyboard_reference_role =
     "Visual continuity only. Do not infer new actions from the board and do not let the board override ordered actions, dialogue, camera intent, timing or end state in this video prompt.";
-  // HARD LOCK (user): the multi-panel board must NEVER be rendered into the video.
+  // The current production path supplies one clean storyboard keyframe. Keep
+  // this wording topology-neutral so an old "multi-panel board" instruction
+  // cannot contradict the actual single full-frame image sent by the extension.
   rules.board_is_reference_not_a_frame =
-    "The attached STORYBOARD BOARD is a MULTI-PANEL planning sheet that only DESCRIBES this scene (cast, character design, location, staging and beats). It is NOT the video's frame and NOT a layout to copy. NEVER reproduce, show or animate the board itself: no split panels, no grid, no side-by-side sub-frames, no numbered badges, no caption strips, no white gutters or borders, no picture-in-picture. Render ONE single, full-bleed, continuous shot of the actual scripted scene in the locked medium—one camera, one framing at a time, filling the entire frame.";
+    "The attached STORYBOARD KEYFRAME is the single full-frame visual opening authority for cast, identity, wardrobe, location and staging. Animate the actual scripted scene from that image; never turn it into a collage, grid, split screen, numbered board, caption strip or picture-in-picture. Keep ONE full-bleed continuous camera setup for the whole clip.";
   if (characterStyleLock) rules.character_style_lock = characterStyleLock;
   return {
     ...clip,
@@ -1042,7 +1044,7 @@ export function withKeyframeAuthority(
         }
       : {}),
     board_usage:
-      "REFERENCE ONLY: the attached storyboard board is a multi-panel sheet that DESCRIBES this scene (who/what/where). Do NOT put the board—its split panels, grid, numbers, captions or borders—into the video. Produce ONE full-frame, single continuous shot of the ACTUAL scripted scene in the project's locked medium, never a montage of panels and never a picture of the board sheet.",
+      "OPENING VISUAL AUTHORITY: use the attached single full-frame storyboard keyframe directly to lock who, what and where. Animate forward from it as ONE continuous shot; do not invent another set, another camera setup, a montage, panels, captions or borders.",
     output_rules: rules,
   };
 }
@@ -1610,7 +1612,7 @@ export function buildNanoFlowManifest(
     //    manual override wins. §6.2.
     const chainOverride = opts.chainModeOverrides?.[index];
     const chainFromPrev =
-      i === 0
+      frameModeDefault === "single" || i === 0
         ? false
         : chainOverride === "on"
         ? true

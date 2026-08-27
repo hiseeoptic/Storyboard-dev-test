@@ -239,6 +239,76 @@ test("Veo clip carries the locked genre voice, camera and sound profile", () => 
   assert.match(result.clips[0].production_profile.sound_direction, /crowd bed/i);
 });
 
+test("same location id cannot drift to another environment preset or camera side", () => {
+  const baseSegment = {
+    duration_seconds: 10,
+    marketing_role: "body",
+    location_id: "location_01",
+    characters_in_scene: ["Minh", "Lan"],
+    first_frame_prompt: "Vietnamese living room with a wooden table; Minh faces Lan.",
+    motion_prompt: "Minh places the glasses on the wooden table; Lan watches.",
+    continuity_note: "Both remain beside the same wooden table.",
+    dialogue_lines: [],
+  };
+  const result = buildVeoJson({
+    character_locks: [
+      { name: "Minh", gender: "male", costume: "blue shirt, dark trousers" },
+      { name: "Lan", gender: "female", costume: "cream blouse, dark trousers" },
+    ],
+    scene_bible: {
+      lens: "50mm lens",
+      lighting: "warm practical lamp",
+      backdrop: "Vietnamese living room with a wooden table",
+      color_grade: "warm neutral grade",
+      film_grain: "fine grain",
+    },
+    style_guide: { art_direction: "natural domestic drama", color_palette: [] },
+    context_ir: {
+      layers: {
+        environment: {
+          locations: [{
+            id: "location_01",
+            description: "Vietnamese living room with a wooden table",
+            spatial_anchors: ["wooden table", "sofa"],
+            fixed_elements: ["window", "door"],
+            lighting_motivation: "warm practical lamp",
+            sound_bed: "quiet furnished-room tone",
+            reverb_profile: "short furnished-room decay",
+          }],
+        },
+      },
+    },
+    segments: [
+      {
+        ...baseSegment,
+        segment_number: 1,
+        environment_ref: "warm_apartment_living_room",
+        beats: [
+          { beat: "Minh stands by the table", camera: "[WIDE] frontal eye-level view" },
+          { beat: "Lan watches", camera: "[OTS] from behind Lan" },
+        ],
+      },
+      {
+        ...baseSegment,
+        segment_number: 2,
+        environment_ref: "coastal_cliff_sea_wind",
+        continuity_mode: "continuous",
+        beats: [{ beat: "Lan lowers her eyes", camera: "[CLOSE] frontal eye-level view" }],
+      },
+    ],
+  }, {
+    aspectRatio: "9:16",
+    dialogueLanguage: "Vietnamese",
+  });
+
+  assert.equal(result.clips.length, 2);
+  assert.doesNotMatch(result.clips[0].camera.movement, /behind Lan/i);
+  assert.match(result.clips[0].camera.movement, /same wide camera axis/i);
+  assert.doesNotMatch(result.clips[1].background_lock.name, /coastal|cliff|sea/i);
+  assert.doesNotMatch(result.clips[1].background_lock.lighting, /5600K|lux/i);
+  assert.deepEqual(result.clips[1].foley_and_ambience.ambience, ["quiet furnished-room tone"]);
+});
+
 test("uploaded references keep identity image-only while preserving contextual clothing text", () => {
   const cleaned = stripUploadedCharacterAppearance(
     "Lan, with long black hair, wearing a soft beige knit top and dark indigo jeans, stands beside Minh.",

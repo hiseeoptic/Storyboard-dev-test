@@ -1781,7 +1781,7 @@
           });
         }
         // Shot này CÓ nối keyframe trước không? (dùng để bớt ref thừa bên dưới.)
-        const willChain = !!prevKeyframeId && d.chain !== false && it.chainFromPrev === true && !wardrobeChangedThisShot;
+        const willChain = false;
         // 1) Reference images (character → scene → product) → imageInputs.
         //    Confirmed Flow shape (from real trace):
         //    { imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: <mediaId> }.
@@ -1885,7 +1885,7 @@
         } catch (e) {}
         // 3) Name it after the shot.
         const renamed = g.workflowId ? await renameWorkflow(pid, g.workflowId, label) : false;
-        const result = { shotId: it.shotId || null, index: it.index || (i + 1), resultKey: it.resultKey, ...context, name: label, mediaId: g.mediaId, workflowId: g.workflowId, renamed: !!renamed, frameMode: it.frameMode === 'start_end' || it.endPrompt ? 'start_end' : 'start', sheetMediaIds: shotSheetIds.slice(), productMediaIds: shotProductIds.slice(), locationMediaId: shotLocationId, locationSheetIds: shotLocationSheetIds.slice() };
+        const result = { shotId: it.shotId || null, index: it.index || (i + 1), resultKey: it.resultKey, ...context, name: label, mediaId: g.mediaId, workflowId: g.workflowId, renamed: !!renamed, frameMode: 'start', sheetMediaIds: shotSheetIds.slice(), productMediaIds: shotProductIds.slice(), locationMediaId: shotLocationId, locationSheetIds: shotLocationSheetIds.slice() };
         post({ via: 'log', kind: 'log', message: willChain
           ? `  ✅ "${label}" dùng lại boundary → ${String(g.mediaId).slice(0, 12)}`
           : `  ✅ "${label}" → ${String(g.mediaId).slice(0, 12)} ${renamed ? '(đã đặt tên)' : '(⚠️ chưa đặt tên được — workflowId có thể trống)'}` });
@@ -1925,7 +1925,7 @@
         // 4) END keyframe: use only canonical character/product/location refs.
         //    Do not feed the start image back as a loose style reference; the
         //    structured end prompt already carries the exact boundary contract.
-        const endPrompt = String(it.endPrompt || '').trim();
+        const endPrompt = '';
         if (endPrompt) {
           try {
             post({ via: 'log', kind: 'log', message: `  🎞️ [${i + 1}/${items.length}] "${label}" — tạo KHUNG CUỐI…` });
@@ -2106,15 +2106,10 @@
         //   videoModelKey abra_r2v_10s
         //   referenceImages = [sheet Lan, sheet Minh, keyframe], KHÔNG có startImage
         // → mặt + BỘ ĐỒ KHÓA của TỪNG nhân vật bám chắc trong clip, thay vì trôi
-        // dạt từ mỗi keyframe. Chỉ dùng khi KHÔNG có khung CUỐI (shot biến hình
-        // vẫn cần start+end để Veo nội suy). Nếu r2v bị từ chối (model không nhận
-        // reference / sai shape) → tự quay về start_frame chỉ-keyframe (đường cũ)
-        // để shot vẫn ra video. Nhân vật cũng đã nằm sẵn TRONG keyframe.
-        const endImageMediaId = it.endImageMediaId || '';
+        // dạt từ mỗi keyframe. Production is single-frame only; the BOARD is the
+        // start image and character/location assets remain supplemental refs.
+        const endImageMediaId = '';
         const refIds = Array.isArray(it.referenceMediaIds) ? it.referenceMediaIds.filter(Boolean) : [];
-        // CLEAN single-frame keyframe is the only visual input Veo may receive.
-        // The multi-panel storyboard board never enters this reference list.
-        const useRefMode = !!startImageMediaId && !endImageMediaId;
         // Prompt là JSON cấu trúc (bắt đầu bằng '{') → gửi NGUYÊN VẸN: khối JSON đã
         // có output_rules/negative_prompt riêng, gắn thêm text ngoài khối dễ gây
         // nhiễu/xung khắc. Prompt text thường mới qua buildPrompt.
@@ -2132,12 +2127,12 @@
           const text = await res.text().catch(() => '');
           return { ok: res.ok, status: res.status, text };
         };
-        // r2v: đưa CLEAN KEYFRAME + SHEET NHÂN VẬT vào làm reference cho Veo.
-        // Clean keyframe đứng đầu, rồi tới các sheet
-        // nhân vật. Giới hạn tổng số ref để tránh quá tải. AN TOÀN: nếu Veo từ chối
-        // nhiều ref (HTTP lỗi) thì fallback sendStart bên dưới chỉ dùng clean frame.
-        const refImageIds = [startImageMediaId, ...refIds.filter((id) => id && id !== startImageMediaId)].slice(0, 4);
-        post({ via: 'log', kind: 'log', message: `  🔗 Veo reference order: BOARD → ${refIds.length ? refIds.map((id) => String(id).slice(0, 8)).join(' → ') : 'no extra refs'} (max 4 total).` });
+        // Reference mode accepts at most three asset images. The normal path
+        // keeps BOARD as the actual startImage and attaches up to three extra
+        // product/character/location refs. If that Flow route is unavailable,
+        // retry r2v with BOARD + two extras (three total), then finally BOARD-only
+        // with an explicit warning. Never drop refs silently.
+        const refImageIds = [startImageMediaId, ...refIds.filter((id) => id && id !== startImageMediaId)].slice(0, 3);
         const sendRef = () => postVideo('reference', {
           aspectRatio: aspectEnum,
           seed: Math.floor(Math.random() * 1000000),
@@ -2167,28 +2162,25 @@
           return postVideo(vMode, item);
         };
 
-        post({ via: 'log', kind: 'log', message: `🎬 [${i + 1}/${items.length}] "${label}" — dựng video (${useRefMode ? `bảng nhân vật×${refIds.length} + keyframe làm ref (r2v)` : (endImageMediaId ? 'khung ĐẦU+CUỐI' : 'keyframe')})…` });
-        let r = await (useRefMode ? sendRef() : sendStart(true));
+        post({ via: 'log', kind: 'log', message: `  🔗 Gửi BOARD làm khung đầu + ${supplementalRefIds.length} ref phụ: ${supplementalRefIds.length ? supplementalRefIds.map((id) => String(id).slice(0, 8)).join(' → ') : 'không có'}.` });
+        post({ via: 'log', kind: 'log', message: `🎬 [${i + 1}/${items.length}] "${label}" — dựng video một keyframe, giữ ref nhân vật/bối cảnh…` });
+        let r = await sendStart(true);
         // 429 (hết lượt tạm thời) → nghỉ rồi thử lại 1 lần.
         if (!r.ok && r.status === 429) {
           post({ via: 'log', kind: 'log', message: `  ⏳ 429 hết lượt tạm thời — nghỉ 30s rồi thử lại "${label}"…` });
           await new Promise((res2) => setTimeout(res2, 30000));
-          r = await (useRefMode ? sendRef() : sendStart(true));
-        }
-        // r2v bị từ chối (không phải hết quota) → quay về start_frame chỉ-keyframe.
-        if (!r.ok && useRefMode && !isQuotaError(r.text)) {
-          post({ via: 'log', kind: 'log', message: `  ↩️ r2v bị từ chối (HTTP ${r.status}) — thử lại chế độ keyframe (start_frame). Lỗi: ${r.text.slice(0, 80)}` });
           r = await sendStart(true);
+        }
+        if (!r.ok && supplementalRefIds.length && !isQuotaError(r.text)) {
+          post({ via: 'log', kind: 'log', message: `  ↩️ Flow từ chối START+ref (HTTP ${r.status}) — thử r2v với BOARD + tối đa 2 ref, không bỏ ref âm thầm.` });
+          r = await sendRef();
           if (!r.ok && r.status === 429) {
             await new Promise((res2) => setTimeout(res2, 30000));
-            r = await sendStart(true);
+            r = await sendRef();
           }
         }
-        // Some Flow model configurations reject supplemental referenceImages on
-        // start/end requests. Retry the same temporal pair without extras rather
-        // than silently dropping the entire video job.
-        if (!r.ok && !useRefMode && supplementalRefIds.length && !isQuotaError(r.text)) {
-          post({ via: 'log', kind: 'log', message: `  ↩️ Flow từ chối ref nhân vật/bối cảnh kèm khung thời gian (HTTP ${r.status}) — giữ nguyên START/END và thử lại không ref phụ.` });
+        if (!r.ok && supplementalRefIds.length && !isQuotaError(r.text)) {
+          post({ via: 'log', kind: 'log', message: `  ⚠️ Cả START+ref và r2v+ref đều bị Flow từ chối (HTTP ${r.status}); lần cuối dùng BOARD-only để không mất cả clip. Ref KHÔNG được báo là đã gửi.` });
           r = await sendStart(false);
         }
         if (!r.ok) {

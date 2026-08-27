@@ -2992,17 +2992,36 @@ export function buildVeoJson(
           .trim()
       )
       .filter(Boolean);
-    const declaredScales = cameraText.match(/\[(?:MEDIUM|CLOSE|EXTREME_CLOSE|WIDE|OTS)\]/gi) ?? [];
-    const distinctScales = new Set(declaredScales.map((scale) => scale.toUpperCase()));
+    // A 10-second Veo clip is one shot, not a miniature edit sequence. The
+    // storyboard can still carry several review beats, but the production clip
+    // must choose one camera axis and one scale. Previously we concatenated the
+    // first and last beat (for example frontal WIDE -> rear OTS), which made Veo
+    // orbit around the room or appear to cut to a different scene mid-clip.
+    const primaryCameraClause = cameraClauses[0] || "";
     const movement = /static|locked/.test(lower)
       ? "static"
-      : cameraClauses.length > 1
-        ? distinctScales.size > 1
-          ? `One continuous motivated reframe begins with ${cameraClauses[0]} and changes scale visibly in-camera before settling on ${cameraClauses[cameraClauses.length - 1]}; no cut, teleport or contradictory instruction to preserve one shot scale`
-          : `One continuous ${framing === "WS" ? "wide" : framing === "CU" ? "close" : "medium"} composition begins with ${cameraClauses[0]} and follows the same action before settling on ${cameraClauses[cameraClauses.length - 1]}, without a cut or shot-scale change`
-        : cameraClauses[0] || "single slow, smooth camera move";
+      : primaryCameraClause
+        ? `Hold the same ${framing === "WS" ? "wide" : framing === "CU" ? "close" : "medium"} camera axis established by ${primaryCameraClause}; allow only a subtle motivated push, pan or focus adjustment that never crosses to another side, changes shot scale, or creates a second setup`
+        : "single stable camera setup with only subtle motivated drift";
     return { framing, angle, movement };
   };
+
+  // A project-local location id owns ONE spatial environment archetype for the
+  // entire story. Resolve that spatial identity once so a later model-selected
+  // preset cannot relocate the scene. Shot-local time/light still comes from
+  // the script-derived scene bible rather than this catalog fallback.
+  const environmentByLocationId = new Map<
+    string,
+    ReturnType<typeof resolveEnvironment>
+  >();
+  for (const segment of breakdown.segments) {
+    const locationKey = oneLine(segment.location_id).toLowerCase();
+    if (!locationKey || environmentByLocationId.has(locationKey)) continue;
+    environmentByLocationId.set(
+      locationKey,
+      resolveEnvironment(segment.environment_ref, segment.first_frame_prompt)
+    );
+  }
 
   const clips = breakdown.segments.map((seg, segIndex) => {
     const beats = Array.isArray(seg.beats) ? seg.beats : [];
@@ -3015,9 +3034,11 @@ export function buildVeoJson(
     // surface physics. They are valuable for live action but conflict with a
     // selected illustrated/clay/paper/low-poly world. A stylized project keeps
     // the script-derived setting and lets its style lock render that world.
+    const locationKey = oneLine(seg.location_id).toLowerCase();
     const env = stylizedRepresentation
       ? undefined
-      : resolveEnvironment(seg.environment_ref, seg.first_frame_prompt);
+      : environmentByLocationId.get(locationKey) ??
+        resolveEnvironment(seg.environment_ref, seg.first_frame_prompt);
     const contextLocation = seg.location_id
       ? contextLocationsById.get(seg.location_id.trim().toLowerCase())
       : undefined;
@@ -3403,13 +3424,10 @@ export function buildVeoJson(
             ? "One continuous supported medium composition holds the same occupied wedge and the waiting character through the glass while the door rotates in one direction; no entry, exit, cut or shot change"
             : "";
     const cameraMovement = revolvingDoorCameraMovement || camera.movement;
-    const ambience = [env?.sound_bed, opts.ambientAudio].filter(
-      (value): value is string => !!value
-    );
     const environmentSoundBed = opts.ambienceEnabled === false
       ? "None — intentional silence with no environmental ambience"
       : scrub(
-          contextLocation?.sound_bed || env?.sound_bed || opts.ambientAudio || ""
+          contextLocation?.sound_bed || opts.ambientAudio || env?.sound_bed || ""
         );
     const environmentReverb = scrub(contextLocation?.reverb_profile || "");
     const previousLocationId =
@@ -3518,15 +3536,18 @@ export function buildVeoJson(
       background_lock: {
         id: seg.location_id || seg.environment_ref || `BACKGROUND_${seg.segment_number}`,
         name: softenIncidentalBagPressure(
-          env?.display_name || seg.title,
+          backgroundSetting.split(/[;,]/u)[0]?.slice(0, 40).trim() ||
+            oneLine(seg.location_id).replace(/[_-]+/g, " ") ||
+            env?.display_name ||
+            seg.title,
           incidentalBagPressure
         ),
         setting: backgroundSetting,
         scenery: sceneBibleTokens.backdrop,
         props: noHex(breakdown.product_dna) || "Only props explicitly named in setting and action",
-        lighting: [sceneBibleTokens.lighting, env ? scrub(`${env.lighting.key_kelvin}K, ~${env.lighting.ambient_lux} lux`) : ""]
-          .filter(Boolean)
-          .join("; "),
+        // Temporal light is script/scene-bible state. Catalog Kelvin/lux is only
+        // a preset hint and must not overwrite a deliberate dawn/night change.
+        lighting: sceneBibleTokens.lighting,
         persistence: opts.hasLocationRef
           ? "Attached location image is the set authority; keep its geometry, furniture, materials and light."
           : "Keep this set unchanged; spatial_topology controls its fixed geometry.",
@@ -3590,7 +3611,7 @@ export function buildVeoJson(
         ambience:
           opts.ambienceEnabled === false
             ? []
-            : [environmentSoundBed, ...ambience.map(scrub)].filter(Boolean),
+            : [environmentSoundBed].filter(Boolean),
         fx: opts.foleyEnabled === false
           ? []
           : actionDrama

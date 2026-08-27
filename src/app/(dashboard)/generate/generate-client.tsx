@@ -2624,7 +2624,9 @@ function ProjectWorkspace() {
       // two-frame shot can never leak. Flip the flag to restore both.
       frameModeDefault: SHOW_FRAME_MODE_CONTROLS ? frameModeDefault : "single",
       frameModeOverrides: SHOW_FRAME_MODE_CONTROLS ? frameModeOverrides : {},
-      chainModeOverrides,
+      // Hidden frame controls mean the production path is genuinely single and
+      // independent per shot. Do not leak stale local-storage chain overrides.
+      chainModeOverrides: SHOW_FRAME_MODE_CONTROLS ? chainModeOverrides : {},
       // Cách 1 — embed uploaded location photos into the downloadable manifest.
       locationSets: genInput?.location_mode === "upload" ? genInput?.location_sets : undefined,
     });

@@ -116,12 +116,9 @@
     const refClauses = isJsonPrompt ? '' : refImageClauses(imageRefs);
     // A "transform" shot declares an END keyframe → we generate 2 images (start
     // + end) and drive the video in start_end_frame mode. §6.2.
-    const hasEndPrompt = !!(item.endStoryboardPrompt && item.endStoryboardPrompt.trim());
-    // Explicit mode wins for new manifests; old manifests remain compatible by
-    // inferring two-frame execution from the existing end prompt.
-    const hasEndFrame = item.frameMode
-      ? item.frameMode === 'start_end' && hasEndPrompt
-      : hasEndPrompt;
+    // One-keyframe production lock. This also normalizes legacy manifests that
+    // still contain an end prompt after the two-frame control was hidden.
+    const hasEndFrame = false;
 
     return {
       shotId: item.shotId,
@@ -129,7 +126,7 @@
       name: item.name,
       durationSeconds: item.durationSeconds || 10,
       // B1 handoff: nối từ ảnh CUỐI scene trước (chỉ khi 'continuous'); cut → khung mới.
-      chainFromPrev: item.chainFromPrev,
+      chainFromPrev: false,
       frameMode: hasEndFrame ? 'start_end' : 'start',
       frameRole: item.frameRole || null,
       boardNo: item.boardNo || null,

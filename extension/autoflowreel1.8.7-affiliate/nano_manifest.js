@@ -102,6 +102,54 @@
     return out;
   }
 
+  /** Parse an optional JSON prompt carried by an environment asset. */
+  function parsePromptObject(input) {
+    if (input && typeof input === 'object') return input;
+    if (typeof input !== 'string' || !input.trim()) return null;
+    try {
+      const parsed = JSON.parse(input);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /** Canonical spatial fields owned by an environment asset, when available. */
+  function environmentAuthority(asset) {
+    if (!asset || typeof asset !== 'object') return null;
+    const sheet = parsePromptObject(asset.location_sheet_prompt)
+      || parsePromptObject(asset.location_views && asset.location_views[0] && asset.location_views[0].prompt)
+      || {};
+    return {
+      name: String(asset.name || sheet.location_name || '').trim(),
+      setting: String(sheet.source_authority || sheet.setting || '').trim(),
+      scenery: String(sheet.scenery || '').trim(),
+      lighting: String(sheet.lighting || '').trim(),
+    };
+  }
+
+  /**
+   * Repair only legacy multi-setup camera prose. Valid pans, tracks, dollies,
+   * pushes and holds survive unchanged; a single-keyframe workflow does not
+   * imply a static camera.
+   */
+  function normalizeCameraMovement(camera) {
+    const framing = String(camera && camera.framing || 'medium').toLowerCase();
+    const angle = String(camera && camera.angle || 'eye level');
+    const movement = String(camera && camera.movement || '').trim();
+    const multiSetup = /\b(?:orbit|reverse angle|second (?:camera )?setup|cut to|switch(?:es|ing)? to|changes? (?:the )?shot scale)\b/i.test(movement)
+      || /\bbegins? with[\s\S]*(?:before settling|settles? on|ending on)\b/i.test(movement)
+      || /\bfront(?:al)?[\s\S]{0,120}\b(?:rear|behind)\b/i.test(movement);
+    const axisLock = 'Keep one camera axis for the whole clip; no cut, orbit, reverse angle, shot-scale jump or second setup.';
+    if (!movement || multiSetup) {
+      return 'Hold one stable ' + framing + ' ' + angle
+        + ' camera axis; a motivated pan, track, dolly, push or focus adjustment may follow the scripted action without crossing to another setup. '
+        + axisLock;
+    }
+    if (/one camera axis|same camera axis|no (?:cut|cuts)/i.test(movement)) return movement;
+    return movement + ' ' + axisLock;
+  }
+
   /**
    * Flatten a manifest into an ordered, render-ready queue. Each item:
    * {
@@ -119,6 +167,90 @@
     const shots = Array.isArray(m.shots) ? m.shots.slice() : [];
     shots.sort(function (a, b) { return (a.index || 0) - (b.index || 0); });
 
+    // Compatibility authority for manifests exported before the one-keyframe
+    // fix. Spatial identity comes from the location asset when one exists, then
+    // falls back to the first script-derived shot. Temporal fields (shot light,
+    // sound and reverb) remain shot-local so an intentional day/night or sound
+    // transition in an arbitrary script is never flattened.
+    const locationAuthority = {};
+    Object.keys(pool.environments || {}).forEach(function (id) {
+      const authority = environmentAuthority(pool.environments[id]);
+      if (authority) locationAuthority[id] = authority;
+    });
+    shots.forEach(function (s) {
+      const clip = s && s.video_prompt && typeof s.video_prompt === 'object'
+        ? s.video_prompt : null;
+      if (!clip) return;
+      const bg = clip.background_lock && typeof clip.background_lock === 'object'
+        ? clip.background_lock : {};
+      const loc = String(s.location_id || clip.location_id || bg.id || '').trim();
+      if (!loc || locationAuthority[loc]) return;
+      const setting = String(bg.setting || '').trim();
+      locationAuthority[loc] = {
+        name: setting.split(/[;,]/)[0].trim() || String(bg.name || loc),
+        setting: setting,
+        scenery: String(bg.scenery || '').trim(),
+        lighting: String(bg.lighting || '').split(';')[0].trim(),
+      };
+    });
+
+    const normalizedVideoPrompt = function (s) {
+      if (!s.video_prompt || typeof s.video_prompt !== 'object') return s.video_prompt;
+      const clip = JSON.parse(JSON.stringify(s.video_prompt));
+      const bg = clip.background_lock && typeof clip.background_lock === 'object'
+        ? clip.background_lock : {};
+      const loc = String(s.location_id || clip.location_id || bg.id || '').trim();
+      const authority = locationAuthority[loc];
+      if (authority) {
+        const tokens = clip.scene_bible_tokens && typeof clip.scene_bible_tokens === 'object'
+          ? clip.scene_bible_tokens : {};
+        const foley = clip.foley_and_ambience && typeof clip.foley_and_ambience === 'object'
+          ? clip.foley_and_ambience : {};
+        // Scene-bible/audio fields are already script-derived for THIS shot.
+        // Prefer them over a location's baseline so intentional temporal change
+        // remains possible while geometry and location identity stay locked.
+        const shotLighting = String(tokens.lighting || authority.lighting || bg.lighting || '').trim();
+        const shotSoundBed = String(tokens.audio_bed || foley.environment_sound_bed || '').trim();
+        const shotReverb = String(tokens.reverb || foley.environment_reverb || '').trim();
+        clip.background_lock = Object.assign({}, bg, {
+          name: authority.name || bg.name,
+          setting: authority.setting || bg.setting,
+          scenery: authority.scenery || bg.scenery,
+          lighting: shotLighting,
+        });
+        if (clip.scene_bible_tokens && typeof clip.scene_bible_tokens === 'object') {
+          clip.scene_bible_tokens = Object.assign({}, clip.scene_bible_tokens, {
+            backdrop: authority.scenery || clip.scene_bible_tokens.backdrop,
+          });
+        }
+        if (clip.foley_and_ambience && typeof clip.foley_and_ambience === 'object') {
+          clip.foley_and_ambience = Object.assign({}, clip.foley_and_ambience, {
+            environment_sound_bed: shotSoundBed || clip.foley_and_ambience.environment_sound_bed,
+            environment_reverb: shotReverb || clip.foley_and_ambience.environment_reverb,
+            ambience: shotSoundBed ? [shotSoundBed] : clip.foley_and_ambience.ambience,
+          });
+        }
+        if (clip.audio_transition && typeof clip.audio_transition === 'object') {
+          clip.audio_transition = Object.assign({}, clip.audio_transition, {
+            sound_bed: shotSoundBed || clip.audio_transition.sound_bed,
+            reverb_profile: shotReverb || clip.audio_transition.reverb_profile,
+          });
+        }
+      }
+      if (clip.camera && typeof clip.camera === 'object') {
+        clip.camera = Object.assign({}, clip.camera, {
+          movement: normalizeCameraMovement(clip.camera),
+        });
+      }
+      clip.board_usage = 'Use the attached single full-frame storyboard keyframe as the visual opening authority and animate forward in one continuous shot.';
+      if (clip.output_rules && typeof clip.output_rules === 'object') {
+        clip.output_rules = Object.assign({}, clip.output_rules, {
+          board_is_reference_not_a_frame: 'The attached image is one single full-frame storyboard keyframe. Keep it as the opening visual authority; never create a grid, collage, split screen, numbered panel or second camera setup.',
+        });
+      }
+      return clip;
+    };
+
     const queue = [];
     shots.forEach(function (s, i) {
       const vref = s.video_refs || {};
@@ -126,9 +258,10 @@
       const shotName = s.storyboard_name || s.shot_id || ('Shot ' + (i + 1));
       // Object (structured Veo clip) → JSON text cho ô prompt của Flow; chuỗi
       // giữ nguyên. KHÔNG String(object) — sẽ thành "[object Object]".
-      const videoPrompt = (s.video_prompt && typeof s.video_prompt === 'object')
-        ? JSON.stringify(s.video_prompt)
-        : String(s.video_prompt || '').trim();
+      const normalizedClip = normalizedVideoPrompt(s);
+      const videoPrompt = (normalizedClip && typeof normalizedClip === 'object')
+        ? JSON.stringify(normalizedClip)
+        : String(normalizedClip || '').trim();
       const charactersInScene = Array.isArray(s.characters_in_scene) ? s.characters_in_scene : [];
       const videoRefs = Object.assign(
         {
@@ -145,9 +278,11 @@
         shotId: shotId,
         parentShotId: shotId,
         sceneNo: null,
-        // Preserve the app-authored cross-shot boundary contract. Missing on old
-        // manifests stays false, so legacy projects keep their prior behaviour.
-        chainFromPrev: s.chain_from_prev === true,
+        // Production is hard-locked to one independent keyframe per shot. Old
+        // manifests may still carry chain_from_prev/start_end; normalize them at
+        // import so they cannot reuse another shot's image or create a second
+        // frame behind the hidden UI.
+        chainFromPrev: false,
         // Ảnh bối cảnh user nạp cho RIÊNG board này (nút nạp theo từng board). Có
         // thì đính làm ref khóa bối cảnh (ưu tiên), không có thì tạo board từ prompt.
         boardLocationImage: s.board_location_image || null,
@@ -159,11 +294,10 @@
         // Clean SINGLE full-bleed frame dedicated to Veo. The multi-panel board
         // remains a review artifact and is never used as video conditioning.
         videoKeyframePrompt: String(s.video_keyframe_prompt || '').trim(),
-        frameMode: s.frame_mode === 'start_end' ? 'start_end'
-          : (s.frame_mode === 'start' ? 'start' : null),
+        frameMode: 'start',
         // Optional END keyframe (start_end_frame mode): when present, the shot
         // has a "transform" — Veo interpolates start→end. See DESIGN §6.2.
-        endStoryboardPrompt: String(s.end_storyboard_prompt || '').trim(),
+        endStoryboardPrompt: '',
         videoPrompt: videoPrompt,
         // Đổi trang phục giữa truyện (ướt mưa, thay đồ…): { "Tên": "outfit mới" }.
         // Extension sẽ tạo lại ảnh toàn thân (wardrobe sheet) từ shot này trở đi.
