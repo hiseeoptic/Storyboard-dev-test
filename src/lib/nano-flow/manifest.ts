@@ -255,7 +255,9 @@ const KEYFRAME_REFERENCE_AUTHORITY =
   "that matches one character's reference but drifts another's face, or invents the place, is a FAILURE. " +
   "(1) IDENTITY comes from the attached character reference: copy EACH character's face, skin tone, " +
   "hair, eyebrows, eyelashes, facial structure and body build EXACTLY from that same-named attached " +
-  "reference. Never invent, age, slim, restyle, change ethnicity or blend two people. " +
+  "reference. Never invent, age, slim, restyle, change ethnicity or blend two people. When that " +
+  "reference is a multi-view sheet, the sharp FRONTAL CLOSE-UP panel is the definitive face — never " +
+  "source a front-facing face from a side-profile panel. " +
   "(2) WARDROBE comes from the STORY-LOCKED outfit in wardrobe_note — NOT from the reference image. " +
   "The reference may show the person in unrelated everyday clothes and a plain studio backdrop; IGNORE " +
   "that clothing and that background and dress each character in the exact story-locked garments, colours " +
@@ -810,11 +812,11 @@ function buildKeyframePrompt(params: {
         name: entry.name,
         reference_binding: characterStyleLock
           ? `Use ONLY the attached character/design sheet labelled ${entry.name} for ${entry.name}; keep the exact proportions, line/shape/material language, palette and identity markers.`
-          : `Use ONLY the attached wardrobe sheet labelled ${entry.name} for ${entry.name}.`,
+          : `Use ONLY the attached wardrobe sheet labelled ${entry.name} for ${entry.name}. That sheet holds THREE framings of the SAME person: take ${entry.name}'s FRONTAL FACE — eyes, nose, mouth, face shape, skin tone, hairline — from the SHARP CHEST-UP CLOSE-UP panel, which is the DEFINITIVE face. The 90° SIDE-PROFILE panel is ONLY for head/silhouette shape and the full-body panel ONLY for wardrobe and proportion — NEVER build a front-facing face from the side-profile panel. Never blend ${entry.name}'s face with another character's.`,
         maximum_instances_per_panel: 1,
       })),
       rule:
-        "Render each named identity at most once in this frame (0-or-1 instances). Never duplicate an identity, merge two characters or substitute one design for another. Multiple views inside a reference sheet are the SAME identity, not extra people.",
+        "Render each named identity at most once in this frame (0-or-1 instances). Never duplicate an identity, merge two characters or substitute one design for another. Multiple views inside a reference sheet are the SAME identity, not extra people. Bind each visible face to its OWN same-named sheet's close-up; if two characters share the frame, keep their faces fully distinct and never swap or average them.",
     },
     body_visibility_contract: characterStyleLock
       ? "Every visible hand, limb or character part stays visibly connected to its named owner's head/body per the locked character-design grammar. Never render an isolated hand, arm, limb or headless fragment unless the script explicitly requires an object-only insert."
