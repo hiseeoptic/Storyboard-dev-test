@@ -5,6 +5,7 @@ import type { SceneIntentIR } from "../scene-intent/types.ts";
 import type { ResolvedVideoContext } from "../video-context/types.ts";
 import { buildActiveStoryboardRulePacket } from "./active-packet.ts";
 import { compileStoryboardSystemPrompt } from "./prompt-compiler.ts";
+import { STORYBOARD_STAGE_PROMPT_CONTRACTS, buildStoryboardStageSystemPrompt } from "./stage-prompt.ts";
 import { buildStoryboardValidationPolicy } from "./validation-policy.ts";
 
 const LEGACY_SAMPLE = `CRITICAL PRODUCTION MODEL — retained
@@ -69,7 +70,7 @@ test("compiler leaves the legacy prompt byte-identical when no rule is suppresse
   assert.equal(compileStoryboardSystemPrompt(LEGACY_SAMPLE).prompt, LEGACY_SAMPLE);
 });
 
-test("V5 removes only router-suppressed legacy global clauses", () => {
+test("V6 removes only router-suppressed legacy global clauses", () => {
   const context = {
     layers: {
       ontology: { visible_text_policy: "Vietnamese diegetic signs allowed" },
@@ -92,7 +93,7 @@ test("V5 removes only router-suppressed legacy global clauses", () => {
   assert.doesNotMatch(prompt, /CAMERA VARIETY ACROSS CLIPS/);
   assert.doesNotMatch(prompt, /DIALOGUE QUALITY DOCTRINE/);
   assert.match(prompt, /CRITICAL PRODUCTION MODEL/);
-  assert.match(prompt, /ACTIVE RULE PACKET V5/);
+  assert.match(prompt, /ACTIVE RULE PACKET V6/);
   assert.match(prompt, /MENU MODE — PRESERVE EVERY LINE/);
 });
 
@@ -139,4 +140,61 @@ test("repair-stage validation policy never authorizes dialogue mutation", () => 
   const policy = buildStoryboardValidationPolicy(packet);
   assert.equal(policy.dialogue_mode, "preserve_current_edit");
   assert.equal(policy.dialogue_mutation_allowed, false);
+});
+
+test("generation keeps the full director prompt path", () => {
+  const packet = buildActiveStoryboardRulePacket(
+    { source_script: "LAN: cảnh mở đầu", script_treatment: "preserve" },
+    { stage: "generation" }
+  );
+  assert.equal(buildStoryboardStageSystemPrompt(packet), null);
+});
+
+test("segment rewrite receives a compact technical-only system prompt", () => {
+  const packet = buildActiveStoryboardRulePacket(
+    {
+      source_script: "LAN: giữ nguyên câu đang sửa",
+      script_treatment: "polish",
+      directing_profile: "handheld_documentary",
+    },
+    { stage: "segment_rewrite" }
+  );
+  const prompt = buildStoryboardStageSystemPrompt(packet);
+  assert.ok(prompt);
+  assert.match(prompt, /ACTIVE STAGE PROMPT V6 — SEGMENT_REWRITE/);
+  assert.match(prompt, /Rewrite exactly the requested segment/);
+  assert.match(prompt, /Preserve every current dialogue\/narration line/);
+  assert.match(prompt, /one physically continuous take/);
+  assert.match(prompt, /route around solid furniture/);
+  assert.match(prompt, /Pans, pots, bowls, tools, furniture, ingredients/);
+  assert.doesNotMatch(prompt, /DIALOGUE QUALITY DOCTRINE/);
+  assert.doesNotMatch(prompt, /thumbnail|marketing strategist|write a strong one/i);
+  assert.ok(prompt.length < 6000, `compact rewrite prompt grew to ${prompt.length} characters`);
+});
+
+test("repair receives a finding-bounded prompt and cannot broaden creative scope", () => {
+  const packet = buildActiveStoryboardRulePacket(
+    { source_script: "MINH: câu hiện tại", script_treatment: "polish" },
+    { stage: "repair" }
+  );
+  const prompt = buildStoryboardStageSystemPrompt(packet);
+  assert.ok(prompt);
+  assert.match(prompt, /ACTIVE STAGE PROMPT V6 — REPAIR/);
+  assert.match(prompt, /only the supplied validator findings/);
+  assert.match(prompt, /Treat clean targets and all neighbours as read-only/);
+  assert.match(prompt, /unrequested creative enhancement/);
+  assert.match(prompt, /valid JSON only/);
+  assert.doesNotMatch(prompt, /actively improve|rewrite weak dialogue|DIALOGUE QUALITY DOCTRINE/i);
+  assert.ok(prompt.length < 6000, `compact repair prompt grew to ${prompt.length} characters`);
+});
+
+test("bounded stage contracts own one explicit, duplicate-free responsibility set", () => {
+  for (const [stage, contract] of Object.entries(STORYBOARD_STAGE_PROMPT_CONTRACTS)) {
+    assert.equal(contract.stage, stage);
+    assert.equal(new Set(contract.responsibilities).size, contract.responsibilities.length);
+    assert.ok(contract.responsibilities.includes("bounded_edit_scope"));
+    assert.ok(contract.responsibilities.includes("dialogue_lock"));
+    assert.ok(contract.responsibilities.includes("physical_interaction"));
+    assert.ok(contract.forbidden_responsibilities.length >= 4);
+  }
 });

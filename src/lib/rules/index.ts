@@ -20,5 +20,7 @@ export type { StoryboardRuleStage, DialogueAuthorityMode, VisibleTextMode, HookS
 export { buildActiveStoryboardRulePacket, isPromptRuleRouterEnabled, isPromptRuleRouterV2Enabled } from "./active-packet";
 export type { CompiledStoryboardSystemPrompt } from "./prompt-compiler";
 export { compileStoryboardSystemPrompt } from "./prompt-compiler";
+export type { StoryboardStageResponsibility, StoryboardStagePromptContract } from "./stage-prompt";
+export { STORYBOARD_STAGE_PROMPT_CONTRACTS, buildStoryboardStageSystemPrompt } from "./stage-prompt";
 export type { StoryboardValidationPolicy } from "./validation-policy";
 export { buildStoryboardValidationPolicy } from "./validation-policy";
