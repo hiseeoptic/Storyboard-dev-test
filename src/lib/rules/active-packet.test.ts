@@ -36,6 +36,24 @@ function productionContext(values: {
 }
 test("router is opt-in", () => { assert.equal(isPromptRuleRouterEnabled(undefined), false); assert.equal(isPromptRuleRouterEnabled("true"), true); });
 test("V7 generation compiler has its own rollout gate", () => { assert.equal(isPromptRuleRouterV7Enabled(undefined), false); assert.equal(isPromptRuleRouterV7Enabled("on"), true); });
+test("production defaults V7 on while an explicit false remains a kill switch", () => {
+  const mutableEnv = process.env as Record<string, string | undefined>;
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousV7 = process.env.PROMPT_RULE_ROUTER_V7;
+  try {
+    mutableEnv.NODE_ENV = "production";
+    delete mutableEnv.PROMPT_RULE_ROUTER_V7;
+    assert.equal(isPromptRuleRouterV7Enabled(), true);
+    mutableEnv.PROMPT_RULE_ROUTER_V7 = "false";
+    assert.equal(isPromptRuleRouterV7Enabled(), false);
+    assert.equal(isPromptRuleRouterEnabled(), false);
+  } finally {
+    if (previousNodeEnv === undefined) delete mutableEnv.NODE_ENV;
+    else mutableEnv.NODE_ENV = previousNodeEnv;
+    if (previousV7 === undefined) delete mutableEnv.PROMPT_RULE_ROUTER_V7;
+    else mutableEnv.PROMPT_RULE_ROUTER_V7 = previousV7;
+  }
+});
 test("polish menu remains creative without completed revision", () => {
   const packet = buildActiveStoryboardRulePacket({ source_script: "LAN: câu gốc", script_treatment: "polish" });
   assert.equal(packet.dialogue.mode, "editorial_polish"); assert.ok(packet.active_rule_ids.includes("storyboard.dialogue.reauthor"));

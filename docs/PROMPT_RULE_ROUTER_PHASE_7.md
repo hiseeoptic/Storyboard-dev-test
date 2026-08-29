@@ -6,8 +6,10 @@ still the exact rollback path.
 
 ## Rollout boundary
 
-`PROMPT_RULE_ROUTER_V7=true` enables the modular generation compiler. Older
-flags continue to behave as before:
+Production enables V7 by default when `PROMPT_RULE_ROUTER_V7` is unset. Set
+`PROMPT_RULE_ROUTER_V7=false` as an immediate production kill switch; local and
+test environments remain opt-in with `PROMPT_RULE_ROUTER_V7=true`. Older flags
+continue to behave as before:
 
 - V6 keeps compact `segment_rewrite` and `repair` prompts;
 - V5/V6 generation keeps the legacy prompt plus exact rule-owned pruning;

@@ -52,8 +52,11 @@ export interface ActiveStoryboardRulePacket {
 const INVENTORY_BY_ID = new Map(STORYBOARD_PROMPT_RULE_INVENTORY.map((entry) => [entry.id, entry]));
 function inventoryRule(id: string): PromptRuleInventoryEntry { const rule = INVENTORY_BY_ID.get(id); if (!rule) throw new Error(`Missing storyboard prompt rule inventory entry: ${id}`); return rule; }
 function candidate(id: string, authority: RuleConflictCandidate["authority"]): RuleConflictCandidate { return { rule: inventoryRule(id), authority }; }
+function productionRouterDefault(): string | undefined {
+  return process.env.NODE_ENV === "production" ? "true" : undefined;
+}
 export function isPromptRuleRouterEnabled(
-  value: string | undefined = process.env.PROMPT_RULE_ROUTER_V7 ?? process.env.PROMPT_RULE_ROUTER_V6 ?? process.env.PROMPT_RULE_ROUTER_V5 ?? process.env.PROMPT_RULE_ROUTER_V4 ?? process.env.PROMPT_RULE_ROUTER_V3 ?? process.env.PROMPT_RULE_ROUTER_V2
+  value: string | undefined = process.env.PROMPT_RULE_ROUTER_V7 ?? process.env.PROMPT_RULE_ROUTER_V6 ?? process.env.PROMPT_RULE_ROUTER_V5 ?? process.env.PROMPT_RULE_ROUTER_V4 ?? process.env.PROMPT_RULE_ROUTER_V3 ?? process.env.PROMPT_RULE_ROUTER_V2 ?? productionRouterDefault()
 ): boolean {
   return ["1", "true", "on", "yes"].includes(value?.trim().toLowerCase() ?? "");
 }
@@ -61,7 +64,7 @@ export function isPromptRuleRouterEnabled(
 /** @deprecated Compatibility alias for Phase-2 callers. */
 export const isPromptRuleRouterV2Enabled = isPromptRuleRouterEnabled;
 export function isPromptRuleRouterV7Enabled(
-  value: string | undefined = process.env.PROMPT_RULE_ROUTER_V7
+  value: string | undefined = process.env.PROMPT_RULE_ROUTER_V7 ?? productionRouterDefault()
 ): boolean {
   return ["1", "true", "on", "yes"].includes(value?.trim().toLowerCase() ?? "");
 }
