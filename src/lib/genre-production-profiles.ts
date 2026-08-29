@@ -412,9 +412,14 @@ export function lockGenreProductionProfile(
   const narratorStyleId = !requestedNarratorStyle || requestedNarratorStyle === "auto"
     ? profile.default_narrator_style
     : requestedNarratorStyle;
-  const cameraProfileId = input.directing_profile && input.directing_profile !== "auto"
-    ? input.directing_profile
-    : profile.default_camera_profile;
+  const selectedCameraProfiles: DirectingProfileId[] = [...new Set<DirectingProfileId>(
+    (input.directing_profiles ?? []).filter((id) => id !== "auto")
+  )];
+  if (selectedCameraProfiles.length === 0 && input.directing_profile && input.directing_profile !== "auto") {
+    selectedCameraProfiles.push(input.directing_profile);
+  }
+  if (selectedCameraProfiles.length === 0) selectedCameraProfiles.push(profile.default_camera_profile);
+  const cameraProfileId = selectedCameraProfiles[0]!;
   const customVoice = compactCustom(input.narrator_voice_style);
   const customDialogue = compactCustom(input.character_dialogue_style);
   const subtypeDirection = input.genre === "advertising" && input.content_subtype
@@ -422,7 +427,7 @@ export function lockGenreProductionProfile(
     : undefined;
   const dialogueDirection = DIALOGUE[dialogueStyleId as keyof typeof DIALOGUE];
   const narratorDirection = VOICE[narratorStyleId as keyof typeof VOICE];
-  const selectedCameraDirection = CAMERA[cameraProfileId];
+  const selectedCameraDirections = selectedCameraProfiles.map((id) => CAMERA[id]).filter(Boolean);
   return {
     registry_version: "1.0",
     genre: input.genre,
@@ -446,7 +451,10 @@ export function lockGenreProductionProfile(
     camera_direction: compactUnique([
       profile.camera_profile,
       subtypeDirection?.camera_direction,
-      selectedCameraDirection,
+      ...selectedCameraDirections,
+      selectedCameraProfiles.length > 1
+        ? "Treat the selected camera profiles as an allowed palette, not a checklist: route the minimum compatible grammar per Scene Intent and change rigs only at declared clip boundaries"
+        : "",
       compactCustom(input.camera_profile_custom),
     ]),
     edit_rhythm: subtypeDirection?.edit_rhythm || profile.edit_rhythm,

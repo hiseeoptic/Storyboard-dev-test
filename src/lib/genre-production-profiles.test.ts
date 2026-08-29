@@ -74,6 +74,19 @@ test("a dialogue or camera override supplements instead of erasing genre grammar
   assert.match(lock.camera_direction, /low tracking move/i);
 });
 
+test("multi-camera selection compiles every selected grammar while keeping a legacy primary id", () => {
+  const lock = lockGenreProductionProfile(input({
+    genre: "action",
+    directing_profile: "aerial_drone",
+    directing_profiles: ["aerial_drone", "pov_first_person", "immersive_action"],
+  }));
+  assert.equal(lock.camera_profile_id, "aerial_drone");
+  assert.match(lock.camera_direction, /aerial establishing scale/i);
+  assert.match(lock.camera_direction, /first-person eye-line/i);
+  assert.match(lock.camera_direction, /threat distance|attack-defence-consequence/i);
+  assert.match(lock.camera_direction, /allowed palette, not a checklist/i);
+});
+
 test("advertising subtypes compile different production grammar", () => {
   const emotional = lockGenreProductionProfile(input({
     genre: "advertising",

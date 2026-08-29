@@ -115,6 +115,17 @@ test("compact generation prompt retains obstacle, hand, receiver-support and exc
   assert.match(prompt, /Intentional exceptions apply only to their named entity\/event/);
 });
 
+test("generation prompt routes a selected camera palette by Scene Intent", () => {
+  const prompt = compileGenerationSystemPrompt(buildActiveStoryboardRulePacket({
+    directing_profiles: ["aerial_drone", "pov_first_person", "immersive_action", "macro_detail"],
+  }, { stage: "generation" })).prompt;
+  assert.match(prompt, /selected camera palette/i);
+  assert.match(prompt, /establish scale\/geography\/crowds.*aerial/i);
+  assert.match(prompt, /POV for embodied participation/i);
+  assert.match(prompt, /conditional mappings, never a mandatory sequence/i);
+  assert.match(prompt, /one physically coherent rig/i);
+});
+
 test("generation compiler rejects bounded edit packets", () => {
   const repair = buildActiveStoryboardRulePacket({}, { stage: "repair" });
   assert.throws(() => compileGenerationSystemPrompt(repair), /cannot compile stage=repair/);

@@ -20,6 +20,7 @@ export interface StoryboardRulePacketInput {
   audience_goal?: string;
   story_format?: string;
   directing_profile?: string;
+  directing_profiles?: readonly string[];
   camera_profile_custom?: string;
   product_images?: readonly RulePacketImageReference[];
   product_ir?: ProductIR;
@@ -32,7 +33,15 @@ export interface ActiveStoryboardRulePacket {
   visible_text: { mode: VisibleTextMode; locked_policy: string; has_verified_product_reference: boolean; rationale: string; };
   hook: { mode: HookSelectionMode; evidence: string[]; rationale: string; };
   clip_execution: { mode: ClipExecutionMode; continuity_mode: string; allowed_transition_modes: string[]; rationale: string; };
-  camera: { mode: CameraSelectionMode; selected_profile_id: string; locked_grammar: string[]; edit_rhythm: string; rationale: string; };
+  camera: {
+    mode: CameraSelectionMode;
+    selected_profile_id: string;
+    selected_profile_ids: string[];
+    locked_grammar: string[];
+    edit_rhythm: string;
+    selection_policy: string;
+    rationale: string;
+  };
   action: { mode: ActionSelectionMode; locked_budget: string; rationale: string; };
   physical_interaction: {
     mode: PhysicalInteractionMode;
@@ -102,20 +111,24 @@ function clipExecutionSelection(input: StoryboardRulePacketInput): ActiveStorybo
 function cameraSelection(input: StoryboardRulePacketInput): ActiveStoryboardRulePacket["camera"] {
   const profile = input.resolved_context?.production_profile;
   const grammar = input.resolved_context?.layers?.visual_language?.camera_grammar ?? [];
-  const explicitMenuProfile = input.directing_profile && input.directing_profile !== "auto"
-    ? input.directing_profile
-    : "";
-  if (explicitMenuProfile) {
-    const contextMatchesMenu = profile?.camera_profile_id === explicitMenuProfile;
+  const explicitMenuProfiles = [...new Set([
+    ...(input.directing_profiles ?? []).filter((id) => id && id !== "auto"),
+    ...(input.directing_profile && input.directing_profile !== "auto" ? [input.directing_profile] : []),
+  ])];
+  const selectionPolicy = "Treat the selected profiles as an allowed camera palette, never a checklist or rotation schedule. For each Scene Intent choose the minimum compatible grammar justified by spatial scale, geography, subjectivity, action readability and emotional consequence. Large-scale geography/crowds may use an allowed aerial or wide grammar; embodied participation may use an allowed POV; contact, impact or intimate consequence may use an allowed close, macro or handheld grammar. One clip keeps one physically coherent rig and continuous camera path; change profile only at a declared clip boundary.";
+  if (explicitMenuProfiles.length > 0) {
+    const contextMatchesMenu = profile?.camera_profile_id === explicitMenuProfiles[0];
     return {
       mode: "selected_menu_profile",
-      selected_profile_id: explicitMenuProfile,
+      selected_profile_id: explicitMenuProfiles[0]!,
+      selected_profile_ids: explicitMenuProfiles,
       locked_grammar: contextMatchesMenu
         ? grammar
         : input.camera_profile_custom?.trim()
           ? [input.camera_profile_custom.trim()]
           : [],
       edit_rhythm: contextMatchesMenu ? profile?.edit_rhythm ?? "" : "",
+      selection_policy: selectionPolicy,
       rationale: contextMatchesMenu
         ? "The locked production profile confirms the explicit directing menu selection; its compiled Context grammar is binding."
         : "The explicit directing menu selection outranks missing or stale compiled context; do not substitute another camera profile.",
@@ -125,8 +138,10 @@ function cameraSelection(input: StoryboardRulePacketInput): ActiveStoryboardRule
     return {
       mode: "locked_context_grammar",
       selected_profile_id: profile?.camera_profile_id || "context-defined",
+      selected_profile_ids: [profile?.camera_profile_id || "context-defined"],
       locked_grammar: grammar,
       edit_rhythm: profile?.edit_rhythm ?? "",
+      selection_policy: selectionPolicy,
       rationale: "Context IR and its production profile already compile the menu, genre and custom camera data; generic smoothness or variety cannot replace them.",
     };
   }
@@ -134,16 +149,20 @@ function cameraSelection(input: StoryboardRulePacketInput): ActiveStoryboardRule
     return {
       mode: "selected_menu_profile",
       selected_profile_id: "custom",
+      selected_profile_ids: ["custom"],
       locked_grammar: input.camera_profile_custom?.trim() ? [input.camera_profile_custom.trim()] : [],
       edit_rhythm: "",
+      selection_policy: selectionPolicy,
       rationale: "The explicit directing menu/custom instruction is binding while Context IR is unavailable.",
     };
   }
   return {
     mode: "derive_without_forced_recipe",
     selected_profile_id: "auto",
+    selected_profile_ids: [],
     locked_grammar: [],
     edit_rhythm: "",
+    selection_policy: selectionPolicy,
     rationale: "Derive camera implementation from story facts, genre and Scene Intent; do not force smoothness, movement variety or a default shot recipe.",
   };
 }
@@ -201,7 +220,7 @@ function buildPromptDigest(packet: Omit<ActiveStoryboardRulePacket, "prompt_dige
   const clip = `CLIP/EDIT SCOPE: every generated clip is one physically continuous take. Inter-clip continuity mode=${JSON.stringify(packet.clip_execution.continuity_mode)}; allowed boundary transitions=${JSON.stringify(packet.clip_execution.allowed_transition_modes)}. A montage, time jump, scene cut or parallel edit belongs at a declared clip boundary; inherit prior physical state only for mode=continuous.`;
   const camera = packet.camera.mode === "derive_without_forced_recipe"
     ? "CAMERA — DERIVE FROM INPUT: use story facts, genre and Scene Intent. Do not impose smooth movement, forced variety or a default camera recipe."
-    : `CAMERA — SELECTED AUTHORITY: profile=${JSON.stringify(packet.camera.selected_profile_id)}; Context camera grammar=${JSON.stringify(packet.camera.locked_grammar)}; edit rhythm=${JSON.stringify(packet.camera.edit_rhythm)}. Follow these selections exactly; do not replace them with generic smoothness or forced variation.`;
+    : `CAMERA — SELECTED AUTHORITY: palette=${JSON.stringify(packet.camera.selected_profile_ids)}; Context camera grammar=${JSON.stringify(packet.camera.locked_grammar)}; edit rhythm=${JSON.stringify(packet.camera.edit_rhythm)}. ${packet.camera.selection_policy}`;
   const action = packet.action.mode === "locked_context_budget"
     ? `ACTION BUDGET — LOCKED CONTEXT: ${JSON.stringify(packet.action.locked_budget)}. Spend motion only on Scene Intent, causal state changes and required performance. Intentional stillness is valid; never add decorative hand business.`
     : "ACTION BUDGET — INTENT LED: stage only causally necessary, physically feasible movement. Intentional stillness is valid; never invent hand business merely because a character is visible.";
@@ -247,7 +266,7 @@ export function buildActiveStoryboardRulePacket(input: StoryboardRulePacketInput
   );
 
   const camera = cameraSelection(input);
-  const cameraAuthority = input.directing_profile && input.directing_profile !== "auto"
+  const cameraAuthority = (input.directing_profiles?.some((id) => id !== "auto") || (input.directing_profile && input.directing_profile !== "auto"))
     ? "user_selection"
     : camera.mode === "locked_context_grammar"
       ? "locked_context"

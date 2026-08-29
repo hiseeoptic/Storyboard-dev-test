@@ -94,7 +94,7 @@ export function buildStoryboardStageSystemPrompt(
   const contract = STORYBOARD_STAGE_PROMPT_CONTRACTS[packet.stage];
   const camera = packet.camera.mode === "derive_without_forced_recipe"
     ? "Derive camera only from the locked Scene Intent and supplied scene facts; impose no default movement, smoothness, or variety recipe."
-    : `Use selected profile=${JSON.stringify(packet.camera.selected_profile_id)}, grammar=${JSON.stringify(packet.camera.locked_grammar)}, edit rhythm=${JSON.stringify(packet.camera.edit_rhythm)}; do not substitute a generic camera style.`;
+    : `Use selected camera palette=${JSON.stringify(packet.camera.selected_profile_ids)}, grammar=${JSON.stringify(packet.camera.locked_grammar)}, edit rhythm=${JSON.stringify(packet.camera.edit_rhythm)}. ${packet.camera.selection_policy}`;
   const action = packet.action.mode === "locked_context_budget"
     ? `Use the locked action budget exactly: ${JSON.stringify(packet.action.locked_budget)}. Every gesture must cause a required state change or serve Scene Intent.`
     : "Use only causally necessary, physically feasible movement. Intentional stillness is valid; add no decorative hand business.";

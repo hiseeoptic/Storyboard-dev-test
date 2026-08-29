@@ -28,6 +28,7 @@ export interface CreativeRoute {
   requested_character_representation: CharacterRepresentation;
   effective_character_representation: CharacterRepresentation;
   directing_profile: DirectingProfileId;
+  directing_profiles?: DirectingProfileId[];
   character_reference_lock: "strict_photoreal" | "none";
   specialist_dna: string[];
   resolution_notes: string[];
@@ -133,6 +134,16 @@ function inferDirectingProfile(
   return genreProductionProfile(input.genre).default_camera_profile;
 }
 
+function selectedDirectingProfiles(
+  input: StoryboardGenerationInput,
+  fallback: DirectingProfileId,
+): DirectingProfileId[] {
+  const requested = (input.directing_profiles ?? []).filter((id) => id !== "auto");
+  if (requested.length > 0) return [...new Set(requested)];
+  if (input.directing_profile && input.directing_profile !== "auto") return [input.directing_profile];
+  return [fallback];
+}
+
 function specialistDnaFor(input: StoryboardGenerationInput, profile: DirectingProfileId): string[] {
   const dna: string[] = [];
   if (input.genre === "cooking") dna.push("cooking");
@@ -168,11 +179,16 @@ export function resolveCreativeRoute(input: StoryboardGenerationInput): Creative
     interpretation = "symbolic_metaphor";
     notes.push("A live-action symbolic metaphor replaces personified-fable treatment because real character references are present.");
   }
-  let directingProfile = inferDirectingProfile(input, interpretation, effectiveCharacter);
-  if (strictPhotorealReferences && ["anthropomorphic_fable", "psychological_metaphor"].includes(directingProfile)) {
-    directingProfile = input.genre === "psychology" ? "cinematic_drama" : "everyday_naturalism";
+  const inferredProfile = inferDirectingProfile(input, interpretation, effectiveCharacter);
+  let directingProfiles = selectedDirectingProfiles(input, inferredProfile);
+  if (strictPhotorealReferences && directingProfiles.some((profile) => ["anthropomorphic_fable", "psychological_metaphor"].includes(profile))) {
+    const replacement = input.genre === "psychology" ? "cinematic_drama" : "everyday_naturalism";
+    directingProfiles = [...new Set(directingProfiles.map((profile) =>
+      ["anthropomorphic_fable", "psychological_metaphor"].includes(profile) ? replacement : profile
+    ))];
     notes.push("A live-action directing profile replaces an incompatible stylized profile because real character references are present.");
   }
+  const directingProfile = directingProfiles[0] ?? inferredProfile;
 
   return {
     topic: input.genre,
@@ -182,8 +198,9 @@ export function resolveCreativeRoute(input: StoryboardGenerationInput): Creative
     requested_character_representation: requestedCharacter,
     effective_character_representation: effectiveCharacter,
     directing_profile: directingProfile,
+    directing_profiles: directingProfiles,
     character_reference_lock: strictPhotorealReferences ? "strict_photoreal" : "none",
-    specialist_dna: specialistDnaFor(input, directingProfile),
+    specialist_dna: [...new Set(directingProfiles.flatMap((profile) => specialistDnaFor(input, profile)))],
     resolution_notes: notes,
   };
 }
@@ -195,8 +212,9 @@ function bulletLines(lines: string[]): string {
 export function renderCreativeRouteDirective(inputOrRoute: StoryboardGenerationInput | CreativeRoute): string {
   const route = "story_idea" in inputOrRoute ? resolveCreativeRoute(inputOrRoute) : inputOrRoute;
   const topicLaws = TOPIC_LAWS[route.topic] ?? [];
-  const directingLaws = route.directing_profile === "auto" ? [] : DIRECTING_LAWS[route.directing_profile];
-  const materialLaws = REAL_WORLD_PROFILES.has(route.directing_profile) ? REAL_WORLD_MATERIAL_LAWS : [];
+  const profiles = route.directing_profiles?.length ? route.directing_profiles : [route.directing_profile];
+  const directingLaws = profiles.flatMap((profile) => profile === "auto" ? [] : DIRECTING_LAWS[profile]);
+  const materialLaws = profiles.some((profile) => REAL_WORLD_PROFILES.has(profile)) ? REAL_WORLD_MATERIAL_LAWS : [];
   const allLaws = [
     ...GOAL_LAWS[route.audience_goal],
     ...FORMAT_LAWS[route.story_format],
@@ -213,27 +231,30 @@ export function renderCreativeRouteDirective(inputOrRoute: StoryboardGenerationI
 3. Story format: ${route.story_format}
 4. Visual interpretation: ${route.visual_interpretation}
 5. Character medium: ${route.effective_character_representation}
-6. Directing profile: ${route.directing_profile}
+6. Directing profile palette: ${profiles.join(", ")}
 7. Active specialist DNA only: ${route.specialist_dna.join(", ") || "none"}
 Reference policy: ${route.character_reference_lock}
 
 ROUTING LAWS
-- The order above is binding. Topic decides specialist knowledge; audience goal decides the intended change; format decides structure; interpretation decides literal/metaphorical treatment; character medium decides representation; directing profile decides camera/light/sound grammar.
+- The order above is binding. Topic decides specialist knowledge; audience goal decides the intended change; format decides structure; interpretation decides literal/metaphorical treatment; character medium decides representation; the directing-profile palette limits the camera/light/sound grammars available to Scene Intent.
+- The directing-profile palette is not a checklist or rotation schedule. For each scene, choose the minimum compatible grammar justified by scale, geography, subjectivity, action and emotional consequence. Change profile only at a declared clip boundary; never combine incompatible physical rigs inside one continuous take.
 - Never import props, ambience, actions, terminology or visual clichés from an inactive topic/profile. Existing legacy style/video_goal fields are secondary compatibility hints and cannot override this route.
 ${bulletLines(allLaws)}${route.resolution_notes.length ? `\nRESOLUTION NOTES\n${bulletLines(route.resolution_notes)}` : ""}`;
 }
 
 export function renderCreativeVisualDirective(inputOrRoute: StoryboardGenerationInput | CreativeRoute): string {
   const route = "story_idea" in inputOrRoute ? resolveCreativeRoute(inputOrRoute) : inputOrRoute;
-  const directing = route.directing_profile === "auto" ? [] : DIRECTING_LAWS[route.directing_profile];
-  const materials = REAL_WORLD_PROFILES.has(route.directing_profile)
-    ? route.directing_profile === "natural_history" || route.directing_profile === "poetic_nature"
+  const profiles = route.directing_profiles?.length ? route.directing_profiles : [route.directing_profile];
+  const directing = profiles.flatMap((profile) => profile === "auto" ? [] : DIRECTING_LAWS[profile]);
+  const materialProfile = profiles.find((profile) => REAL_WORLD_PROFILES.has(profile));
+  const materials = materialProfile
+    ? materialProfile === "natural_history" || materialProfile === "poetic_nature"
       ? [REAL_WORLD_MATERIAL_LAWS[0]!, REAL_WORLD_MATERIAL_LAWS[3]!]
-      : route.directing_profile === "premium_commercial"
+      : materialProfile === "premium_commercial"
         ? [REAL_WORLD_MATERIAL_LAWS[0]!, REAL_WORLD_MATERIAL_LAWS[1]!, REAL_WORLD_MATERIAL_LAWS[3]!]
         : [REAL_WORLD_MATERIAL_LAWS[0]!, REAL_WORLD_MATERIAL_LAWS[2]!, REAL_WORLD_MATERIAL_LAWS[3]!]
     : [];
-  return `VISUAL ROUTE LOCK: topic=${route.topic}; character=${route.effective_character_representation}; directing=${route.directing_profile}; interpretation=${route.visual_interpretation}; reference=${route.character_reference_lock}.
+  return `VISUAL ROUTE LOCK: topic=${route.topic}; character=${route.effective_character_representation}; directing_palette=${profiles.join(",")}; interpretation=${route.visual_interpretation}; reference=${route.character_reference_lock}.
 ${bulletLines([
     ...(isStylizedCharacterRepresentation(route.effective_character_representation)
       ? [SCRIPT_DERIVED_STYLE_WORLD_LAW]

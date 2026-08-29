@@ -150,7 +150,7 @@ export function buildGenerationPromptModules(
 
   const camera = packet.camera.mode === "derive_without_forced_recipe"
     ? "Derive shot size, angle, movement, and stillness from Scene Intent and the selected genre; do not force smoothness, movement, or variety."
-    : `Use selected camera profile=${JSON.stringify(packet.camera.selected_profile_id)}, grammar=${JSON.stringify(packet.camera.locked_grammar)}, edit rhythm=${JSON.stringify(packet.camera.edit_rhythm)}. Never replace it with a generic recipe.`;
+    : `Use selected camera palette=${JSON.stringify(packet.camera.selected_profile_ids)}, grammar=${JSON.stringify(packet.camera.locked_grammar)}, edit rhythm=${JSON.stringify(packet.camera.edit_rhythm)}. ${packet.camera.selection_policy}`;
   const action = packet.action.mode === "locked_context_budget"
     ? `Exact Context action budget: ${JSON.stringify(packet.action.locked_budget)}.`
     : "Use only the minimum causally necessary, physically feasible action; intentional stillness is valid.";
@@ -184,6 +184,7 @@ ${options.environment_catalog?.trim() ? `AVAILABLE ARCHETYPE IDS:\n${options.env
 - Sitting, standing, stairs, doors, mechanisms, spills, impacts, tools, liquids, and food obey contact, weight transfer, collision, gravity, containment, and cause-before-effect in the declared universe.`),
     module("camera_light_performance", "camera_light_and_performance", `CAMERA, LIGHT, AND PERFORMANCE:
 - ${camera} Every camera instruction names shot size, height/angle, visible subject, screen relationship/facing, focus target, and any move's start/end framing. Camera occupies a valid zone and respects architecture, axis, line of sight, and safety barriers.
+- Route coverage by intent rather than novelty: establish scale/geography/crowds with an allowed aerial or wide grammar; use an allowed POV for embodied participation; use an allowed close, macro or handheld grammar for contact, impact or intimate consequence; use stable medium/OTS coverage for dialogue and explanation. These are conditional mappings, never a mandatory sequence.
 - Scene Bible is the single lens/light/grade authority. Preserve motivated key direction, time-of-day, Kelvin/Lux logic, reflections, shadows, and colour continuity unless a declared transition resets them.
 - ${action} Every gesture serves Scene Intent, a causal state change, or a specific line/subtext. Use observable body mechanics and micro-reactions; never force generic smiles, idle hand business, exaggerated acting, or camera motion merely for variety.
 - Multiple characters may act in parallel only when each individual action remains continuous, readable, collision-free, and within the clip budget.`),

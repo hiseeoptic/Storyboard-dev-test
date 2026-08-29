@@ -139,7 +139,7 @@ export function characterWorldStylePrompt(
 }
 
 export const DIRECTING_PROFILE_OPTIONS: CreativeOption<DirectingProfileId>[] = [
-  { value: "auto", label_vi: "Tự động theo nội dung", label_en: "Auto by content", description_vi: "Chọn ngôn ngữ quay phù hợp, không trộn profile chuyên ngành.", description_en: "Choose a fitting camera grammar without mixing specialist profiles." },
+  { value: "auto", label_vi: "Tự động theo từng cảnh", label_en: "Auto by scene", description_vi: "Tự phối ngôn ngữ quay theo Scene Intent, quy mô, hành động và cảm xúc của từng cảnh.", description_en: "Route camera grammar from each scene's intent, scale, action and emotion." },
   { value: "everyday_naturalism", label_vi: "Đời thường chân thật", label_en: "Everyday naturalism", description_vi: "Ánh sáng có nguồn thật, máy quay ở vị trí một người có thể đứng.", description_en: "Motivated light and a camera placed where a person could physically stand." },
   { value: "observational_documentary", label_vi: "Tài liệu quan sát", label_en: "Observational documentary", description_vi: "Quan sát hành vi, không tô bóng quảng cáo hay diễn xuất quá mức.", description_en: "Observe behaviour without commercial polish or overstated acting." },
   { value: "natural_history", label_vi: "Thiên nhiên chân thực", label_en: "Natural history", description_vi: "Hệ sinh thái, loài, thời tiết và chuyển động vi mô có căn cứ.", description_en: "Grounded ecosystem, species, weather and micro-motion." },

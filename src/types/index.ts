@@ -253,6 +253,10 @@ export interface StoryboardGenerationInput {
   story_format?: StoryFormat;
   visual_interpretation?: VisualInterpretation;
   character_representation?: CharacterRepresentation;
+  /** Ordered camera/directing palette selected in the UI. Each scene chooses
+   * only the subset justified by its Scene Intent; this is not a shot recipe. */
+  directing_profiles?: DirectingProfileId[];
+  /** Legacy primary profile retained for stored projects and older clients. */
   directing_profile?: DirectingProfileId;
   /** User-selected colour grade / film look (empty/"auto" ⇒ AI derives by genre). */
   color_look?: ColorLookId;

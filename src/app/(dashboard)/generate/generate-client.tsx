@@ -155,6 +155,82 @@ function creativeOptionLabel<T extends string>(
   return lang === "vi" ? option.label_vi : option.label_en;
 }
 
+function CameraProfileChecklist({
+  options,
+  selected,
+  lang,
+  onChange,
+}: {
+  options: CreativeOption<DirectingProfileId>[];
+  selected: DirectingProfileId[];
+  lang: Lang;
+  onChange: (profiles: DirectingProfileId[]) => void;
+}) {
+  const concreteOptions = options.filter((option) => option.value !== "auto");
+  const automatic = selected.length === 0;
+  const toggle = (profile: DirectingProfileId) => {
+    onChange(
+      selected.includes(profile)
+        ? selected.filter((value) => value !== profile)
+        : [...selected, profile]
+    );
+  };
+  return (
+    <div className="space-y-2">
+      <label className={cn(
+        "flex cursor-pointer items-start gap-2 rounded-md border p-2.5 text-sm transition-colors",
+        automatic ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+      )}>
+        <input
+          type="checkbox"
+          checked={automatic}
+          onChange={() => onChange([])}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+        />
+        <span>
+          <span className="block font-medium">
+            {lang === "vi" ? "Tự động phối camera theo từng cảnh" : "Auto-route camera per scene"}
+          </span>
+          <span className="block text-xs text-muted-foreground">
+            {lang === "vi"
+              ? "AI tự chọn từ hồ sơ thể loại dựa trên Scene Intent, quy mô không gian và hành động."
+              : "AI chooses from the genre profile using Scene Intent, spatial scale and action."}
+          </span>
+        </span>
+      </label>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {concreteOptions.map((option) => {
+          const checked = selected.includes(option.value);
+          return (
+            <label
+              key={option.value}
+              className={cn(
+                "flex cursor-pointer items-start gap-2 rounded-md border p-2.5 transition-colors",
+                checked ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggle(option.value)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium">
+                  {lang === "vi" ? option.label_vi : option.label_en}
+                </span>
+                <span className="block text-[11px] leading-relaxed text-muted-foreground">
+                  {lang === "vi" ? option.description_vi : option.description_en}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Nano Flow (text-only) ─────────────────────────────────────────────────
 // When true, Storyboard AI stops generating the paid Gemini "nano banana"
 // board images and instead writes scripts + prompts only. The images are
@@ -1516,6 +1592,7 @@ function ProjectWorkspace() {
   const [visualInterpretation, setVisualInterpretation] = useState<VisualInterpretation>("auto");
   const [characterRepresentation, setCharacterRepresentation] = useState<CharacterRepresentation>("auto");
   const [directingProfile, setDirectingProfile] = useState<DirectingProfileId>("auto");
+  const [directingProfiles, setDirectingProfiles] = useState<DirectingProfileId[]>([]);
   // Colour grade / film look for the whole video (separate axis from medium + camera).
   const [colorLook, setColorLook] = useState<ColorLookId>("auto");
   const [colorLookCustom, setColorLookCustom] = useState("");
@@ -2019,7 +2096,8 @@ function ProjectWorkspace() {
           : finalCharacterImages.length > 0
             ? "uploaded_photoreal"
             : characterRepresentation,
-      directing_profile: directingProfile,
+      directing_profile: directingProfiles[0] ?? directingProfile,
+      directing_profiles: directingProfiles.length > 0 ? directingProfiles : undefined,
       color_look: colorLook !== "auto" ? colorLook : undefined,
       color_look_custom: colorLook === "custom" ? colorLookCustom.trim() || undefined : undefined,
       script_provider: scriptProvider,
@@ -4629,6 +4707,7 @@ function ProjectWorkspace() {
                     setStoryFormat("auto");
                     setVisualInterpretation("auto");
                     setDirectingProfile("auto");
+                    setDirectingProfiles([]);
                     // Genre is the hard router. Reset stale specialist goals so
                     // Cooking can never leak into numerology/film/etc.
                     if (g === "numerology") {
@@ -4679,6 +4758,7 @@ function ProjectWorkspace() {
                     setToneSel("auto");
                     setNarratorVoiceSel("auto");
                     setDirectingProfile("auto");
+                    setDirectingProfiles([]);
                   }} options={GENRE_OPTIONS[lang]} />
                 </div>
                 <div className="space-y-2">
@@ -4767,10 +4847,14 @@ function ProjectWorkspace() {
                 <label className="text-sm font-medium">
                   {lang === "vi" ? "Phong cách quay và camera" : "Camera and directing style"}
                 </label>
-                <Select
-                  value={directingProfile}
-                  onChange={(e) => setDirectingProfile(e.target.value as DirectingProfileId)}
-                  options={localizedCreativeOptions(filteredDirectingOptions, lang)}
+                <CameraProfileChecklist
+                  options={filteredDirectingOptions}
+                  selected={directingProfiles}
+                  lang={lang}
+                  onChange={(profiles) => {
+                    setDirectingProfiles(profiles);
+                    setDirectingProfile(profiles[0] ?? "auto");
+                  }}
                 />
                 <Input
                   value={cameraProfileCustom}
@@ -4779,8 +4863,8 @@ function ProjectWorkspace() {
                 />
                 <p className="text-xs text-muted-foreground">
                   {lang === "vi"
-                    ? "Danh sách được lọc theo thể loại; Auto dùng hồ sơ mặc định nhưng vẫn giữ screen direction, eyeline và continuity."
-                    : "Filtered by genre; Auto uses the genre default while preserving screen direction, eyelines and continuity."}
+                    ? "Có thể tick nhiều kiểu quay. Đây là bảng màu được phép: AI chọn kiểu phù hợp cho từng Scene Intent, không bắt buộc dùng hết hoặc xoay vòng máy móc."
+                    : "Select multiple camera grammars. This is an allowed palette: AI routes each Scene Intent without forced use or mechanical rotation."}
                 </p>
               </div>
               {characterDialogueEnabled && (
@@ -5970,13 +6054,19 @@ function ProjectWorkspace() {
                 <label className="text-sm font-medium">
                   {lang === "vi" ? "5. Ngôn ngữ đạo diễn / cách quay" : "5. Directing profile / camera grammar"}
                 </label>
-                <Select
-                  value={directingProfile}
-                  onChange={(e) => setDirectingProfile(e.target.value as DirectingProfileId)}
-                  options={localizedCreativeOptions(filteredDirectingOptions, lang)}
+                <CameraProfileChecklist
+                  options={filteredDirectingOptions}
+                  selected={directingProfiles}
+                  lang={lang}
+                  onChange={(profiles) => {
+                    setDirectingProfiles(profiles);
+                    setDirectingProfile(profiles[0] ?? "auto");
+                  }}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {creativeOptionDescription(CREATIVE_DIRECTING_OPTIONS, directingProfile, lang)}
+                  {lang === "vi"
+                    ? "Ví dụ: đại cảnh quân đội → Flycam; nhập vai giữa đội hình → POV; giao chiến trực diện → Hành động nhập vai/Handheld/Macro khi đã được chọn. Mỗi clip vẫn là một cú máy vật lý liên tục."
+                    : "Example: army scale → Aerial; embodied formation view → POV; close combat → Immersive/Handheld/Macro when selected. Each clip remains one physically continuous take."}
                 </p>
               </div>
 

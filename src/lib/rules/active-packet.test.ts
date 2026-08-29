@@ -153,6 +153,21 @@ test("explicit camera menu outranks a stale mismatched context profile", () => {
   assert.doesNotMatch(packet.prompt_digest, /handheld sway/);
 });
 
+test("multiple camera selections remain an intent-routed palette rather than a forced sequence", () => {
+  const packet = buildActiveStoryboardRulePacket({
+    directing_profile: "aerial_drone",
+    directing_profiles: ["aerial_drone", "pov_first_person", "immersive_action", "macro_detail"],
+  });
+  assert.deepEqual(packet.camera.selected_profile_ids, [
+    "aerial_drone", "pov_first_person", "immersive_action", "macro_detail",
+  ]);
+  assert.match(packet.camera.selection_policy, /allowed camera palette/i);
+  assert.match(packet.camera.selection_policy, /Large-scale geography\/crowds.*aerial/i);
+  assert.match(packet.camera.selection_policy, /embodied participation.*POV/i);
+  assert.match(packet.camera.selection_policy, /change profile only at a declared clip boundary/i);
+  assert.doesNotMatch(packet.camera.selection_policy, /use every|rotate through/i);
+});
+
 test("locked action budget permits intentional stillness and suppresses forced business", () => {
   const packet = buildActiveStoryboardRulePacket({
     resolved_context: productionContext({
