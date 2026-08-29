@@ -337,9 +337,10 @@ export interface StoryboardGenerationInput {
   tone?: string;
   setting?: string;
   custom_instructions?: string;
-  /** Stage-1 script (written by script_provider, e.g. Claude). When present,
-   * the storyboard model must expand THIS script into the JSON verbatim. */
+  /** Script text consumed by the technical shot/keyframe-planning stage. */
   source_script?: string;
+  /** Internal provenance for source_script. Menu choice remains authoritative. */
+  source_script_revision?: "user_verbatim" | "editorial_revision" | "generated_script";
   /**
    * Internal Stage-1.5 output: the neutral 10-layer context resolved from the
    * brief + approved script. Storyboard generation consumes this canonical IR

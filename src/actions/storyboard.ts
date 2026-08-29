@@ -2353,8 +2353,8 @@ export async function generateStoryboardPlan(
     //   Stage 1 — the SCRIPT (creative text) is written by input.script_provider
     //     (default Claude Opus 4.8), which is the strongest at Vietnamese
     //     numerology/health scripts.
-    //   Stage 2 — the STORYBOARD (segments + JSON) is built by the main provider
-    //     (Gemini 2.5 Flash — cheap), which expands the approved script verbatim.
+    //   Stage 2 — the technical shot/keyframe plan is built by the main provider
+    //     from either the menu-preserved original or Stage-1 creative revision.
     //   Images always stay on Nano Banana.
     // If Stage 1's model is unavailable (e.g. ANTHROPIC_API_KEY not set), we skip
     // the script and let Stage 2 write directly. If Stage 2 fails but we have a
@@ -2375,6 +2375,8 @@ export async function generateStoryboardPlan(
     // explicit "polish" choice which deliberately runs the scriptwriter once.
     let sourceScript: string | null =
       pastedScript && input.script_treatment !== "polish" ? pastedScript : null;
+    let sourceScriptRevision: StoryboardGenerationInput["source_script_revision"] =
+      sourceScript ? "user_verbatim" : undefined;
     if (sourceScript) {
       warnings.push(
         "Đã nhận diện nội dung nhập là kịch bản hoàn chỉnh và dùng trực tiếp; không gọi API viết lại kịch bản."
@@ -2407,6 +2409,10 @@ export async function generateStoryboardPlan(
             deadlineMs: generationDeadlineMs,
             maxAttempts: chainIndex === 0 ? 2 : 1,
           });
+          sourceScriptRevision =
+            pastedScript && input.script_treatment === "polish"
+              ? "editorial_revision"
+              : "generated_script";
           if (chainIndex > 0) {
             warnings.push(
               `Kịch bản do ${sp} viết thay vì ${scriptProvider} (model chính không phản hồi).`
@@ -2431,7 +2437,7 @@ export async function generateStoryboardPlan(
     }
 
     const stage2Input = sourceScript
-      ? { ...enhanced, source_script: sourceScript }
+      ? { ...enhanced, source_script: sourceScript, source_script_revision: sourceScriptRevision }
       : enhanced;
 
     // Stage 1.5: analyse the approved script/brief into the canonical neutral

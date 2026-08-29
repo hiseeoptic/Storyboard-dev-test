@@ -49,6 +49,14 @@ test("all speech menu modes reach both script and storyboard prompts", () => {
   assert.match(promptSource, /speaker=\"\", delivery=\"voiceover\"/);
 });
 
+test("script treatment provenance reaches technical planning", () => {
+  const promptSource = readFileSync(new URL("../../prompts/storyboard-breakdown.ts", import.meta.url), "utf8");
+  const actionSource = readFileSync(new URL("../../actions/storyboard.ts", import.meta.url), "utf8");
+  assert.match(promptSource, /CREATIVE POLISH SELECTED IN MENU/);
+  assert.match(actionSource, /"editorial_revision"/);
+  assert.match(actionSource, /source_script_revision: sourceScriptRevision/);
+});
+
 test("creative writing has no fixed word quota while delivery remains timed", () => {
   const promptSource = readFileSync(
     new URL("../../prompts/storyboard-breakdown.ts", import.meta.url),

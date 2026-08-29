@@ -843,7 +843,10 @@ Write the ${segmentCount}-segment script now in the exact output shape from the 
 
 // ─── Step 1: Segment Breakdown + Character Lock ─────────────────────────────
 
-export function buildStoryboardSystemPrompt(hasUploadedCharacterReferences = false): string {
+export function buildStoryboardSystemPrompt(
+  hasUploadedCharacterReferences = false,
+  activeRuleDigest = ""
+): string {
   return `You are a world-class short-form video director and marketing strategist. You design storyboards that are turned into REAL videos using AI image-to-video tools (Google Veo 3 / Veo 3.1, Seedance, Kling).
 
 CRITICAL PRODUCTION MODEL — how the final video is actually made:
@@ -960,7 +963,7 @@ ${FILTER_SAFE_CONTENT_DOCTRINE}
 
 Camera codes: [EYE] eye-level, [LOW] low, [HIGH] high, [OVH] overhead, [DUTCH] dutch, [OTS] over-shoulder, [POV] first-person, [CLOSE] close-up, [SIDE] side profile.
 
-Output MUST be valid JSON only — no markdown, no code fences, no text outside the JSON.`;
+Output MUST be valid JSON only — no markdown, no code fences, no text outside the JSON.${activeRuleDigest ? `\n\n${activeRuleDigest}` : ""}`;
 }
 
 export function buildStoryboardUserPrompt(
@@ -1064,10 +1067,15 @@ ${JSON.stringify(resolvedContextForPrompt, null, 2)}
 === END RESOLVED CONTEXT IR ===`
     : "";
 
-  // Stage-1 approved script (written by Claude). When present, the storyboard
-  // model must EXPAND this exact script into the JSON — not invent a new story.
+  // Provenance plus the menu treatment decides whether dialogue is edited here.
+  const sourceNeedsEditorialRevision =
+    input.script_treatment === "polish" &&
+    input.source_script_revision !== "editorial_revision" &&
+    input.source_script_revision !== "generated_script";
   const scriptBlock = input.source_script
-    ? `\n\n=== APPROVED SCRIPT (Stage 1) — EXPAND THIS VERBATIM ===\nA scriptwriter already wrote the creative script below. Your job is ONLY to turn it into the technical storyboard JSON. Follow it FAITHFULLY:\n- ${characterNames.length > 0 ? `The CLOSED USER CAST above is the absolute name authority. Create exactly those ${characterNames.length} locks and no others. If this script contains a wrong, invented or alternate character name, map that role back to the appropriate closed-cast name; never copy the stray name into output.` : `Keep the SAME CAST across the whole video: create one character_lock per person in CHARACTERS (same names, same looks everywhere; carry any "(child)" mark into is_child: true).`}\n- Map each SEGMENT in the script to one 10s storyboard segment IN ORDER (same count, same beats/roles).\n- Use each segment's DIALOGUE line VERBATIM; set its speaker from the script's SPEAKER line ("VO" → speaker: "", delivery: "voiceover"). Use delivery="off_screen" only when the approved script explicitly places that named speaker outside the camera beat. Set "characters_in_scene" from the script's IN SCENE line. NEVER give a line to a different character.\n- SPEAKER ATTRIBUTION IS CRITICAL — copy the speaker label the script already wrote in front of each line, EXACTLY. Do not re-decide who is talking, do not default every line to the first character, and do not merge two people into one. If the script labels a line with a role, use that role's mapped character name from CHARACTERS. Read the words the line actually uses to address or refer to people and confirm they fit the labelled speaker; a misattributed line ruins the whole video.\n- KEEP EVERY LINE OF THE SCRIPT. Do not compress a multi-line exchange down to one line per segment: distribute the script's full back-and-forth across the segments using "dialogue_lines" (up to 3 turns per 10s segment, sequential, non-overlapping, each with its own correct speaker). Dropping the user's lines is a bug.\n- Turn each segment's ACTION into the first_frame_prompt + motion_prompt (one continuous action per clip).\n- Do NOT add, drop, reorder, or invent segments, lines or people. This script is final.\n\n${input.source_script}\n=== END APPROVED SCRIPT ===`
+    ? sourceNeedsEditorialRevision
+      ? `\n\n=== USER SCREENPLAY — CREATIVE POLISH SELECTED IN MENU ===\nReview and rewrite this screenplay before converting it into the technical shot/keyframe JSON. Preserve cast, role ownership, relationships, locations, props, plot facts, causal reveals, emotional meaning and ending, but actively improve the opening hook, enabled narration/dialogue channels, subtext, rhythm, performance and visual action. You may redistribute or replace weak lines; never merely copy flat dialogue when the selected treatment asks for creative improvement. Do not introduce a different story or message.\n\n${input.source_script}\n=== END USER SCREENPLAY ===`
+      : `\n\n=== CURRENT SCRIPT VERSION (Stage 1) — TECHNICAL EXPANSION ===\nThe selected menu treatment has already produced this current creative version. Convert it into technical shot/keyframe JSON without reverting to an earlier draft or applying an uncontrolled second editorial pass. Keep current dialogue, speaker ownership, plot facts, cast and order; solve technical timing, staging, physics and continuity.\n\n${input.source_script}\n=== END CURRENT SCRIPT VERSION ===`
     : "";
 
   const segmentCount = input.segment_count ?? 5;

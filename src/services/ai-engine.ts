@@ -33,6 +33,7 @@ import {
 import { shouldRetryAiError } from "@/lib/ai/retry-policy";
 import { logOpenAiUsage } from "@/lib/ai/usage";
 import { isStylizedCharacterRepresentation } from "@/lib/creative-routing";
+import { buildActiveStoryboardRulePacket, isPromptRuleRouterV2Enabled, type StoryboardRuleStage } from "@/lib/rules";
 import type {
   AIProvider,
   CharacterLock,
@@ -56,6 +57,12 @@ const STRING_ARRAY_SCHEMA = { type: "ARRAY", items: STRING_SCHEMA };
 
 function hasUploadedCharacterReferences(input: StoryboardGenerationInput): boolean {
   return (input.character_images ?? []).some((entry) => (entry.images?.length ?? 0) > 0);
+}
+
+function buildActiveStoryboardSystemPrompt(input: StoryboardGenerationInput, stage: StoryboardRuleStage = "generation"): string {
+  const hasReferences = hasUploadedCharacterReferences(input);
+  if (!isPromptRuleRouterV2Enabled()) return buildStoryboardSystemPrompt(hasReferences);
+  return buildStoryboardSystemPrompt(hasReferences, buildActiveStoryboardRulePacket(input, { stage }).prompt_digest);
 }
 
 interface GenerationTimingOptions {
@@ -989,7 +996,7 @@ export async function generateStoryboardBreakdown(
         // Claude Opus 4.8 writes the best scripts. It returns text; the JSON is
         // extracted by sanitizeJsonResponse below (no responseMimeType on Claude).
         rawContent = await claudeGenerateText({
-          systemPrompt: buildStoryboardSystemPrompt(hasUploadedCharacterReferences(input)),
+          systemPrompt: buildActiveStoryboardSystemPrompt(input),
           userPrompt:
             buildStoryboardUserPrompt(input) +
             "\n\nReturn ONLY the JSON object described above — no markdown, no code fences, no prose before or after.",
@@ -998,7 +1005,7 @@ export async function generateStoryboardBreakdown(
         });
       } else if (provider === "gemini") {
         rawContent = await geminiGenerateText({
-          systemPrompt: buildStoryboardSystemPrompt(hasUploadedCharacterReferences(input)),
+          systemPrompt: buildActiveStoryboardSystemPrompt(input),
           userPrompt: buildStoryboardUserPrompt(input),
           jsonMode: true,
           responseSchema: STORYBOARD_RESPONSE_SCHEMA,
@@ -1045,8 +1052,7 @@ export async function generateStoryboardBreakdown(
         const openai = getOpenAIClient();
         const storyboardModel =
           process.env.OPENAI_STORYBOARD_MODEL || "gpt-4.1-mini";
-        const storyboardSystemPrompt =
-          buildStoryboardSystemPrompt(hasUploadedCharacterReferences(input));
+        const storyboardSystemPrompt = buildActiveStoryboardSystemPrompt(input);
         const storyboardUserPrompt = buildStoryboardUserPrompt(input);
         const completion = await openai.chat.completions.create(
           {
@@ -1393,7 +1399,7 @@ export async function rewriteStoryboardSegment(params: {
   if (!original) {
     throw new Error(`Segment index ${params.segmentIndex} not found`);
   }
-  const systemPrompt = buildStoryboardSystemPrompt(hasUploadedCharacterReferences(params.input));
+  const systemPrompt = buildActiveStoryboardSystemPrompt(params.input, "segment_rewrite");
   const userPrompt = buildSegmentRewriteUserPrompt({
     input: params.input,
     breakdown: params.breakdown,
@@ -1727,9 +1733,7 @@ export async function repairStoryboardSegments(params: {
     return { segments: [], character_locks: [] };
   }
 
-  const systemPrompt = buildStoryboardSystemPrompt(
-    hasUploadedCharacterReferences(params.input)
-  );
+  const systemPrompt = buildActiveStoryboardSystemPrompt(params.input, "repair");
   const userPrompt = buildStoryboardRepairUserPrompt({
     input: params.input,
     breakdown: params.breakdown,
