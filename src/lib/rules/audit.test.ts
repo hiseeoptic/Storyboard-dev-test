@@ -6,6 +6,7 @@ import { STORYBOARD_PROMPT_RULE_INVENTORY } from "./prompt-inventory.ts";
 
 test("authority keeps user facts above generated preferences", () => {
   assert.equal(RULE_AUTHORITY_ORDER[0], "user_reference");
+  assert.equal(RULE_AUTHORITY_ORDER[1], "user_selection");
   assert.ok(authorityRank("approved_script") < authorityRank("style_preference"));
 });
 test("prompt inventory has no structural error", () => {

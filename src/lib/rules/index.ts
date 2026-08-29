@@ -16,5 +16,5 @@ export type { RuleAuditSeverity, RuleAuditFinding, RuleAuditReport } from "./aud
 export { auditRuleDefinitions, auditPromptRuleInventory } from "./audit";
 export type { RuleConflictCandidate, RuleConflictResolution, UnresolvedRuleConflict, RuleConflictResult } from "./conflict-resolver";
 export { resolveRuleConflicts } from "./conflict-resolver";
-export type { StoryboardRuleStage, DialogueAuthorityMode, VisibleTextMode, StoryboardRulePacketInput, ActiveStoryboardRulePacket } from "./active-packet";
-export { buildActiveStoryboardRulePacket, isPromptRuleRouterV2Enabled } from "./active-packet";
+export type { StoryboardRuleStage, DialogueAuthorityMode, VisibleTextMode, HookSelectionMode, ClipExecutionMode, CameraSelectionMode, ActionSelectionMode, StoryboardRulePacketInput, ActiveStoryboardRulePacket } from "./active-packet";
+export { buildActiveStoryboardRulePacket, isPromptRuleRouterEnabled, isPromptRuleRouterV2Enabled } from "./active-packet";

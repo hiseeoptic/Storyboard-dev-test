@@ -33,7 +33,7 @@ import {
 import { shouldRetryAiError } from "@/lib/ai/retry-policy";
 import { logOpenAiUsage } from "@/lib/ai/usage";
 import { isStylizedCharacterRepresentation } from "@/lib/creative-routing";
-import { buildActiveStoryboardRulePacket, isPromptRuleRouterV2Enabled, type StoryboardRuleStage } from "@/lib/rules";
+import { buildActiveStoryboardRulePacket, isPromptRuleRouterEnabled, type StoryboardRuleStage } from "@/lib/rules";
 import type {
   AIProvider,
   CharacterLock,
@@ -61,7 +61,7 @@ function hasUploadedCharacterReferences(input: StoryboardGenerationInput): boole
 
 function buildActiveStoryboardSystemPrompt(input: StoryboardGenerationInput, stage: StoryboardRuleStage = "generation"): string {
   const hasReferences = hasUploadedCharacterReferences(input);
-  if (!isPromptRuleRouterV2Enabled()) return buildStoryboardSystemPrompt(hasReferences);
+  if (!isPromptRuleRouterEnabled()) return buildStoryboardSystemPrompt(hasReferences);
   return buildStoryboardSystemPrompt(hasReferences, buildActiveStoryboardRulePacket(input, { stage }).prompt_digest);
 }
 

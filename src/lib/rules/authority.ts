@@ -1,5 +1,6 @@
 export const RULE_AUTHORITY_ORDER = [
   "user_reference",
+  "user_selection",
   "approved_script",
   "locked_context",
   "production_profile",
