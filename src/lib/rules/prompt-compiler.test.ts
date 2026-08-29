@@ -70,7 +70,7 @@ test("compiler leaves the legacy prompt byte-identical when no rule is suppresse
   assert.equal(compileStoryboardSystemPrompt(LEGACY_SAMPLE).prompt, LEGACY_SAMPLE);
 });
 
-test("V6 removes only router-suppressed legacy global clauses", () => {
+test("V7 packet removes only router-suppressed legacy global clauses", () => {
   const context = {
     layers: {
       ontology: { visible_text_policy: "Vietnamese diegetic signs allowed" },
@@ -93,7 +93,7 @@ test("V6 removes only router-suppressed legacy global clauses", () => {
   assert.doesNotMatch(prompt, /CAMERA VARIETY ACROSS CLIPS/);
   assert.doesNotMatch(prompt, /DIALOGUE QUALITY DOCTRINE/);
   assert.match(prompt, /CRITICAL PRODUCTION MODEL/);
-  assert.match(prompt, /ACTIVE RULE PACKET V6/);
+  assert.match(prompt, /ACTIVE RULE PACKET V7/);
   assert.match(prompt, /MENU MODE — PRESERVE EVERY LINE/);
 });
 

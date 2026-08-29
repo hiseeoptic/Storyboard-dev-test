@@ -17,7 +17,7 @@
     "test:spatial": "node --experimental-strip-types --test src/lib/spatial-topology/index.test.ts",
     "test:storyboard-prompts": "node --experimental-strip-types --test src/lib/storyboard/prompt-package.test.ts",
     "test:production-state": "node --experimental-strip-types --test src/lib/production-state/normalizer.test.ts src/lib/production-state/physical-validator.test.ts src/lib/production-state/spatial-action.test.ts src/lib/production-state/cinematography.test.ts src/lib/production-state/dialogue-audio.test.ts",
-    "test:rules": "node --experimental-strip-types --test src/lib/rules/audit.test.ts src/lib/rules/active-packet.test.ts src/lib/rules/prompt-compiler.test.ts"
+    "test:rules": "node --experimental-strip-types --test src/lib/rules/audit.test.ts src/lib/rules/active-packet.test.ts src/lib/rules/prompt-compiler.test.ts src/lib/rules/generation-prompt.test.ts"
   },
   "dependencies": {
     "next": "^15.1.0",

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ResolvedVideoContext } from "../video-context/types.ts";
-import { buildActiveStoryboardRulePacket, isPromptRuleRouterEnabled } from "./active-packet.ts";
+import { buildActiveStoryboardRulePacket, isPromptRuleRouterEnabled, isPromptRuleRouterV7Enabled } from "./active-packet.ts";
 
 function context(text: string, overlay = "none — no overlays"): ResolvedVideoContext {
   return { layers: { ontology: { visible_text_policy: text }, visual_language: { text_overlay_policy: overlay } } } as ResolvedVideoContext;
@@ -35,6 +35,7 @@ function productionContext(values: {
   } as ResolvedVideoContext;
 }
 test("router is opt-in", () => { assert.equal(isPromptRuleRouterEnabled(undefined), false); assert.equal(isPromptRuleRouterEnabled("true"), true); });
+test("V7 generation compiler has its own rollout gate", () => { assert.equal(isPromptRuleRouterV7Enabled(undefined), false); assert.equal(isPromptRuleRouterV7Enabled("on"), true); });
 test("polish menu remains creative without completed revision", () => {
   const packet = buildActiveStoryboardRulePacket({ source_script: "LAN: câu gốc", script_treatment: "polish" });
   assert.equal(packet.dialogue.mode, "editorial_polish"); assert.ok(packet.active_rule_ids.includes("storyboard.dialogue.reauthor"));
@@ -156,9 +157,9 @@ test("digest makes input fidelity the operating principle", () => {
   assert.match(packet.prompt_digest, /may never replace input facts with a preferred template/i);
 });
 
-test("V6 retains obstacle, hand-contact and support-continuity contracts", () => {
+test("V7 retains obstacle, hand-contact and support-continuity contracts", () => {
   const packet = buildActiveStoryboardRulePacket({});
-  assert.equal(packet.version, "6.0");
+  assert.equal(packet.version, "7.0");
   assert.equal(packet.physical_interaction.mode, "real_world_default");
   assert.ok(packet.active_rule_ids.includes("storyboard.spatial.obstacle_clearance"));
   assert.ok(packet.active_rule_ids.includes("storyboard.manipulation.contact_chain"));
@@ -166,7 +167,7 @@ test("V6 retains obstacle, hand-contact and support-continuity contracts", () =>
   assert.match(packet.prompt_digest, /pan, pot, bowl, tool or receiving surface never floats/i);
 });
 
-test("V6 obeys locked universe physics and only its declared exceptions", () => {
+test("V7 obeys locked universe physics and only its declared exceptions", () => {
   const resolved = productionContext({
     continuity: "strict",
     transitions: ["continuous"],

@@ -56,6 +56,7 @@ import {
   stripUploadedCharacterAppearance,
 } from "@/lib/character-realism";
 import { compileStoryboardSystemPrompt } from "@/lib/rules/prompt-compiler";
+import { buildRoutedStoryboardStructureDirective } from "@/lib/rules/generation-prompt";
 
 // Forbidden in every generated image/clip (the brief's negative list).
 // Phrased as plain descriptors (no instructive "no/don't") — Veo/Kling read the
@@ -970,7 +971,8 @@ Output MUST be valid JSON only — no markdown, no code fences, no text outside 
 }
 
 export function buildStoryboardUserPrompt(
-  input: StoryboardGenerationInput
+  input: StoryboardGenerationInput,
+  routedPolicy: { hookSelectionMode?: "required_by_menu" | "intent_gated" } = {}
 ): string {
   const creativeRouteDirective = renderCreativeRouteDirective(input);
   const referencedCharacterNames = new Set(
@@ -1153,9 +1155,10 @@ ${JSON.stringify(resolvedContextForPrompt, null, 2)}
     "promo_sale",
     "social_short",
   ]).has(goal);
-  const structureDirective = hardMarketingArc
-    ? "This project intent requires an attention-opening first segment and an earned CTA in the final segment; their exact form must still follow the approved script and story logic."
-    : "The first segment still requires an intent-appropriate 3-5 second Hook Window, but do NOT turn it into generic marketing clickbait and do NOT automatically add a CTA. The final segment performs only the ending function justified by the approved script.";
+  const structureDirective = buildRoutedStoryboardStructureDirective(
+    routedPolicy.hookSelectionMode,
+    hardMarketingArc
+  );
   const activeSceneIntentRulesBlock = `\n\n${selectedSceneIntentRulesDigest({
     projectPurpose: input.resolved_context?.layers.project_intent.purpose,
     videoGoal: goal,

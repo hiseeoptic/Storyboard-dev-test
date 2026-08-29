@@ -26,7 +26,7 @@ export interface StoryboardRulePacketInput {
   resolved_context?: ResolvedVideoContext;
 }
 export interface ActiveStoryboardRulePacket {
-  version: "6.0";
+  version: "7.0";
   stage: StoryboardRuleStage;
   dialogue: { mode: DialogueAuthorityMode; rationale: string; };
   visible_text: { mode: VisibleTextMode; locked_policy: string; has_verified_product_reference: boolean; rationale: string; };
@@ -53,13 +53,18 @@ const INVENTORY_BY_ID = new Map(STORYBOARD_PROMPT_RULE_INVENTORY.map((entry) => 
 function inventoryRule(id: string): PromptRuleInventoryEntry { const rule = INVENTORY_BY_ID.get(id); if (!rule) throw new Error(`Missing storyboard prompt rule inventory entry: ${id}`); return rule; }
 function candidate(id: string, authority: RuleConflictCandidate["authority"]): RuleConflictCandidate { return { rule: inventoryRule(id), authority }; }
 export function isPromptRuleRouterEnabled(
-  value: string | undefined = process.env.PROMPT_RULE_ROUTER_V6 ?? process.env.PROMPT_RULE_ROUTER_V5 ?? process.env.PROMPT_RULE_ROUTER_V4 ?? process.env.PROMPT_RULE_ROUTER_V3 ?? process.env.PROMPT_RULE_ROUTER_V2
+  value: string | undefined = process.env.PROMPT_RULE_ROUTER_V7 ?? process.env.PROMPT_RULE_ROUTER_V6 ?? process.env.PROMPT_RULE_ROUTER_V5 ?? process.env.PROMPT_RULE_ROUTER_V4 ?? process.env.PROMPT_RULE_ROUTER_V3 ?? process.env.PROMPT_RULE_ROUTER_V2
 ): boolean {
   return ["1", "true", "on", "yes"].includes(value?.trim().toLowerCase() ?? "");
 }
 
 /** @deprecated Compatibility alias for Phase-2 callers. */
 export const isPromptRuleRouterV2Enabled = isPromptRuleRouterEnabled;
+export function isPromptRuleRouterV7Enabled(
+  value: string | undefined = process.env.PROMPT_RULE_ROUTER_V7
+): boolean {
+  return ["1", "true", "on", "yes"].includes(value?.trim().toLowerCase() ?? "");
+}
 function isExplicitTextBan(policy: string): boolean { const value = policy.trim().toLowerCase(); return Boolean(value) && /\b(none|forbid(?:den)?|disallow(?:ed)?|zero readable|no readable|blur(?:red)?)\b/.test(value); }
 function allowsOverlay(policy: string): boolean { const value = policy.trim().toLowerCase(); return !isExplicitTextBan(value) && /\b(overlay|caption|subtitle|title card)\b/.test(value) && /\b(allow(?:ed)?|permit(?:ted)?|require(?:d)?|yes)\b/.test(value); }
 function hasVerifiedProductReference(input: StoryboardRulePacketInput): boolean { return input.product_ir?.review_status === "approved" || (input.product_images ?? []).some((entry) => (entry.images?.length ?? 0) > 0 || entry.isReference === true); }
@@ -199,7 +204,7 @@ function buildPromptDigest(packet: Omit<ActiveStoryboardRulePacket, "prompt_dige
     : "ACTION BUDGET — INTENT LED: stage only causally necessary, physically feasible movement. Intentional stillness is valid; never invent hand business merely because a character is visible.";
   const physical = `PHYSICAL INTERACTION CONTRACT — physics mode=${JSON.stringify(packet.physical_interaction.physics_mode)}; intentional exceptions=${JSON.stringify(packet.physical_interaction.intentional_exceptions)}. ${packet.physical_interaction.obstacle_clearance} ${packet.physical_interaction.manipulation_chain} ${packet.physical_interaction.support_continuity} A pan, pot, bowl, tool or receiving surface never floats merely because attention moves to the ingredient or acting hand. Apply an exception only when it is explicitly listed above.`;
   return [
-    "ACTIVE RULE PACKET V6 — FINAL CONFLICT RESOLUTION",
+    "ACTIVE RULE PACKET V7 — FINAL CONFLICT RESOLUTION",
     "INPUT FIDELITY (HIGHEST OPERATING PRINCIPLE): obey every explicit menu selection, uploaded reference, approved/current script fact, locked Context IR value and user instruction. This packet resolves implementation conflicts only; it may never replace input facts with a preferred template.",
     `- ${dialogue}`, `- ${visible}`, `- ${hook}`, `- ${clip}`, `- ${camera}`, `- ${action}`, `- ${physical}`,
     `- Active rule ids: ${packet.active_rule_ids.join(", ") || "none"}`,
@@ -279,7 +284,7 @@ export function buildActiveStoryboardRulePacket(input: StoryboardRulePacketInput
   const result = resolveRuleConflicts(candidates, selected);
   const visibleTextMode: VisibleTextMode = contextAllowsOverlay ? "overlay_allowed" : contextAllowsText && verifiedProduct ? "contextual_diegetic_with_verified_brand" : contextAllowsText ? "contextual_diegetic" : verifiedProduct ? "verified_brand_only" : "forbid_all";
   const without: Omit<ActiveStoryboardRulePacket, "prompt_digest"> = {
-    version: "6.0", stage,
+    version: "7.0", stage,
     dialogue: { mode: dialogueMode, rationale: dialogueMode === "preserve_user_verbatim" ? "Menu selected preservation." : dialogueMode === "use_editorial_revision" ? "Menu-selected creative revision was completed upstream." : dialogueMode === "use_generated_script" ? "Stage 1 generated the script before technical planning." : dialogueMode === "preserve_current_edit" ? "Editor owns current dialogue." : dialogueMode === "editorial_polish" ? "Menu selects creative revision and no completed revision is attached." : "Dialogue follows Scene Intent and audio profile." },
     visible_text: { mode: visibleTextMode, locked_policy: effectiveTextPolicy, has_verified_product_reference: verifiedProduct, rationale: contextAllowsText ? "Locked Context IR selects permitted scope." : verifiedProduct ? "Verified product truth overrides suppression only on the referenced surface." : "No higher-authority text permission exists." },
     hook,

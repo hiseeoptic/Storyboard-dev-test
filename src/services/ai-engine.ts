@@ -33,7 +33,8 @@ import {
 import { shouldRetryAiError } from "@/lib/ai/retry-policy";
 import { logOpenAiUsage } from "@/lib/ai/usage";
 import { isStylizedCharacterRepresentation } from "@/lib/creative-routing";
-import { buildActiveStoryboardRulePacket, buildStoryboardStageSystemPrompt, isPromptRuleRouterEnabled, type StoryboardRuleStage } from "@/lib/rules";
+import { environmentCatalogForPrompt } from "@/lib/environment";
+import { buildActiveStoryboardRulePacket, buildStoryboardStageSystemPrompt, compileGenerationSystemPrompt, isPromptRuleRouterEnabled, isPromptRuleRouterV7Enabled, type StoryboardRuleStage } from "@/lib/rules";
 import type {
   AIProvider,
   CharacterLock,
@@ -59,13 +60,36 @@ function hasUploadedCharacterReferences(input: StoryboardGenerationInput): boole
   return (input.character_images ?? []).some((entry) => (entry.images?.length ?? 0) > 0);
 }
 
+function hasAnyUploadedStoryboardReferences(input: StoryboardGenerationInput): boolean {
+  return hasUploadedCharacterReferences(input) ||
+    (input.reference_images ?? []).some((entry) => entry.trim().length > 0) ||
+    [input.product_images, input.ingredient_images, input.background_images]
+      .some((entries) => (entries ?? []).some((entry) =>
+        (entry.images?.length ?? 0) > 0 || entry.isReference === true
+      )) ||
+    input.product_ir?.review_status === "approved" ||
+    (input.location_mode === "upload" && (input.location_sets?.length ?? 0) > 0);
+}
+
 function buildActiveStoryboardSystemPrompt(input: StoryboardGenerationInput, stage: StoryboardRuleStage = "generation"): string {
   const hasReferences = hasUploadedCharacterReferences(input);
   if (!isPromptRuleRouterEnabled()) return buildStoryboardSystemPrompt(hasReferences);
   const packet = buildActiveStoryboardRulePacket(input, { stage });
   const stagePrompt = buildStoryboardStageSystemPrompt(packet);
   if (stagePrompt) return stagePrompt;
+  if (isPromptRuleRouterV7Enabled()) {
+    return compileGenerationSystemPrompt(packet, {
+      has_any_uploaded_references: hasAnyUploadedStoryboardReferences(input),
+      environment_catalog: environmentCatalogForPrompt(),
+    }).prompt;
+  }
   return buildStoryboardSystemPrompt(hasReferences, packet.prompt_digest, packet.suppressed_rule_ids);
+}
+
+function buildActiveStoryboardUserPrompt(input: StoryboardGenerationInput): string {
+  if (!isPromptRuleRouterV7Enabled()) return buildStoryboardUserPrompt(input);
+  const packet = buildActiveStoryboardRulePacket(input, { stage: "generation" });
+  return buildStoryboardUserPrompt(input, { hookSelectionMode: packet.hook.mode });
 }
 
 interface GenerationTimingOptions {
@@ -1001,7 +1025,7 @@ export async function generateStoryboardBreakdown(
         rawContent = await claudeGenerateText({
           systemPrompt: buildActiveStoryboardSystemPrompt(input),
           userPrompt:
-            buildStoryboardUserPrompt(input) +
+            buildActiveStoryboardUserPrompt(input) +
             "\n\nReturn ONLY the JSON object described above — no markdown, no code fences, no prose before or after.",
           maxTokens: 16000,
           timeoutMs: boundedTimeoutMs(timing, 60_000, "Claude storyboard generation"),
@@ -1009,7 +1033,7 @@ export async function generateStoryboardBreakdown(
       } else if (provider === "gemini") {
         rawContent = await geminiGenerateText({
           systemPrompt: buildActiveStoryboardSystemPrompt(input),
-          userPrompt: buildStoryboardUserPrompt(input),
+          userPrompt: buildActiveStoryboardUserPrompt(input),
           jsonMode: true,
           responseSchema: STORYBOARD_RESPONSE_SCHEMA,
           temperature: attempt === 0 ? 0.25 : 0.1,
@@ -1056,7 +1080,7 @@ export async function generateStoryboardBreakdown(
         const storyboardModel =
           process.env.OPENAI_STORYBOARD_MODEL || "gpt-4.1-mini";
         const storyboardSystemPrompt = buildActiveStoryboardSystemPrompt(input);
-        const storyboardUserPrompt = buildStoryboardUserPrompt(input);
+        const storyboardUserPrompt = buildActiveStoryboardUserPrompt(input);
         const completion = await openai.chat.completions.create(
           {
             // gpt-4.1-mini is reliable for the strict large JSON while costing
