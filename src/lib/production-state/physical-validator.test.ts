@@ -646,3 +646,33 @@ test("cooking receiver cannot float while an ingredient is cracked into it", () 
   assert.equal(findings.find((item) => item.code === "RECEIVER_SUPPORT_MISSING")?.severity, "critical");
   assert.ok(findings.some((item) => item.code === "OBJECT_SUPPORT_MISSING" && item.entity_ids.includes("obj_pan")));
 });
+
+test("a named levitation exception suppresses support findings only for that object", () => {
+  const floatingPan: ProductionEntitySnapshot = {
+    entity_id: "obj_blue_pan",
+    kind: "object",
+    state: "levitating by declared magic",
+    position: "floating in midair",
+    object_physics: { existence: "exists", visibility: "visible", occupied_volume_id: null },
+  };
+  const productionState = state([shot(snapshot([floatingPan]))]);
+  productionState.registry = [{
+    entity_id: "obj_blue_pan",
+    display_name: "blue pan",
+    kind: "object",
+    aliases: [],
+    source_ref: "Blue Pan",
+  }];
+
+  assert.ok(validatePhysicalState(productionState).some((item) => item.code === "OBJECT_SUPPORT_MISSING"));
+  const allowed = validatePhysicalState(productionState, {
+    physicsMode: "ordinary gravity with declared magic",
+    intentionalExceptions: ["The blue pan may levitate while the sorcerer concentrates."],
+  });
+  assert.equal(allowed.some((item) => item.code === "OBJECT_SUPPORT_MISSING"), false);
+
+  const unrelated = validatePhysicalState(productionState, {
+    intentionalExceptions: ["The red cup may levitate."],
+  });
+  assert.ok(unrelated.some((item) => item.code === "OBJECT_SUPPORT_MISSING"));
+});

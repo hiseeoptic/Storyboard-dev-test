@@ -462,7 +462,13 @@ export function buildProductionState(breakdown: LegacyBreakdown): ProductionStat
     boundaries,
     findings,
   };
-  state.findings.push(...validatePhysicalState(state));
+  state.findings.push(...validatePhysicalState(state, {
+    physicsMode:
+      breakdown.context_ir?.layers?.world_context?.physics_mode ||
+      breakdown.context_ir?.layers?.motion_continuity?.physics_mode,
+    intentionalExceptions:
+      breakdown.context_ir?.layers?.world_context?.intentional_exceptions ?? [],
+  }));
   state.findings.push(...validateSpatialState(state));
   state.findings.push(...validateAtomicActions(state));
   state.findings.push(...validateCinematographyState(state));

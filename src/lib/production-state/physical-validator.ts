@@ -7,6 +7,11 @@ import type {
   ShotState,
 } from "./types.ts";
 
+export interface PhysicalValidationOptions {
+  physicsMode?: string;
+  intentionalExceptions?: readonly string[];
+}
+
 function finding(params: Omit<ProductionFinding, "suggested_patch"> & {
   suggested_patch?: Record<string, unknown> | null;
 }): ProductionFinding {
@@ -56,6 +61,27 @@ function isEnvironmentEntity(entityId: string | null | undefined): boolean {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function permitsUnsupportedObject(
+  state: ProductionState,
+  entityId: string,
+  options: PhysicalValidationOptions
+): boolean {
+  const exceptions = options.intentionalExceptions ?? [];
+  if (exceptions.length === 0) return false;
+  const entry = state.registry.find((candidate) => candidate.entity_id === entityId);
+  const names = [entityId, entry?.display_name, entry?.source_ref, ...(entry?.aliases ?? [])]
+    .filter((value): value is string => Boolean(value?.trim()));
+  return exceptions.some((exception) => {
+    const allowsUnsupported = /\b(?:levitat|float|hover|fly|airborne|weightless|zero gravity|no gravity|telekinesis|phase through)\w*\b|\b(?:bay|lơ lửng|không trọng lực|phi trọng lực|xuyên vật|dịch chuyển bằng ý niệm)\b/iu.test(exception);
+    if (!allowsUnsupported) return false;
+    const universal = /\b(?:all|every|entire world|everything|zero gravity|no gravity)\b|\b(?:mọi|tất cả|toàn bộ|không trọng lực|phi trọng lực)\b/iu.test(exception);
+    return universal || names.some((name) => new RegExp(
+      `(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}($|[^\\p{L}\\p{N}])`,
+      "iu"
+    ).test(exception));
+  });
 }
 
 function mentionedReceivingObjects(
@@ -127,7 +153,9 @@ function validateLimb(
 function validateSnapshot(
   shot: ShotState,
   snapshot: ProductionSnapshot,
-  boundary: "start" | "end"
+  boundary: "start" | "end",
+  state: ProductionState,
+  options: PhysicalValidationOptions
 ): ProductionFinding[] {
   const findings: ProductionFinding[] = [];
   const occupied = new Map<string, ProductionEntitySnapshot>();
@@ -230,6 +258,7 @@ function validateSnapshot(
       !entity.holder_entity_id &&
       entity.position &&
       !isEnvironmentEntity(entity.entity_id) &&
+      !permitsUnsupportedObject(state, entity.entity_id, options) &&
       !activeSupport(snapshot, entity.entity_id, ["ground", "surface", "hand", "body"])
     ) {
       findings.push(
@@ -336,11 +365,14 @@ function validateSnapshot(
   return findings;
 }
 
-export function validatePhysicalState(state: ProductionState): ProductionFinding[] {
+export function validatePhysicalState(
+  state: ProductionState,
+  options: PhysicalValidationOptions = {}
+): ProductionFinding[] {
   const findings: ProductionFinding[] = [];
   for (const shot of state.shots) {
-    findings.push(...validateSnapshot(shot, shot.start_snapshot, "start"));
-    findings.push(...validateSnapshot(shot, shot.end_snapshot, "end"));
+    findings.push(...validateSnapshot(shot, shot.start_snapshot, "start", state, options));
+    findings.push(...validateSnapshot(shot, shot.end_snapshot, "end", state, options));
     for (const change of shot.changes) {
       const holderChanged = change.from_holder_entity_id !== change.to_holder_entity_id;
       if (
@@ -389,6 +421,7 @@ export function validatePhysicalState(state: ProductionState): ProductionFinding
         holderChanged &&
         Boolean(change.from_holder_entity_id) &&
         !change.to_holder_entity_id &&
+        !permitsUnsupportedObject(state, change.entity_id, options) &&
         !anyActiveSupport(shot.end_snapshot, change.entity_id)
       ) {
         findings.push(
@@ -416,7 +449,10 @@ export function validatePhysicalState(state: ProductionState): ProductionFinding
         const end = shot.end_snapshot.entities.find((entity) => entity.entity_id === receiverId);
         const supportedAtStart = Boolean(start?.holder_entity_id) || anyActiveSupport(shot.start_snapshot, receiverId);
         const supportedAtEnd = Boolean(end?.holder_entity_id) || anyActiveSupport(shot.end_snapshot, receiverId);
-        if (supportedAtStart && supportedAtEnd) continue;
+        if (
+          (supportedAtStart && supportedAtEnd) ||
+          permitsUnsupportedObject(state, receiverId, options)
+        ) continue;
         findings.push(
           finding({
             code: "RECEIVER_SUPPORT_MISSING",

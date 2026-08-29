@@ -156,9 +156,9 @@ test("digest makes input fidelity the operating principle", () => {
   assert.match(packet.prompt_digest, /may never replace input facts with a preferred template/i);
 });
 
-test("V4 activates obstacle, hand-contact and support-continuity contracts", () => {
+test("V5 retains obstacle, hand-contact and support-continuity contracts", () => {
   const packet = buildActiveStoryboardRulePacket({});
-  assert.equal(packet.version, "4.0");
+  assert.equal(packet.version, "5.0");
   assert.equal(packet.physical_interaction.mode, "real_world_default");
   assert.ok(packet.active_rule_ids.includes("storyboard.spatial.obstacle_clearance"));
   assert.ok(packet.active_rule_ids.includes("storyboard.manipulation.contact_chain"));
@@ -166,7 +166,7 @@ test("V4 activates obstacle, hand-contact and support-continuity contracts", () 
   assert.match(packet.prompt_digest, /pan, pot, bowl, tool or receiving surface never floats/i);
 });
 
-test("V4 obeys locked universe physics and only its declared exceptions", () => {
+test("V5 obeys locked universe physics and only its declared exceptions", () => {
   const resolved = productionContext({
     continuity: "strict",
     transitions: ["continuous"],

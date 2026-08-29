@@ -11,6 +11,10 @@ export interface SceneIntentValidationContext {
   segmentCount: number;
   charactersInScene?: string[];
   projectPurpose?: string;
+  /** Backward-compatible default is required_by_menu. V5 callers pass the
+   * Active Rule Packet decision so validation cannot resurrect a suppressed
+   * universal-hook rule. */
+  hookSelectionMode?: "required_by_menu" | "intent_gated";
 }
 
 const emptyMeaning = /^(none|nothing|n\/a|not[ _-]?applicable|không|không có)$/i;
@@ -26,20 +30,22 @@ export function validateSceneIntent(
 
   const hook = intent.hook_window;
   if (context.segmentIndex === 0) {
-    if (!hook.enabled) {
+    const hookRequired =
+      context.hookSelectionMode !== "intent_gated" || intent.primary_function === "hook";
+    if (hookRequired && !hook.enabled) {
       add("HOOK_WINDOW_DISABLED", "error", "The first clip must enable its 3-5 second Hook Window.");
     }
-    if (hook.duration_seconds < 3 || hook.duration_seconds > 5) {
+    if (hook.enabled && (hook.duration_seconds < 3 || hook.duration_seconds > 5)) {
       add("HOOK_WINDOW_DURATION", "error", "The first clip Hook Window must last between 3 and 5 seconds.");
     }
-    if (emptyMeaning.test(hook.core_promise) || emptyMeaning.test(hook.payoff_link)) {
+    if (hook.enabled && (emptyMeaning.test(hook.core_promise) || emptyMeaning.test(hook.payoff_link))) {
       add("HOOK_WINDOW_NO_PROMISE", "error", "Hook Window needs one honest promise and a link to its later payoff.");
     }
     const hookEvidence = [hook.immediate_visual_event, hook.immediate_audio_event, hook.dialogue_hook];
-    if (hookEvidence.every((value) => emptyMeaning.test(value.trim()))) {
+    if (hook.enabled && hookEvidence.every((value) => emptyMeaning.test(value.trim()))) {
       add("HOOK_WINDOW_NO_EVIDENCE", "error", "Hook Window needs an immediate visual, audio or dialogue event.");
     }
-    if (hook.forbidden_delays.length === 0) {
+    if (hook.enabled && hook.forbidden_delays.length === 0) {
       add("HOOK_WINDOW_NO_DELAY_GUARD", "error", "Hook Window must declare slow-opening delays it forbids.");
     }
   } else if (hook.enabled || hook.duration_seconds !== 0) {

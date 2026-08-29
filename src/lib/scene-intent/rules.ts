@@ -3,7 +3,7 @@ import { defineRules, selectRules, type RuleSelectionContext } from "@/lib/rules
 /** Abstract laws. They apply to every project without assuming a marketing arc. */
 export const SCENE_INTENT_ABSTRACT_LAWS = [
   "Scene intent is derived from the locked project intent, approved script and story state — never selected from a default marketing template without evidence",
-  "The FIRST clip reserves a 3-5 second Hook Window that earns immediate attention in an intent-appropriate form; later clips do not pretend to be new opening hooks",
+  "The FIRST clip uses a 3-5 second Hook Window only when an explicit menu selection or the evidence-backed Project/Scene Intent requires one; later clips do not pretend to be new opening hooks",
   "A Hook Window carries exactly one honest core promise and names how the later payoff fulfils it; misleading clickbait, unrelated spectacle, slow greetings, logo-first openings and context dumps before the hook are violations",
   "Hook dialogue is optional: a strong visual/audio event may carry the first 3-5 seconds, but the window must provide immediate observable evidence rather than an abstract claim",
   "Every clip has exactly one primary function and at most three secondary functions; the primary function wins whenever purposes compete",

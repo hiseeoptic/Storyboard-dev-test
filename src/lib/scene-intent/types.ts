@@ -108,7 +108,7 @@ export interface SceneIntentIR {
   confidence: number;
   primary_function: SceneFunction;
   secondary_functions: SceneFunction[];
-  /** Clip 1: mandatory 3-5s. Later clips: enabled=false, duration=0. */
+  /** Clip 1: 3-5s only when menu/intent requires it. Later clips: disabled. */
   hook_window: HookWindowIR;
   narrative_objective: string;
   audience_effect: SceneAudienceEffect;

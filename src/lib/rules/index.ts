@@ -18,3 +18,7 @@ export type { RuleConflictCandidate, RuleConflictResolution, UnresolvedRuleConfl
 export { resolveRuleConflicts } from "./conflict-resolver";
 export type { StoryboardRuleStage, DialogueAuthorityMode, VisibleTextMode, HookSelectionMode, ClipExecutionMode, CameraSelectionMode, ActionSelectionMode, StoryboardRulePacketInput, ActiveStoryboardRulePacket } from "./active-packet";
 export { buildActiveStoryboardRulePacket, isPromptRuleRouterEnabled, isPromptRuleRouterV2Enabled } from "./active-packet";
+export type { CompiledStoryboardSystemPrompt } from "./prompt-compiler";
+export { compileStoryboardSystemPrompt } from "./prompt-compiler";
+export type { StoryboardValidationPolicy } from "./validation-policy";
+export { buildStoryboardValidationPolicy } from "./validation-policy";

@@ -62,7 +62,8 @@ function hasUploadedCharacterReferences(input: StoryboardGenerationInput): boole
 function buildActiveStoryboardSystemPrompt(input: StoryboardGenerationInput, stage: StoryboardRuleStage = "generation"): string {
   const hasReferences = hasUploadedCharacterReferences(input);
   if (!isPromptRuleRouterEnabled()) return buildStoryboardSystemPrompt(hasReferences);
-  return buildStoryboardSystemPrompt(hasReferences, buildActiveStoryboardRulePacket(input, { stage }).prompt_digest);
+  const packet = buildActiveStoryboardRulePacket(input, { stage });
+  return buildStoryboardSystemPrompt(hasReferences, packet.prompt_digest, packet.suppressed_rule_ids);
 }
 
 interface GenerationTimingOptions {
