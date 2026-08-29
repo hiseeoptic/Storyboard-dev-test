@@ -19,6 +19,12 @@ function lower(value: unknown): string {
   return clean(value).toLocaleLowerCase();
 }
 
+function explicitlyUnsupported(text: string): boolean {
+  return /\b(?:float(?:s|ing)?|hover(?:s|ing)?|levitat(?:e|es|ing)|suspend(?:ed)? in (?:midair|the air)|airborne|unsupported)\b|\b(?:lơ lửng|bay giữa không trung|treo giữa không trung|không có (?:vật|điểm|bề mặt) (?:đỡ|tựa)|không được đỡ)\b/iu.test(
+    text
+  );
+}
+
 function emptyLimb(limbId: LimbId): LimbState {
   return {
     limb_id: limbId,
@@ -167,13 +173,18 @@ function compileSnapshot(
               : "unknown",
         occupied_volume_id: null,
       };
-      if (!entry.holder_entity_id && entry.object_physics.existence === "exists" && entry.position) {
+      if (
+        !entry.holder_entity_id &&
+        entry.object_physics.existence === "exists" &&
+        entry.position &&
+        !explicitlyUnsupported(text)
+      ) {
         // Every visible, existing, non-held legacy object with a declared
         // position is necessarily supported. Bind the named support when it is
         // present; otherwise retain an active anonymous surface/ground relation
         // instead of falsely claiming that a table, door, bowl or appliance is
-        // floating. Explicit structured unsupported states can still be caught
-        // by the validator when no compatibility compilation is involved.
+        // floating. Never manufacture support when the source explicitly says
+        // the object floats/hovers; that evidence must reach the validator.
         const isGround = /\b(?:floor|ground|street|road|pavement|yard|garden)\b|\b(?:sàn|đất|đường|vỉa hè|sân|vườn)\b/iu.test(text);
         snapshot.supports.push({
           supported_entity_id: entry.entity_id,

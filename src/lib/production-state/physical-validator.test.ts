@@ -567,3 +567,82 @@ test("holder transfer with reach/lift gets a deterministic hand and contact targ
   assert.deepEqual(change.contact_entity_ids, ["obj_gift"]);
   assert.equal(validatePhysicalState(compiled).some((item) => item.code === "CONTACT_CAUSALITY_MISSING"), false);
 });
+
+test("character-held object requires a named gripping hand", () => {
+  const physicalSnapshot = snapshot([
+    characterEntity("char_lan"),
+    {
+      entity_id: "obj_pan",
+      kind: "object",
+      state: "held",
+      position: "held by Lan",
+      holder_entity_id: "char_lan",
+      object_physics: { existence: "exists", visibility: "visible", occupied_volume_id: null },
+    },
+  ]);
+  physicalSnapshot.contacts.push({
+    source_entity_id: "char_lan",
+    source_limb_id: null,
+    target_entity_id: "obj_pan",
+    kind: "hold",
+    active: true,
+  });
+  physicalSnapshot.supports.push({
+    supported_entity_id: "obj_pan",
+    support_entity_id: "char_lan",
+    kind: "hand",
+    contact_part: null,
+    active: true,
+  });
+  const findings = validatePhysicalState(state([shot(physicalSnapshot)]));
+  assert.ok(findings.some((item) => item.code === "HELD_OBJECT_HAND_UNASSIGNED"));
+});
+
+test("release without a receiving support is critical", () => {
+  const start = snapshot([characterEntity("char_lan")]);
+  const end = snapshot([characterEntity("char_lan")]);
+  const transition = shot(start, end, [{
+    entity_id: "obj_pan",
+    from: "held",
+    action: "Lan releases the pan",
+    to: "floating",
+    caused_by: "Lan",
+    from_holder_entity_id: "char_lan",
+    to_holder_entity_id: null,
+    body_part: "right_hand",
+    contact_entity_ids: ["obj_pan"],
+  }]);
+  const findings = validatePhysicalState(state([transition]));
+  assert.equal(findings.find((item) => item.code === "RELEASE_WITHOUT_SUPPORT")?.severity, "critical");
+});
+
+test("cooking receiver cannot float while an ingredient is cracked into it", () => {
+  const legacySegment = {
+    segment_number: 1, duration_seconds: 10, title: "Egg", marketing_role: "body",
+    beats: [], first_frame_prompt: "Lan cooks an egg",
+    motion_prompt: "Lan cracks the egg into the pan", dialogue: null, continuity_note: "",
+    characters_in_scene: ["Lan"],
+    state_ledger: {
+      start: [
+        { entity_id: "Egg", state: "whole", position: "on the counter" },
+        { entity_id: "Pan", state: "empty and floating", position: "floating in midair" },
+      ],
+      changes: [{
+        entity_id: "Egg", from: "whole", action: "Lan cracks the egg into the pan",
+        to: "cracked into pan", caused_by: "Lan right hand",
+      }],
+      end: [
+        { entity_id: "Egg", state: "cracked into pan", position: "inside pan" },
+        { entity_id: "Pan", state: "contains egg and floating", position: "floating in midair" },
+      ],
+    },
+  } satisfies VideoSegment;
+  const lan = {
+    name: "Lan", gender_age: "adult", build: "average", skin_tone: "natural", hair: "black",
+    eyes: "brown", costume: "shirt", signature_features: "none", default_expression: "neutral", render_style: "cinematic",
+  } satisfies CharacterLock;
+  const compiled = buildProductionState({ character_locks: [lan], segments: [legacySegment], total_duration_seconds: 10 });
+  const findings = validatePhysicalState(compiled);
+  assert.equal(findings.find((item) => item.code === "RECEIVER_SUPPORT_MISSING")?.severity, "critical");
+  assert.ok(findings.some((item) => item.code === "OBJECT_SUPPORT_MISSING" && item.entity_ids.includes("obj_pan")));
+});

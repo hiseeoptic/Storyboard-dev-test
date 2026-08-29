@@ -155,3 +155,42 @@ test("digest makes input fidelity the operating principle", () => {
   assert.match(packet.prompt_digest, /obey every explicit menu selection/i);
   assert.match(packet.prompt_digest, /may never replace input facts with a preferred template/i);
 });
+
+test("V4 activates obstacle, hand-contact and support-continuity contracts", () => {
+  const packet = buildActiveStoryboardRulePacket({});
+  assert.equal(packet.version, "4.0");
+  assert.equal(packet.physical_interaction.mode, "real_world_default");
+  assert.ok(packet.active_rule_ids.includes("storyboard.spatial.obstacle_clearance"));
+  assert.ok(packet.active_rule_ids.includes("storyboard.manipulation.contact_chain"));
+  assert.ok(packet.active_rule_ids.includes("storyboard.object.support_continuity"));
+  assert.match(packet.prompt_digest, /pan, pot, bowl, tool or receiving surface never floats/i);
+});
+
+test("V4 obeys locked universe physics and only its declared exceptions", () => {
+  const resolved = productionContext({
+    continuity: "strict",
+    transitions: ["continuous"],
+    actionBudget: "one causal action",
+    cameraProfile: "static",
+    cameraGrammar: ["locked camera"],
+    editRhythm: "hold",
+  });
+  resolved.layers.world_context = {
+    world_type: "magical realism",
+    reality_level: "stylized",
+    genre: "fantasy",
+    geography: "script-defined",
+    culture: "script-defined",
+    time_period: "present",
+    technology_level: "present",
+    social_class: "script-defined",
+    physics_mode: "ordinary gravity except declared telekinesis",
+    intentional_exceptions: ["the sorcerer may levitate the named blue cup"],
+  };
+  const packet = buildActiveStoryboardRulePacket({ resolved_context: resolved });
+  assert.equal(packet.physical_interaction.mode, "locked_world_physics");
+  assert.deepEqual(packet.physical_interaction.intentional_exceptions, [
+    "the sorcerer may levitate the named blue cup",
+  ]);
+  assert.match(packet.prompt_digest, /ordinary gravity except declared telekinesis/i);
+});

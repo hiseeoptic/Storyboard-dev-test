@@ -159,10 +159,97 @@ function connected(graph: SpatialGraphState | null, from: string, to: string): b
   return false;
 }
 
+const SOLID_OBSTACLE = "(?:table|desk|counter|chair|sofa|couch|bench|stool|cabinet|island|shelf|wall|railing|fence|bàn|ghế|quầy|sofa|tủ|đảo bếp|kệ|tường|lan can|hàng rào)";
+
+function explicitlyIntersectsSolidObstacle(text: string): boolean {
+  return new RegExp(
+    `\\b(?:walk|move|step|cross|pass|run)(?:s|ed|ing)?\\b.{0,36}\\b(?:through|inside)\\s+(?:the\\s+)?${SOLID_OBSTACLE}\\b|\\b(?:đi|bước|chạy|băng)\\b.{0,36}\\b(?:xuyên qua|vào trong)\\s+${SOLID_OBSTACLE}\\b`,
+    "iu"
+  ).test(text);
+}
+
+function isMovementActionText(text: string): boolean {
+  return /\b(?:walk|move|cross|step|enter|exit|pass|run)(?:s|ed|ing)?\b|\b(?:đi|di chuyển|bước|vào|ra|băng qua|chạy)\b/iu.test(text);
+}
+
+function blockedFurnitureRouteNeedsClearance(shot: ShotState): boolean {
+  const layout = shot.start_snapshot.spatial_layout ?? shot.end_snapshot.spatial_layout;
+  if (!layout) return false;
+  const fixed = layout.fixed_architecture ?? "";
+  const path = layout.walkable_path ?? "";
+  const obstacleBlocksDirectRoute = new RegExp(
+    `${SOLID_OBSTACLE}.{0,48}(?:between|blocks?|obstructs?|across|chặn|cản|nằm giữa)|(?:between|blocks?|obstructs?|across|chặn|cản|nằm giữa).{0,48}${SOLID_OBSTACLE}`,
+    "iu"
+  ).test(fixed);
+  const hasClearanceRoute = new RegExp(
+    `\\b(?:around|past|beside|alongside|clear of|avoids?)\\b.{0,48}${SOLID_OBSTACLE}|\\b(?:vòng qua|đi vòng|tránh|men theo|bên cạnh)\\b.{0,48}${SOLID_OBSTACLE}|\\b(?:clear|unobstructed|không bị cản|thông thoáng)\\b`,
+    "iu"
+  ).test(path);
+  return obstacleBlocksDirectRoute && !hasClearanceRoute;
+}
+
 export function validateSpatialState(state: ProductionState): ProductionFinding[] {
   const findings: ProductionFinding[] = [];
   for (const shot of state.shots) {
     if (shot.spatial_graph) findings.push(...graphErrors(shot, shot.spatial_graph));
+    for (const action of shot.actions) {
+      const actionText = `${action.verb} ${action.evidence} ${action.physical_conditions.join(" ")}`;
+      if (explicitlyIntersectsSolidObstacle(actionText)) {
+        findings.push(
+          finding({
+            code: "PATH_INTERSECTS_SOLID_OBSTACLE",
+            severity: "critical",
+            message: "Character movement intersects solid furniture or architecture instead of routing around it.",
+            shot_id: shot.shot_id,
+            entity_ids: action.subject_entity_id ? [action.subject_entity_id] : [],
+            evidence: { action_id: action.action_id, action: action.verb },
+            suggested_patch: { op: "route_around_solid_obstacle" },
+          })
+        );
+      }
+      if (
+        isMovementActionText(actionText) &&
+        action.from_zone_id &&
+        action.to_zone_id &&
+        !sameZoneId(action.from_zone_id, action.to_zone_id) &&
+        !connected(shot.spatial_graph, action.from_zone_id, action.to_zone_id)
+      ) {
+        findings.push(
+          finding({
+            code: "ACTION_ROUTE_BLOCKED",
+            severity: "critical",
+            message: "Movement crosses zones without a connected clear path.",
+            shot_id: shot.shot_id,
+            entity_ids: action.subject_entity_id ? [action.subject_entity_id] : [],
+            evidence: {
+              action_id: action.action_id,
+              from_zone_id: action.from_zone_id,
+              to_zone_id: action.to_zone_id,
+            },
+            suggested_patch: { op: "use_clear_spatial_connector" },
+          })
+        );
+      }
+    }
+    if (
+      shot.actions.some((action) => isMovementActionText(`${action.verb} ${action.evidence}`)) &&
+      blockedFurnitureRouteNeedsClearance(shot)
+    ) {
+      findings.push(
+        finding({
+          code: "PATH_CLEARANCE_UNPROVEN",
+          severity: "high",
+          message: "A solid obstacle blocks the direct line, but the walkable path does not declare a route around it.",
+          shot_id: shot.shot_id,
+          entity_ids: [],
+          evidence: {
+            fixed_architecture: shot.start_snapshot.spatial_layout?.fixed_architecture ?? "",
+            walkable_path: shot.start_snapshot.spatial_layout?.walkable_path ?? "",
+          },
+          suggested_patch: { op: "declare_obstacle_clearance_route" },
+        })
+      );
+    }
     // Multi-character placement — ONE finding per shot (the old per-boundary loop
     // only reported the identical note twice). When the shot HAS a spatial graph
     // but a character is unplaced in it, that is a genuine structured gap → high.

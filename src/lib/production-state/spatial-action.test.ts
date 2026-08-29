@@ -97,6 +97,57 @@ test("SpatialGraphValidator rejects connectors and placements pointing outside t
   assert.ok(findings.some((item) => item.code === "SPATIAL_PLACEMENT_ANCHOR_INVALID"));
 });
 
+test("movement through a table is a critical solid-obstacle collision", () => {
+  const compiled = buildProductionState(
+    breakdown(
+      [segment(1, {
+        characters_in_scene: ["Lan"],
+        spatial_layout: {
+          zone_order: "kitchen floor",
+          fixed_architecture: "A dining table remains fixed in the center.",
+          character_placement: "Lan stands beside the counter.",
+          walkable_path: "Lan walks toward the doorway.",
+          camera_zone: "camera beside the wall",
+        },
+        state_ledger: {
+          start: [{ entity_id: "Lan", state: "standing", position: "beside counter" }],
+          changes: [{ entity_id: "Lan", from: "standing", action: "Lan walks through the table", to: "standing", caused_by: "Lan" }],
+          end: [{ entity_id: "Lan", state: "standing", position: "near doorway" }],
+        },
+      })],
+      ["Lan"]
+    )
+  );
+  assert.equal(
+    validateSpatialState(compiled).find((item) => item.code === "PATH_INTERSECTS_SOLID_OBSTACLE")?.severity,
+    "critical"
+  );
+});
+
+test("blocked furniture line requires a declared clearance route", () => {
+  const compiled = buildProductionState(
+    breakdown(
+      [segment(1, {
+        characters_in_scene: ["Lan"],
+        spatial_layout: {
+          zone_order: "kitchen floor",
+          fixed_architecture: "A table blocks the direct line between Lan and the doorway.",
+          character_placement: "Lan stands beside the counter.",
+          walkable_path: "Lan reaches the doorway.",
+          camera_zone: "camera beside the wall",
+        },
+        state_ledger: {
+          start: [{ entity_id: "Lan", state: "standing", position: "beside counter" }],
+          changes: [{ entity_id: "Lan", from: "standing", action: "Lan walks to the doorway", to: "standing", caused_by: "Lan" }],
+          end: [{ entity_id: "Lan", state: "standing", position: "near doorway" }],
+        },
+      })],
+      ["Lan"]
+    )
+  );
+  assert.ok(validateSpatialState(compiled).some((item) => item.code === "PATH_CLEARANCE_UNPROVEN"));
+});
+
 test("continuous boundary catches a silent left-right seat swap", () => {
   const first = segment(1, {
     characters_in_scene: ["Lan", "Minh"],

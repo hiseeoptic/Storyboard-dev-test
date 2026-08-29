@@ -20,6 +20,26 @@ function activeSupport(snapshot: ProductionSnapshot, entityId: string, kinds: st
   );
 }
 
+function anyActiveSupport(snapshot: ProductionSnapshot, entityId: string): boolean {
+  return snapshot.supports.some(
+    (relation) => relation.active && relation.supported_entity_id === entityId
+  );
+}
+
+function activeHandContact(
+  snapshot: ProductionSnapshot,
+  holderEntityId: string,
+  objectEntityId: string
+): boolean {
+  return snapshot.contacts.some(
+    (contact) =>
+      contact.active &&
+      contact.source_entity_id === holderEntityId &&
+      contact.target_entity_id === objectEntityId &&
+      (contact.source_limb_id === "left_hand" || contact.source_limb_id === "right_hand")
+  );
+}
+
 function isNoHolderEntityId(value: string | null | undefined): boolean {
   return /^(?:entity_)?(?:none|null|nil|no_holder|nobody|no_one)$/iu.test(value ?? "");
 }
@@ -32,6 +52,36 @@ function isEnvironmentEntity(entityId: string | null | undefined): boolean {
   return /\b(?:room|bedroom|kitchen|bathroom|living_?room|hall(?:way)?|corridor|floor|wall|ceiling|window|door(?:way)?|background|backdrop|scene|scenery|set|space|environment|interior|exterior|street|road|sky|building|house|store|shop|market|garden|yard)\b/iu.test(
     String(entityId ?? "")
   );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function mentionedReceivingObjects(
+  state: ProductionState,
+  shot: ShotState,
+  text: string,
+  excludedEntityIds: Array<string | null>
+): string[] {
+  if (!/\b(?:into|onto|inside|in|on)\b|\b(?:vào|lên|trong)\b/iu.test(text)) return [];
+  const excluded = new Set(excludedEntityIds.filter((value): value is string => Boolean(value)));
+  const snapshotIds = new Set(
+    [...shot.start_snapshot.entities, ...shot.end_snapshot.entities]
+      .filter((entity) => entity.kind === "object" || entity.kind === "product")
+      .map((entity) => entity.entity_id)
+  );
+  return state.registry
+    .filter((entry) => snapshotIds.has(entry.entity_id) && !excluded.has(entry.entity_id))
+    .filter((entry) =>
+      [entry.display_name, entry.source_ref, ...entry.aliases]
+        .filter((name): name is string => Boolean(name?.trim()))
+        .some((name) => new RegExp(
+          `\\b(?:into|onto|inside|in|on)\\s+(?:the\\s+)?${escapeRegExp(name)}(?:$|[^\\p{L}\\p{N}])|\\b(?:vào|lên|trong)\\s+(?:cái|chiếc)?\\s*${escapeRegExp(name)}(?:$|[^\\p{L}\\p{N}])`,
+          "iu"
+        ).test(text))
+    )
+    .map((entry) => entry.entity_id);
 }
 
 function validateLimb(
@@ -216,6 +266,54 @@ function validateSnapshot(
         })
       );
     }
+    if (
+      entity.holder_entity_id &&
+      !isNoHolderEntityId(entity.holder_entity_id) &&
+      snapshot.entities.some(
+        (candidate) =>
+          candidate.entity_id === entity.holder_entity_id && Boolean(candidate.character_physics)
+      ) &&
+      !activeHandContact(snapshot, entity.holder_entity_id, entity.entity_id)
+    ) {
+      findings.push(
+        finding({
+          code: "HELD_OBJECT_HAND_UNASSIGNED",
+          severity: "high",
+          message: "A character-held object must identify the hand that grips and supports it.",
+          shot_id: shot.shot_id,
+          entity_ids: [entity.holder_entity_id, entity.entity_id],
+          evidence: { boundary, holder_entity_id: entity.holder_entity_id },
+          suggested_patch: { op: "assign_held_object_to_free_hand" },
+        })
+      );
+    }
+
+    if (character) {
+      for (const limb of Object.values(character.limbs)) {
+        for (const heldObjectId of limb.held_object_ids) {
+          const heldObject = snapshot.entities.find(
+            (candidate) => candidate.entity_id === heldObjectId
+          );
+          if (heldObject?.holder_entity_id !== entity.entity_id) {
+            findings.push(
+              finding({
+                code: "HOLDER_LIMB_MISMATCH",
+                severity: "critical",
+                message: "Hand occupancy and object holder state disagree.",
+                shot_id: shot.shot_id,
+                entity_ids: [entity.entity_id, heldObjectId],
+                evidence: {
+                  boundary,
+                  limb_id: limb.limb_id,
+                  object_holder_entity_id: heldObject?.holder_entity_id ?? null,
+                },
+                suggested_patch: { op: "reconcile_holder_and_hand_state" },
+              })
+            );
+          }
+        }
+      }
+    }
 
     const volume = character?.occupied_volume_id ?? object?.occupied_volume_id;
     if (volume) {
@@ -266,6 +364,75 @@ export function validatePhysicalState(state: ProductionState): ProductionFinding
               contact_entity_ids: change.contact_entity_ids ?? [],
             },
             suggested_patch: { op: "declare_contact_transition", entity_id: change.entity_id },
+          })
+        );
+      }
+      if (
+        holderChanged &&
+        change.body_part &&
+        change.body_part !== "left_hand" &&
+        change.body_part !== "right_hand"
+      ) {
+        findings.push(
+          finding({
+            code: "INVALID_HOLD_BODY_PART",
+            severity: "critical",
+            message: "Pickup, handoff or release must use a declared hand, not a non-hand body part.",
+            shot_id: shot.shot_id,
+            entity_ids: [change.entity_id],
+            evidence: { action: change.action, body_part: change.body_part },
+            suggested_patch: { op: "assign_free_hand_to_holder_transition" },
+          })
+        );
+      }
+      if (
+        holderChanged &&
+        Boolean(change.from_holder_entity_id) &&
+        !change.to_holder_entity_id &&
+        !anyActiveSupport(shot.end_snapshot, change.entity_id)
+      ) {
+        findings.push(
+          finding({
+            code: "RELEASE_WITHOUT_SUPPORT",
+            severity: "critical",
+            message: "An object is released without a receiving hand, body, surface or ground support.",
+            shot_id: shot.shot_id,
+            entity_ids: [change.entity_id, change.from_holder_entity_id!],
+            evidence: { action: change.action, end_supports: shot.end_snapshot.supports },
+            suggested_patch: { op: "add_receiving_support_before_release" },
+          })
+        );
+      }
+    }
+
+    for (const action of shot.actions) {
+      const text = `${action.verb} ${action.evidence} ${action.physical_conditions.join(" ")}`;
+      const receiverIds = mentionedReceivingObjects(state, shot, text, [
+        action.subject_entity_id,
+        action.object_entity_id,
+      ]);
+      for (const receiverId of receiverIds) {
+        const start = shot.start_snapshot.entities.find((entity) => entity.entity_id === receiverId);
+        const end = shot.end_snapshot.entities.find((entity) => entity.entity_id === receiverId);
+        const supportedAtStart = Boolean(start?.holder_entity_id) || anyActiveSupport(shot.start_snapshot, receiverId);
+        const supportedAtEnd = Boolean(end?.holder_entity_id) || anyActiveSupport(shot.end_snapshot, receiverId);
+        if (supportedAtStart && supportedAtEnd) continue;
+        findings.push(
+          finding({
+            code: "RECEIVER_SUPPORT_MISSING",
+            severity: "critical",
+            message: "A receiving container or work object loses physical support during another object's action.",
+            shot_id: shot.shot_id,
+            entity_ids: [receiverId].concat(
+              action.object_entity_id ? [action.object_entity_id] : []
+            ),
+            evidence: {
+              action_id: action.action_id,
+              action: action.verb,
+              supported_at_start: supportedAtStart,
+              supported_at_end: supportedAtEnd,
+            },
+            suggested_patch: { op: "preserve_receiver_support_through_action" },
           })
         );
       }

@@ -10,6 +10,7 @@ export type HookSelectionMode = "required_by_menu" | "intent_gated";
 export type ClipExecutionMode = "continuous_generated_clip_with_context_boundaries";
 export type CameraSelectionMode = "locked_context_grammar" | "selected_menu_profile" | "derive_without_forced_recipe";
 export type ActionSelectionMode = "locked_context_budget" | "intent_led_safe_budget";
+export type PhysicalInteractionMode = "locked_world_physics" | "real_world_default";
 interface RulePacketImageReference { images?: readonly string[]; isReference?: boolean; }
 export interface StoryboardRulePacketInput {
   source_script?: string;
@@ -25,7 +26,7 @@ export interface StoryboardRulePacketInput {
   resolved_context?: ResolvedVideoContext;
 }
 export interface ActiveStoryboardRulePacket {
-  version: "3.0";
+  version: "4.0";
   stage: StoryboardRuleStage;
   dialogue: { mode: DialogueAuthorityMode; rationale: string; };
   visible_text: { mode: VisibleTextMode; locked_policy: string; has_verified_product_reference: boolean; rationale: string; };
@@ -33,6 +34,15 @@ export interface ActiveStoryboardRulePacket {
   clip_execution: { mode: ClipExecutionMode; continuity_mode: string; allowed_transition_modes: string[]; rationale: string; };
   camera: { mode: CameraSelectionMode; selected_profile_id: string; locked_grammar: string[]; edit_rhythm: string; rationale: string; };
   action: { mode: ActionSelectionMode; locked_budget: string; rationale: string; };
+  physical_interaction: {
+    mode: PhysicalInteractionMode;
+    physics_mode: string;
+    intentional_exceptions: string[];
+    obstacle_clearance: string;
+    manipulation_chain: string;
+    support_continuity: string;
+    rationale: string;
+  };
   active_rule_ids: string[];
   suppressed_rule_ids: string[];
   conflict_resolutions: ReturnType<typeof resolveRuleConflicts>["resolutions"];
@@ -43,7 +53,7 @@ const INVENTORY_BY_ID = new Map(STORYBOARD_PROMPT_RULE_INVENTORY.map((entry) => 
 function inventoryRule(id: string): PromptRuleInventoryEntry { const rule = INVENTORY_BY_ID.get(id); if (!rule) throw new Error(`Missing storyboard prompt rule inventory entry: ${id}`); return rule; }
 function candidate(id: string, authority: RuleConflictCandidate["authority"]): RuleConflictCandidate { return { rule: inventoryRule(id), authority }; }
 export function isPromptRuleRouterEnabled(
-  value: string | undefined = process.env.PROMPT_RULE_ROUTER_V3 ?? process.env.PROMPT_RULE_ROUTER_V2
+  value: string | undefined = process.env.PROMPT_RULE_ROUTER_V4 ?? process.env.PROMPT_RULE_ROUTER_V3 ?? process.env.PROMPT_RULE_ROUTER_V2
 ): boolean {
   return ["1", "true", "on", "yes"].includes(value?.trim().toLowerCase() ?? "");
 }
@@ -137,6 +147,28 @@ function actionSelection(input: StoryboardRulePacketInput): ActiveStoryboardRule
     : { mode: "intent_led_safe_budget", locked_budget: "", rationale: "Use only causally necessary, physically feasible action. Do not invent hand business merely because a character is visible." };
 }
 
+function physicalInteractionSelection(
+  input: StoryboardRulePacketInput
+): ActiveStoryboardRulePacket["physical_interaction"] {
+  const world = input.resolved_context?.layers?.world_context;
+  const motion = input.resolved_context?.layers?.motion_continuity;
+  const physicsMode = world?.physics_mode?.trim() || motion?.physics_mode?.trim() || "real-world material physics";
+  const exceptions = world?.intentional_exceptions?.filter((value) => value.trim()) ?? [];
+  return {
+    mode: world?.physics_mode?.trim() || motion?.physics_mode?.trim()
+      ? "locked_world_physics"
+      : "real_world_default",
+    physics_mode: physicsMode,
+    intentional_exceptions: exceptions,
+    obstacle_clearance: "Movement uses connected load-bearing walkable space; route around solid furniture, bodies and architecture with visible clearance.",
+    manipulation_chain: "Manipulation is ordered reach -> contact -> grip -> transfer/use -> supported release; name the acting free hand and preserve hand occupancy.",
+    support_continuity: "Every visible material object has continuous support from ground, surface, body or holder; receivers and tools keep support while another object is acted into or against them.",
+    rationale: exceptions.length > 0
+      ? "The locked universe physics is binding. Departures from ordinary collision, gravity or contact are allowed only for the declared exceptions and must remain causally consistent."
+      : "No intentional exception suspends collision, gravity, contact or support continuity.",
+  };
+}
+
 function buildPromptDigest(packet: Omit<ActiveStoryboardRulePacket, "prompt_digest">): string {
   const dialogue = packet.dialogue.mode === "preserve_user_verbatim"
     ? "MENU MODE — PRESERVE EVERY LINE: preserve the user's supplied dialogue and speaker ownership exactly. Do not elevate, paraphrase, translate, or re-author it; build the technical shot/keyframe plan around those words."
@@ -165,10 +197,11 @@ function buildPromptDigest(packet: Omit<ActiveStoryboardRulePacket, "prompt_dige
   const action = packet.action.mode === "locked_context_budget"
     ? `ACTION BUDGET — LOCKED CONTEXT: ${JSON.stringify(packet.action.locked_budget)}. Spend motion only on Scene Intent, causal state changes and required performance. Intentional stillness is valid; never add decorative hand business.`
     : "ACTION BUDGET — INTENT LED: stage only causally necessary, physically feasible movement. Intentional stillness is valid; never invent hand business merely because a character is visible.";
+  const physical = `PHYSICAL INTERACTION CONTRACT — physics mode=${JSON.stringify(packet.physical_interaction.physics_mode)}; intentional exceptions=${JSON.stringify(packet.physical_interaction.intentional_exceptions)}. ${packet.physical_interaction.obstacle_clearance} ${packet.physical_interaction.manipulation_chain} ${packet.physical_interaction.support_continuity} A pan, pot, bowl, tool or receiving surface never floats merely because attention moves to the ingredient or acting hand. Apply an exception only when it is explicitly listed above.`;
   return [
-    "ACTIVE RULE PACKET V3 — FINAL CONFLICT RESOLUTION",
+    "ACTIVE RULE PACKET V4 — FINAL CONFLICT RESOLUTION",
     "INPUT FIDELITY (HIGHEST OPERATING PRINCIPLE): obey every explicit menu selection, uploaded reference, approved/current script fact, locked Context IR value and user instruction. This packet resolves implementation conflicts only; it may never replace input facts with a preferred template.",
-    `- ${dialogue}`, `- ${visible}`, `- ${hook}`, `- ${clip}`, `- ${camera}`, `- ${action}`,
+    `- ${dialogue}`, `- ${visible}`, `- ${hook}`, `- ${clip}`, `- ${camera}`, `- ${action}`, `- ${physical}`,
     `- Active rule ids: ${packet.active_rule_ids.join(", ") || "none"}`,
     `- Suppressed conflicting rule ids: ${packet.suppressed_rule_ids.join(", ") || "none"}`,
   ].join("\n");
@@ -225,6 +258,17 @@ export function buildActiveStoryboardRulePacket(input: StoryboardRulePacketInput
   );
   selected.push("storyboard.action.selective_budget");
 
+  const physicalInteraction = physicalInteractionSelection(input);
+  const physicsAuthority = physicalInteraction.mode === "locked_world_physics"
+    ? "locked_context"
+    : "production_state";
+  candidates.push(
+    candidate("storyboard.physics.locked_mode", physicsAuthority),
+    candidate("storyboard.spatial.obstacle_clearance", "production_state"),
+    candidate("storyboard.manipulation.contact_chain", "production_state"),
+    candidate("storyboard.object.support_continuity", "production_state")
+  );
+
   const lockedPolicy = input.resolved_context?.layers?.ontology?.visible_text_policy?.trim() ?? "";
   const overlayPolicy = input.resolved_context?.layers?.visual_language?.text_overlay_policy?.trim() ?? "";
   const effectiveTextPolicy = [lockedPolicy, overlayPolicy].filter(Boolean).join("; ");
@@ -235,13 +279,14 @@ export function buildActiveStoryboardRulePacket(input: StoryboardRulePacketInput
   const result = resolveRuleConflicts(candidates, selected);
   const visibleTextMode: VisibleTextMode = contextAllowsOverlay ? "overlay_allowed" : contextAllowsText && verifiedProduct ? "contextual_diegetic_with_verified_brand" : contextAllowsText ? "contextual_diegetic" : verifiedProduct ? "verified_brand_only" : "forbid_all";
   const without: Omit<ActiveStoryboardRulePacket, "prompt_digest"> = {
-    version: "3.0", stage,
+    version: "4.0", stage,
     dialogue: { mode: dialogueMode, rationale: dialogueMode === "preserve_user_verbatim" ? "Menu selected preservation." : dialogueMode === "use_editorial_revision" ? "Menu-selected creative revision was completed upstream." : dialogueMode === "use_generated_script" ? "Stage 1 generated the script before technical planning." : dialogueMode === "preserve_current_edit" ? "Editor owns current dialogue." : dialogueMode === "editorial_polish" ? "Menu selects creative revision and no completed revision is attached." : "Dialogue follows Scene Intent and audio profile." },
     visible_text: { mode: visibleTextMode, locked_policy: effectiveTextPolicy, has_verified_product_reference: verifiedProduct, rationale: contextAllowsText ? "Locked Context IR selects permitted scope." : verifiedProduct ? "Verified product truth overrides suppression only on the referenced surface." : "No higher-authority text permission exists." },
     hook,
     clip_execution: clipExecution,
     camera,
     action,
+    physical_interaction: physicalInteraction,
     active_rule_ids: result.active.map((entry) => entry.rule.id).sort(), suppressed_rule_ids: result.suppressed.map((entry) => entry.rule.id).sort(), conflict_resolutions: result.resolutions, unresolved_conflicts: result.unresolved,
   };
   return { ...without, prompt_digest: buildPromptDigest(without) };
