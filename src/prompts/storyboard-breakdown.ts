@@ -43,7 +43,10 @@ import {
   renderSpatialTopologyLock,
   SPATIAL_TOPOLOGY_INVARIANTS,
 } from "@/lib/spatial-topology";
-import { renderCreativeRouteDirective } from "@/lib/creative-routing";
+import {
+  renderCreativeRouteDirective,
+  renderCreativeScriptRouteDirective,
+} from "@/lib/creative-routing";
 import {
   compactGenreScriptDirective,
   compactGenreStoryboardDirective,
@@ -748,7 +751,7 @@ function affiliateClipDurations(input: StoryboardGenerationInput): number[] | nu
 }
 
 export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): string {
-  const creativeRouteDirective = renderCreativeRouteDirective(input);
+  const creativeRouteDirective = renderCreativeScriptRouteDirective(input);
   const segmentCount = input.segment_count ?? 5;
   const affiliateDurations = affiliateClipDurations(input);
   const goal = input.video_goal ?? "marketing_general";
@@ -2589,7 +2592,7 @@ const VEO_CAMERA_FOCUS_RULE =
 // same character's voice drift clip-to-clip. The per-row voice_personality is
 // the precise source of truth; this note only states the binding rules once.
 const VEO_LIP_SYNC_DIRECTOR_NOTE =
-  "HARD VOICE BINDING: resolve every line from that row's dialogue.speaker_id + dialogue.speaker_name + verbatim dialogue.voice_personality — these override character order, camera subject, visible face and reference image, and stay identical for the same named speaker in every clip. Language, region and dialect come only from the locked project context or character voice; there is no default accent. Only that speaker's lips and jaw move during their start_sec/end_sec; every listener stays silent, reacting through eyes, brows, breathing and posture. Voiceover is off-screen and moves no visible mouth. One voice at a time — each line spoken EXACTLY ONCE, no swap, overlap, echo, repetition, ad-lib or accent drift. CRITICAL — NO LINE LOOPING: speak each line one single time only; if the clip runs longer than the speech, hold NATURAL SILENCE with continued micro-action and reaction — NEVER repeat, re-say, echo or loop a line (or restart the exchange) to fill the remaining seconds.";
+  "HARD VOICE BINDING: dialogue.speaker_id + dialogue.speaker_name + verbatim dialogue.voice_personality own each line regardless of character order, camera subject or visible face. For delivery=on_screen, only the named speaker's lips/jaw move during start_sec–end_sec; listeners keep mouths naturally closed and react through eyes, breath and posture. For delivery=off_screen or voiceover, NO visible mouth moves and the voice never transfers to the filmed person. One voice at a time; each line EXACTLY ONCE—no swap, overlap, ad-lib, echo, accent drift or looping. After speech, hold natural silence and continued micro-reaction.";
 
 interface VeoJsonOptions {
   aspectRatio: string;
@@ -3581,7 +3584,7 @@ export function buildVeoJson(
         angle: camera.angle,
         movement: actionDrama
           ? `${scrub(cameraMovement)}. ACTION CAMERA: preserve screen direction and readable body geography at real-time speed; hold a supported wide or medium-wide view through attack, defence and contact, absorb force with a controlled operator reaction, then tighten only on the visible consequence. No cuts, frantic orbit, glamour pose, hidden impact or calm slow drift that weakens danger.`
-          : `${scrub(cameraMovement)}. One smooth move or hold; no cuts or separate camera clock. PACING SAFETY VALVE: pace everything calmly across the FULL clip at real human speed — NEVER rush, whip, jerk or fast-forward a move or an action to catch up with the plan; if a move or beat cannot happen calmly within its time window, make it SMALLER or simply HOLD the current framing (a still, well-composed frame beats a hurried one). The camera settles and holds on whoever is speaking and only drifts during silent gaps between lines.`,
+          : `${scrub(cameraMovement)}. One smooth move or hold; no cuts or separate camera clock. PACING SAFETY VALVE: pace everything calmly across the FULL clip at real human speed — NEVER rush, whip, jerk or fast-forward a move or an action to catch up with the plan; if a move or beat cannot happen calmly within its time window, make it SMALLER or simply HOLD the current framing (a still, well-composed frame beats a hurried one). Hold the explicitly declared visual subject: speaker, silent listener reaction or both. Never pan to the speaker merely because they talk; when the named speaker is off-screen, the visible listener keeps their mouth naturally closed.`,
         focus: VEO_CAMERA_FOCUS_RULE,
       },
       scene_action: {

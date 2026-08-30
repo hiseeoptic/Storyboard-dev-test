@@ -57,6 +57,26 @@ test("script treatment provenance reaches technical planning", () => {
   assert.match(actionSource, /source_script_revision: sourceScriptRevision/);
 });
 
+test("camera selections cannot alter the Stage-1 dialogue-writing prompt", () => {
+  const promptSource = readFileSync(new URL("../../prompts/storyboard-breakdown.ts", import.meta.url), "utf8");
+  const routingSource = readFileSync(new URL("../creative-routing/compiler.ts", import.meta.url), "utf8");
+  assert.match(promptSource, /const creativeRouteDirective = renderCreativeScriptRouteDirective\(input\)/);
+  const isolatedRoute = routingSource.match(
+    /export function renderCreativeScriptRouteDirective[\s\S]*?(?=export function renderCreativeVisualDirective)/
+  )?.[0] ?? "";
+  assert.match(isolatedRoute, /CREATIVE SCRIPT ROUTE — CAMERA-ISOLATED/);
+  assert.match(isolatedRoute, /Camera\/directing profiles are intentionally absent/i);
+  assert.doesNotMatch(isolatedRoute, /DIRECTING_LAWS|REAL_WORLD_MATERIAL_LAWS|directing_profiles/);
+});
+
+test("camera may hold a silent listener without transferring lip-sync", () => {
+  const promptSource = readFileSync(new URL("../../prompts/storyboard-breakdown.ts", import.meta.url), "utf8");
+  assert.match(promptSource, /Never pan to the speaker merely because they talk/);
+  assert.match(promptSource, /visible listener keeps their mouth naturally closed/);
+  assert.match(promptSource, /delivery=off_screen or voiceover, NO visible mouth moves/);
+  assert.doesNotMatch(promptSource, /camera settles and holds on whoever is speaking/i);
+});
+
 test("creative writing has no fixed word quota while delivery remains timed", () => {
   const promptSource = readFileSync(
     new URL("../../prompts/storyboard-breakdown.ts", import.meta.url),

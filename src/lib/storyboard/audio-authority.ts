@@ -129,9 +129,9 @@ export function normalizeSegmentAudioAuthority(
 }
 
 /**
- * Final non-AI speaker/camera binding pass. It deliberately does not inspect
- * dialogue timing, so one overloaded scene can no longer abort binding for all
- * following scenes. Existing valid bindings and camera intent remain intact.
+ * Final non-AI speaker/camera binding pass. It never edits dialogue text or
+ * camera composition. A named speaker missing from every camera beat becomes
+ * off-screen so the visible listener can react without inheriting lip-sync.
  */
 export function bindOnScreenSpeakersToCameraBeats(
   breakdown: Pick<StoryboardGenerationOutput, "segments">
@@ -167,25 +167,11 @@ export function bindOnScreenSpeakersToCameraBeats(
         continue;
       }
 
-      if (!segment.beats?.length) {
-        segment.beats = [
-          {
-            beat: `${turn.speaker} speaks on screen while the listener reacts naturally`,
-            camera: `[MEDIUM] ${turn.speaker} clearly visible and identifiable`,
-          },
-        ];
-        turn.camera_beat = 1;
-        repaired += 1;
-        continue;
-      }
-
-      const fallbackIndex = Math.min(turnIndex, segment.beats.length - 1);
-      const fallback = segment.beats[fallbackIndex]!;
-      fallback.camera = `${clean(fallback.camera)}; ${turn.speaker} clearly visible on screen while speaking`.replace(
-        /^;\s*/,
-        ""
-      );
-      turn.camera_beat = fallbackIndex + 1;
+      // Preserve the director's listener/reaction composition. If no camera
+      // beat actually shows the named speaker, their line is off-screen; never
+      // pull them into frame or transfer lip-sync to the visible listener.
+      turn.delivery = "off_screen";
+      turn.camera_beat = undefined;
       repaired += 1;
     }
   }

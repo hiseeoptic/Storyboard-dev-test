@@ -117,10 +117,21 @@ test("display segment labels are repaired to Context IR audio authority", () => 
   assert.equal(breakdown.segments[1]!.transition_in?.to_location_id, "home");
 });
 
-test("every on-screen speaker receives a beat that explicitly shows them", () => {
+test("listener framing stays intact and an unseen speaker becomes off-screen", () => {
   const breakdown = fixture();
+  const originalText = breakdown.segments.flatMap((segment) =>
+    (segment.dialogue_lines ?? []).map((turn) => turn.text)
+  );
   assert.equal(bindOnScreenSpeakersToCameraBeats(breakdown), 2);
-  assert.equal(breakdown.segments[0]!.dialogue_lines?.[0]?.camera_beat, 1);
-  assert.match(breakdown.segments[0]!.beats[0]!.camera, /Minh clearly visible/);
+  assert.equal(breakdown.segments[0]!.dialogue_lines?.[0]?.delivery, "off_screen");
+  assert.equal(breakdown.segments[0]!.dialogue_lines?.[0]?.camera_beat, undefined);
+  assert.equal(breakdown.segments[0]!.beats[0]!.camera, "[MEDIUM] Lan");
+  assert.equal(breakdown.segments[1]!.dialogue_lines?.[0]?.delivery, "on_screen");
   assert.equal(breakdown.segments[1]!.dialogue_lines?.[0]?.camera_beat, 1);
+  assert.deepEqual(
+    breakdown.segments.flatMap((segment) =>
+      (segment.dialogue_lines ?? []).map((turn) => turn.text)
+    ),
+    originalText
+  );
 });

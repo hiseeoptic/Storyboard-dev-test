@@ -682,7 +682,7 @@ function normalizeDialogue(
     // Bind every on-screen voice to one concrete storyboard camera beat. The
     // beat itself must name that speaker; otherwise the compiled prompt cannot
     // prove who is visible while the line is delivered.
-    turns = turns.map((turn, turnIndex) => {
+    turns = turns.map((turn) => {
       if (!turn.speaker || turn.delivery !== "on_screen") {
         return { ...turn, camera_beat: undefined };
       }
@@ -707,24 +707,11 @@ function normalizeDialogue(
         return { ...turn, camera_beat: inferredIndex + 1 };
       }
 
-      // Mechanical compatibility repair: if the model forgot to name the
-      // on-screen speaker in any beat, bind the turn to a real beat and append
-      // a visibility clause. Dialogue text, action and camera intent remain
-      // untouched; the validator now has explicit proof for lip-sync.
-      if (!seg.beats?.length) {
-        seg.beats = [{
-          beat: `${turn.speaker} speaks on screen while the listener reacts naturally`,
-          camera: `[MEDIUM] ${turn.speaker} clearly visible and identifiable`,
-        }];
-        return { ...turn, camera_beat: 1 };
-      }
-      const fallbackIndex = Math.min(turnIndex, seg.beats.length - 1);
-      const fallbackBeat = seg.beats[fallbackIndex]!;
-      fallbackBeat.camera = `${fallbackBeat.camera ?? ""}; ${turn.speaker} clearly visible on screen while speaking`.replace(/^;\s*/, "");
-      return {
-        ...turn,
-        camera_beat: fallbackIndex + 1,
-      };
+      // Camera coverage and dialogue ownership are independent. When no beat
+      // shows the named speaker, keep the listener/reaction framing intact and
+      // render the named voice off-screen. Never pull the speaker into frame or
+      // let the visible listener inherit their lip-sync.
+      return { ...turn, delivery: "off_screen", camera_beat: undefined };
     });
 
     // Only an on-screen delivery requires the speaker's face in the camera
@@ -3355,6 +3342,16 @@ export async function generateBoardImage(params: {
       // Clean single first-frame (veoflow format) at the user's real aspect.
       // CAST-SYNC: attach ONLY the present characters' photos + cast block.
       const kfRefs = buildBoardRefs(ctx, seg.characters_in_scene, cookingRefOptions);
+      const firstBeatOnScreenSpeaker = (seg.dialogue_lines ?? []).find(
+        (turn) =>
+          turn.delivery !== "off_screen" &&
+          turn.delivery !== "voiceover" &&
+          (turn.camera_beat ?? 1) === 1
+      );
+      const legacyOnScreenSpeaker = (seg.dialogue_lines?.length ?? 0) === 0 && seg.dialogue?.trim()
+        ? seg.speaker?.trim() || null
+        : null;
+      const keyframeSpeaker = firstBeatOnScreenSpeaker?.speaker?.trim() || legacyOnScreenSpeaker;
       const r = await generateKeyframe({
         segmentNumber: seg.segment_number,
         sceneDescription: spatiallyLockedFirstFrame,
@@ -3375,8 +3372,10 @@ export async function generateBoardImage(params: {
         sceneBible: ctx.sceneBible,
         style: ctx.boardStyle,
         preserveRealFace: ctx.preserveRealFace,
-        hasDialogue: !!(seg.dialogue && seg.dialogue.trim()),
-        speakerName: seg.speaker,
+        // The keyframe represents beat 1. Do not rotate a listener-reaction
+        // frame toward an off-screen speaker merely because audio is present.
+        hasDialogue: Boolean(keyframeSpeaker),
+        speakerName: keyframeSpeaker,
         environmentRef: seg.environment_ref,
         referenceImages: ctx.canChain && kfRefs.images.length > 0 ? kfRefs.images : undefined,
         references: ctx.canChain && kfRefs.descriptors.length > 0 ? kfRefs.descriptors : undefined,

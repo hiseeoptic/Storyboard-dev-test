@@ -242,6 +242,32 @@ ROUTING LAWS
 ${bulletLines(allLaws)}${route.resolution_notes.length ? `\nRESOLUTION NOTES\n${bulletLines(route.resolution_notes)}` : ""}`;
 }
 
+/** Script authorship deliberately stops before camera/directing selection.
+ * Camera is a Stage-2 production concern and must never change dialogue density,
+ * wording, turn ownership or the dramatic exchange selected by Stage 1. */
+export function renderCreativeScriptRouteDirective(
+  inputOrRoute: StoryboardGenerationInput | CreativeRoute
+): string {
+  const route = "story_idea" in inputOrRoute ? resolveCreativeRoute(inputOrRoute) : inputOrRoute;
+  const laws = [
+    ...GOAL_LAWS[route.audience_goal],
+    ...FORMAT_LAWS[route.story_format],
+    ...INTERPRETATION_LAWS[route.visual_interpretation],
+    ...(TOPIC_LAWS[route.topic] ?? []),
+  ];
+  return `CREATIVE SCRIPT ROUTE — CAMERA-ISOLATED
+1. Topic: ${route.topic}
+2. Audience outcome: ${route.audience_goal}
+3. Story format: ${route.story_format}
+4. Interpretation: ${route.visual_interpretation}
+5. Character medium: ${route.effective_character_representation}
+
+SCRIPT ROUTING LAWS
+- These authorities govern premise, structure, causal meaning and character performance only.
+- Camera/directing profiles are intentionally absent at this stage. They must not change dialogue wording, number of turns, speaker ownership, subtext, reply structure or ending. Stage 2 will translate the approved script into camera coverage.
+${bulletLines(laws)}`;
+}
+
 export function renderCreativeVisualDirective(inputOrRoute: StoryboardGenerationInput | CreativeRoute): string {
   const route = "story_idea" in inputOrRoute ? resolveCreativeRoute(inputOrRoute) : inputOrRoute;
   const profiles = route.directing_profiles?.length ? route.directing_profiles : [route.directing_profile];
