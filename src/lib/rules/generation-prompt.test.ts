@@ -130,3 +130,14 @@ test("generation compiler rejects bounded edit packets", () => {
   const repair = buildActiveStoryboardRulePacket({}, { stage: "repair" });
   assert.throws(() => compileGenerationSystemPrompt(repair), /cannot compile stage=repair/);
 });
+
+test("compact generation prompt keeps the filter-safe (bedroom / non-sexual) staging law", () => {
+  const prompt = compileGenerationSystemPrompt(
+    buildActiveStoryboardRulePacket({}, { stage: "generation" })
+  ).prompt;
+  assert.match(prompt, /FILTER-SAFE STAGING/);
+  assert.match(prompt, /bedroom/i);
+  assert.match(prompt, /fully and modestly dressed/i);
+  assert.match(prompt, /never lingerie/i);
+  assert.match(prompt, /never dilutes non-intimate genres/i);
+});
