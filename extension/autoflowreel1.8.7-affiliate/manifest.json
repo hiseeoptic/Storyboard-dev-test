@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFlow Reel — Bulk AI Video Automation",
-  "version": "1.8.10",
+  "version": "1.8.11",
   "description": "Bulk-automate AI video & image creation on Google Flow: queue prompts, storyboard, auto-run. Not affiliated with Google.",
   "permissions": [
     "storage",

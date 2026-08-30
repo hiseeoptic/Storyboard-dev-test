@@ -1923,7 +1923,7 @@
           //   lỗi và KHÔNG phải "manifest cũ": bước dựng video sẽ dùng chính ẢNH BOARD
           //   của shot làm khung đầu (board bản mới là 1 ảnh scene sạch, không phải lưới
           //   nhiều panel). Video VẪN được dựng bình thường — không hề bị giữ lại.
-          post({ via: 'log', kind: 'log', message: '  🎞️ Shot không có video_keyframe_prompt riêng — dùng ảnh board làm khung đầu cho video (bình thường).' });
+          post({ via: 'log', kind: 'log', message: '  🎞️ Shot dùng ẢNH KEYFRAME (scene sạch) làm khung đầu cho video — đúng chuẩn, không cần keyframe riêng.' });
         }
 
         // 4) END keyframe: use only canonical character/product/location refs.
@@ -2131,19 +2131,22 @@
           const text = await res.text().catch(() => '');
           return { ok: res.ok, status: res.status, text };
         };
-        // Reference mode accepts at most three asset images. The normal path
-        // keeps BOARD as the actual startImage and attaches up to three extra
-        // product/character/location refs. If that Flow route is unavailable,
-        // retry r2v with BOARD + two extras (three total), then finally BOARD-only
-        // with an explicit warning. Never drop refs silently.
-        const refImageIds = [startImageMediaId, ...refIds.filter((id) => id && id !== startImageMediaId)].slice(0, 3);
-        const sendRef = () => postVideo('reference', {
+        // Reference-mode (r2v) fallback. The PRIMARY path above keeps BOARD as the
+        // startImage and attaches up to three extra product/character/location refs
+        // (four images) so a two-person scene keeps its location lock. When that
+        // Flow route is rejected we retry r2v here, trying BOARD + THREE extras
+        // first (so the location sheet — ordered LAST in refIds — still rides in),
+        // then BOARD + TWO if Flow caps reference mode at three images, then finally
+        // BOARD-only. Never drop refs silently.
+        const buildRefImageIds = (cap) =>
+          [startImageMediaId, ...refIds.filter((id) => id && id !== startImageMediaId)].slice(0, cap);
+        const sendRef = (cap) => postVideo('reference', {
           aspectRatio: aspectEnum,
           seed: Math.floor(Math.random() * 1000000),
           metadata: {},
           textInput: { structuredPrompt: { parts: [{ text: promptText }] } },
           videoModelKey: videoModelKey('reference', model, it.durationSeconds || d.duration),
-          referenceImages: refImageIds.map((id) => ({ mediaId: id, imageUsageType: 'IMAGE_USAGE_TYPE_ASSET' })),
+          referenceImages: buildRefImageIds(cap).map((id) => ({ mediaId: id, imageUsageType: 'IMAGE_USAGE_TYPE_ASSET' })),
         });
         // Đường cũ: keyframe = khung đầu (i2v). Transform shot có khung CUỐI → nội suy.
         const supplementalRefIds = refIds
@@ -2176,11 +2179,22 @@
           r = await sendStart(true);
         }
         if (!r.ok && supplementalRefIds.length && !isQuotaError(r.text)) {
-          post({ via: 'log', kind: 'log', message: `  ↩️ Flow từ chối START+ref (HTTP ${r.status}) — thử r2v với BOARD + tối đa 2 ref, không bỏ ref âm thầm.` });
-          r = await sendRef();
+          post({ via: 'log', kind: 'log', message: `  ↩️ Flow từ chối START+ref (HTTP ${r.status}) — thử r2v BOARD + 3 ref (2 nhân vật + bối cảnh), không bỏ ref âm thầm.` });
+          r = await sendRef(4);
           if (!r.ok && r.status === 429) {
             await new Promise((res2) => setTimeout(res2, 30000));
-            r = await sendRef();
+            r = await sendRef(4);
+          }
+          // Flow reference mode may cap at three images (BOARD + 2). If BOARD+3 is
+          // rejected, retry BOARD+2 so the two character identities still lock (the
+          // location then rides inside the BOARD, generated with its plate baked in).
+          if (!r.ok && !isQuotaError(r.text)) {
+            post({ via: 'log', kind: 'log', message: `  ↩️ r2v BOARD+3 bị từ chối (HTTP ${r.status}) — hạ xuống BOARD+2 ref (giữ 2 nhân vật; bối cảnh nằm trong BOARD).` });
+            r = await sendRef(3);
+            if (!r.ok && r.status === 429) {
+              await new Promise((res2) => setTimeout(res2, 30000));
+              r = await sendRef(3);
+            }
           }
         }
         if (!r.ok && supplementalRefIds.length && !isQuotaError(r.text)) {
