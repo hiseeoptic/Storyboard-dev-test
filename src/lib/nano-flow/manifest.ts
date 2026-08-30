@@ -986,6 +986,8 @@ function buildLocationSheetViews(params: {
       "The SCRIPT is the semantic authority for what this place contains. If a LOCATION PHOTO is attached, preserve its actual geometry and landmarks while rendering it in the locked project medium. If NO photo is attached, build the complete location from the setting/scenery description below. Never replace an exterior with a room, an interior with a blank canvas, or a specific scripted place with a generic template.",
     layout:
       "A SINGLE full-bleed 16:9 WIDE establishing frame showing the complete terrain/architecture, boundaries, circulation route, fixed landmarks, support surfaces and spatial anchors. No panels, grid, divider, collage, inset, labels or captions.",
+    richness:
+      "Render a fully realized, lived-in, cinematic space with rich production-design detail appropriate to the story's culture, era and mood: layered furnishings, decor, textiles, believable everyday objects and gentle clutter, plants or props, real surface texture, patina and wear, atmospheric depth (soft haze, motivated light falloff, gentle layered shadows) and a clear foreground / midground / background. Fill the frame like a real film set with depth and character — never a bare, empty, sparse, showroom-clean or generic template. Add this detail only in ways faithful to the scripted place; keep the frame free of people, product and text.",
     setting: setting || "the scripted location",
     scenery: scenery && scenery !== setting ? scenery : undefined,
     lighting: lighting || undefined,
