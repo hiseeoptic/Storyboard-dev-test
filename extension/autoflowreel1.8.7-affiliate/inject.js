@@ -1560,21 +1560,24 @@
     // Prompt JSON cho ảnh TOÀN THÂN: danh tính (mặt/tóc/vóc dáng) phải theo ĐÚNG
     // ẢNH THAM CHIẾU người dùng nạp; trang phục theo lựa chọn kịch bản. Dạng JSON
     // cho Nano Banana kết quả bám sát hơn (theo yêu cầu user).
-    // 16:9 TRIPLE-VIEW character-board sheet (user request): ONE landscape image
-    // with THREE framings of the SAME person in the SAME locked outfit — a sharp
-    // chest-up close-up, a 3/4-turned full-body, and a 90° SIDE-PROFILE waist-up.
-    // The close-up restores face fidelity, the full-body pins the complete outfit,
-    // and the side profile locks the head/body silhouette for consistent turns.
+    // 16:9 SPLIT character-board sheet (user layout): the image is divided in half.
+    // LEFT half  = ONE full-body shot in the locked outfit (head to shoes).
+    // RIGHT half = TWO head-only cells — a straight FRONTAL face close-up and a
+    //              90° SIDE PROFILE from the NECK UP. The profile is head-only (no
+    //              torso): the earlier waist-up profile invented an at-angle body
+    //              that drifted the generated identity away from the uploaded face,
+    //              so keyframes stopped matching the real character. Head-only keeps
+    //              the profile a pure face-angle reference.
     const sheetPromptFor = (name, outfit) => JSON.stringify({
       type: 'photoreal_character_board_sheet',
-      layout: 'A single 16:9 landscape character reference sheet holding THREE framings of the SAME person, side by side against one continuous studio background: LEFT = a chest-up close-up, face sharp and fully lit, showing the upper garment clearly; MIDDLE = a 3/4-turned full-body, whole body from head to shoes visible, standing relaxed; RIGHT = a 90° SIDE PROFILE waist-up (a pure side view of the head and upper body, nose pointing to the side).',
-      subject: name + ' — the identical individual in all three framings; same face, same outfit, same grooming in each.',
-      identity_authority: 'Match the face, hair, skin and body build of the ATTACHED reference photo EXACTLY in ALL THREE framings — this is the identity source of truth; do not reinterpret, age or beautify, and keep the close-up, the full-body and the side profile unmistakably the same person.',
+      layout: 'A single 16:9 landscape character reference sheet split into two halves against one continuous plain studio background, with a thin clean divider between every cell and NO text or numbers. LEFT HALF: ONE 3/4-to-front FULL-BODY shot of the person — the whole body from head to shoes, standing relaxed, wearing the complete locked outfit. RIGHT HALF: divided into two equal stacked cells, each a HEAD-ONLY portrait (head and neck only, no torso, no outfit below the collar): the TOP cell is a straight-on FRONTAL face close-up with the face filling the cell; the BOTTOM cell is a 90° SIDE PROFILE of the SAME head from the neck up (a pure left-or-right side view, nose pointing to the side).',
+      subject: name + ' — the identical individual in every cell; same face, same hair, same grooming. Only the full-body cell shows clothing below the neck.',
+      identity_authority: 'The straight FRONTAL face close-up is the identity anchor: copy the face, hair, skin and features of the ATTACHED reference photo EXACTLY — do not reinterpret, age, slim or beautify. The 90° profile is the SAME head merely rotated to the side, inventing no new facial feature. The full-body cell carries that identical face. Every cell is unmistakably the same real person from the reference photo.',
       wardrobe: outfit || ("one practical, concrete everyday outfit that fits this story's setting (" + sceneHint + ') — pick specific garments (top, bottom, footwear)'),
-      wardrobe_rule: 'Dress the person in the wardrobe above and render the COMPLETE outfit clearly and IDENTICALLY in all three framings (same top across every framing, plus bottom and footwear on the full-body). Ignore whatever clothes appear in the reference photo — the reference photo governs only the face/identity, not the clothing.',
+      wardrobe_rule: 'ONLY the full-body cell wears the complete locked outfit (top, bottom, footwear), rendered clearly. The two head-only cells show just the head and neck (a collar may show); do not put the outfit on them. Ignore whatever clothes appear in the reference photo — it governs only the face/identity, never the clothing.',
       background: 'plain light-grey seamless studio background, soft even lighting, no props, no text',
       render: 'Photorealistic, true-to-life skin and fabric textures, sharp focus, ultra-detailed — a real photograph.',
-      negative: 'NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT CGI, different people between framings, mismatched outfit between the framings, cut-off feet on the full-body, on-screen text, watermark',
+      negative: 'NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT CGI, a DIFFERENT face between the cells, a beautified or altered face, a torso or clothing in either head-only cell, mismatched outfit, cut-off feet on the full-body, on-screen text, watermark',
     });
     const ensureWardrobeSheet = async (r) => {
       const name = r.name || 'character';
@@ -1588,7 +1591,8 @@
         post({ via: 'log', kind: 'log', message: `🧍 Tạo ảnh TOÀN THÂN nhân vật "${name}"${outfit ? ` — trang phục: ${outfit.slice(0, 60)}` : ' — trang phục theo bối cảnh'}…` });
         const g = await batchGenerateImages(pid, {
           prompt: sheetPromptFor(name, outfit),
-          // 16:9 landscape so the close-up + full-body sit side by side (user request).
+          // 16:9 landscape so the full-body (left half) and the two head-only cells
+          // (right half: frontal face + 90° profile head) sit side by side (user layout).
           aspect: 'IMAGE_ASPECT_RATIO_LANDSCAPE',
           model,
           imageInputs: [{ imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: photoId }],
@@ -1596,7 +1600,7 @@
         // Đặt tên RIÊNG BIỆT (bảng nhân vật) để KHÔNG lẫn với ảnh cảnh (keyframe)
         // hay ảnh tham chiếu ban đầu người dùng nạp ở ô nhân vật. Kèm trang phục
         // để phân biệt các lần đổi đồ.
-        try { await renameWorkflow(pid, g.workflowId, `👗 BẢNG NHÂN VẬT · ${name}${outfit ? ' — ' + outfit.slice(0, 40) : ''} (mặt cận + toàn thân + nghiêng 90°, KHÔNG phải cảnh)`); } catch (e2) {}
+        try { await renameWorkflow(pid, g.workflowId, `👗 BẢNG NHÂN VẬT · ${name}${outfit ? ' — ' + outfit.slice(0, 40) : ''} (toàn thân + mặt chính diện + đầu nghiêng 90°, KHÔNG phải cảnh)`); } catch (e2) {}
         sheetCache.set(key, g.mediaId);
         post({ via: 'log', kind: 'log', message: `  ✅ sheet "${name}" → ${String(g.mediaId).slice(0, 10)} (dùng làm ref cho các keyframe)` });
         await new Promise((r2) => setTimeout(r2, 1200));
