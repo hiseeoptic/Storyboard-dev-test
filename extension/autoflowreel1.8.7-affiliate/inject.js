@@ -44,7 +44,8 @@
   const traceableApi = (url) => {
     let u = String(url || '').toLowerCase();
     try { u = new URL(u, location.href).href; } catch (e) {}
-    return /aisandbox|googleapis|labs\.google|clients6\.google/.test(u);
+    // Flow mới: mọi thao tác là batchexecute cùng origin flow.google.com.
+    return /aisandbox|googleapis|labs\.google|clients6\.google|flow\.google\.com\/_\/aisandboxangularfrontend\//.test(u);
   };
   // Phân loại request Flow đời mới (Omni Flash) — theo log thực tế:
   //  • generate: flowCreationAgent:streamChat (tạo video qua creation agent)
@@ -260,6 +261,8 @@
     } catch (e) {}
     // 2) window.___grecaptcha_cfg.clients → tìm chuỗi giống site key
     if (!gState.siteKey) { try { gState.siteKey = deepFindSiteKey(window.___grecaptcha_cfg, 0); } catch (e) {} }
+    // 3) Flow mới (flow.google.com) — site key công khai của trang (bản 09/2026).
+    if (!gState.siteKey && window.location.hostname === 'flow.google.com') gState.siteKey = '6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV';
     if (gState.siteKey) post({ via: 'log', kind: 'log', message: `🔑 Tìm thấy reCAPTCHA site key trong trang` });
     return gState.siteKey;
   }
@@ -301,8 +304,312 @@
   // Tách data URL → {mime, b64}. imageBytes cần base64 THUẦN (bỏ tiền tố data:).
   const parseDataUrl = (u) => { const m = /^data:([^;]+);base64,([\s\S]*)$/.exec(u || ''); return m ? { mime: m[1], b64: m[2] } : { mime: 'image/png', b64: (u || '') }; };
 
+  // ============================================================
+  // FLOW MỚI (flow.google.com, Google chuyển từ 09/2026)
+  // Flow cũ (labs.google/fx) gọi REST aisandbox-pa.googleapis.com bằng
+  // "Authorization: Bearer ya29…". Flow mới (Angular) KHÔNG còn Bearer nữa — mọi
+  // thao tác đi qua batchexecute cùng origin, xác thực bằng cookie + token phiên
+  // "at" (WIZ_global_data.SNlM0e). Vì vậy request cũ bị 401 "missing required
+  // authentication credential" dù vẫn đăng nhập. Payload dạng mảng theo vị trí,
+  // đối chiếu với bản bắt thực tế của dự án mã nguồn mở flowkit (MIT, 09/2026).
+  //   ogiZ0b tạo ảnh · maseQ upload ảnh · eb1hJf video khung đầu · MZZa6b video
+  //   từ ref · jwpduf poll · Zzl0ze danh sách media · as29s lấy URL · jHPbke tạo project
+  // ============================================================
+  const FB_PATH = '/_/AiSandboxAngularFrontend/data/batchexecute';
+  const FB_CAPTCHA = '__AF_CAPTCHA_SLOT__';
+  const FB_SURFACE = 22;
+  const FB_IMAGE_ASPECT = {
+    IMAGE_ASPECT_RATIO_SQUARE: 1,
+    IMAGE_ASPECT_RATIO_PORTRAIT: 2,
+    IMAGE_ASPECT_RATIO_LANDSCAPE: 3,
+    IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR: 4,
+    IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE: 5,
+  };
+  // Video dùng mã KHÁC ảnh: 1 = dọc, 2 = ngang.
+  const fbVideoAspect = (a) => (/portrait|9:16/i.test(String(a || '')) ? 1 : 2);
+  const fbUuid = () => uuid4().toUpperCase();
+  const fbWiz = () => window.WIZ_global_data || {};
+  function isNewFlowHost() {
+    try { return window.location.hostname === 'flow.google.com'; } catch (e) { return false; }
+  }
+  // Trang Flow mới (hoặc trang có token phiên WIZ mà không có Bearer) → dùng batchexecute.
+  function useBatchTransport() {
+    return isNewFlowHost() || (!gAuth && !!fbWiz().SNlM0e);
+  }
+  function fbContext(pid, assetId) {
+    return [null, FB_SURFACE, null, null, assetId || null, pid || null, null, null, null, null, [FB_CAPTCHA, 1]];
+  }
+  function fbEnvelope(rpcid, inner) {
+    return JSON.stringify([[[rpcid, JSON.stringify(inner), null, 'generic']]]);
+  }
+  // Tách các mảng JSON cấp cao nhất trong phản hồi ")]}'\n<len>\n[...]\n<len>\n[...]".
+  function fbJsonChunks(text) {
+    const out = [];
+    const s = String(text || '');
+    let i = 0;
+    while (i < s.length) {
+      const start = s.indexOf('[', i);
+      if (start === -1) break;
+      let depth = 0, inStr = false, esc = false, end = -1;
+      for (let j = start; j < s.length; j++) {
+        const c = s[j];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (c === '\\') esc = true;
+          else if (c === '"') inStr = false;
+          continue;
+        }
+        if (c === '"') inStr = true;
+        else if (c === '[') depth++;
+        else if (c === ']') { depth--; if (depth === 0) { end = j; break; } }
+      }
+      if (end === -1) break;
+      try { out.push(JSON.parse(s.slice(start, end + 1))); } catch (e) {}
+      i = end + 1;
+    }
+    return out;
+  }
+  function fbParse(text) {
+    const results = [];
+    for (const chunk of fbJsonChunks(text)) {
+      if (!Array.isArray(chunk)) continue;
+      for (const entry of chunk) {
+        if (!Array.isArray(entry) || entry[0] !== 'wrb.fr') continue;
+        const payload = entry[2];
+        if (payload == null) { results.push({ rpcid: entry[1], error: entry.length > 5 ? entry[5] : true }); continue; }
+        let data = payload;
+        if (typeof payload === 'string') { try { data = JSON.parse(payload); } catch (e) { data = payload; } }
+        results.push({ rpcid: entry[1], data });
+      }
+    }
+    return results;
+  }
+  // Mã lỗi gRPC trong ô lỗi batchexecute → chữ dễ hiểu + giữ nguyên tên lỗi để
+  // các bộ lọc cũ (quota/reCAPTCHA) vẫn nhận ra.
+  function fbErrorText(rpcid, err) {
+    const raw = JSON.stringify(err);
+    const code = Array.isArray(err) ? err[0] : null;
+    const names = { 3: 'INVALID_ARGUMENT', 5: 'NOT_FOUND', 7: 'PERMISSION_DENIED', 8: 'RESOURCE_EXHAUSTED', 13: 'INTERNAL', 14: 'UNAVAILABLE', 16: 'UNAUTHENTICATED' };
+    return `${rpcid} lỗi ${names[code] || 'code ' + code}: ${raw.slice(0, 300)}`;
+  }
+  function fbRpcError(rpcid, err) {
+    const e = new Error(fbErrorText(rpcid, err));
+    e.fbCode = Array.isArray(err) ? err[0] : null;
+    e.fbRaw = JSON.stringify(err);
+    return e;
+  }
+  // Gọi 1 RPC batchexecute ngay trong trang (cookie + "at" của phiên đang đăng nhập).
+  //   opts.captcha: action reCAPTCHA cần mint (IMAGE_GENERATION / VIDEO_GENERATION)
+  //   opts.raw: trả nguyên văn bản phản hồi (dùng cho danh sách media rất lớn)
+  async function fbCall(rpcid, inner, opts = {}) {
+    const wiz = fbWiz();
+    const at = wiz.SNlM0e;
+    if (!at) throw new Error('Trang Flow chưa có token phiên ("at") — F5 trang flow.google.com, kiểm tra đã đăng nhập rồi thử lại.');
+    let freq = fbEnvelope(rpcid, inner);
+    if (opts.captcha) {
+      const token = await mintRecaptcha(opts.captcha);
+      freq = freq.split(FB_CAPTCHA).join(String(token || ''));
+    }
+    const hl = (document.documentElement.lang || navigator.language || 'en').split('-')[0];
+    const reqid = Math.floor(Math.random() * 900000) + 100000;
+    const url = `${FB_PATH}?rpcids=${encodeURIComponent(rpcid)}`
+      + `&source-path=${encodeURIComponent(window.location.pathname || '/')}`
+      + `&bl=${encodeURIComponent(wiz.cfb2h || '')}&f.sid=${encodeURIComponent(wiz.FdrFJe || '')}`
+      + `&hl=${encodeURIComponent(hl)}&_reqid=${reqid}&rt=c`;
+    const res = await fetchWithTimeout(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'X-Same-Domain': '1' },
+      body: new URLSearchParams({ 'f.req': freq, at }).toString(),
+    }, opts.timeoutMs || 90000, rpcid);
+    const text = await res.text().catch(() => '');
+    if (!res.ok) {
+      const hint = (res.status === 401 || res.status === 403) ? ' — phiên Flow hết hạn/không hợp lệ: F5 trang flow.google.com và đăng nhập lại.' : '';
+      throw new Error(`${rpcid} HTTP ${res.status}: ${text.slice(0, 200)}${hint}`);
+    }
+    if (opts.raw) return text;
+    const hit = fbParse(text).find((r) => r.rpcid === rpcid);
+    if (!hit) throw new Error(`${rpcid}: phản hồi không có dữ liệu (${text.slice(0, 160)})`);
+    if (hit.error !== undefined) throw fbRpcError(rpcid, hit.error);
+    return hit.data;
+  }
+  function fbWalkStrings(node, cb) {
+    if (typeof node === 'string') { cb(node); return; }
+    if (Array.isArray(node)) node.forEach((x) => fbWalkStrings(x, cb));
+  }
+  function fbFindUrl(payload, kind) {
+    let found = '';
+    fbWalkStrings(payload, (s) => { if (!found && /^https:\/\//.test(s) && s.indexOf('flow-content.google/' + kind + '/') !== -1) found = s; });
+    return found;
+  }
+  function fbExplainCaptchaError(e) {
+    const msg = String((e && e.message) || e || '');
+    if (/UNUSUAL_ACTIVITY|reCAPTCHA evaluation failed/i.test(msg)) {
+      post({ via: 'log', kind: 'log', message: '🛑 Flow từ chối reCAPTCHA (PUBLIC_ERROR_UNUSUAL_ACTIVITY): Google đánh giá phiên này là tự động. Hãy giảm tốc độ (tăng độ trễ), F5 trang Flow, đăng nhập lại; nếu vẫn lỗi thì Flow đang chặn reCAPTCHA do extension tạo — chỉ còn cách thao tác tay trên Flow.' });
+      return true;
+    }
+    return false;
+  }
+
+  // Tạo 1 ảnh (Nano Banana) — trả { mediaId, workflowId: '', url }.
+  //   Trên Flow mới không còn workflow để đổi tên, nên workflowId để trống.
+  async function fbGenerateImage(pid, opts) {
+    const refs = (Array.isArray(opts.imageInputs) ? opts.imageInputs : [])
+      .map((x) => (typeof x === 'string' ? x : (x && (x.name || x.mediaId))))
+      .filter(Boolean);
+    const ctx = fbContext(pid, null);
+    const item = [
+      null, null,
+      refs.length ? refs.map((id) => [id, null, null, null, 1]) : null, // 1 = reference image
+      Math.floor(Math.random() * 1e9) + 1,
+      FB_IMAGE_ASPECT[imageAspectRatioKey(opts.aspect)] || 3,
+      opts.model || 'GEM_PIX_2',
+      null, ctx, [[[String(opts.prompt || '')]]],
+      null, null, null, null, fbUuid(),
+    ];
+    const data = await fbCall('ogiZ0b', [null, [item], 1, ctx, [fbUuid()]], { captcha: 'IMAGE_GENERATION', timeoutMs: 150000 });
+    const url = fbFindUrl(data, 'image');
+    const mediaId = url ? url.split('/image/')[1].split('?')[0] : '';
+    if (!mediaId) throw new Error('ogiZ0b: phản hồi không có ảnh (mediaId)');
+    return { mediaId, workflowId: '', url, raw: data };
+  }
+  async function fbGenerateImageWithRetry(pid, opts) {
+    try {
+      return await fbGenerateImage(pid, opts);
+    } catch (e) {
+      // [8] trên RPC ảnh thường là nghẽn tạm thời — nghỉ rồi thử lại đúng 1 lần.
+      if (e && e.fbCode === 8) {
+        post({ via: 'log', kind: 'log', message: '  ⏳ Flow báo bận/hết lượt tạm (RESOURCE_EXHAUSTED) — nghỉ 35s rồi thử lại 1 lần…' });
+        await new Promise((r) => setTimeout(r, 35000));
+        return await fbGenerateImage(pid, opts);
+      }
+      if (/UNUSUAL_ACTIVITY|reCAPTCHA/i.test(String(e && e.message))) {
+        post({ via: 'log', kind: 'log', message: '  ⏳ reCAPTCHA bị từ chối — chờ 5s, mint token mới thử lại 1 lần…' });
+        await new Promise((r) => setTimeout(r, 5000));
+        try { return await fbGenerateImage(pid, opts); }
+        catch (e2) { fbExplainCaptchaError(e2); throw e2; }
+      }
+      throw e;
+    }
+  }
+
+  async function fbUploadImage(pid, dataUrl, fileName) {
+    const { mime, b64 } = parseDataUrl(dataUrl);
+    const data = await fbCall('maseQ', [
+      fbContext(pid, null), b64, mime, 1, null, null, null, null,
+      fileName || 'ref.png', null, fbUuid(), fbUuid(),
+    ], { captcha: 'IMAGE_GENERATION', timeoutMs: 120000 });
+    const rec = Array.isArray(data) && Array.isArray(data[0]) ? data[0] : null;
+    const id = rec && typeof rec[0] === 'string' ? rec[0] : '';
+    if (!id) throw new Error('maseQ: không có mediaId trong phản hồi upload');
+    return id;
+  }
+
+  // Model video trên Flow mới: tên KHÔNG còn hậu tố _portrait/_fl/…; khung hình là ô riêng.
+  function fbVideoModel(mode, model, duration) {
+    const d = [4, 6, 8, 10].includes(Number(duration)) ? Number(duration) : 8;
+    if (model === 'omni_flash') return mode === 'reference' ? `abra_r2v_${d}s` : `abra_i2v_${d}s`;
+    if (model === 'fast' || model === 'quality') return 'veo_3_1_i2v_s_fast_ultra';
+    return 'veo_3_1_i2v_lite';
+  }
+  // Đọc id operation từ phản hồi tạo video ([..., ..., [[opId, projectId, sceneId, status, …]]]).
+  function fbReadOperationId(data) {
+    const isId = (v) => typeof v === 'string' && /^[\w.:/-]{8,}$/.test(v) && !/^https?:/.test(v);
+    for (const slot of [2, 3]) {
+      const recs = Array.isArray(data) ? data[slot] : null;
+      const rec = Array.isArray(recs) ? recs[0] : null;
+      if (Array.isArray(rec) && isId(rec[0])) return rec[0];
+    }
+    let found = '';
+    fbWalkStrings(data, (s) => { if (!found && isId(s)) found = s; });
+    return found;
+  }
+  async function fbSubmitVideo(pid, o) {
+    const textPart = [null, null, [[[String(o.prompt || '')]]]];
+    const tail = [null, null, null, null, fbUuid(), fbUuid()];
+    let rpcid, request;
+    if (o.mode === 'reference') {
+      rpcid = 'MZZa6b';
+      request = [textPart, o.refIds.map((id) => [null, id]), o.modelKey, fbVideoAspect(o.aspect), null, tail];
+    } else {
+      rpcid = 'eb1hJf';
+      request = [textPart, o.modelKey, fbVideoAspect(o.aspect), null, [null, o.startId, null, null, null, [null, null, 1, 1]], tail];
+    }
+    const data = await fbCall(rpcid, [[request], fbContext(pid, null), [fbUuid(), 2]], { captcha: 'VIDEO_GENERATION', timeoutMs: 150000 });
+    const opId = fbReadOperationId(data);
+    if (!opId) throw new Error(`${rpcid}: phản hồi không có operation id`);
+    fbVideoJobs.set(opId, { opId, pid, mediaId: '', url: '', polls: 0 });
+    return opId;
+  }
+
+  // Theo dõi video: operation → (danh sách project) mediaId → (as29s) URL tải.
+  const fbVideoJobs = new Map();
+  function fbFindMediaInListing(text, opId) {
+    const lower = String(text || '').toLowerCase();
+    const at = lower.indexOf(String(opId).toLowerCase());
+    if (at === -1) return '';
+    const win = String(text).slice(Math.max(0, at - 400), at + 800);
+    const m = /null,null,\\*"([0-9a-fA-F-]{36})\\*"/.exec(win);
+    return m ? m[1] : '';
+  }
+  async function fbResolveVideo(id, pid) {
+    let job = fbVideoJobs.get(id);
+    if (!job) {
+      // id lạ (không do lượt này gửi) — có thể đã là mediaId: hỏi thẳng URL trước.
+      job = { opId: id, pid, mediaId: '', url: '', polls: 0 };
+      fbVideoJobs.set(id, job);
+      try {
+        const m = await fbCall('as29s', [id]);
+        const url = fbFindUrl(m, 'video');
+        if (url) { job.mediaId = id; job.url = url; return job; }
+      } catch (e) {}
+    }
+    if (job.url) return job;
+    job.polls++;
+    if (!job.mediaId) {
+      let look = job.polls % 3 === 0;
+      try {
+        const op = await fbCall('jwpduf', [null, null, [[job.opId]]]);
+        const rec = Array.isArray(op) && Array.isArray(op[2]) ? op[2][0] : null;
+        if (Array.isArray(rec)) {
+          if (typeof rec[1] === 'string' && rec[1]) job.pid = rec[1];
+          if (rec[3] === 'CAE') look = true;
+        }
+      } catch (e) { look = true; job.lastError = e.message; }
+      if (look) {
+        const text = await fbCall('Zzl0ze', [`projects/${job.pid || pid}`, null, null, null, [1]], { raw: true, timeoutMs: 120000 });
+        job.mediaId = fbFindMediaInListing(text, job.opId);
+      }
+    }
+    if (job.mediaId && !job.url) {
+      const m = await fbCall('as29s', [job.mediaId]);
+      job.url = fbFindUrl(m, 'video'); // chỉ có /image/ (poster) nghĩa là video chưa ghi xong
+    }
+    return job;
+  }
+
+  async function fbCreateProject(title) {
+    const clean = String(title || 'AutoFlow').replace(/\s+/g, ' ').trim().slice(0, 160) || 'AutoFlow';
+    const data = await fbCall('jHPbke', ['projects/*', [null, [clean]], [null, FB_SURFACE]]);
+    const pid = Array.isArray(data) && typeof data[0] === 'string' ? data[0].replace(/^projects\//, '') : '';
+    if (!pid) throw new Error('jHPbke: không có project id trong phản hồi');
+    return pid;
+  }
+  window.addEventListener('message', async (ev) => {
+    if (ev.source !== window) return;
+    const d = ev.data;
+    if (!d || d.__afCreateProject !== true) return;
+    try {
+      const pid = await fbCreateProject(d.title);
+      post({ via: 'projectCreated', kind: 'projectCreated', reqId: d.reqId, ok: true, pid });
+    } catch (e) {
+      post({ via: 'projectCreated', kind: 'projectCreated', reqId: d.reqId, ok: false, error: e.message });
+    }
+  });
+
   // Upload 1 ảnh → trả mediaId (media.name). Dùng cho ảnh nhân vật/reference.
   async function uploadImageToFlow(pid, dataUrl, fileName) {
+    if (useBatchTransport()) return fbUploadImage(pid, dataUrl, fileName);
     if (gAuthRejected) throw new Error('OAuth Flow đã bị từ chối (401); cần lấy token mới từ thao tác trực tiếp trên Flow.');
     if (!gAuth) throw new Error('Chưa có OAuth Bearer hợp lệ từ Flow; hãy tạo thử 1 ảnh/video trực tiếp trên Flow rồi chạy lại.');
     const { mime, b64 } = parseDataUrl(dataUrl);
@@ -962,9 +1269,32 @@
     return ordered.filter((id) => ready.has(id));
   }
 
+  // Flow mới: chờ từng operation có mediaId + URL video đã ký (flow-content.google).
+  async function fbWaitVideosReady(ids, projectId, rounds = 60, delayMs = 5000) {
+    const ordered = (ids || []).map((x) => String(x || '').replace(/_upsampled$/, '')).filter(Boolean);
+    const pending = new Set(ordered);
+    const urls = {};
+    for (let i = 0; i < rounds && pending.size; i++) {
+      if (i > 0) await sleep(Math.max(delayMs, 8000));
+      for (const id of Array.from(pending)) {
+        try {
+          const job = await fbResolveVideo(id, projectId);
+          if (job && job.url) { urls[id] = job.url; pending.delete(id); }
+        } catch (e) { /* thử vòng sau */ }
+      }
+      post({ via: 'log', kind: 'log', message: `⏳ Chờ render (Flow mới): còn ${pending.size}, xong ${Object.keys(urls).length}…` });
+    }
+    return { ready: ordered.filter((id) => urls[id]), urls };
+  }
+
   async function waitVideosReadyHandler(d) {
     const projectId = String(d.projectId || '').replace(/^projects\//, '');
     const ids = Array.isArray(d.ids) ? d.ids : [];
+    if (useBatchTransport() && projectId && ids.length) {
+      const out = await fbWaitVideosReady(ids, projectId, d.rounds || 60, d.delayMs || 5000);
+      post({ via: 'videosReady', kind: 'videosReady', reqId: d.reqId, ready: out.ready, urls: out.urls });
+      return;
+    }
     if (!gAuth || !projectId || !ids.length) { post({ via: 'videosReady', kind: 'videosReady', reqId: d.reqId, ready: [] }); return; }
     const ready = await waitVideosReady(ids, projectId, d.rounds || 60, d.delayMs || 5000);
     post({ via: 'videosReady', kind: 'videosReady', reqId: d.reqId, ready });
@@ -1452,6 +1782,7 @@
   }
 
   async function batchGenerateImages(pid, opts) {
+    if (useBatchTransport()) return fbGenerateImageWithRetry(pid, opts);
     // One attempt: mint a FRESH reCAPTCHA token, then POST. Returns {res, text}.
     const attempt = async () => {
       if (gAuthRejected) throw new Error('OAuth Flow đã bị từ chối (401); cần lấy token mới từ thao tác trực tiếp trên Flow.');
@@ -1517,7 +1848,8 @@
   }
 
   async function renameWorkflow(pid, workflowId, displayName) {
-    if (!workflowId || !displayName) return false;
+    // Flow mới không còn workflow để đặt tên (workflowId luôn trống) → bỏ qua.
+    if (!workflowId || !displayName || useBatchTransport()) return false;
     const url = 'https://aisandbox-pa.googleapis.com/v1/flowWorkflows/' + workflowId;
     const body = {
       workflow: { name: workflowId, projectId: pid, metadata: { displayName: String(displayName) } },
@@ -1560,8 +1892,8 @@
     const done = (results) => post({ via: 'nanoImagesDone', kind: 'nanoImagesDone', results: results || [], ...context });
     // Xác nhận lệnh ĐÃ tới trang Flow (nếu không thấy dòng này sau "Gửi N shot"
     // thì inject.js chưa nạp vào tab → F5 trang Flow sau khi cập nhật extension).
-    post({ via: 'log', kind: 'log', message: `▶️ Trang Flow nhận lệnh tạo ảnh: ${Array.isArray(d.items) ? d.items.length : 0} shot · token=${gAuth ? 'có' : 'CHƯA'} · pid=${String(d.projectId || '').slice(0, 8) || 'TRỐNG'}` });
-    if (!gAuth) { post({ via: 'log', kind: 'log', message: '❌ Chưa có OAuth Bearer hợp lệ — tạo thử 1 ảnh/video trực tiếp trong Flow rồi chạy Nano lại.' }); return done([]); }
+    post({ via: 'log', kind: 'log', message: `▶️ Trang Flow nhận lệnh tạo ảnh: ${Array.isArray(d.items) ? d.items.length : 0} shot · ${useBatchTransport() ? 'Flow mới (batchexecute) · phiên=' + (fbWiz().SNlM0e ? 'có' : 'CHƯA') : 'token=' + (gAuth ? 'có' : 'CHƯA')} · pid=${String(d.projectId || '').slice(0, 8) || 'TRỐNG'}` });
+    if (!gAuth && !useBatchTransport()) { post({ via: 'log', kind: 'log', message: '❌ Chưa có OAuth Bearer hợp lệ — tạo thử 1 ảnh/video trực tiếp trong Flow rồi chạy Nano lại.' }); return done([]); }
     const pid = String(d.projectId || '').replace(/^projects\//, '');
     if (!pid) { post({ via: 'log', kind: 'log', message: '❌ Chưa có projectId — mở 1 project Flow (URL .../project/...) rồi thử lại.' }); return done([]); }
     const items = Array.isArray(d.items) ? d.items : [];
@@ -1936,7 +2268,7 @@
         const result = { shotId: it.shotId || null, index: it.index || (i + 1), resultKey: it.resultKey, ...context, name: label, mediaId: g.mediaId, workflowId: g.workflowId, renamed: !!renamed, frameMode: 'start', sheetMediaIds: shotSheetIds.slice(), productMediaIds: shotProductIds.slice(), locationMediaId: shotLocationId, locationSheetIds: shotLocationSheetIds.slice() };
         post({ via: 'log', kind: 'log', message: willChain
           ? `  ✅ "${label}" dùng lại boundary → ${String(g.mediaId).slice(0, 12)}`
-          : `  ✅ "${label}" → ${String(g.mediaId).slice(0, 12)} ${renamed ? '(đã đặt tên)' : '(⚠️ chưa đặt tên được — workflowId có thể trống)'}` });
+          : `  ✅ "${label}" → ${String(g.mediaId).slice(0, 12)} ${renamed ? '(đã đặt tên)' : (useBatchTransport() ? '' : '(⚠️ chưa đặt tên được — workflowId có thể trống)')}` });
         if (g.mediaId) prevKeyframeId = g.mediaId; // shot sau nối tiếp từ ảnh này
 
         // Preserve the optional legacy CLEAN frame artifact when the manifest
@@ -2038,8 +2370,8 @@
   async function genNanoThumb(d) {
     const context = nanoContextFrom(d);
     const done = (result) => post({ via: 'nanoThumbDone', kind: 'nanoThumbDone', result: result || null, ...context });
-    post({ via: 'log', kind: 'log', message: `▶️ Trang Flow nhận lệnh tạo THUMBNAIL · token=${gAuth ? 'có' : 'CHƯA'} · pid=${String(d.projectId || '').slice(0, 8) || 'TRỐNG'}` });
-    if (!gAuth) { post({ via: 'log', kind: 'log', message: '❌ Chưa bắt được Bearer — MỞ 1 PROJECT Flow và thao tác 1 lần rồi thử lại.' }); return done(null); }
+    post({ via: 'log', kind: 'log', message: `▶️ Trang Flow nhận lệnh tạo THUMBNAIL · ${useBatchTransport() ? 'Flow mới (batchexecute)' : 'token=' + (gAuth ? 'có' : 'CHƯA')} · pid=${String(d.projectId || '').slice(0, 8) || 'TRỐNG'}` });
+    if (!gAuth && !useBatchTransport()) { post({ via: 'log', kind: 'log', message: '❌ Chưa bắt được Bearer — MỞ 1 PROJECT Flow và thao tác 1 lần rồi thử lại.' }); return done(null); }
     const pid = String(d.projectId || '').replace(/^projects\//, '');
     if (!pid) { post({ via: 'log', kind: 'log', message: '❌ Chưa có projectId — mở 1 project Flow rồi thử lại.' }); return done(null); }
     if (!validNanoContext(context, pid)) { post({ via: 'log', kind: 'log', message: '🛡️ Từ chối thumbnail thiếu/sai khóa phiên dự án.' }); return done(null); }
@@ -2124,7 +2456,7 @@
   async function genNanoVideos(d) {
     const context = nanoContextFrom(d);
     const done = (results) => post({ via: 'nanoVideosDone', kind: 'nanoVideosDone', results: results || [], ...context });
-    if (!gAuth) { post({ via: 'log', kind: 'log', message: '❌ Chưa bắt được Bearer — thao tác 1 lần trên Flow rồi thử lại.' }); return done([]); }
+    if (!gAuth && !useBatchTransport()) { post({ via: 'log', kind: 'log', message: '❌ Chưa bắt được Bearer — thao tác 1 lần trên Flow rồi thử lại.' }); return done([]); }
     const pid = String(d.projectId || '').replace(/^projects\//, '');
     if (!pid) { post({ via: 'log', kind: 'log', message: '❌ Chưa có projectId — mở 1 project Flow rồi thử lại.' }); return done([]); }
     const items = Array.isArray(d.items) ? d.items : [];
@@ -2147,6 +2479,50 @@
       if (!startImageMediaId) {
         results.push({ shotId: it.shotId || null, index: it.index || (i + 1), resultKey: it.resultKey, ...context, name: label, error: 'thiếu keyframe (chưa tạo ảnh)' });
         post({ via: 'log', kind: 'log', message: `  ⚠️ "${label}" bỏ qua — chưa có ảnh keyframe.` });
+        continue;
+      }
+      if (useBatchTransport()) {
+        // Flow mới: BOARD là khung đầu (eb1hJf). Ô khung đầu không nhận ref phụ;
+        // Omni Flash có chế độ ref riêng (MZZa6b) nên dùng làm phương án 2.
+        const refIds = Array.isArray(it.referenceMediaIds) ? it.referenceMediaIds.filter((id) => id && id !== startImageMediaId) : [];
+        const promptText = /^\s*\{/.test(String(it.prompt || '')) ? String(it.prompt) : buildPrompt(it.prompt, it.voice);
+        const duration = it.durationSeconds || d.duration;
+        const submit = (mode, modelName) => fbSubmitVideo(pid, {
+          mode,
+          prompt: promptText,
+          aspect: d.aspect,
+          startId: startImageMediaId,
+          refIds: [startImageMediaId, ...refIds].slice(0, 3),
+          modelKey: fbVideoModel(mode, modelName, duration),
+        });
+        post({ via: 'log', kind: 'log', message: `🎬 [${i + 1}/${items.length}] "${label}" — dựng video từ BOARD (Flow mới, model ${fbVideoModel('start_frame', model, duration)})…` });
+        if (refIds.length) post({ via: 'log', kind: 'log', message: `  ℹ️ Flow mới: chế độ khung đầu không nhận ${refIds.length} ref phụ — mặt/bối cảnh đã nằm trong BOARD.` });
+        try {
+          let opId = '';
+          try {
+            opId = await submit('start_frame', model);
+          } catch (e1) {
+            if (isQuotaError(e1.message) || e1.fbCode === 8) throw e1;
+            if (fbExplainCaptchaError(e1)) throw e1;
+            if (model === 'omni_flash' && refIds.length) {
+              post({ via: 'log', kind: 'log', message: `  ↩️ Khung đầu bị từ chối (${String(e1.message).slice(0, 90)}) — thử Omni ref (BOARD + ${Math.min(2, refIds.length)} ref).` });
+              opId = await submit('reference', model);
+            } else if (model !== 'lite') {
+              post({ via: 'log', kind: 'log', message: `  ↩️ Model "${model}" bị từ chối (${String(e1.message).slice(0, 90)}) — thử lại bằng Veo 3.1 Lite.` });
+              opId = await submit('start_frame', 'lite');
+            } else {
+              throw e1;
+            }
+          }
+          post({ via: 'harvestVideos', kind: 'harvestVideos', videos: [{ id: opId, workflowId: '', aspectRatio: AF_ASPECT(d.aspect) }] });
+          results.push({ shotId: it.shotId || null, index: it.index || (i + 1), resultKey: it.resultKey, ...context, name: label, workflowId: '', videoMediaId: opId, renamed: false });
+          post({ via: 'log', kind: 'log', message: `  ✅ "${label}" → đã gửi (operation ${String(opId).slice(0, 8)})` });
+        } catch (e) {
+          if (isQuotaError(e.message) || e.fbCode === 8) { quotaExhausted = true; break; }
+          results.push({ shotId: it.shotId || null, index: it.index || (i + 1), resultKey: it.resultKey, ...context, name: label, error: e.message });
+          post({ via: 'log', kind: 'log', message: `  ❌ "${label}" lỗi: ${e.message}` });
+        }
+        await new Promise((r) => setTimeout(r, Math.max(d.delayMs || 1800, 2500)));
         continue;
       }
       try {

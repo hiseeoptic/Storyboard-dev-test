@@ -65,14 +65,19 @@ function rememberGeneratedMediaIds(ids) {
 
 function bgInterestingUrl(url) {
   const u = String(url || '').toLowerCase();
-  if (!/aisandbox-pa\.googleapis\.com|labs\.google|clients6\.google/.test(u)) return false;
+  if (!/aisandbox-pa\.googleapis\.com|labs\.google|clients6\.google|flow\.google\.com/.test(u)) return false;
   if (/fetchuserrecommendations|batchlogfrontendevents|\/g\/collect|analytics|telemetry/.test(u)) return false;
+  if (/flow\.google\.com\/_\/aisandboxangularfrontend\//.test(u)) return true;
   return /flowmedia:batchgenerateimages|\/v1\/projects\/[^/]+\/flowmedia|flowcreationagent|\/v1\/flow|\/v1\/video|agentinfo|uploadimage|batchasyncgenerate|batchcheckasync|streamchat|entities|models\/statuses|checkappavailability/.test(u);
 }
 
 function bgTraceKind(url) {
   const u = String(url || '').toLowerCase();
   if (/flowmedia:batchgenerateimages/.test(u)) return 'image-generate';
+  if (/rpcids=ogiz0b/.test(u)) return 'image-generate';
+  if (/rpcids=(eb1hjf|mzza6b|yhhmef|nprqif)/.test(u)) return 'generate';
+  if (/rpcids=jwpduf/.test(u)) return 'poll';
+  if (/rpcids=maseq/.test(u)) return 'upload';
   if (/batchcheckasyncvideo|generationstatus|video:batchcheck/.test(u)) return 'poll';
   if (/streamchat|batchasyncgeneratevideo|flowcreationagent:streamchat|generatevideo/.test(u)) return 'generate';
   if (/uploadimage|uploadmedia/.test(u)) return 'upload';
@@ -1018,7 +1023,7 @@ function bgIsFlowHomeUrl(url) {
 function bgIsFlowUrl(url) {
   try {
     const u = new URL(url || '');
-    return (u.hostname === 'flow.google.com' && (u.pathname === '/' || u.pathname.startsWith('/project/')))
+    return (u.hostname === 'flow.google.com' && !u.pathname.startsWith('/_/'))
       || ((u.hostname === 'labs.google' || u.hostname === 'labs.google.com') && u.pathname.startsWith('/fx/'));
   } catch (e) {
     return false;
@@ -1167,7 +1172,7 @@ async function bgPrepareProjectRoute(it, index) {
     // Ưu tiên đúng thao tác tay trong trace: từ /tools/flow bấm "Create with Google
     // Flow" để frontend tự sinh UUID và khởi tạo session. Trước đây tự ghép UUID
     // trực tiếp nên có thể mắc ở route project chưa được app khởi tạo.
-    const createAck = await bgSendTab(tabId, { action: 'CREATE_NEW_FLOW_PROJECT' }, 8000);
+    const createAck = await bgSendTab(tabId, { action: 'CREATE_NEW_FLOW_PROJECT' }, 25000);
     const created = createAck && createAck.success
       ? await bgWaitForNewProjectRoute(tabId, blockedProjectIds, 25000)
       : null;

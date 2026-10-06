@@ -2038,7 +2038,7 @@ async function findFlowTab() {
 function isFlowUrl(url) {
   try {
     const u = new URL(url || '');
-    return (u.hostname === 'flow.google.com' && (u.pathname === '/' || u.pathname.startsWith('/project/')))
+    return (u.hostname === 'flow.google.com' && !u.pathname.startsWith('/_/'))
       || ((u.hostname === 'labs.google' || u.hostname === 'labs.google.com') && u.pathname.startsWith('/fx/'));
   } catch (e) { return false; }
 }
@@ -3272,7 +3272,7 @@ async function createFreshFlowProject() {
   await waitFlowReady(tabId, '', 30000);
   await new Promise((r) => setTimeout(r, 1500));
   // 2) Bấm nút tạo dự án mới thật của Flow (Flow tự sinh project id + session).
-  const ack = await sendToContentAwait({ action: 'CREATE_NEW_FLOW_PROJECT' }, 8000);
+  const ack = await sendToContentAwait({ action: 'CREATE_NEW_FLOW_PROJECT' }, 25000);
   if (!ack || !ack.success) addLog(`⚠️ Không bấm được nút tạo dự án mới (${(ack && ack.error) || 'không phản hồi'}) — thử chờ điều hướng.`, 'warning');
   // 3) Chờ URL nhảy sang /project/<id MỚI> (khác pid cũ).
   const start = Date.now();

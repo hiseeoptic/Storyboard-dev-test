@@ -1562,7 +1562,7 @@
   // Chờ toàn bộ video đã sinh render xong rồi TẢI hết (không cần bấm tay).
   //   quality: '720' → tải thẳng; '1080'/'4k' → pipeline upsample rồi tải.
   async function autoDownloadGeneratedVideos(quality, downloadBaseName = '', expectCount = 0) {
-    const q = quality === true ? '1080' : (quality === false || !quality ? '720' : String(quality));
+    const q = effectiveDownloadQuality(quality === true ? '1080' : (quality === false || !quality ? '720' : String(quality)));
     const pid = getProjectIdFromUrl() || '';
     // BƯỚC 1: chờ thu đủ media id (không bỏ cuộc chỉ vì đọc lần đầu chưa thấy).
     const { rich, ids } = await waitHarvestedVideos(expectCount);
@@ -1611,6 +1611,27 @@
       const rounds = Math.max(12, Math.ceil(timeoutMs / delayMs));
       window.postMessage({ __afWaitVideosReady: true, reqId, ids, projectId, rounds, delayMs }, '*');
     });
+  }
+
+  // Flow mới (flow.google.com): không còn media.getMediaUrlRedirect của labs.google.
+  //   inject trả về URL video đã ký trên flow-content.google khi video render xong.
+  const afResolvedVideoUrls = new Map();
+  const _afProjectCreateWaiters = new Map();
+  function isNewFlowHost() { return location.hostname === 'flow.google.com'; }
+  function downloadViaBackground(url, filename) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: 'DOWNLOAD_FILE', url, filename }, (resp) => {
+        resolve(chrome.runtime.lastError ? { success: false, error: chrome.runtime.lastError.message } : (resp || { success: false }));
+      });
+    });
+  }
+  // Flow mới chưa có RPC upscale video đã kiểm chứng → luôn tải bản gốc 720p.
+  function effectiveDownloadQuality(q) {
+    if (isNewFlowHost() && q && q !== '720') {
+      logUI('ℹ️ Flow mới (flow.google.com) chưa hỗ trợ upscale 1080p/4K qua extension — tải bản gốc 720p.', 'warning');
+      return '720';
+    }
+    return q;
   }
 
   const mediaRedirectUrl = (name) => `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${encodeURIComponent(name)}`;
@@ -1678,6 +1699,15 @@
     for (let index = 0; index < list.length; index++) {
       const raw = list[index];
       const downloadName = explicitNames[index] || numberedDownloadName(downloadBaseName, index);
+      const signedUrl = afResolvedVideoUrls.get(String(raw).replace(/_upsampled$/, ''));
+      if (signedUrl) {
+        const dr = await downloadViaBackground(signedUrl, downloadName);
+        const r0 = { id: String(raw), ok: !!dr.success, error: dr.error };
+        if (r0.ok) logUI(`⬇️ Đã tải ${String(raw).slice(0, 8)}… ✅`, 'success');
+        else logUI(`⬇️ Lỗi tải ${String(raw).slice(0, 8)}…: ${dr.error || '?'}`, 'warning');
+        results.push(r0);
+        continue;
+      }
       const r = await fetchBlobDownloadWithRetry(raw, upsampled, downloadName);
       if (r.ok) {
         logUI(`⬇️ Đã tải ${String(r.id).slice(0, 8)}… (${Math.round((r.bytes || 0) / 1048576)}MB) ✅`, 'success');
@@ -1718,7 +1748,7 @@
     notify('DOWNLOADING');
     await wait(2);
     const downloadName = numberedDownloadName(cfg.downloadBaseName || 'Clip', downloadIndex);
-    const quality = selectedDownloadQuality();
+    const quality = effectiveDownloadQuality(selectedDownloadQuality());
 
     // 1) Chờ MEDIA_ID của video mới xuất hiện trên trang (thẻ <video> có thể vào
     //    DOM trễ hơn lúc card kết quả hiện) — tối đa 60s.
@@ -3964,7 +3994,7 @@
           // Chờ thu media id (id chỉ về sau khi Flow poll) — không bỏ cuộc sau 1 lần đọc.
           const { rich, ids: idList } = await waitHarvestedVideos(msg.expect || 0, 10 * 60 * 1000);
           if (!idList.length) { logUI('⬇️ Chuỗi: sau 10 phút vẫn chưa thu được video nào để tải.', 'warning'); await finishDownload({ success: false, error: 'no-media-ids' }); return; }
-          const quality = msg.quality === '4k' ? '4k' : (msg.quality === '1080' || msg.upsampled ? '1080' : '720');
+          const quality = effectiveDownloadQuality(msg.quality === '4k' ? '4k' : (msg.quality === '1080' || msg.upsampled ? '1080' : '720'));
           logUI(`⏳ Chuỗi: chờ ${idList.length} video render xong…`, 'info');
           const ready = pid ? await waitVideosReadyViaInject(idList, pid) : idList;
           if (!ready.length) { logUI('⬇️ Chuỗi: không video nào sẵn sàng sau thời gian chờ.', 'warning'); await finishDownload({ success: false, error: 'not-ready' }); return; }
@@ -4293,6 +4323,28 @@
         });
         break;
       case 'CREATE_NEW_FLOW_PROJECT': {
+        if (isNewFlowHost()) {
+          // Flow mới: tạo project bằng RPC jHPbke rồi mở thẳng /project/<id>.
+          const reqId = 'np_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+          const timer = setTimeout(() => {
+            _afProjectCreateWaiters.delete(reqId);
+            sendResponse({ success: false, error: 'create-project-timeout' });
+          }, 20000);
+          _afProjectCreateWaiters.set(reqId, (r) => {
+            clearTimeout(timer);
+            _afProjectCreateWaiters.delete(reqId);
+            if (!r.ok || !r.pid) {
+              logUI(`🆕 Tạo dự án Flow mới lỗi: ${r.error || '?'}`, 'warning');
+              sendResponse({ success: false, error: r.error || 'create-project-failed' });
+              return;
+            }
+            logUI(`🆕 Đã tạo dự án Flow mới …/${String(r.pid).slice(0, 8)} — đang mở.`, 'info');
+            sendResponse({ success: true, pid: r.pid });
+            setTimeout(() => { location.href = `${location.origin}/project/${encodeURIComponent(r.pid)}`; }, 80);
+          });
+          window.postMessage({ __afCreateProject: true, reqId, title: msg.title || ('AutoFlow ' + new Date().toLocaleString('vi-VN')) }, '*');
+          return true;
+        }
         // Luồng đúng theo trace thao tác tay: ở /tools/flow, bấm nút
         // "Create with Google Flow" để chính Flow sinh projectId + session mới.
         const labelOf = (el) => `${el.textContent || ''} ${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''}`
@@ -4537,12 +4589,20 @@
       }
       return;
     }
+    if (d.kind === 'projectCreated') {
+      const cb = _afProjectCreateWaiters.get(d.reqId);
+      if (cb) cb(d);
+      return;
+    }
     if (d.kind === 'harvestVideos') {
       // inject bóc media id TRỰC TIẾP từ response tạo (không cần nghe lỏm trang poll).
       storeHarvestedVideos(d.videos);
       return;
     }
     if (d.kind === 'videosReady') {
+      if (d.urls && typeof d.urls === 'object') {
+        for (const k of Object.keys(d.urls)) { if (d.urls[k]) afResolvedVideoUrls.set(k, d.urls[k]); }
+      }
       const cb = _afReadyWaiters.get(d.reqId);
       if (cb) cb(Array.isArray(d.ready) ? d.ready : []);
       return;
