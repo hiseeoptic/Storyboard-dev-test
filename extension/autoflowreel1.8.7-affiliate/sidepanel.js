@@ -1891,8 +1891,8 @@ async function startTeach(target) {
   if (!tabId) {
     addLog('❌ ' + L.flow_not_open, 'error');
     addLog(lang === 'vi'
-      ? '💡 Hãy mở trang labs.google/fx rồi reload trang đó'
-      : '💡 Open labs.google/fx and reload the page', 'warning');
+      ? '💡 Hãy mở Google Flow rồi reload trang đó'
+      : '💡 Open Google Flow and reload the page', 'warning');
     return;
   }
 
@@ -2036,12 +2036,17 @@ async function findFlowTab() {
 }
 
 function isFlowUrl(url) {
-  return url && (url.includes('labs.google.com/fx') || url.includes('labs.google/fx'));
+  try {
+    const u = new URL(url || '');
+    return (u.hostname === 'flow.google.com' && (u.pathname === '/' || u.pathname.startsWith('/project/')))
+      || ((u.hostname === 'labs.google' || u.hostname === 'labs.google.com') && u.pathname.startsWith('/fx/'));
+  } catch (e) { return false; }
 }
 // A real Flow PROJECT (has a project id in the path) — the only kind of tab that
 // can actually generate. The bare tools/home page matches isFlowUrl but NOT this.
 function isFlowProjectUrl(url) {
-  return !!url && /labs\.google(?:\.com)?\/fx\/tools\/flow\/project\//.test(url);
+  return !!url && (/labs\.google(?:\.com)?\/fx\/(?:[^/]+\/)?tools\/flow\/project\//.test(url)
+    || /flow\.google\.com\/project\//.test(url));
 }
 
 function getScriptTitle(project) {
@@ -2567,7 +2572,7 @@ function sendToContentAwait(data, timeoutMs = 0) {
 }
 
 function projectIdFromUrl(url) {
-  const m = /\/project\/([0-9a-fA-F-]{36})/.exec(String(url || ''));
+  const m = /\/project\/([0-9a-fA-F-]{36}|[A-Za-z0-9_-]+)/.exec(String(url || ''));
   return m ? m[1] : '';
 }
 
@@ -3241,6 +3246,12 @@ function removeNanoProject(i) {
 function flowHomeUrlFrom(url) {
   try {
     const u = new URL(url || 'https://labs.google/fx/vi/tools/flow');
+    if (u.hostname === 'flow.google.com') {
+      u.pathname = '/';
+      u.search = '';
+      u.hash = '';
+      return u.toString();
+    }
     const m = /^(\/fx\/[a-z-]+\/tools\/flow)/.exec(u.pathname);
     return u.origin + (m ? m[1] : '/fx/vi/tools/flow');
   } catch (e) { return 'https://labs.google/fx/vi/tools/flow'; }
@@ -3382,7 +3393,7 @@ async function runNanoImages(options = {}) {
   if (!nanoQueue.length) { addLog('⚠️ Chưa nạp manifest.', 'warning'); return; }
   if (!window.NanoPipeline) { addLog('❌ Thiếu nano_pipeline.js', 'error'); return; }
   const tabId = await findFlowTab();
-  if (!tabId) { addLog('❌ Chưa mở trang Flow (labs.google/fx) — mở 1 project rồi thử lại.', 'error'); return; }
+  if (!tabId) { addLog('❌ Chưa tìm thấy tab Google Flow — mở Flow rồi thử lại.', 'error'); return; }
   const flowProjectId = await flowProjectIdForTab(tabId);
   if (!flowProjectId) { addLog('❌ Tab Flow không có project ID hợp lệ — mở đúng URL /project/... rồi thử lại.', 'error'); return; }
   const runContext = ensureNanoRun(flowProjectId, options.reuseRun === true);
@@ -3560,7 +3571,7 @@ async function runNanoThumbnail() {
   const prompt = String((nanoManifest.project && nanoManifest.project.thumbnail_prompt) || '').trim();
   if (!prompt) { addLog('⚠️ Manifest này chưa có prompt thumbnail (project.thumbnail_prompt). Hãy tạo lại kịch bản trên web (bản mới) rồi nạp lại file .nanoflow.json.', 'warning'); return; }
   const tabId = await findFlowTab();
-  if (!tabId) { addLog('❌ Chưa mở trang Flow (labs.google/fx) — mở 1 project rồi thử lại.', 'error'); return; }
+  if (!tabId) { addLog('❌ Chưa tìm thấy tab Google Flow — mở Flow rồi thử lại.', 'error'); return; }
   const flowProjectId = await flowProjectIdForTab(tabId);
   if (!flowProjectId) { addLog('❌ Tab Flow không có project ID hợp lệ.', 'error'); return; }
   const runContext = ensureNanoRun(flowProjectId, true);
@@ -3619,7 +3630,7 @@ async function runNanoPipeline() {
   if (!nanoQueue.length) { addLog('⚠️ Chưa nạp manifest Nano Flow.', 'warning'); return; }
   if (!window.NanoPipeline) { addLog('❌ Thiếu nano_pipeline.js', 'error'); return; }
   const tabId = await findFlowTab();
-  if (!tabId) { addLog('❌ Chưa mở trang Flow (labs.google/fx) — mở 1 project rồi thử lại.', 'error'); return; }
+  if (!tabId) { addLog('❌ Chưa tìm thấy tab Google Flow — mở Flow rồi thử lại.', 'error'); return; }
   document.querySelector('.tab-btn[data-tab="log"]')?.click();
   addLog('▶️ BẮT ĐẦU pipeline Nano Flow: tạo ảnh keyframe → tự động dựng video.', 'info');
   nanoPipelineAuto = true;
@@ -3644,7 +3655,7 @@ async function runNanoVideos(options = {}) {
   if (!nanoQueue.length) { nanoThumbnailAfterVideos = false; addLog('⚠️ Chưa nạp manifest.', 'warning'); return; }
   if (!window.NanoPipeline) { nanoThumbnailAfterVideos = false; addLog('❌ Thiếu nano_pipeline.js', 'error'); return; }
   const tabId = await findFlowTab();
-  if (!tabId) { nanoThumbnailAfterVideos = false; addLog('❌ Chưa mở trang Flow (labs.google/fx) — mở 1 project rồi thử lại.', 'error'); return; }
+  if (!tabId) { nanoThumbnailAfterVideos = false; addLog('❌ Chưa tìm thấy tab Google Flow — mở Flow rồi thử lại.', 'error'); return; }
   const flowProjectId = await flowProjectIdForTab(tabId);
   if (!flowProjectId) { nanoThumbnailAfterVideos = false; addLog('❌ Tab Flow không có project ID hợp lệ.', 'error'); return; }
   const runContext = ensureNanoRun(flowProjectId, options.reuseRun === true);

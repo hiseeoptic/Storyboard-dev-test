@@ -67,11 +67,12 @@ function bgInterestingUrl(url) {
   const u = String(url || '').toLowerCase();
   if (!/aisandbox-pa\.googleapis\.com|labs\.google|clients6\.google/.test(u)) return false;
   if (/fetchuserrecommendations|batchlogfrontendevents|\/g\/collect|analytics|telemetry/.test(u)) return false;
-  return /flowcreationagent|\/v1\/flow|\/v1\/video|agentinfo|uploadimage|batchasyncgenerate|batchcheckasync|streamchat|entities|models\/statuses|checkappavailability/.test(u);
+  return /flowmedia:batchgenerateimages|\/v1\/projects\/[^/]+\/flowmedia|flowcreationagent|\/v1\/flow|\/v1\/video|agentinfo|uploadimage|batchasyncgenerate|batchcheckasync|streamchat|entities|models\/statuses|checkappavailability/.test(u);
 }
 
 function bgTraceKind(url) {
   const u = String(url || '').toLowerCase();
+  if (/flowmedia:batchgenerateimages/.test(u)) return 'image-generate';
   if (/batchcheckasyncvideo|generationstatus|video:batchcheck/.test(u)) return 'poll';
   if (/streamchat|batchasyncgeneratevideo|flowcreationagent:streamchat|generatevideo/.test(u)) return 'generate';
   if (/uploadimage|uploadmedia/.test(u)) return 'upload';
@@ -309,6 +310,7 @@ chrome.webRequest.onBeforeRequest.addListener((details) => {
     'https://aisandbox-pa.googleapis.com/*',
     'https://labs.google.com/*',
     'https://labs.google/*',
+    'https://flow.google.com/*',
     'https://clients6.google.com/*'
   ]
 }, ['requestBody']);
@@ -326,6 +328,7 @@ chrome.webRequest.onBeforeSendHeaders.addListener((details) => {
     'https://aisandbox-pa.googleapis.com/*',
     'https://labs.google.com/*',
     'https://labs.google/*',
+    'https://flow.google.com/*',
     'https://clients6.google.com/*'
   ]
 }, ['requestHeaders']);
@@ -350,6 +353,7 @@ chrome.webRequest.onCompleted.addListener((details) => {
     'https://aisandbox-pa.googleapis.com/*',
     'https://labs.google.com/*',
     'https://labs.google/*',
+    'https://flow.google.com/*',
     'https://clients6.google.com/*'
   ]
 });
@@ -373,6 +377,7 @@ chrome.webRequest.onErrorOccurred.addListener((details) => {
     'https://aisandbox-pa.googleapis.com/*',
     'https://labs.google.com/*',
     'https://labs.google/*',
+    'https://flow.google.com/*',
     'https://clients6.google.com/*'
   ]
 });
@@ -720,7 +725,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       let tabId = msg.tabId;
       if (!tabId) {
         const tabs = await chrome.tabs.query({});
-        const f = tabs.find((t) => t.url && (t.url.includes('labs.google.com/fx') || t.url.includes('labs.google/fx')));
+        const f = tabs.find((t) => bgIsFlowUrl(t.url));
         tabId = f ? f.id : null;
       }
       if (!tabId) { sendResponse({ success: false, error: 'no-flow-tab' }); return; }
@@ -820,7 +825,7 @@ async function checkFlowTabAlive() {
   try {
     const tabs = await chrome.tabs.query({});
     const flowTab = tabs.find(t =>
-      t.url && (t.url.includes('labs.google.com/fx') || t.url.includes('labs.google/fx'))
+      bgIsFlowUrl(t.url)
     );
 
     if (flowTab) {
@@ -1003,7 +1008,18 @@ async function bgWaitFlowReady(tabId, wantPid, timeoutMs = 60000) {
 function bgIsFlowHomeUrl(url) {
   try {
     const u = new URL(url || '');
+    if (u.hostname === 'flow.google.com') return /^\/?$/.test(u.pathname) && !bgProjectIdFromUrl(u.toString());
     return /\/tools\/flow\/?$/.test(u.pathname) && !bgProjectIdFromUrl(u.toString());
+  } catch (e) {
+    return false;
+  }
+}
+
+function bgIsFlowUrl(url) {
+  try {
+    const u = new URL(url || '');
+    return (u.hostname === 'flow.google.com' && (u.pathname === '/' || u.pathname.startsWith('/project/')))
+      || ((u.hostname === 'labs.google' || u.hostname === 'labs.google.com') && u.pathname.startsWith('/fx/'));
   } catch (e) {
     return false;
   }
@@ -1043,6 +1059,7 @@ function bgUuid4() {
 function bgNewProjectUrl(currentUrl, pid) {
   try {
     const u = new URL(currentUrl || 'https://labs.google/fx/vi/tools/flow');
+    if (u.hostname === 'flow.google.com') return `${u.origin}/project/${pid}`;
     const m = u.pathname.match(/^(.*\/tools\/flow)/);
     const base = m ? m[1] : '/fx/vi/tools/flow';
     return `${u.origin}${base}/project/${pid}`;
@@ -1054,6 +1071,12 @@ function bgNewProjectUrl(currentUrl, pid) {
 function bgFlowHomeUrl(currentUrl) {
   try {
     const u = new URL(currentUrl || 'https://labs.google/fx/vi/tools/flow');
+    if (u.hostname === 'flow.google.com') {
+      u.pathname = '/';
+      u.search = '';
+      u.hash = '';
+      return u.toString();
+    }
     const m = u.pathname.match(/^(.*\/tools\/flow)/);
     u.pathname = m ? m[1] : '/fx/vi/tools/flow';
     u.search = '';
@@ -1408,11 +1431,11 @@ function bgTrackProjectSwitch(tabId, url) {
 // Listen for tab updates (page reload, navigation)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   const url = changeInfo.url || (tab && tab.url) || '';
-  if ((tab && tab.url && /labs\.google(\.com)?\/fx/.test(tab.url)) || /labs\.google(\.com)?\/fx/.test(url)) {
+  if (bgIsFlowUrl((tab && tab.url) || url) || bgIsFlowUrl(url)) {
     bgTrackProjectSwitch(tabId, url || (tab && tab.url));
   }
   if (changeInfo.status === 'complete' && tab.url &&
-      (tab.url.includes('labs.google.com/fx') || tab.url.includes('labs.google/fx'))) {
+      bgIsFlowUrl(tab.url)) {
     // Flow page just loaded/reloaded — notify sidepanel
     setTimeout(() => {
       chrome.runtime.sendMessage({ type: 'FLOW_TAB_READY', tabId }, () => {

@@ -34,7 +34,16 @@
 
   // URL backend của Flow / Google AI (chỉ quan tâm các host này để khỏi nhiễu).
   const interesting = (url) => {
-    const u = (url || '').toLowerCase();
+    let u = String(url || '').toLowerCase();
+    try { u = new URL(u, location.href).href; } catch (e) {}
+    return /aisandbox|googleapis|labs\.google|flow\.google\.com|clients6\.google/.test(u);
+  };
+  // The migrated Flow app serves some authenticated requests from its own origin.
+  // Observe their Authorization header too, but keep trace recording restricted to
+  // Google API endpoints so frontend query parameters never enter copied traces.
+  const traceableApi = (url) => {
+    let u = String(url || '').toLowerCase();
+    try { u = new URL(u, location.href).href; } catch (e) {}
     return /aisandbox|googleapis|labs\.google|clients6\.google/.test(u);
   };
   // Phân loại request Flow đời mới (Omni Flash) — theo log thực tế:
@@ -59,8 +68,9 @@
   };
 
   const shouldTraceRequest = (url, method) => {
-    const u = (url || '').toLowerCase();
-    if (!interesting(url)) return false;
+    let u = String(url || '').toLowerCase();
+    try { u = new URL(u, location.href).href; } catch (e) {}
+    if (!traceableApi(url)) return false;
     if (/fetchuserrecommendations|\/g\/collect|analytics|telemetry/.test(u)) return false;
     if (method !== 'GET') return true;
     return /\/v1\/flow\/entities\b|\/v1\/flow\/models\/statuses\b|uploadimage|character|persona|voice|avatar|asset|getmediaurlredirect|\/v1\/flow\/projects\b|listprojects|getproject|checkappavailability/.test(u);
@@ -81,13 +91,30 @@
 
   // Bearer token TƯƠI NHẤT — bắt từ mọi request tới backend để phát lại khỏi bị 401.
   let gAuth = null;
+  let gAuthRejected = false;
   const grabAuth = (headers) => {
     try {
       for (const k in headers) {
-        if (k.toLowerCase() === 'authorization' && headers[k]) { gAuth = headers[k]; return; }
+        if (k.toLowerCase() === 'authorization' && headers[k]) {
+          const value = String(headers[k]).trim();
+          // The image/video REST endpoints require OAuth Bearer. A different
+          // Authorization scheme from the new frontend is not a usable token.
+          if (/^Bearer\s+\S+/i.test(value)) { gAuth = value; gAuthRejected = false; return; }
+        }
       }
     } catch (e) {}
   };
+
+  function markAuthRejected(res, text, operation) {
+    if (!res || res.status !== 401) return;
+    gAuth = null;
+    gAuthRejected = true;
+    const missing = /CREDENTIALS_MISSING|UNAUTHENTICATED/i.test(String(text || ''));
+    post({
+      via: 'log', kind: 'log',
+      message: `🔒 Flow báo ${missing ? 'thiếu hoặc không nhận OAuth' : 'từ chối OAuth'} khi ${operation} (HTTP 401). Đã dừng dùng token cũ; hãy tạo thử 1 ảnh/video trực tiếp trong Flow để lấy quyền mới rồi chạy Nano lại.`,
+    });
+  }
 
   // ---- fetch ----
   const origFetch = window.fetch;
@@ -276,15 +303,22 @@
 
   // Upload 1 ảnh → trả mediaId (media.name). Dùng cho ảnh nhân vật/reference.
   async function uploadImageToFlow(pid, dataUrl, fileName) {
+    if (gAuthRejected) throw new Error('OAuth Flow đã bị từ chối (401); cần lấy token mới từ thao tác trực tiếp trên Flow.');
+    if (!gAuth) throw new Error('Chưa có OAuth Bearer hợp lệ từ Flow; hãy tạo thử 1 ảnh/video trực tiếp trên Flow rồi chạy lại.');
     const { mime, b64 } = parseDataUrl(dataUrl);
+    const body = JSON.stringify({ clientContext: { projectId: pid, tool: 'PINHOLE' }, fileName: fileName || 'ref.png', imageBytes: b64, isHidden: false, isUserUploaded: true, mimeType: mime });
     const res = await fetchWithTimeout('https://aisandbox-pa.googleapis.com/v1/flow/uploadImage', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=UTF-8', Authorization: gAuth },
-      body: JSON.stringify({ clientContext: { projectId: pid, tool: 'PINHOLE' }, fileName: fileName || 'ref.png', imageBytes: b64, isHidden: false, isUserUploaded: true, mimeType: mime }),
+      body,
       credentials: 'include',
     }, 90000, 'uploadImage');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const j = await res.json();
+    const text = await res.text().catch(() => '');
+    if (!res.ok) {
+      markAuthRejected(res, text, 'tải ảnh tham chiếu lên');
+      throw new Error('HTTP ' + res.status + (text ? ': ' + text.slice(0, 200) : ''));
+    }
+    let j = {}; try { j = JSON.parse(text || '{}'); } catch (e) {}
     const id = j && j.media && j.media.name;
     if (!id) throw new Error('không có mediaId trong phản hồi upload');
     return id;
@@ -422,6 +456,9 @@
 
   function flowProjectBasePath(projectId) {
     const path = window.location && window.location.pathname || '';
+    if (window.location && window.location.hostname === 'flow.google.com') {
+      return `/project/${encodeURIComponent(projectId)}`;
+    }
     const m = /(\/fx\/(?:[^/]+\/)?tools\/flow\/project\/)[^/]+/.exec(path);
     if (m) return m[1] + encodeURIComponent(projectId);
     return `/fx/vi/tools/flow/project/${encodeURIComponent(projectId)}`;
@@ -1417,6 +1454,8 @@
   async function batchGenerateImages(pid, opts) {
     // One attempt: mint a FRESH reCAPTCHA token, then POST. Returns {res, text}.
     const attempt = async () => {
+      if (gAuthRejected) throw new Error('OAuth Flow đã bị từ chối (401); cần lấy token mới từ thao tác trực tiếp trên Flow.');
+      if (!gAuth) throw new Error('Chưa có OAuth Bearer hợp lệ từ Flow; hãy tạo thử 1 ảnh/video trực tiếp trên Flow rồi chạy lại.');
       const token = await mintRecaptcha('IMAGE_GENERATION');
       const clientContext = {
         recaptchaContext: { token, applicationType: 'RECAPTCHA_APPLICATION_TYPE_WEB' },
@@ -1459,6 +1498,7 @@
     // every caller (boards, sheets, thumbnail). NOT a quota error — those surface
     // as USER_QUOTA_REACHED/RESOURCE_EXHAUSTED and are handled by callers.
     let { res, text } = await attempt();
+    if (res.status === 401) markAuthRejected(res, text, 'tạo ảnh Nano');
     let tries = 0;
     while (!res.ok && res.status === 403
       && /reCAPTCHA|PERMISSION_DENIED|evaluation failed/i.test(text)
@@ -1516,11 +1556,12 @@
 
   async function genNanoImages(d) {
     const context = nanoContextFrom(d);
+    gAuthRejected = false;
     const done = (results) => post({ via: 'nanoImagesDone', kind: 'nanoImagesDone', results: results || [], ...context });
     // Xác nhận lệnh ĐÃ tới trang Flow (nếu không thấy dòng này sau "Gửi N shot"
     // thì inject.js chưa nạp vào tab → F5 trang Flow sau khi cập nhật extension).
     post({ via: 'log', kind: 'log', message: `▶️ Trang Flow nhận lệnh tạo ảnh: ${Array.isArray(d.items) ? d.items.length : 0} shot · token=${gAuth ? 'có' : 'CHƯA'} · pid=${String(d.projectId || '').slice(0, 8) || 'TRỐNG'}` });
-    if (!gAuth) { post({ via: 'log', kind: 'log', message: '❌ Chưa bắt được Bearer — MỞ 1 PROJECT Flow và thao tác 1 lần (tạo/bấm) rồi thử lại.' }); return done([]); }
+    if (!gAuth) { post({ via: 'log', kind: 'log', message: '❌ Chưa có OAuth Bearer hợp lệ — tạo thử 1 ảnh/video trực tiếp trong Flow rồi chạy Nano lại.' }); return done([]); }
     const pid = String(d.projectId || '').replace(/^projects\//, '');
     if (!pid) { post({ via: 'log', kind: 'log', message: '❌ Chưa có projectId — mở 1 project Flow (URL .../project/...) rồi thử lại.' }); return done([]); }
     const items = Array.isArray(d.items) ? d.items : [];
@@ -1562,22 +1603,25 @@
     // cho Nano Banana kết quả bám sát hơn (theo yêu cầu user).
     // 16:9 SPLIT character-board sheet (user layout): the image is divided in half.
     // LEFT half  = ONE full-body shot in the locked outfit (head to shoes).
-    // RIGHT half = TWO head-only cells — a straight FRONTAL face close-up and a
-    //              90° SIDE PROFILE from the NECK UP. The profile is head-only (no
-    //              torso): the earlier waist-up profile invented an at-angle body
-    //              that drifted the generated identity away from the uploaded face,
-    //              so keyframes stopped matching the real character. Head-only keeps
-    //              the profile a pure face-angle reference.
+    // RIGHT half = TWO neck-up cells — a straight FRONTAL face close-up and a
+    //              90° SIDE PROFILE. BOTH crops stop at the base of the neck: no
+    //              shoulders, chest, torso or outfit. The earlier waist-up/profile
+    //              crops invented an at-angle body and drifted the generated identity
+    //              away from the uploaded face. Matching neck-up crops keep both face
+    //              angles equally useful as identity anchors.
     const sheetPromptFor = (name, outfit) => JSON.stringify({
       type: 'photoreal_character_board_sheet',
-      layout: 'A single 16:9 landscape character reference sheet split into two halves against one continuous plain studio background, with a thin clean divider between every cell and NO text or numbers. LEFT HALF: ONE 3/4-to-front FULL-BODY shot of the person — the whole body from head to shoes, standing relaxed, wearing the complete locked outfit. RIGHT HALF: divided into two equal stacked cells, each a HEAD-ONLY portrait (head and neck only, no torso, no outfit below the collar): the TOP cell is a straight-on FRONTAL face close-up with the face filling the cell; the BOTTOM cell is a 90° SIDE PROFILE of the SAME head from the neck up (a pure left-or-right side view, nose pointing to the side).',
-      subject: name + ' — the identical individual in every cell; same face, same hair, same grooming. Only the full-body cell shows clothing below the neck.',
-      identity_authority: 'The straight FRONTAL face close-up is the identity anchor: copy the face, hair, skin and features of the ATTACHED reference photo EXACTLY — do not reinterpret, age, slim or beautify. The 90° profile is the SAME head merely rotated to the side, inventing no new facial feature. The full-body cell carries that identical face. Every cell is unmistakably the same real person from the reference photo.',
+      canvas_contract: 'Exactly ONE 16:9 landscape image. Split it at x=50%. The LEFT region occupies x=0–50%, y=0–100%. Split only the RIGHT region horizontally: RIGHT-TOP occupies x=50–100%, y=0–50%; RIGHT-BOTTOM occupies x=50–100%, y=50–100%. Use thin clean dividers. Never swap, mirror, reorder or resize these three cells. No labels, text or numbers.',
+      left_cell_x0_50_y0_100: 'ONE 3/4-to-front FULL-BODY view of the person, entire body visible continuously from top of head through both shoes, standing relaxed and wearing the complete locked outfit. This is the ONLY full-body or torso view on the sheet.',
+      right_top_cell_x50_100_y0_50: 'ONE straight-on FRONTAL portrait of the same person, cropped strictly FROM THE BASE OF THE NECK UP. Show the complete head, face, hair and neck only. No shoulders, chest, torso, arms, hands or clothing below the neck.',
+      right_bottom_cell_x50_100_y50_100: 'ONE exact 90-DEGREE SIDE PROFILE of the same person, cropped strictly FROM THE BASE OF THE NECK UP. Show the complete head, hair and neck only; nose points fully left or fully right. No three-quarter angle, shoulders, chest, torso, arms, hands or clothing below the neck.',
+      subject: name + ' — the identical individual in all three cells; same face, head shape, hair, skin, age and grooming. Only the LEFT full-body cell may show the outfit or body below the neck.',
+      identity_authority: 'Copy the face, head, hair, skin and features of the ATTACHED reference photo EXACTLY — do not reinterpret, age, slim or beautify. The RIGHT-TOP frontal neck-up crop and RIGHT-BOTTOM 90° profile neck-up crop are equal identity anchors of the SAME head. The LEFT full-body cell carries that identical face. Every cell must unmistakably depict the same real person.',
       wardrobe: outfit || ("one practical, concrete everyday outfit that fits this story's setting (" + sceneHint + ') — pick specific garments (top, bottom, footwear)'),
-      wardrobe_rule: 'ONLY the full-body cell wears the complete locked outfit (top, bottom, footwear), rendered clearly. The two head-only cells show just the head and neck (a collar may show); do not put the outfit on them. Ignore whatever clothes appear in the reference photo — it governs only the face/identity, never the clothing.',
+      wardrobe_rule: 'ONLY the LEFT full-body cell shows the complete locked outfit (top, bottom, footwear). BOTH RIGHT cells terminate at the base of the neck; at most a very narrow collar edge may appear. Never show shoulders or any garment body in either RIGHT cell. Ignore clothes in the attached reference photo — it governs face and identity only.',
       background: 'plain light-grey seamless studio background, soft even lighting, no props, no text',
       render: 'Photorealistic, true-to-life skin and fabric textures, sharp focus, ultra-detailed — a real photograph.',
-      negative: 'NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT CGI, a DIFFERENT face between the cells, a beautified or altered face, a torso or clothing in either head-only cell, mismatched outfit, cut-off feet on the full-body, on-screen text, watermark',
+      negative: 'swapped cells, frontal close-up in the LEFT cell, full-body or half-body person in either RIGHT cell, shoulders in either RIGHT cell, chest in either RIGHT cell, torso in either RIGHT cell, arms or hands in either RIGHT cell, three-quarter face in the RIGHT-BOTTOM cell, cut-off feet in the LEFT cell, different face between cells, beautified or altered face, mismatched outfit, cartoon, anime, illustration, 3D render, CGI, on-screen text, watermark',
     });
     const ensureWardrobeSheet = async (r) => {
       const name = r.name || 'character';
@@ -1591,8 +1635,8 @@
         post({ via: 'log', kind: 'log', message: `🧍 Tạo ảnh TOÀN THÂN nhân vật "${name}"${outfit ? ` — trang phục: ${outfit.slice(0, 60)}` : ' — trang phục theo bối cảnh'}…` });
         const g = await batchGenerateImages(pid, {
           prompt: sheetPromptFor(name, outfit),
-          // 16:9 landscape so the full-body (left half) and the two head-only cells
-          // (right half: frontal face + 90° profile head) sit side by side (user layout).
+          // 16:9 landscape: LEFT = full body; RIGHT-TOP and RIGHT-BOTTOM = matching
+          // neck-up identity crops (frontal + exact 90° profile).
           aspect: 'IMAGE_ASPECT_RATIO_LANDSCAPE',
           model,
           imageInputs: [{ imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: photoId }],
@@ -1600,7 +1644,7 @@
         // Đặt tên RIÊNG BIỆT (bảng nhân vật) để KHÔNG lẫn với ảnh cảnh (keyframe)
         // hay ảnh tham chiếu ban đầu người dùng nạp ở ô nhân vật. Kèm trang phục
         // để phân biệt các lần đổi đồ.
-        try { await renameWorkflow(pid, g.workflowId, `👗 BẢNG NHÂN VẬT · ${name}${outfit ? ' — ' + outfit.slice(0, 40) : ''} (toàn thân + mặt chính diện + đầu nghiêng 90°, KHÔNG phải cảnh)`); } catch (e2) {}
+        try { await renameWorkflow(pid, g.workflowId, `👗 BẢNG NHÂN VẬT · ${name}${outfit ? ' — ' + outfit.slice(0, 40) : ''} (toàn thân + chính diện từ cổ + nghiêng 90° từ cổ, KHÔNG phải cảnh)`); } catch (e2) {}
         sheetCache.set(key, g.mediaId);
         post({ via: 'log', kind: 'log', message: `  ✅ sheet "${name}" → ${String(g.mediaId).slice(0, 10)} (dùng làm ref cho các keyframe)` });
         await new Promise((r2) => setTimeout(r2, 1200));
@@ -1689,7 +1733,7 @@
       if (allCharRefs.length) {
         post({ via: 'log', kind: 'log', message: `🧑‍🎨 Tạo TRƯỚC toàn bộ ${allCharRefs.length} sheet nhân vật (khóa mặt/đồ) rồi mới dựng board…` });
         for (const r of allCharRefs) {
-          if (quotaExhausted) break;
+          if (quotaExhausted || gAuthRejected) break;
           try { await ensureWardrobeSheet(r); } catch (e) {}
         }
       }
@@ -1714,7 +1758,7 @@
           post({ via: 'log', kind: 'log', message: `  ⚠️ ảnh sản phẩm "${r.name || ''}" lỗi: ${String(e.message).slice(0, 70)}` });
         }
       }
-      if (quotaExhausted) break;
+      if (quotaExhausted || gAuthRejected) break;
     }
     if (allProductMediaIds.length) {
       post({ via: 'log', kind: 'log', message: `📦 Đã khóa ${allProductMediaIds.length} ảnh sản phẩm cho đúng project/run; sẽ ưu tiên trong thumbnail, board và video affiliate.` });
@@ -1724,7 +1768,7 @@
     //    tạo thumbnail (khóa mặt bằng sheet) — KHÔNG để tới cuối lúc dựng video (dễ
     //    lỗi/chen quota như user báo). Chỉ chạy khi manifest có thumbnail_prompt;
     //    lỗi được nuốt, không chặn board. "Mọi thứ tạo xong rồi mới tạo board." ──
-    if (!quotaExhausted && String(d.thumbnailPrompt || '').trim()) {
+    if (!quotaExhausted && !gAuthRejected && String(d.thumbnailPrompt || '').trim()) {
       try {
         const sheetMids = Array.from(new Set(Array.from(sheetCache.values()).filter(Boolean)));
         const thumbIds = [...allProductMediaIds.slice(0, 1), ...sheetMids].slice(0, 4);
@@ -1749,10 +1793,10 @@
     // ── LOCATION SHEET TRƯỚC BOARD: tạo HẾT sheet bối cảnh (1 ảnh/địa điểm) TRƯỚC
     //    khi dựng board — để "mọi thứ tạo xong rồi mới tạo board". ensureLocationSheet
     //    có cache nên vòng lặp board bên dưới TÁI DÙNG, không tạo lại (không tốn quota). ──
-    if (!quotaExhausted) {
+    if (!quotaExhausted && !gAuthRejected) {
       const seenLoc = new Set();
       for (const itm of items) {
-        if (quotaExhausted) break;
+        if (quotaExhausted || gAuthRejected) break;
         for (const r of (Array.isArray(itm.refs) ? itm.refs : [])) {
           if (!(r && r.kind === 'environments' && Array.isArray(r.locationViews) && r.locationViews.length)) continue;
           const locId = r.id || r.name || 'location';
@@ -1767,10 +1811,10 @@
     // Nhịp nghỉ TRƯỚC board đầu: reCAPTCHA đã ấm nhờ các bước trên (sheet/thumbnail),
     // thêm nghỉ để KHÔNG ép thời gian gây lỗi board đầu như user báo. batchGenerateImages
     // cũng tự retry 403 reCAPTCHA nên board đầu không còn hỏng vì token lạnh.
-    if (!quotaExhausted) await new Promise((r) => setTimeout(r, (d.delayMs || 1500) + 1500));
+    if (!quotaExhausted && !gAuthRejected) await new Promise((r) => setTimeout(r, (d.delayMs || 1500) + 1500));
 
     for (let i = 0; i < items.length; i++) {
-      if (quotaExhausted) break;
+      if (quotaExhausted || gAuthRejected) break;
       const it = items[i] || {};
       const label = it.name || ('Storyboard ' + (i + 1));
       try {
@@ -1845,7 +1889,7 @@
             post({ via: 'log', kind: 'log', message: `  ❌ ref "${r && r.name || ''}" lỗi: ${e.message}` });
           }
         }
-        if (quotaExhausted) break;
+        if (quotaExhausted || gAuthRejected) break;
         // 1b) Boundary continuity is exact media reuse, not loose image guidance.
         let prompt = String(it.prompt || '');
         // Nối tiếp keyframe trước để giữ liên tục bối cảnh/đạo cụ — TRỪ shot đổi
@@ -1967,6 +2011,7 @@
         }
         results.push(result);
       } catch (e) {
+        if (gAuthRejected) break;
         if (isQuotaError(e.message)) { quotaExhausted = true; break; }
         results.push({ shotId: it.shotId || null, index: it.index || (i + 1), resultKey: it.resultKey, ...context, name: label, error: e.message });
         post({ via: 'log', kind: 'log', message: `  ❌ "${label}" lỗi: ${e.message}` });
@@ -1974,6 +2019,7 @@
       await new Promise((r) => setTimeout(r, d.delayMs || 1500));
     }
     const okN = results.filter((r) => r.mediaId).length;
+    if (gAuthRejected) post({ via: 'log', kind: 'log', message: `⏹️ Đã dừng loạt Nano sau lỗi xác thực Flow. Tạo thử 1 ảnh/video trực tiếp trong Flow rồi chạy lại. Kết quả hiện có: ${okN}/${items.length}.` });
     if (quotaExhausted) {
       post({ via: 'log', kind: 'log', message: `🛑 HẾT QUOTA hôm nay (Google Flow đã dùng hết lượt tạo ảnh của tài khoản). Đã tạo ${okN}/${items.length} ảnh. Hãy đợi quota reset (thường 24h) hoặc đổi tài khoản Flow rồi chạy lại — KHÔNG phải lỗi pipeline.` });
     } else {

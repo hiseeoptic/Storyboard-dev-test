@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoFlow Reel — Bulk AI Video Automation",
-  "version": "1.8.10",
+  "version": "1.8.12",
   "description": "Bulk-automate AI video & image creation on Google Flow: queue prompts, storyboard, auto-run. Not affiliated with Google.",
   "permissions": [
     "storage",
@@ -19,6 +19,7 @@
   "host_permissions": [
     "https://labs.google.com/fx/*",
     "https://labs.google/fx/*",
+    "https://flow.google.com/*",
     "https://aisandbox-pa.googleapis.com/*",
     "https://clients6.google.com/*",
     "https://api.openai.com/*",
@@ -48,7 +49,8 @@
     {
       "matches": [
         "https://labs.google.com/fx/*",
-        "https://labs.google/fx/*"
+        "https://labs.google/fx/*",
+        "https://flow.google.com/*"
       ],
       "js": [
         "inject.js"
@@ -59,7 +61,8 @@
     {
       "matches": [
         "https://labs.google.com/fx/*",
-        "https://labs.google/fx/*"
+        "https://labs.google/fx/*",
+        "https://flow.google.com/*"
       ],
       "js": [
         "content_script.js"
