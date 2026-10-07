@@ -401,7 +401,14 @@
   // Gọi 1 RPC batchexecute ngay trong trang (cookie + "at" của phiên đang đăng nhập).
   //   opts.captcha: action reCAPTCHA cần mint (IMAGE_GENERATION / VIDEO_GENERATION)
   //   opts.raw: trả nguyên văn bản phản hồi (dùng cho danh sách media rất lớn)
+  // Chốt an toàn tài khoản: lần đầu Flow trả PUBLIC_ERROR_UNUSUAL_ACTIVITY thì
+  // NGỪNG mọi lệnh có reCAPTCHA cho tới khi F5 trang. Thử lại liên tục sau lỗi này
+  // đã khiến tài khoản bị khoá cả khi thao tác tay (báo cáo cộng đồng 10/2026).
+  let fbSafetyHold = false;
   async function fbCall(rpcid, inner, opts = {}) {
+    if (opts.captcha && fbSafetyHold) {
+      throw new Error(`${rpcid}: đã dừng vì Flow vừa báo UNUSUAL_ACTIVITY (chốt an toàn) — không gửi thêm lệnh tạo. F5 trang Flow trước khi thử lại.`);
+    }
     const wiz = fbWiz();
     const at = wiz.SNlM0e;
     if (!at) throw new Error('Trang Flow chưa có token phiên ("at") — F5 trang flow.google.com, kiểm tra đã đăng nhập rồi thử lại.');
@@ -430,7 +437,15 @@
     if (opts.raw) return text;
     const hit = fbParse(text).find((r) => r.rpcid === rpcid);
     if (!hit) throw new Error(`${rpcid}: phản hồi không có dữ liệu (${text.slice(0, 160)})`);
-    if (hit.error !== undefined) throw fbRpcError(rpcid, hit.error);
+    if (hit.error !== undefined) {
+      const err = fbRpcError(rpcid, hit.error);
+      if (/UNUSUAL_ACTIVITY/.test(err.fbRaw || '')) {
+        fbSafetyHold = true;
+        gAuthRejected = true; // để các vòng lặp tạo ảnh/video dừng ngay
+        fbExplainCaptchaError(err);
+      }
+      throw err;
+    }
     return hit.data;
   }
   function fbWalkStrings(node, cb) {
@@ -445,7 +460,7 @@
   function fbExplainCaptchaError(e) {
     const msg = String((e && e.message) || e || '');
     if (/UNUSUAL_ACTIVITY|reCAPTCHA evaluation failed/i.test(msg)) {
-      post({ via: 'log', kind: 'log', message: '🛑 Flow từ chối reCAPTCHA (PUBLIC_ERROR_UNUSUAL_ACTIVITY): Google đánh giá phiên này là tự động. Hãy giảm tốc độ (tăng độ trễ), F5 trang Flow, đăng nhập lại; nếu vẫn lỗi thì Flow đang chặn reCAPTCHA do extension tạo — chỉ còn cách thao tác tay trên Flow.' });
+      post({ via: 'log', kind: 'log', message: '🛑 Flow từ chối lệnh tạo (PUBLIC_ERROR_UNUSUAL_ACTIVITY): từ bản Flow 22/09/2026, Google không nhận reCAPTCHA do extension tạo — giảm tốc độ KHÔNG khắc phục được. Đã DỪNG toàn bộ lượt chạy để bảo vệ tài khoản; đừng chạy lại liên tục.' });
       return true;
     }
     return false;
@@ -482,12 +497,6 @@
         post({ via: 'log', kind: 'log', message: '  ⏳ Flow báo bận/hết lượt tạm (RESOURCE_EXHAUSTED) — nghỉ 35s rồi thử lại 1 lần…' });
         await new Promise((r) => setTimeout(r, 35000));
         return await fbGenerateImage(pid, opts);
-      }
-      if (/UNUSUAL_ACTIVITY|reCAPTCHA/i.test(String(e && e.message))) {
-        post({ via: 'log', kind: 'log', message: '  ⏳ reCAPTCHA bị từ chối — chờ 5s, mint token mới thử lại 1 lần…' });
-        await new Promise((r) => setTimeout(r, 5000));
-        try { return await fbGenerateImage(pid, opts); }
-        catch (e2) { fbExplainCaptchaError(e2); throw e2; }
       }
       throw e;
     }
@@ -2508,6 +2517,7 @@
           results.push({ shotId: it.shotId || null, index: it.index || (i + 1), resultKey: it.resultKey, ...context, name: label, workflowId: '', videoMediaId: opId, renamed: false });
           post({ via: 'log', kind: 'log', message: `  ✅ "${label}" → đã gửi (operation ${String(opId).slice(0, 8)})` });
         } catch (e) {
+          if (fbSafetyHold) break;
           if (isQuotaError(e.message) || e.fbCode === 8) { quotaExhausted = true; break; }
           results.push({ shotId: it.shotId || null, index: it.index || (i + 1), resultKey: it.resultKey, ...context, name: label, error: e.message });
           post({ via: 'log', kind: 'log', message: `  ❌ "${label}" lỗi: ${e.message}` });
