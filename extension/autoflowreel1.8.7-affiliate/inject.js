@@ -465,7 +465,7 @@
       FB_IMAGE_ASPECT[imageAspectRatioKey(opts.aspect)] || 3,
       opts.model || 'GEM_PIX_2',
       null, ctx, [[[String(opts.prompt || '')]]],
-      null, null, null, null, fbUuid(),
+      null, null, null, fbUuid(), fbUuid(),
     ];
     const data = await fbCall('ogiZ0b', [null, [item], 1, ctx, [fbUuid()]], { captcha: 'IMAGE_GENERATION', timeoutMs: 150000 });
     const url = fbFindUrl(data, 'image');
@@ -512,17 +512,17 @@
     if (model === 'fast' || model === 'quality') return 'veo_3_1_i2v_s_fast_ultra';
     return 'veo_3_1_i2v_lite';
   }
-  // Đọc id operation từ phản hồi tạo video ([..., ..., [[opId, projectId, sceneId, status, …]]]).
-  function fbReadOperationId(data) {
-    const isId = (v) => typeof v === 'string' && /^[\w.:/-]{8,}$/.test(v) && !/^https?:/.test(v);
-    for (const slot of [2, 3]) {
-      const recs = Array.isArray(data) ? data[slot] : null;
-      const rec = Array.isArray(recs) ? recs[0] : null;
-      if (Array.isArray(rec) && isId(rec[0])) return rec[0];
-    }
-    let found = '';
-    fbWalkStrings(data, (s) => { if (!found && isId(s)) found = s; });
-    return found;
+  // Phản hồi tạo video (bắt thực tế 07/10/2026, MZZa6b):
+  //   [null, n, [[mediaId, …, [title, ts, …, opId, …], pid]], [[opId, pid, mediaId, …]]]
+  function fbReadVideoSubmit(data) {
+    const isStr = (v) => typeof v === 'string' && v.length >= 8;
+    const ops = Array.isArray(data) && Array.isArray(data[3]) ? data[3][0] : null;
+    const media = Array.isArray(data) && Array.isArray(data[2]) ? data[2][0] : null;
+    let opId = Array.isArray(ops) && isStr(ops[0]) ? ops[0] : '';
+    let mediaId = Array.isArray(ops) && isStr(ops[2]) ? ops[2] : '';
+    if (!mediaId && Array.isArray(media) && isStr(media[0])) mediaId = media[0];
+    if (!opId && Array.isArray(media) && Array.isArray(media[3]) && isStr(media[3][4])) opId = media[3][4];
+    return { opId, mediaId };
   }
   async function fbSubmitVideo(pid, o) {
     const textPart = [null, null, [[[String(o.prompt || '')]]]];
@@ -536,10 +536,11 @@
       request = [textPart, o.modelKey, fbVideoAspect(o.aspect), null, [null, o.startId, null, null, null, [null, null, 1, 1]], tail];
     }
     const data = await fbCall(rpcid, [[request], fbContext(pid, null), [fbUuid(), 2]], { captcha: 'VIDEO_GENERATION', timeoutMs: 150000 });
-    const opId = fbReadOperationId(data);
-    if (!opId) throw new Error(`${rpcid}: phản hồi không có operation id`);
-    fbVideoJobs.set(opId, { opId, pid, mediaId: '', url: '', polls: 0 });
-    return opId;
+    const { opId, mediaId } = fbReadVideoSubmit(data);
+    if (!opId && !mediaId) throw new Error(`${rpcid}: phản hồi không có operation/media id (${JSON.stringify(data).slice(0, 160)})`);
+    const id = opId || mediaId;
+    fbVideoJobs.set(id, { opId: opId || '', pid, mediaId: mediaId || '', url: '', polls: 0 });
+    return id;
   }
 
   // Theo dõi video: operation → (danh sách project) mediaId → (as29s) URL tải.
@@ -554,36 +555,25 @@
   }
   async function fbResolveVideo(id, pid) {
     let job = fbVideoJobs.get(id);
-    if (!job) {
-      // id lạ (không do lượt này gửi) — có thể đã là mediaId: hỏi thẳng URL trước.
-      job = { opId: id, pid, mediaId: '', url: '', polls: 0 };
-      fbVideoJobs.set(id, job);
-      try {
-        const m = await fbCall('as29s', [id]);
-        const url = fbFindUrl(m, 'video');
-        if (url) { job.mediaId = id; job.url = url; return job; }
-      } catch (e) {}
-    }
+    if (!job) { job = { opId: '', pid, mediaId: id, url: '', polls: 0 }; fbVideoJobs.set(id, job); }
     if (job.url) return job;
     job.polls++;
-    if (!job.mediaId) {
-      let look = job.polls % 3 === 0;
+    if (!job.mediaId && job.opId) {
       try {
         const op = await fbCall('jwpduf', [null, null, [[job.opId]]]);
         const rec = Array.isArray(op) && Array.isArray(op[2]) ? op[2][0] : null;
-        if (Array.isArray(rec)) {
-          if (typeof rec[1] === 'string' && rec[1]) job.pid = rec[1];
-          if (rec[3] === 'CAE') look = true;
-        }
-      } catch (e) { look = true; job.lastError = e.message; }
-      if (look) {
+        if (Array.isArray(rec) && typeof rec[2] === 'string') job.mediaId = rec[2];
+      } catch (e) { job.lastError = e.message; }
+      if (!job.mediaId && job.polls % 3 === 0) {
         const text = await fbCall('Zzl0ze', [`projects/${job.pid || pid}`, null, null, null, [1]], { raw: true, timeoutMs: 120000 });
         job.mediaId = fbFindMediaInListing(text, job.opId);
       }
     }
-    if (job.mediaId && !job.url) {
-      const m = await fbCall('as29s', [job.mediaId]);
-      job.url = fbFindUrl(m, 'video'); // chỉ có /image/ (poster) nghĩa là video chưa ghi xong
+    if (job.mediaId) {
+      try {
+        const m = await fbCall('as29s', [job.mediaId]);
+        job.url = fbFindUrl(m, 'video'); // chỉ có /image/ (poster) = video chưa xong
+      } catch (e) { job.lastError = e.message; } // [5] NOT_FOUND khi media chưa ghi xong
     }
     return job;
   }
