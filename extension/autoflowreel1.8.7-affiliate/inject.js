@@ -675,7 +675,7 @@
       }
       if (!kv.media_id) {
         // Lời gọi (chưa có kết quả): ghi lại prompt theo placeholder để ghép sau.
-        if (ph && kv.prompt) agent.args.set(ph, { tool: c.tool, prompt: String(kv.prompt), aspect: kv.aspect_ratio || '', model: kv.model_usage_key || '', startId: kv.start_image_media_id || '' });
+        if (ph && kv.prompt) agent.args.set(ph, { tool: c.tool, prompt: String(kv.prompt), aspect: kv.aspect_ratio || '', model: kv.model_usage_key || '', startId: kv.start_image_media_id || kv.first_frame_media_id || '' });
         continue;
       }
       const id = String(kv.media_id);
@@ -696,6 +696,8 @@
       });
       if (!prev) added++;
       agent.media.set(id, rec);
+      // Sidepanel ghép kết quả vào đúng mục (SHEET/LOCATION/THUMBNAIL/SHOT) để dựng tin nhắn kế tiếp.
+      post({ via: 'agentResult', kind: 'agentResult', mediaId: id, mediaKind: rec.kind, prompt: rec.prompt, name: rec.name, status: rec.status, startId: String(a.startId || ''), pid: rec.pid });
     }
     if (added) {
       const v = Array.from(agent.media.values());
@@ -725,7 +727,7 @@
           post({ via: 'agentMedia', kind: 'agentMedia', mediaId: id, mediaKind: m.kind, shot: m.shot, thumb: !!m.thumb, name: m.name, prompt: m.prompt.slice(0, 200), pid: m.pid, url });
         }
       } catch (e) { /* NOT_FOUND khi chưa ghi xong → vòng sau */ }
-      if (!m.done && m.tries > 120) { m.done = true; post({ via: 'agentEvent', kind: 'agentEvent', event: 'timeout', text: `⌛ Agent: hết thời gian chờ ${m.kind} ${m.shot ? 'SHOT ' + m.shot : id.slice(0, 8)}.` }); }
+      if (!m.done && m.tries > 120) { m.done = true; post({ via: 'agentEvent', kind: 'agentEvent', event: 'timeout', mediaId: id, mediaKind: m.kind, text: `⌛ Agent: hết thời gian chờ ${m.kind} ${m.shot ? 'SHOT ' + m.shot : id.slice(0, 8)}.` }); }
     }
     if (Array.from(agent.media.values()).some((m) => !m.done && want(m))) agentSchedulePoll(10000);
   }

@@ -1631,6 +1631,8 @@
     const ext = d.mediaKind === 'video' ? 'mp4' : 'jpg';
     const proj = String(d.pid || '').slice(0, 8) || 'flow';
     if (d.thumb) return `AutoFlow Agent ${proj} - THUMBNAIL ${String(d.mediaId).slice(0, 4)}.${ext}`;
+    const tag = /^\W*(SHEET|LOCATION)\s*0*(\d{1,3})/i.exec(String(d.prompt || ''));
+    if (tag && d.mediaKind === 'image') return `AutoFlow Agent ${proj} - ${tag[1].toUpperCase()} ${String(tag[2]).padStart(2, '0')}.${ext}`;
     const shot = Number(d.shot) > 0 ? `SHOT ${String(d.shot).padStart(2, '0')}` : (d.name || String(d.mediaId).slice(0, 8));
     return `AutoFlow Agent ${proj} - ${shot}${d.mediaKind === 'image' ? ' (khung dau)' : ''}.${ext}`;
   }
@@ -1674,8 +1676,8 @@
           el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
         }
       }
-      const got = (el.value != null ? el.value : el.textContent) || '';
-      return { success: got.trim().length > 0 };
+      const got = (el.value != null ? el.value : el.innerText || el.textContent) || '';
+      return { success: got.trim().length > 0, length: got.length };
     } catch (e) { return { success: false, error: (e && e.message) || String(e) }; }
   }
   // Bật lại theo cài đặt đã lưu mỗi khi trang Flow (mới) tải xong.
@@ -4615,7 +4617,8 @@
     appendApiTrace(d);
     if (d.via === 'init') { logUI('🔌 Net hook đã cài — đang lắng nghe API Flow. Hãy TẠO 1 video tay để bắt giao thức.', 'info'); return; }
     if (d.kind === 'log') { logUI(d.message || '', 'info'); return; }
-    if (d.kind === 'agentEvent') { logUI(d.text || '', d.event === 'timeout' ? 'warning' : 'info'); notify('AGENT_EVENT', { event: d.event || '', text: d.text || '', on: d.on }); return; }
+    if (d.kind === 'agentEvent') { logUI(d.text || '', d.event === 'timeout' ? 'warning' : 'info'); notify('AGENT_EVENT', { event: d.event || '', text: d.text || '', on: d.on, mediaId: d.mediaId || '', mediaKind: d.mediaKind || '' }); return; }
+    if (d.kind === 'agentResult') { notify('AGENT_RESULT', { mediaId: d.mediaId, mediaKind: d.mediaKind, prompt: d.prompt || '', name: d.name || '', status: d.status || '', startId: d.startId || '', pid: d.pid || '' }); return; }
     if (d.kind === 'agentMedia') { handleAgentMedia(d); return; }
     if (d.kind === 'agentRefs') { const w = _afAgentRefWaiters.get(d.reqId); if (w) { _afAgentRefWaiters.delete(d.reqId); w(d); } return; }
     if (d.kind === 'nanoImagesDone') { notify('NANO_IMAGES_DONE', { results: d.results || [], projectFingerprint: d.projectFingerprint || '', runId: d.runId || '', generationEpoch: Number(d.generationEpoch) || 0, flowProjectId: d.flowProjectId || '' }); return; }

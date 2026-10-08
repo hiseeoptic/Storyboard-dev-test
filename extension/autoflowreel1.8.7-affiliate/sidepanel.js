@@ -5044,145 +5044,47 @@ function bindLicenseEvents() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CHẾ ĐỘ AGENT (Flow mới). Extension KHÔNG tự gửi tin nhắn và KHÔNG tự bấm Approve
-// (reCAPTCHA chỉ hợp lệ khi chính người dùng thao tác). Sidepanel chỉ: soạn chỉ dẫn
-// tiếng Anh theo shot của manifest để người dùng dán vào Agent, và bật bộ đọc kết
-// quả để content_script tự tải video về, đặt tên "SHOT NN".
+// (reCAPTCHA chỉ hợp lệ khi chính người dùng thao tác). Extension: nạp ảnh tham
+// chiếu, ĐIỀN SẴN từng tin nhắn vào khung chat Agent theo đúng thứ tự pipeline cũ
+// (agent_plan.js: sheet nhân vật + bối cảnh → thumbnail + keyframe → video), đọc
+// kết quả Agent để lấy mã ảnh cho tin nhắn kế tiếp, và tự tải video về.
 // ─────────────────────────────────────────────────────────────────────────────
-let agentCopyPart = 0;
-function agentClip(text, max) {
-  const t = String(text || '').replace(/\s+/g, ' ').trim();
-  return t.length > max ? t.slice(0, max - 1) + '…' : t;
+const AGENT_MAX_CHARS = 30000;   // giới hạn chữ / tin nhắn (prompt manifest rất dài)
+function agentSay(t, level) {
+  const el = document.getElementById('nf-agent-status'); if (el) el.textContent = t;
+  if (level !== 'quiet') addLog(t, level || 'info');
 }
-function agentVideoText(item) {
-  const raw = String(item.videoPrompt || '').trim();
-  if (!raw.startsWith('{')) return raw;
-  // Clip có cấu trúc: Agent đọc văn xuôi tốt hơn JSON dài → trải phẳng các giá trị chữ.
-  try {
-    const parts = [];
-    const walk = (v) => {
-      if (typeof v === 'string') { if (v.trim()) parts.push(v.trim()); }
-      else if (Array.isArray(v)) v.forEach(walk);
-      else if (v && typeof v === 'object') Object.values(v).forEach(walk);
-    };
-    walk(JSON.parse(raw));
-    return parts.join('. ');
-  } catch (e) { return raw; }
-}
-// Ảnh tham chiếu đã nạp vào project Flow đang mở: [{ kind, id, name, mediaId }].
-// Chỉ dùng khi đúng project (mediaId của project khác Agent không đọc được).
-function agentRefsFor(pid) {
-  const r = nanoManifest && nanoManifest.agentRefs;
-  if (!r || !pid || r.pid !== pid || !Array.isArray(r.list)) return [];
-  return r.list.filter((x) => x && x.mediaId);
-}
-const AGENT_KIND_LABEL = { characters: 'character', environments: 'location', products: 'product' };
-function agentRefLabel(ref) { return `"${ref.name}" (media id ${ref.mediaId})`; }
-// Ảnh ref dùng cho 1 shot = các asset shot đó khai báo trong image_refs.
-function agentShotRefs(item, refs) {
-  const pick = [];
-  const ir = (item && item.imageRefs) || {};
-  ['characters', 'environments', 'products'].forEach((kind) => {
-    (ir[kind] || []).forEach((a) => {
-      refs.filter((r) => r.kind === kind && (r.id ? r.id === a.id : r.name === a.name))
-        .forEach((r) => { if (!pick.includes(r)) pick.push(r); });
-    });
-  });
-  return pick;
-}
-function buildAgentInstruction(items, partNo, partCount, refs) {
-  refs = Array.isArray(refs) ? refs : [];
-  const projAspect = (nanoManifest && nanoManifest.project && nanoManifest.project.aspect_ratio) || '';
-  const aspect = /9:16/.test(projAspect) ? '9:16' : (/16:9/.test(projAspect) ? '16:9' : (/PORTRAIT/i.test(document.getElementById('nf-aspect')?.value || '') ? '9:16' : '16:9'));
-  const orient = aspect === '9:16' ? 'portrait' : 'landscape';
-  const duration = Math.max(4, Math.min(10, (typeof settings !== 'undefined' && settings.duration) || 8));
-  const lines = [];
-  lines.push(`Make a ${items.length}-shot ${aspect === '9:16' ? 'vertical' : 'horizontal'} video${partCount > 1 ? ` (part ${partNo} of ${partCount})` : ''}. Do NOT ask me any questions; use these settings exactly.`);
-  lines.push('');
-  if (refs.length) {
-    // Đã kiểm chứng: Agent tự gắn ảnh có sẵn trong project khi chỉ dẫn ghi mã ảnh.
-    lines.push('REFERENCE IMAGES — these images already exist in this project. Use them by media id as references (do not ask me to upload anything). Keep faces, hair, outfits, places and products identical to them in every image and video:');
-    refs.forEach((r) => lines.push(`- ${r.name} (${AGENT_KIND_LABEL[r.kind] || 'reference'}): media id ${r.mediaId}`));
-  } else {
-    lines.push('References: the uploaded photos are the main characters — keep their faces, hair and outfits identical in every image and video.');
-  }
-  lines.push('');
-  lines.push(`STEP 1 — Generate ${items.length} images with Nano Banana, aspect ratio ${aspect} (${orient}), one per shot${refs.length ? ', using the reference images listed for each shot' : ', using the uploaded photos as reference'}. Start every image prompt with its shot title exactly as written (e.g. "SHOT 01 –").`);
-  items.forEach((it) => {
-    const no = String(it.index || 0).padStart(2, '0');
-    const own = refs.length ? agentShotRefs(it, refs) : [];
-    const use = own.length ? own : refs.filter((r) => r.kind === 'characters');
-    const tail = use.length ? ` [references: ${use.map(agentRefLabel).join(', ')}]` : '';
-    lines.push(`SHOT ${no} – ${agentClip(it.videoKeyframePrompt || it.storyboardPrompt || it.name, 900)}${tail}`);
-  });
-  lines.push('');
-  lines.push(`STEP 2 — For each SHOT image from step 1, generate one video using that image as the first frame (start image), aspect ratio ${aspect}, ${duration} seconds, no text or subtitles on screen. Start every video prompt with the same shot title.`);
-  items.forEach((it) => {
-    const no = String(it.index || 0).padStart(2, '0');
-    lines.push(`SHOT ${no} motion – ${agentClip(agentVideoText(it), 900)}`);
-  });
-  const proj = (nanoManifest && nanoManifest.project) || {};
-  const thumbPrompt = String(proj.thumbnail_prompt || '').trim();
-  const withThumb = !!thumbPrompt && partNo === partCount;
-  if (withThumb) {
-    const title = String(proj.thumbnail_title || '').trim();
-    const tRefs = refs.filter((r) => r.kind !== 'environments');
-    lines.push('');
-    lines.push(`STEP 3 — Generate 1 thumbnail image with Nano Banana, aspect ratio ${aspect}. Start its prompt with "THUMBNAIL –".${tRefs.length ? ` Use ${tRefs.map(agentRefLabel).join(', ')} as references.` : ''}`);
-    lines.push(`THUMBNAIL – ${agentClip(thumbPrompt, 900)}${title ? ` Title text on the image: "${agentClip(title, 80)}".` : ''}`);
-  }
-  lines.push('');
-  lines.push(`I approve the credit cost of every image and video in this message in advance — generate everything in one go without asking me for permission. If you must ask, ask only once for all of it. When finished, list the titles you produced.`);
-  return lines.join('\n');
-}
-// Nạp ảnh nhân vật / bối cảnh / sản phẩm (đã gắn ở mục 👤📦🏠) vào project Flow đang mở.
-// Đây là thao tác upload thường của Flow; extension chỉ ghi lại mã ảnh để đưa vào chỉ dẫn.
-async function uploadAgentRefs() {
-  const statusEl = document.getElementById('nf-agent-status');
-  const busy = document.getElementById('btn-nf-agent-refs');
-  const say = (t) => { if (statusEl) statusEl.textContent = t; };
-  if (!nanoManifest || !nanoManifest.assets) { say('⚠️ Chưa nạp manifest Nano Flow.'); return null; }
-  const refs = [];
-  ['characters', 'environments', 'products'].forEach((kind) => {
-    (nanoManifest.assets[kind] || []).forEach((a, i) => {
-      const data = a && (a.image || (Array.isArray(a.images) && a.images[0]));
-      if (data) refs.push({ key: `${kind}:${a.id || i}`, kind, id: a.id || '', name: String(a.name || `${kind} ${i + 1}`).trim(), data });
-    });
-  });
-  if (!refs.length) { say('⚠️ Chưa gắn ảnh nào ở mục Nhân vật / Bối cảnh / Sản phẩm bên dưới.'); return []; }
+async function agentFlowPid() {
   const tabId = await findFlowTab();
-  const pid = tabId ? await flowProjectIdForTab(tabId) : '';
-  if (!pid) { say('⚠️ Mở project trên flow.google.com (URL có /project/…) rồi bấm lại.'); return null; }
-  if (busy) busy.disabled = true;
-  say(`📤 Đang nạp ${refs.length} ảnh vào project Flow…`);
-  addLog(`📤 Nạp ${refs.length} ảnh tham chiếu (theo tên) vào project Flow ${pid.slice(0, 8)}…`, 'info');
-  const r = await sendToContentAwait({ action: 'AGENT_UPLOAD_REFS', refs: refs.map(({ key, name, data }) => ({ key, name, data })) }, 600000);
-  if (busy) busy.disabled = false;
-  if (!r || !r.success) { say(`❌ Nạp ảnh lỗi: ${(r && r.error) || 'không kết nối được tab Flow'}`); return null; }
-  const byKey = new Map((r.refs || []).map((x) => [x.key, x]));
-  const list = [];
-  let fail = 0;
-  refs.forEach((ref) => {
-    const got = byKey.get(ref.key);
-    if (got && got.mediaId) list.push({ kind: ref.kind, id: ref.id, name: ref.name, mediaId: got.mediaId });
-    else fail++;
-  });
-  nanoManifest.agentRefs = { pid: r.pid || pid, list, at: Date.now() };
-  persistNanoProjects();
-  say(fail ? `⚠️ Đã nạp ${list.length}/${refs.length} ảnh (${fail} lỗi — xem Nhật ký).` : `✅ Đã nạp ${list.length} ảnh: ${list.map((x) => x.name).join(', ')}.`);
-  addLog(`📤 Đã nạp ${list.length}/${refs.length} ảnh tham chiếu vào Flow.`, fail ? 'warning' : 'success');
-  return list;
+  return tabId ? await flowProjectIdForTab(tabId) : '';
 }
-function agentHasImages() {
-  return ['characters', 'environments', 'products'].some((k) => ((nanoManifest && nanoManifest.assets && nanoManifest.assets[k]) || []).some((a) => a && (a.image || (a.images && a.images.length))));
+function agentRefMap(pid) {
+  const r = nanoManifest && nanoManifest.agentRefs;
+  return (r && pid && r.pid === pid && r.map && typeof r.map === 'object') ? r.map : {};
 }
-// Ảnh ref cho project đang mở; chưa nạp vào project này thì tự nạp luôn (1 lần).
+// Nạp (chỉ những) ảnh tham chiếu còn thiếu trong project Flow đang mở → map key→mediaId.
 async function ensureAgentRefs(pid) {
-  let refs = agentRefsFor(pid);
-  if (!refs.length && pid && agentHasImages()) {
-    const up = await uploadAgentRefs();
-    if (up) refs = agentRefsFor(pid);
-  }
-  return refs;
+  if (!nanoManifest || !window.AgentPlan) return {};
+  const have = agentRefMap(pid);
+  const missing = window.AgentPlan.refUploads(nanoManifest, nanoQueue).filter((r) => !have[r.key]);
+  if (!missing.length || !pid) return have;
+  const busy = document.getElementById('btn-nf-agent-refs'); if (busy) busy.disabled = true;
+  agentSay(`📤 Nạp ${missing.length} ảnh tham chiếu (nhân vật/bối cảnh/sản phẩm) vào project Flow ${pid.slice(0, 8)}…`);
+  const r = await sendToContentAwait({ action: 'AGENT_UPLOAD_REFS', refs: missing.map(({ key, name, data }) => ({ key, name, data })) }, 600000);
+  if (busy) busy.disabled = false;
+  if (!r || !r.success) { agentSay(`❌ Nạp ảnh lỗi: ${(r && r.error) || 'không kết nối được tab Flow'}`, 'error'); return have; }
+  const map = Object.assign({}, have);
+  let ok = 0;
+  (r.refs || []).forEach((x) => { if (x && x.key && x.mediaId) { map[x.key] = x.mediaId; ok++; } });
+  nanoManifest.agentRefs = { pid: r.pid || pid, map, at: Date.now() };
+  persistNanoProjects();
+  agentSay(`📤 Đã nạp ${ok}/${missing.length} ảnh tham chiếu.`, ok === missing.length ? 'success' : 'warning');
+  return map;
+}
+async function uploadAgentRefs() {
+  const pid = await agentFlowPid();
+  if (!pid) { agentSay('⚠️ Mở project trên flow.google.com (URL có /project/…) rồi bấm lại.', 'warning'); return; }
+  await ensureAgentRefs(pid);
 }
 async function agentWriteClipboard(text) {
   try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
@@ -5190,127 +5092,197 @@ async function agentWriteClipboard(text) {
     const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
     const ok = document.execCommand('copy'); ta.remove(); if (ok) return true;
   } catch (e2) {}
-  // Sidepanel không có focus (người dùng đang ở tab Flow) → nhờ trang Flow copy.
   const r = await sendToContentAwait({ action: 'AGENT_COPY_TEXT', text }, 5000);
   return !!(r && r.success);
 }
-async function copyAgentInstruction() {
-  const statusEl = document.getElementById('nf-agent-status');
-  if (agentRun && agentRun.text) {   // đang chạy tất cả dự án → copy lại đúng phần hiện tại
-    const ok = await agentWriteClipboard(agentRun.text);
-    await sendToContentAwait({ action: 'AGENT_PREFILL', text: agentRun.text }, 15000);
-    if (statusEl) statusEl.textContent = ok ? `📋 Đã copy lại phần ${agentRun.part + 1}/${agentRun.parts.length} của dự án ${agentRun.keys[agentRun.pos]}.` : '❌ Copy không được.';
-    return;
-  }
-  const items = (nanoQueue || []).filter((q) => q && (q.videoKeyframePrompt || q.storyboardPrompt || q.videoPrompt));
-  if (!items.length) { if (statusEl) statusEl.textContent = '⚠️ Chưa có shot — nạp manifest Nano Flow trước.'; return; }
-  const per = Math.max(1, Math.min(20, Number(document.getElementById('nf-agent-batch')?.value) || 5));
-  const parts = Math.ceil(items.length / per);
-  if (agentCopyPart >= parts) agentCopyPart = 0;
-  const chunk = items.slice(agentCopyPart * per, agentCopyPart * per + per);
-  const flowTab = await findFlowTab();
-  const pid = flowTab ? await flowProjectIdForTab(flowTab) : '';
-  const refs = await ensureAgentRefs(pid);
-  const hasImages = agentHasImages();
-  const text = buildAgentInstruction(chunk, agentCopyPart + 1, parts, refs);
-  await agentWriteClipboard(text);
-  const filled = await sendToContentAwait({ action: 'AGENT_PREFILL', text }, 15000);
-  const first = String(chunk[0].index).padStart(2, '0'), last = String(chunk[chunk.length - 1].index).padStart(2, '0');
-  const refNote = refs.length ? ` Đã ghi ${refs.length} ảnh tham chiếu theo tên — không cần kéo ảnh.`
-    : (hasImages ? ' ⚠️ Nạp ảnh vào project này chưa được (xem Nhật ký) — phải kéo ảnh tay.' : '');
-  if (statusEl) statusEl.textContent = `✅ Đã copy phần ${agentCopyPart + 1}/${parts} (SHOT ${first}–${last}, ${text.length} ký tự). ${filled && filled.success ? 'Đã điền sẵn vào khung chat Agent — bấm nút gửi ➜ rồi Approve.' : 'Dán vào khung chat Agent, gửi, rồi bấm Approve.'}${refNote}${parts > 1 ? ' Bấm Copy lần nữa để lấy phần tiếp theo.' : ''}`;
-  addLog(`🤖 Đã copy chỉ dẫn Agent phần ${agentCopyPart + 1}/${parts} (SHOT ${first}–${last}).`, 'info');
-  agentCopyPart = (agentCopyPart + 1) % parts;
-  const lbl = document.getElementById('nf-agent-copy-label');
-  if (lbl) lbl.textContent = parts > 1 ? `Copy chỉ dẫn Agent (phần ${agentCopyPart + 1}/${parts})` : 'Copy chỉ dẫn Agent';
+function agentBuildCtx() {
+  const plans = window.NanoPipeline ? window.NanoPipeline.buildQueuePlan(nanoQueue).plans : [];
+  return window.AgentPlan.buildContext(nanoManifest, nanoQueue, plans, {
+    videoModel: (typeof settings !== 'undefined' && settings.model) || '',
+    duration: (typeof settings !== 'undefined' && settings.duration) || 8,
+  });
 }
-// ── CHẠY TẤT CẢ DỰ ÁN bằng Agent (flow.google.com). Với mỗi dự án: tạo project Flow
-//   mới → tự nạp ảnh tham chiếu theo tên → copy chỉ dẫn phần 1. Người dùng chỉ dán,
-//   gửi và bấm Approve trên Flow (reCAPTCHA cần thao tác thật). Khi đủ video của phần
-//   đó đã tải về → tự copy phần kế; hết phần → sang dự án kế.
+// Kết quả Agent đã có của project Flow này (để chạy lại thì bỏ qua phần đã xong).
+function agentSavedState(pid) {
+  const a = nanoManifest && nanoManifest.agentMedia;
+  if (a && a.pid === pid) return { media: Object.assign({}, a.media || {}), videos: Object.assign({}, a.videos || {}) };
+  return { media: {}, videos: {} };
+}
+function agentPersistState(run) {
+  if (!nanoManifest || !run) return;
+  nanoManifest.agentMedia = { pid: run.pid, media: run.state.media, videos: run.state.videos, at: Date.now() };
+  persistNanoProjects();
+}
+
+// ── Bộ điều phối: mỗi dự án = chuỗi tin nhắn A (sheet) → B (thumbnail + keyframe) → C (video).
 let agentRun = null;
-function agentRunSay(t, level) {
-  const el = document.getElementById('nf-agent-status'); if (el) el.textContent = t;
-  addLog(t, level || 'info');
-}
 function stopAgentRunAll(reason) {
   if (!agentRun) return;
   agentRun = null;
-  agentRunSay(`⏹️ Đã dừng chạy Agent (${reason}).`, 'warning');
+  agentSay(`⏹️ Đã dừng chế độ Agent (${reason}).`, 'warning');
+  agentUpdateButtons();
+}
+function agentUpdateButtons() {
+  const skip = document.getElementById('btn-nf-agent-skip');
+  if (skip) skip.style.display = agentRun ? '' : 'none';
+  const lbl = document.getElementById('nf-agent-copy-label');
+  if (lbl) lbl.textContent = agentRun ? 'Điền lại tin nhắn hiện tại' : 'Bắt đầu (dự án đang mở)';
 }
 async function startAgentRunAll(keys) {
-  if (!confirm(`Chạy ${keys.length} dự án bằng Agent của Flow (${keys.map((k) => 'DA' + k).join(', ')})?\n\nMỗi dự án: extension tạo project Flow mới, TỰ NẠP ảnh nhân vật/bối cảnh/sản phẩm, rồi copy sẵn chỉ dẫn.\nBạn chỉ cần: dán (Ctrl/Cmd+V) vào khung Agent → gửi → bấm Approve.\nVideo tải xong, extension tự copy phần/dự án tiếp theo.\n\nGiữ tab Flow mở.`)) return;
-  agentRun = { keys, pos: 0, parts: [], part: 0, expected: 0, got: 0, thumb: false, gotThumb: false, pid: '', busy: false };
+  if (!confirm(`Chạy ${keys.length} dự án bằng Agent của Flow (${keys.map((k) => 'DA' + k).join(', ')})?\n\nMỗi dự án: extension tạo project Flow mới, tự nạp ảnh, rồi ĐIỀN SẴN lần lượt các tin nhắn:\n  A. Sheet trang phục nhân vật + ảnh bối cảnh\n  B. Thumbnail + keyframe từng shot (dùng đúng sheet vừa tạo)\n  C. Video từng shot (khung đầu = đúng keyframe)\nBạn chỉ bấm Gửi mỗi tin nhắn (và Approve khi Agent xin tạo video). Video + thumbnail tự tải về.\n\nGiữ tab Flow mở.`)) return;
+  await agentStart(keys, true);
+}
+async function agentStart(keys, fresh) {
+  if (!window.AgentPlan) { agentSay('❌ Thiếu agent_plan.js — cài lại extension.', 'error'); return; }
+  agentRun = { keys, pos: 0, fresh, pid: '', ctx: null, state: null, stage: null, videoIds: {}, skipped: new Set(), busy: false, maxChars: AGENT_MAX_CHARS, msgNo: 0 };
   const w = document.getElementById('nf-agent-watch'); if (w) w.checked = true;
   chrome.storage.local.set({ afAgentWatch: { on: true, images: !!document.getElementById('nf-agent-images')?.checked } });
   document.querySelector('.tab-btn[data-tab="log"]')?.click();
-  addLog(`🤖 CHẠY TẤT CẢ ${keys.length} dự án bằng Agent — mỗi dự án 1 project Flow mới.`, 'success');
+  agentUpdateButtons();
   await agentRunProject();
 }
 async function agentRunProject() {
   const run = agentRun; if (!run) return;
   const key = run.keys[run.pos];
-  if (!key) { agentRun = null; agentRunSay(`✅ Xong TẤT CẢ ${run.keys.length} dự án bằng Agent.`, 'success'); return; }
+  if (!key) { agentRun = null; agentSay(`✅ Xong ${run.keys.length} dự án bằng Agent.`, 'success'); agentUpdateButtons(); return; }
   run.busy = true;
-  curProj = key;
-  const sel = document.getElementById('project-select'); if (sel) sel.value = key;
-  await chrome.storage.local.set({ afCurProj: key });
-  const fresh = (await chrome.storage.local.get(['afProjects'])).afProjects || {};
-  applyProject(fresh[key] || null);
-  const items = (nanoQueue || []).filter((q) => q && (q.videoKeyframePrompt || q.storyboardPrompt || q.videoPrompt));
-  if (!items.length) { addLog(`⏭️ Dự án ${key} chưa có shot — bỏ qua.`, 'warning'); run.pos++; run.busy = false; return agentRunProject(); }
-  agentRunSay(`▶️ Dự án ${key} (${run.pos + 1}/${run.keys.length}): tạo project Flow mới…`);
-  const pid = await createFreshFlowProject();
-  if (agentRun !== run) return;
-  run.pid = pid || projectIdFromUrl(await currentFlowTabUrl());
-  await new Promise((r) => setTimeout(r, 2000));
-  await pushAgentWatchSetting(true);
+  if (run.fresh) {
+    curProj = key;
+    const sel = document.getElementById('project-select'); if (sel) sel.value = key;
+    await chrome.storage.local.set({ afCurProj: key });
+    const fresh = (await chrome.storage.local.get(['afProjects'])).afProjects || {};
+    applyProject(fresh[key] || null);
+  }
+  if (!nanoManifest || !nanoQueue.length) { addLog(`⏭️ Dự án ${key} chưa có manifest/shot — bỏ qua.`, 'warning'); run.pos++; run.busy = false; return agentRunProject(); }
+  if (run.fresh) {
+    agentSay(`▶️ Dự án ${key} (${run.pos + 1}/${run.keys.length}): tạo project Flow mới…`);
+    await createFreshFlowProject();
+    if (agentRun !== run) return;
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  run.pid = await agentFlowPid();
+  if (!run.pid) { agentSay('❌ Tab Flow không ở trong 1 project (URL /project/…).', 'error'); stopAgentRunAll('không có project'); return; }
+  await pushAgentWatchSetting(!run.fresh ? false : true);
   const refs = await ensureAgentRefs(run.pid);
   if (agentRun !== run) return;
-  const per = Math.max(1, Math.min(20, Number(document.getElementById('nf-agent-batch')?.value) || 5));
-  run.parts = [];
-  for (let i = 0; i < items.length; i += per) run.parts.push(items.slice(i, i + per));
-  run.part = 0; run.refs = refs;
+  run.ctx = agentBuildCtx();
+  run.state = Object.assign(agentSavedState(run.pid), { refs });
+  run.videoIds = {}; run.skipped = new Set(); run.msgNo = 0;
+  const c = run.ctx;
+  addLog(`🧭 Kế hoạch Agent: ${c.sheets.length} sheet nhân vật, ${c.locs.length} ảnh bối cảnh, ${c.thumb ? '1 thumbnail, ' : ''}${c.shots.length} keyframe, ${c.shots.length} video · khung ${c.aspect}.`, 'info');
   run.busy = false;
-  await agentRunDeliverPart();
+  await agentDeliver();
 }
-async function agentRunDeliverPart() {
-  const run = agentRun; if (!run) return;
-  const chunk = run.parts[run.part];
-  const last = run.part === run.parts.length - 1;
-  const text = buildAgentInstruction(chunk, run.part + 1, run.parts.length, run.refs || []);
-  run.expected = chunk.length; run.got = 0;
-  run.thumb = last && !!String((nanoManifest && nanoManifest.project && nanoManifest.project.thumbnail_prompt) || '').trim();
-  run.gotThumb = false;
+function agentStageKeysLeft(run, stage) {
+  const st = run.state;
+  return stage.keys.filter((k) => !run.skipped.has(k) && !(stage.type === 'videos' ? st.videos[k] : st.media[k]));
+}
+function agentNextStage(run) {
+  const maxCount = Math.max(1, Math.min(20, Number(document.getElementById('nf-agent-batch')?.value) || 20));
+  const all = window.AgentPlan.stages(run.ctx, run.state, { maxCount, maxChars: run.maxChars });
+  for (const stg of all) {
+    const keys = stg.keys.filter((k) => !run.skipped.has(k));
+    if (keys.length) return { type: stg.type, keys, left: all.length };
+  }
+  return null;
+}
+const AGENT_STAGE_LABEL = { prep: 'A · sheet nhân vật + bối cảnh', frames: 'B · thumbnail + keyframe', videos: 'C · video' };
+async function agentDeliver(onlyRefill) {
+  const run = agentRun; if (!run || run.busy) return;
+  if (!onlyRefill || !run.stage) run.stage = agentNextStage(run);
+  const stage = run.stage;
+  if (!stage) {
+    agentPersistState(run);
+    addLog(`✅ Xong dự án ${run.keys[run.pos]} bằng Agent.`, 'success');
+    run.pos++;
+    if (run.pos >= run.keys.length) { agentRun = null; agentSay(`✅ Hoàn tất ${run.keys.length} dự án bằng Agent.`, 'success'); agentUpdateButtons(); return; }
+    return agentRunProject();
+  }
+  const keys = agentStageKeysLeft(run, stage);
+  if (!keys.length) { run.stage = null; return agentDeliver(); }
+  if (!onlyRefill) run.msgNo++;
+  const head = `Project "${run.ctx.title || run.keys[run.pos]}" — message ${run.msgNo}: ${stage.type === 'prep' ? 'STEP A — character wardrobe sheets and location plates' : stage.type === 'frames' ? 'STEP B — thumbnail and shot keyframes' : 'STEP C — shot videos'}`;
+  const text = window.AgentPlan.messageFor(run.ctx, { type: stage.type, keys }, run.state, head);
   run.text = text;
-  const ok = await agentWriteClipboard(text);
-  const filled = await sendToContentAwait({ action: 'AGENT_PREFILL', text }, 15000);
-  const first = String(chunk[0].index).padStart(2, '0'), lastNo = String(chunk[chunk.length - 1].index).padStart(2, '0');
-  const how = filled && filled.success ? 'đã ĐIỀN SẴN vào khung chat Agent → bấm nút gửi (➜) trên Flow, rồi bấm Approve.'
-    : (ok ? 'đã copy → dán (Ctrl/Cmd+V) vào khung chat Agent, gửi, rồi bấm Approve.' : 'chưa copy được — bấm "Copy chỉ dẫn Agent".');
-  agentRunSay(`📋 Dự án ${run.keys[run.pos]} · phần ${run.part + 1}/${run.parts.length} (SHOT ${first}–${lastNo}) ${how}${(run.refs || []).length ? ` (kèm ${run.refs.length} ảnh tham chiếu)` : ''}`, (filled && filled.success) || ok ? 'success' : 'warning');
-  sendToContentAwait({ action: 'AGENT_NOTICE', text: `AutoFlow: phần ${run.part + 1}/${run.parts.length} ${filled && filled.success ? 'đã điền sẵn — bấm nút gửi ➜ rồi bấm Approve.' : 'đã copy — dán vào khung Agent, gửi, rồi bấm Approve.'}` }, 3000);
+  const copied = await agentWriteClipboard(text);
+  const filled = await sendToContentAwait({ action: 'AGENT_PREFILL', text }, 20000);
+  if (filled && filled.success && filled.length && filled.length < text.length * 0.97 && run.maxChars > 6000) {
+    // Khung chat cắt bớt chữ → chia nhỏ tin nhắn rồi điền lại.
+    run.maxChars = Math.max(6000, Math.floor(filled.length * 0.9));
+    addLog(`✂️ Khung chat Agent chỉ nhận ${filled.length}/${text.length} ký tự — chia nhỏ tin nhắn (≤${run.maxChars} ký tự) rồi điền lại.`, 'warning');
+    run.stage = null; run.msgNo--;
+    return agentDeliver();
+  }
+  const how = filled && filled.success ? 'đã ĐIỀN SẴN vào khung chat Agent → bấm nút gửi ➜'
+    : (copied ? 'đã copy → dán (Ctrl/Cmd+V) vào khung chat Agent rồi gửi' : 'chưa copy được — bấm "Điền lại tin nhắn hiện tại"');
+  agentSay(`📨 Dự án ${run.keys[run.pos]} · tin nhắn ${run.msgNo} (${AGENT_STAGE_LABEL[stage.type]}: ${keys.join(', ')}) ${how}${stage.type === 'videos' ? ', rồi bấm Approve khi Agent hỏi.' : '.'}`, (filled && filled.success) || copied ? 'success' : 'warning');
+  sendToContentAwait({ action: 'AGENT_NOTICE', text: `AutoFlow: tin nhắn ${run.msgNo} (${AGENT_STAGE_LABEL[stage.type]}) ${filled && filled.success ? 'đã điền sẵn — bấm nút gửi ➜' : 'đã copy — dán vào khung Agent rồi gửi'}${stage.type === 'videos' ? ', rồi Approve.' : '.'}` }, 3000);
 }
-async function agentRunOnSaved(m) {
-  const run = agentRun; if (!run || run.busy || !m) return;
-  // Đếm cả file tải lỗi / hết giờ để không kẹt cả chuỗi (lỗi đã ghi ở Nhật ký).
-  if (m.thumb) run.gotThumb = true;
-  else if (m.mediaKind === 'video') run.got++;
-  if (run.got < run.expected) return;
-  if (run.thumb && !run.gotThumb) {
-    // Chờ thumbnail tối đa 2 phút sau video cuối rồi đi tiếp.
-    if (!run.thumbTimer) run.thumbTimer = setTimeout(() => { run.thumbTimer = null; run.gotThumb = true; agentRunOnSaved({ tick: true }); }, 120000);
+async function agentCheckAdvance() {
+  const run = agentRun; if (!run || run.busy || !run.stage) return;
+  const left = agentStageKeysLeft(run, run.stage);
+  if (left.length) {
+    agentSay(`⏳ Tin nhắn ${run.msgNo}: còn chờ ${left.join(', ')}.`, 'quiet');
     return;
   }
-  if (run.thumbTimer) { clearTimeout(run.thumbTimer); run.thumbTimer = null; }
   run.busy = true;
-  await new Promise((r) => setTimeout(r, 3000));
+  agentPersistState(run);
+  await new Promise((r) => setTimeout(r, 4000));   // để Agent nói xong lượt hiện tại
   if (agentRun !== run) return;
   run.busy = false;
-  if (run.part < run.parts.length - 1) { run.part++; return agentRunDeliverPart(); }
-  addLog(`✅ Xong dự án ${run.keys[run.pos]} bằng Agent.`, 'success');
-  run.pos++;
-  return agentRunProject();
+  run.stage = null;
+  await agentDeliver();
+}
+function agentExpectedPrompt(ctx, key, kind) {
+  if (kind === 'video') { const s = ctx.shots.find((x) => x.key === key); return s ? s.videoPrompt : ''; }
+  const f = ctx.sheets.find((x) => x.key === key) || ctx.locs.find((x) => x.key === key);
+  if (f) return f.prompt;
+  if (key === 'THUMBNAIL') return ctx.thumb ? ctx.thumb.prompt : '';
+  const s = ctx.shots.find((x) => x.key === key); return s ? s.keyframePrompt : '';
+}
+function agentOnResult(m) {
+  const run = agentRun; if (!run || !run.ctx || !m || !m.mediaId) return;
+  if (m.pid && run.pid && m.pid !== run.pid) return;
+  let key = window.AgentPlan.matchKey(run.ctx, m);
+  if (!key && m.mediaKind === 'video' && m.startId) {
+    key = Object.keys(run.state.media).find((k) => /^SHOT /.test(k) && run.state.media[k] === m.startId) || '';
+  }
+  if (!key) return;
+  if (/fail|error/i.test(m.status || '')) { addLog(`⚠️ Agent báo lỗi khi tạo ${key} — bấm "Điền lại tin nhắn hiện tại" để tạo lại mục còn thiếu.`, 'warning'); return; }
+  const fid = window.AgentPlan.fidelity(agentExpectedPrompt(run.ctx, key, m.mediaKind), m.prompt);
+  if (m.mediaKind === 'video') {
+    if (run.videoIds[m.mediaId]) return;
+    run.videoIds[m.mediaId] = key;
+  } else {
+    if (run.state.media[key] === m.mediaId) return;
+    run.state.media[key] = m.mediaId;
+    agentPersistState(run);
+  }
+  addLog(fid >= 0.95 ? `✅ ${key}${m.mediaKind === 'video' ? ' (video)' : ''} → ${String(m.mediaId).slice(0, 8)}… · prompt giữ nguyên`
+    : `⚠️ ${key}${m.mediaKind === 'video' ? ' (video)' : ''} → ${String(m.mediaId).slice(0, 8)}… · Agent đã RÚT GỌN prompt (còn ~${Math.round(fid * 100)}%).`, fid >= 0.95 ? 'success' : 'warning');
+  agentCheckAdvance();
+}
+function agentOnVideoDone(mediaId, ok) {
+  const run = agentRun; if (!run || !run.state) return;
+  const key = run.videoIds[mediaId];
+  if (!key) return;
+  run.state.videos[key] = ok ? mediaId : 'failed:' + mediaId;
+  agentCheckAdvance();
+}
+function agentSkipStage() {
+  const run = agentRun; if (!run || !run.stage) return;
+  const left = agentStageKeysLeft(run, run.stage);
+  left.forEach((k) => run.skipped.add(k));
+  addLog(`⏭️ Bỏ qua: ${left.join(', ') || '(không còn mục nào)'} — sang tin nhắn kế.`, 'warning');
+  run.stage = null; run.busy = false;
+  agentDeliver();
+}
+// Nút chính: chưa chạy → bắt đầu cho DỰ ÁN ĐANG MỞ trong project Flow đang mở; đang chạy → điền lại tin nhắn hiện tại (chỉ mục còn thiếu).
+async function copyAgentInstruction() {
+  if (agentRun) { await agentDeliver(true); return; }
+  if (!nanoManifest || !nanoQueue.length) { agentSay('⚠️ Chưa có shot — nạp manifest Nano Flow trước.', 'warning'); return; }
+  if (!(await agentFlowPid())) { agentSay('⚠️ Mở 1 project trên flow.google.com (URL có /project/…) rồi bấm lại.', 'warning'); return; }
+  await agentStart([curProj], false);
 }
 async function pushAgentWatchSetting(reset) {
   const on = !!document.getElementById('nf-agent-watch')?.checked;
@@ -5336,17 +5308,16 @@ function initAgentMode() {
   images?.addEventListener('change', () => pushAgentWatchSetting(false));
   document.getElementById('btn-nf-agent-copy')?.addEventListener('click', copyAgentInstruction);
   document.getElementById('btn-nf-agent-refs')?.addEventListener('click', uploadAgentRefs);
+  document.getElementById('btn-nf-agent-skip')?.addEventListener('click', agentSkipStage);
+  agentUpdateButtons();
   chrome.runtime.onMessage.addListener((m) => {
     if (!m) return;
-    if (m.type === 'AGENT_EVENT' && m.event === 'permission') {
-      const statusEl = document.getElementById('nf-agent-status');
-      if (statusEl) statusEl.textContent = '🙋 Agent đang chờ bạn bấm Approve trên Flow.';
-    }
+    if (m.type === 'AGENT_EVENT' && m.event === 'permission') agentSay('🙋 Agent đang chờ bạn bấm Approve trên Flow.', 'quiet');
+    if (m.type === 'AGENT_RESULT') agentOnResult(m);
     if (m.type === 'AGENT_MEDIA_SAVED') {
-      const statusEl = document.getElementById('nf-agent-status');
-      if (statusEl) statusEl.textContent = m.ok ? `⬇️ Đã tải ${m.name}` : `❌ Tải lỗi: ${m.name}`;
-      agentRunOnSaved(m);
+      agentSay(m.ok ? `⬇️ Đã tải ${m.name}` : `❌ Tải lỗi: ${m.name}`, 'quiet');
+      if (m.mediaKind === 'video') agentOnVideoDone(m.mediaId, !!m.ok);
     }
-    if (m.type === 'AGENT_EVENT' && m.event === 'timeout') agentRunOnSaved({ mediaKind: /\bvideo\b/.test(m.text || '') ? 'video' : 'image' });
+    if (m.type === 'AGENT_EVENT' && m.event === 'timeout' && m.mediaKind === 'video') agentOnVideoDone(m.mediaId, false);
   });
 }
