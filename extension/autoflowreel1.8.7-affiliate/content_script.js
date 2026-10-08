@@ -1640,7 +1640,7 @@
     const name = agentDownloadName(d);
     const r = await downloadViaBackground(d.url, name);
     logUI(r && r.success ? `⬇️ Agent: đã tải ${name} ✅` : `⬇️ Agent: tải ${name} lỗi: ${(r && r.error) || '?'}`, r && r.success ? 'success' : 'error');
-    notify('AGENT_MEDIA_SAVED', { ok: !!(r && r.success), name, mediaId: d.mediaId, mediaKind: d.mediaKind, shot: d.shot || 0 });
+    notify('AGENT_MEDIA_SAVED', { ok: !!(r && r.success), name, mediaId: d.mediaId, mediaKind: d.mediaKind, thumb: !!d.thumb, shot: d.shot || 0 });
   }
   function pushAgentWatch(cfg, reset) {
     try { window.postMessage({ __afAgentWatch: true, on: !!(cfg && cfg.on), images: !!(cfg && cfg.images), reset: !!reset }, '*'); } catch (e) {}
@@ -4350,6 +4350,29 @@
           }
         });
         break;
+      case 'AGENT_COPY_TEXT': {
+        // Copy chỉ dẫn từ trang Flow (đang có focus) khi sidepanel không copy được.
+        const text = String(msg.text || '');
+        const fallback = () => {
+          try {
+            const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok;
+          } catch (e) { return false; }
+        };
+        navigator.clipboard.writeText(text).then(() => sendResponse({ success: true }), () => sendResponse({ success: fallback() }));
+        return true;
+      }
+      case 'AGENT_NOTICE': {
+        logUI(String(msg.text || ''), 'info');
+        try {
+          const id = 'af-agent-notice'; document.getElementById(id)?.remove();
+          const el = document.createElement('div'); el.id = id; el.textContent = String(msg.text || '');
+          el.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#1a73e8;color:#fff;padding:10px 16px;border-radius:8px;font:14px sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.3);max-width:80vw;';
+          document.body.appendChild(el); setTimeout(() => el.remove(), 12000);
+        } catch (e) {}
+        sendResponse({ success: true });
+        break;
+      }
       case 'AGENT_UPLOAD_REFS': {
         if (!isNewFlowHost()) { sendResponse({ success: false, error: 'Tab đang mở không phải flow.google.com' }); break; }
         const pid = getProjectIdFromUrl();

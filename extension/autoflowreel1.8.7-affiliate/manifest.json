@@ -14,7 +14,8 @@
     "webRequest",
     "alarms",
     "notifications",
-    "scripting"
+    "scripting",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "https://labs.google.com/fx/*",
