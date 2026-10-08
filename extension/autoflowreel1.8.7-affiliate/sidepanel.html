@@ -675,6 +675,18 @@
             </select>
           </div>
           <p class="setup-desc" style="margin:2px 0;opacity:.75;">🎬 Video dùng <b>model + độ dài ở Cài đặt tổng</b> (gồm cả Omni). Đổi ở tab ⚙️ Cài đặt.</p>
+          <div id="nf-agent-box" style="margin:8px 0;padding:8px;border:1px dashed var(--border,#444);border-radius:6px;">
+            <div class="setup-desc" style="font-weight:600;">🤖 Chế độ Agent của Flow (flow.google.com)</div>
+            <p class="setup-desc" style="margin:4px 0;opacity:.8;">Flow mới chặn lệnh tạo do extension gửi. Cách này: bật Agent trên Flow → kéo ảnh nhân vật vào khung chat → bấm <b>Copy chỉ dẫn</b> rồi dán &amp; gửi → bấm <b>Approve</b>. Extension tự nhận kết quả và tải video về, đặt tên theo SHOT.</p>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+              <label class="setup-desc"><input type="checkbox" id="nf-agent-watch"> Tự tải kết quả Agent</label>
+              <label class="setup-desc"><input type="checkbox" id="nf-agent-images"> Tải cả ảnh khung đầu</label>
+              <span class="setup-desc">Shot / tin nhắn:</span>
+              <input type="number" id="nf-agent-batch" min="1" max="20" value="5" style="width:52px;">
+              <button class="btn-sm btn-outline" id="btn-nf-agent-copy">📋 <span id="nf-agent-copy-label">Copy chỉ dẫn Agent</span></button>
+            </div>
+            <p id="nf-agent-status" class="setup-desc" style="margin:4px 0 0;"></p>
+          </div>
           <p id="nf-status" class="setup-desc"></p>
           <div id="nf-projects"></div>
           <div id="nf-assets"></div>

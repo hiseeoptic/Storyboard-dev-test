@@ -889,6 +889,7 @@ function bindEvents() {
   document.getElementById('btn-nf-video')?.addEventListener('click', runNanoVideos);
   // Nút thumbnail riêng đã bỏ — thumbnail nay tự chạy trong luồng (maybeAutoThumbnail).
   document.getElementById('btn-nf-runall')?.addEventListener('click', runAllNanoProjects); // B2
+  initAgentMode();
   document.getElementById('btn-nf-clear')?.addEventListener('click', clearNanoQueue);
   chrome.runtime.onMessage.addListener((m) => {
     if (m && m.type === 'NANO_IMAGES_DONE') {
@@ -5033,5 +5034,114 @@ function bindLicenseEvents() {
   document.getElementById('license-key-input').addEventListener('input', (e) => {
     let val = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '');
     e.target.value = val;
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHẾ ĐỘ AGENT (Flow mới). Extension KHÔNG tự gửi tin nhắn và KHÔNG tự bấm Approve
+// (reCAPTCHA chỉ hợp lệ khi chính người dùng thao tác). Sidepanel chỉ: soạn chỉ dẫn
+// tiếng Anh theo shot của manifest để người dùng dán vào Agent, và bật bộ đọc kết
+// quả để content_script tự tải video về, đặt tên "SHOT NN".
+// ─────────────────────────────────────────────────────────────────────────────
+let agentCopyPart = 0;
+function agentClip(text, max) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  return t.length > max ? t.slice(0, max - 1) + '…' : t;
+}
+function agentVideoText(item) {
+  const raw = String(item.videoPrompt || '').trim();
+  if (!raw.startsWith('{')) return raw;
+  // Clip có cấu trúc: Agent đọc văn xuôi tốt hơn JSON dài → trải phẳng các giá trị chữ.
+  try {
+    const parts = [];
+    const walk = (v) => {
+      if (typeof v === 'string') { if (v.trim()) parts.push(v.trim()); }
+      else if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+    };
+    walk(JSON.parse(raw));
+    return parts.join('. ');
+  } catch (e) { return raw; }
+}
+function buildAgentInstruction(items, partNo, partCount) {
+  const projAspect = (nanoManifest && nanoManifest.project && nanoManifest.project.aspect_ratio) || '';
+  const aspect = /9:16/.test(projAspect) ? '9:16' : (/16:9/.test(projAspect) ? '16:9' : (/PORTRAIT/i.test(document.getElementById('nf-aspect')?.value || '') ? '9:16' : '16:9'));
+  const orient = aspect === '9:16' ? 'portrait' : 'landscape';
+  const duration = Math.max(4, Math.min(10, (typeof settings !== 'undefined' && settings.duration) || 8));
+  const lines = [];
+  lines.push(`Make a ${items.length}-shot ${aspect === '9:16' ? 'vertical' : 'horizontal'} video${partCount > 1 ? ` (part ${partNo} of ${partCount})` : ''}. Do NOT ask me any questions; use these settings exactly.`);
+  lines.push('');
+  lines.push('References: the uploaded photos are the main characters — keep their faces, hair and outfits identical in every image and video.');
+  lines.push('');
+  lines.push(`STEP 1 — Generate ${items.length} images with Nano Banana, aspect ratio ${aspect} (${orient}), one per shot, using the uploaded photos as reference. Start every image prompt with its shot title exactly as written (e.g. "SHOT 01 –").`);
+  items.forEach((it) => {
+    const no = String(it.index || 0).padStart(2, '0');
+    lines.push(`SHOT ${no} – ${agentClip(it.videoKeyframePrompt || it.storyboardPrompt || it.name, 900)}`);
+  });
+  lines.push('');
+  lines.push(`STEP 2 — For each image, generate one video using that image as the first frame, aspect ratio ${aspect}, ${duration} seconds, no text or subtitles on screen. Start every video prompt with the same shot title.`);
+  items.forEach((it) => {
+    const no = String(it.index || 0).padStart(2, '0');
+    lines.push(`SHOT ${no} motion – ${agentClip(agentVideoText(it), 900)}`);
+  });
+  lines.push('');
+  lines.push(`Generate all ${items.length} shots in one go and ask for permission only once. When finished, list the shot titles you produced.`);
+  return lines.join('\n');
+}
+async function copyAgentInstruction() {
+  const statusEl = document.getElementById('nf-agent-status');
+  const items = (nanoQueue || []).filter((q) => q && (q.videoKeyframePrompt || q.storyboardPrompt || q.videoPrompt));
+  if (!items.length) { if (statusEl) statusEl.textContent = '⚠️ Chưa có shot — nạp manifest Nano Flow trước.'; return; }
+  const per = Math.max(1, Math.min(20, Number(document.getElementById('nf-agent-batch')?.value) || 5));
+  const parts = Math.ceil(items.length / per);
+  if (agentCopyPart >= parts) agentCopyPart = 0;
+  const chunk = items.slice(agentCopyPart * per, agentCopyPart * per + per);
+  const text = buildAgentInstruction(chunk, agentCopyPart + 1, parts);
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e2) {} ta.remove();
+  }
+  const first = String(chunk[0].index).padStart(2, '0'), last = String(chunk[chunk.length - 1].index).padStart(2, '0');
+  if (statusEl) statusEl.textContent = `✅ Đã copy phần ${agentCopyPart + 1}/${parts} (SHOT ${first}–${last}, ${text.length} ký tự). Dán vào khung chat Agent, gửi, rồi bấm Approve.${parts > 1 ? ' Bấm Copy lần nữa để lấy phần tiếp theo.' : ''}`;
+  addLog(`🤖 Đã copy chỉ dẫn Agent phần ${agentCopyPart + 1}/${parts} (SHOT ${first}–${last}).`, 'info');
+  agentCopyPart = (agentCopyPart + 1) % parts;
+  const lbl = document.getElementById('nf-agent-copy-label');
+  if (lbl) lbl.textContent = parts > 1 ? `Copy chỉ dẫn Agent (phần ${agentCopyPart + 1}/${parts})` : 'Copy chỉ dẫn Agent';
+}
+async function pushAgentWatchSetting(reset) {
+  const on = !!document.getElementById('nf-agent-watch')?.checked;
+  const images = !!document.getElementById('nf-agent-images')?.checked;
+  chrome.storage.local.set({ afAgentWatch: { on, images } });
+  const r = await sendToContentAwait({ action: 'AGENT_WATCH', on, images, reset: !!reset }, 5000);
+  const statusEl = document.getElementById('nf-agent-status');
+  if (statusEl) {
+    if (!r) statusEl.textContent = on ? '⚠️ Chưa kết nối tab Flow — mở flow.google.com rồi bật lại.' : '';
+    else if (on && !r.newFlow) statusEl.textContent = 'ℹ️ Tab đang mở không phải flow.google.com — chế độ Agent chỉ chạy trên Flow mới.';
+    else statusEl.textContent = on ? '🤖 Đang nghe kết quả Agent trên tab Flow.' : '';
+  }
+}
+function initAgentMode() {
+  const watch = document.getElementById('nf-agent-watch');
+  const images = document.getElementById('nf-agent-images');
+  chrome.storage.local.get(['afAgentWatch'], (v) => {
+    const cfg = (v && v.afAgentWatch) || {};
+    if (watch) watch.checked = !!cfg.on;
+    if (images) images.checked = !!cfg.images;
+  });
+  watch?.addEventListener('change', () => pushAgentWatchSetting(true));
+  images?.addEventListener('change', () => pushAgentWatchSetting(false));
+  document.getElementById('btn-nf-agent-copy')?.addEventListener('click', copyAgentInstruction);
+  chrome.runtime.onMessage.addListener((m) => {
+    if (!m) return;
+    if (m.type === 'AGENT_EVENT' && m.event === 'permission') {
+      const statusEl = document.getElementById('nf-agent-status');
+      if (statusEl) statusEl.textContent = '🙋 Agent đang chờ bạn bấm Approve trên Flow.';
+    }
+    if (m.type === 'AGENT_MEDIA_SAVED') {
+      const statusEl = document.getElementById('nf-agent-status');
+      if (statusEl) statusEl.textContent = m.ok ? `⬇️ Đã tải ${m.name}` : `❌ Tải lỗi: ${m.name}`;
+    }
   });
 }

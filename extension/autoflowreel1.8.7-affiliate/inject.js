@@ -139,6 +139,9 @@
       }
     } catch (e) {}
     const p = origFetch.apply(this, arguments);
+    if (AGENT_STREAM_RE.test(_url)) {
+      try { p.then((r) => r.clone().text()).then((t) => agentOnStream(t)).catch(() => {}); } catch (e) {}
+    }
     if (_trace || _kind) {
       try {
         p.then((r) => {
@@ -162,6 +165,9 @@
   XMLHttpRequest.prototype.setRequestHeader = function (k, v) { try { this.__afH[k] = v; } catch (e) {} return H.apply(this, arguments); };
   XMLHttpRequest.prototype.send = function (body) {
     try {
+      if (AGENT_STREAM_RE.test(String(this.__afU || ''))) {
+        this.addEventListener('load', () => { try { agentOnStream(this.responseText); } catch (e) {} });
+      }
       if (interesting(this.__afU)) grabAuth(this.__afH || {});
       const trace = shouldTraceRequest(this.__afU, this.__afM || 'GET');
       if (trace) {
@@ -604,6 +610,130 @@
     } catch (e) {
       post({ via: 'projectCreated', kind: 'projectCreated', reqId: d.reqId, ok: false, error: e.message });
     }
+  });
+
+  // ============================================================
+  // CHẾ ĐỘ AGENT (Flow Creation Agent) — CHỈ QUAN SÁT, KHÔNG TỰ GỬI.
+  // Người dùng tự dán chỉ dẫn vào khung chat Agent, tự gửi và tự bấm Approve
+  // (reCAPTCHA do chính trang tạo). Extension chỉ đọc phản hồi StreamChat mà trang
+  // đã nhận, gom kết quả generate_image / generate_video_with_first_frame theo
+  // "SHOT NN" trong prompt, rồi chờ URL đã ký bằng as29s (đọc, không reCAPTCHA)
+  // và báo content_script tải về. Trace 3 shot 08/10/2026: 1 tin nhắn → 3 ảnh,
+  // 1 lần Approve → 3 video; media_id video là ID THẬT trong kết quả (KHÁC
+  // placeholder_frontend_id — poll placeholder sẽ "Media not found").
+  // ============================================================
+  const AGENT_STREAM_RE = /FlowCreationAgentService\/StreamChat/;
+  const agent = {
+    on: false,
+    images: false,          // có tải luôn ảnh khung đầu không
+    args: new Map(),        // placeholder_frontend_id → { tool, prompt, aspect, model, startId }
+    media: new Map(),       // media_id → { kind, shot, prompt, name, pid, url, tries, done }
+    pollTimer: null,
+  };
+  // Giá trị một tham số tool-call: [null,null,"chuỗi"] · [null,8] · [null,…,[…list…]]
+  function agentArgValue(v) {
+    if (!Array.isArray(v)) return v;
+    if (typeof v[2] === 'string') return v[2];
+    if (typeof v[1] === 'number' || typeof v[1] === 'boolean') return v[1];
+    for (let i = v.length - 1; i >= 0; i--) if (v[i] != null) return v[i];
+    return null;
+  }
+  // Tìm mọi ["generate_x","generate_x",[[[key,val],…]], placeholder] trong payload.
+  function agentFindToolCalls(node, out) {
+    if (!Array.isArray(node)) return out;
+    if (typeof node[0] === 'string' && node[0] === node[1] && /^(generate_|ask_for_permission)/.test(node[0]) && Array.isArray(node[2])) {
+      const kv = {};
+      const pairs = Array.isArray(node[2][0]) ? node[2][0] : [];
+      for (const p of pairs) if (Array.isArray(p) && typeof p[0] === 'string') kv[p[0]] = agentArgValue(p[1]);
+      out.push({ tool: node[0], kv, ref: typeof node[3] === 'string' ? node[3] : '' });
+      return out;
+    }
+    for (const x of node) agentFindToolCalls(x, out);
+    return out;
+  }
+  function agentShotOf(text) {
+    const m = /\bSHOT\s*0*(\d{1,3})\b/i.exec(String(text || ''));
+    return m ? Number(m[1]) : 0;
+  }
+  function agentPid(kv) {
+    if (kv && kv.project_id) return String(kv.project_id);
+    const m = /\/project\/([0-9a-f-]{36})/i.exec(location.pathname || '');
+    return m ? m[1] : '';
+  }
+  function agentParseStream(text) {
+    const calls = [];
+    for (const r of fbParse(text)) {
+      if (r.data != null) agentFindToolCalls(r.data, calls);
+    }
+    let added = 0;
+    for (const c of calls) {
+      const kv = c.kv;
+      const ph = kv.placeholder_frontend_id || c.ref;
+      if (c.tool === 'ask_for_permission') {
+        post({ via: 'agentEvent', kind: 'agentEvent', event: 'permission', text: '🙋 Agent đang xin phép tạo video — bấm Approve trên Flow (extension không tự bấm).' });
+        continue;
+      }
+      if (!kv.media_id) {
+        // Lời gọi (chưa có kết quả): ghi lại prompt theo placeholder để ghép sau.
+        if (ph && kv.prompt) agent.args.set(ph, { tool: c.tool, prompt: String(kv.prompt), aspect: kv.aspect_ratio || '', model: kv.model_usage_key || '', startId: kv.start_image_media_id || '' });
+        continue;
+      }
+      const id = String(kv.media_id);
+      const a = agent.args.get(ph) || {};
+      const isVideo = /video/.test(c.tool);
+      const prev = agent.media.get(id);
+      const prompt = a.prompt || (prev && prev.prompt) || '';
+      const rec = Object.assign(prev || { url: '', tries: 0, done: false }, {
+        kind: isVideo ? 'video' : 'image',
+        shot: agentShotOf(prompt) || agentShotOf(kv.display_name) || (prev && prev.shot) || 0,
+        prompt,
+        name: String(kv.display_name || (prev && prev.name) || ''),
+        pid: agentPid(kv),
+        status: String(kv.status || ''),
+      });
+      if (!prev) added++;
+      agent.media.set(id, rec);
+    }
+    if (added) {
+      const v = Array.from(agent.media.values());
+      post({ via: 'agentEvent', kind: 'agentEvent', event: 'found', text: `🤖 Agent: đã thấy ${v.filter((x) => x.kind === 'image').length} ảnh, ${v.filter((x) => x.kind === 'video').length} video — đang chờ render để tải.` });
+      agentSchedulePoll(3000);
+    }
+  }
+  function agentOnStream(text) {
+    if (!agent.on || !text) return;
+    try { agentParseStream(text); } catch (e) { post({ via: 'log', kind: 'log', message: '⚠️ Agent: không đọc được phản hồi StreamChat: ' + ((e && e.message) || e) }); }
+  }
+  function agentSchedulePoll(ms) {
+    if (agent.pollTimer) return;
+    agent.pollTimer = setTimeout(() => { agent.pollTimer = null; agentPoll(); }, ms);
+  }
+  async function agentPoll() {
+    if (!agent.on) return;
+    const wanted = Array.from(agent.media.entries()).filter(([, m]) => !m.done && (m.kind === 'video' || agent.images));
+    for (const [id, m] of wanted) {
+      m.tries++;
+      try {
+        const data = await fbCall('as29s', [id]);       // đọc — không reCAPTCHA
+        const url = fbFindUrl(data, m.kind);
+        if (url) {
+          m.url = url; m.done = true;
+          post({ via: 'agentMedia', kind: 'agentMedia', mediaId: id, mediaKind: m.kind, shot: m.shot, name: m.name, prompt: m.prompt.slice(0, 200), pid: m.pid, url });
+        }
+      } catch (e) { /* NOT_FOUND khi chưa ghi xong → vòng sau */ }
+      if (!m.done && m.tries > 120) { m.done = true; post({ via: 'agentEvent', kind: 'agentEvent', event: 'timeout', text: `⌛ Agent: hết thời gian chờ ${m.kind} ${m.shot ? 'SHOT ' + m.shot : id.slice(0, 8)}.` }); }
+    }
+    if (Array.from(agent.media.values()).some((m) => !m.done && (m.kind === 'video' || agent.images))) agentSchedulePoll(10000);
+  }
+  window.addEventListener('message', (ev) => {
+    if (ev.source !== window) return;
+    const d = ev.data;
+    if (!d || d.__afAgentWatch !== true) return;
+    agent.on = !!d.on;
+    agent.images = !!d.images;
+    if (d.reset) { agent.args.clear(); agent.media.clear(); }
+    post({ via: 'agentEvent', kind: 'agentEvent', event: 'state', on: agent.on, text: agent.on ? '🤖 Chế độ Agent: BẬT — gửi chỉ dẫn và bấm Approve trên Flow, extension sẽ tự tải video theo SHOT.' : '🤖 Chế độ Agent: TẮT.' });
+    if (agent.on) agentSchedulePoll(1000);
   });
 
   // Upload 1 ảnh → trả mediaId (media.name). Dùng cho ảnh nhân vật/reference.

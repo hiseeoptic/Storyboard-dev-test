@@ -1625,6 +1625,32 @@
       });
     });
   }
+  // ── Chế độ Agent: inject chỉ ĐỌC kết quả Agent; ở đây tải file về, đặt tên theo SHOT.
+  const _afAgentSaved = new Set();
+  function agentDownloadName(d) {
+    const ext = d.mediaKind === 'video' ? 'mp4' : 'jpg';
+    const proj = String(d.pid || '').slice(0, 8) || 'flow';
+    const shot = Number(d.shot) > 0 ? `SHOT ${String(d.shot).padStart(2, '0')}` : (d.name || String(d.mediaId).slice(0, 8));
+    return `AutoFlow Agent ${proj} - ${shot}${d.mediaKind === 'image' ? ' (khung dau)' : ''}.${ext}`;
+  }
+  async function handleAgentMedia(d) {
+    if (!d || !d.url || _afAgentSaved.has(d.mediaId)) return;
+    _afAgentSaved.add(d.mediaId);
+    const name = agentDownloadName(d);
+    const r = await downloadViaBackground(d.url, name);
+    logUI(r && r.success ? `⬇️ Agent: đã tải ${name} ✅` : `⬇️ Agent: tải ${name} lỗi: ${(r && r.error) || '?'}`, r && r.success ? 'success' : 'error');
+    notify('AGENT_MEDIA_SAVED', { ok: !!(r && r.success), name, mediaId: d.mediaId, mediaKind: d.mediaKind, shot: d.shot || 0 });
+  }
+  function pushAgentWatch(cfg, reset) {
+    try { window.postMessage({ __afAgentWatch: true, on: !!(cfg && cfg.on), images: !!(cfg && cfg.images), reset: !!reset }, '*'); } catch (e) {}
+  }
+  // Bật lại theo cài đặt đã lưu mỗi khi trang Flow (mới) tải xong.
+  if (isNewFlowHost()) {
+    setTimeout(() => {
+      try { chrome.storage.local.get(['afAgentWatch'], (v) => { if (v && v.afAgentWatch && v.afAgentWatch.on) pushAgentWatch(v.afAgentWatch, false); }); } catch (e) {}
+    }, 1500);
+  }
+
   // Flow mới chưa có RPC upscale video đã kiểm chứng → luôn tải bản gốc 720p.
   function effectiveDownloadQuality(q) {
     if (isNewFlowHost() && q && q !== '720') {
@@ -4322,6 +4348,13 @@
           }
         });
         break;
+      case 'AGENT_WATCH': {
+        const cfg = { on: !!msg.on, images: !!msg.images };
+        try { chrome.storage.local.set({ afAgentWatch: cfg }); } catch (e) {}
+        pushAgentWatch(cfg, !!msg.reset);
+        sendResponse({ success: true, newFlow: isNewFlowHost() });
+        break;
+      }
       case 'CREATE_NEW_FLOW_PROJECT': {
         if (isNewFlowHost()) {
           // Flow mới: tạo project bằng RPC jHPbke rồi mở thẳng /project/<id>.
@@ -4510,6 +4543,8 @@
     appendApiTrace(d);
     if (d.via === 'init') { logUI('🔌 Net hook đã cài — đang lắng nghe API Flow. Hãy TẠO 1 video tay để bắt giao thức.', 'info'); return; }
     if (d.kind === 'log') { logUI(d.message || '', 'info'); return; }
+    if (d.kind === 'agentEvent') { logUI(d.text || '', d.event === 'timeout' ? 'warning' : 'info'); notify('AGENT_EVENT', { event: d.event || '', text: d.text || '', on: d.on }); return; }
+    if (d.kind === 'agentMedia') { handleAgentMedia(d); return; }
     if (d.kind === 'nanoImagesDone') { notify('NANO_IMAGES_DONE', { results: d.results || [], projectFingerprint: d.projectFingerprint || '', runId: d.runId || '', generationEpoch: Number(d.generationEpoch) || 0, flowProjectId: d.flowProjectId || '' }); return; }
     if (d.kind === 'nanoVideosDone') { notify('NANO_VIDEOS_DONE', { results: d.results || [], projectFingerprint: d.projectFingerprint || '', runId: d.runId || '', generationEpoch: Number(d.generationEpoch) || 0, flowProjectId: d.flowProjectId || '' }); return; }
     if (d.kind === 'nanoThumbDone') { notify('NANO_THUMB_DONE', { result: d.result || null, projectFingerprint: d.projectFingerprint || '', runId: d.runId || '', generationEpoch: Number(d.generationEpoch) || 0, flowProjectId: d.flowProjectId || '' }); return; }
