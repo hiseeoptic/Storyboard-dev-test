@@ -683,9 +683,12 @@
       const isVideo = /video/.test(c.tool);
       const prev = agent.media.get(id);
       const prompt = a.prompt || (prev && prev.prompt) || '';
+      // Agent có thể viết lại prompt và bỏ "SHOT NN" → video lấy số shot từ ảnh khung đầu.
+      const startRec = a.startId ? agent.media.get(String(a.startId)) : null;
       const rec = Object.assign(prev || { url: '', tries: 0, done: false }, {
         kind: isVideo ? 'video' : 'image',
-        shot: agentShotOf(prompt) || agentShotOf(kv.display_name) || (prev && prev.shot) || 0,
+        shot: agentShotOf(prompt) || agentShotOf(kv.display_name) || (prev && prev.shot) || (startRec && startRec.shot) || 0,
+        thumb: !isVideo && (/\bTHUMBNAIL\b/i.test(prompt) || /\bthumbnail\b/i.test(String(kv.display_name || ''))),
         prompt,
         name: String(kv.display_name || (prev && prev.name) || ''),
         pid: agentPid(kv),
@@ -710,7 +713,8 @@
   }
   async function agentPoll() {
     if (!agent.on) return;
-    const wanted = Array.from(agent.media.entries()).filter(([, m]) => !m.done && (m.kind === 'video' || agent.images));
+    const want = (m) => m.kind === 'video' || m.thumb || agent.images;
+    const wanted = Array.from(agent.media.entries()).filter(([, m]) => !m.done && want(m));
     for (const [id, m] of wanted) {
       m.tries++;
       try {
@@ -718,16 +722,40 @@
         const url = fbFindUrl(data, m.kind);
         if (url) {
           m.url = url; m.done = true;
-          post({ via: 'agentMedia', kind: 'agentMedia', mediaId: id, mediaKind: m.kind, shot: m.shot, name: m.name, prompt: m.prompt.slice(0, 200), pid: m.pid, url });
+          post({ via: 'agentMedia', kind: 'agentMedia', mediaId: id, mediaKind: m.kind, shot: m.shot, thumb: !!m.thumb, name: m.name, prompt: m.prompt.slice(0, 200), pid: m.pid, url });
         }
       } catch (e) { /* NOT_FOUND khi chưa ghi xong → vòng sau */ }
       if (!m.done && m.tries > 120) { m.done = true; post({ via: 'agentEvent', kind: 'agentEvent', event: 'timeout', text: `⌛ Agent: hết thời gian chờ ${m.kind} ${m.shot ? 'SHOT ' + m.shot : id.slice(0, 8)}.` }); }
     }
-    if (Array.from(agent.media.values()).some((m) => !m.done && (m.kind === 'video' || agent.images))) agentSchedulePoll(10000);
+    if (Array.from(agent.media.values()).some((m) => !m.done && want(m))) agentSchedulePoll(10000);
+  }
+  // Nạp ảnh nhân vật / bối cảnh / sản phẩm vào project (maseQ — upload thường của Flow,
+  // KHÔNG phải lệnh tạo). Trả mediaId để chỉ dẫn Agent ghi "tên + mã ảnh" — Agent đã
+  // được kiểm chứng (08/10/2026) tự dùng ảnh có sẵn trong project theo mã, không cần kéo ảnh.
+  async function agentUploadRefs(d) {
+    const pid = String(d.projectId || '').replace(/^projects\//, '') || agentPid(null);
+    const refs = Array.isArray(d.refs) ? d.refs : [];
+    const out = [];
+    for (let i = 0; i < refs.length; i++) {
+      const r = refs[i] || {};
+      if (fbSafetyHold) { out.push({ key: r.key, error: 'đã dừng (chốt an toàn UNUSUAL_ACTIVITY)' }); continue; }
+      const base = String(r.name || `ref_${i + 1}`).replace(/[\\/:*?"<>|]+/g, ' ').trim() || `ref_${i + 1}`;
+      try {
+        const mediaId = await fbUploadImage(pid, r.data, `${base}.png`);
+        out.push({ key: r.key, mediaId });
+        post({ via: 'log', kind: 'log', message: `📤 Đã nạp "${base}" vào Flow → ${String(mediaId).slice(0, 8)}…` });
+      } catch (e) {
+        out.push({ key: r.key, error: (e && e.message) || String(e) });
+        post({ via: 'log', kind: 'log', message: `❌ Nạp "${base}" lỗi: ${(e && e.message) || e}` });
+      }
+      if (i < refs.length - 1) await new Promise((res) => setTimeout(res, 1500));
+    }
+    post({ via: 'agentRefs', kind: 'agentRefs', reqId: d.reqId, pid, refs: out });
   }
   window.addEventListener('message', (ev) => {
     if (ev.source !== window) return;
     const d = ev.data;
+    if (d && d.__afAgentUploadRefs === true) { agentUploadRefs(d); return; }
     if (!d || d.__afAgentWatch !== true) return;
     agent.on = !!d.on;
     agent.images = !!d.images;

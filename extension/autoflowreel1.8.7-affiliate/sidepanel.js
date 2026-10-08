@@ -5063,7 +5063,29 @@ function agentVideoText(item) {
     return parts.join('. ');
   } catch (e) { return raw; }
 }
-function buildAgentInstruction(items, partNo, partCount) {
+// Ảnh tham chiếu đã nạp vào project Flow đang mở: [{ kind, id, name, mediaId }].
+// Chỉ dùng khi đúng project (mediaId của project khác Agent không đọc được).
+function agentRefsFor(pid) {
+  const r = nanoManifest && nanoManifest.agentRefs;
+  if (!r || !pid || r.pid !== pid || !Array.isArray(r.list)) return [];
+  return r.list.filter((x) => x && x.mediaId);
+}
+const AGENT_KIND_LABEL = { characters: 'character', environments: 'location', products: 'product' };
+function agentRefLabel(ref) { return `"${ref.name}" (media id ${ref.mediaId})`; }
+// Ảnh ref dùng cho 1 shot = các asset shot đó khai báo trong image_refs.
+function agentShotRefs(item, refs) {
+  const pick = [];
+  const ir = (item && item.imageRefs) || {};
+  ['characters', 'environments', 'products'].forEach((kind) => {
+    (ir[kind] || []).forEach((a) => {
+      refs.filter((r) => r.kind === kind && (r.id ? r.id === a.id : r.name === a.name))
+        .forEach((r) => { if (!pick.includes(r)) pick.push(r); });
+    });
+  });
+  return pick;
+}
+function buildAgentInstruction(items, partNo, partCount, refs) {
+  refs = Array.isArray(refs) ? refs : [];
   const projAspect = (nanoManifest && nanoManifest.project && nanoManifest.project.aspect_ratio) || '';
   const aspect = /9:16/.test(projAspect) ? '9:16' : (/16:9/.test(projAspect) ? '16:9' : (/PORTRAIT/i.test(document.getElementById('nf-aspect')?.value || '') ? '9:16' : '16:9'));
   const orient = aspect === '9:16' ? 'portrait' : 'landscape';
@@ -5071,22 +5093,77 @@ function buildAgentInstruction(items, partNo, partCount) {
   const lines = [];
   lines.push(`Make a ${items.length}-shot ${aspect === '9:16' ? 'vertical' : 'horizontal'} video${partCount > 1 ? ` (part ${partNo} of ${partCount})` : ''}. Do NOT ask me any questions; use these settings exactly.`);
   lines.push('');
-  lines.push('References: the uploaded photos are the main characters — keep their faces, hair and outfits identical in every image and video.');
+  if (refs.length) {
+    // Đã kiểm chứng: Agent tự gắn ảnh có sẵn trong project khi chỉ dẫn ghi mã ảnh.
+    lines.push('REFERENCE IMAGES — these images already exist in this project. Use them by media id as references (do not ask me to upload anything). Keep faces, hair, outfits, places and products identical to them in every image and video:');
+    refs.forEach((r) => lines.push(`- ${r.name} (${AGENT_KIND_LABEL[r.kind] || 'reference'}): media id ${r.mediaId}`));
+  } else {
+    lines.push('References: the uploaded photos are the main characters — keep their faces, hair and outfits identical in every image and video.');
+  }
   lines.push('');
-  lines.push(`STEP 1 — Generate ${items.length} images with Nano Banana, aspect ratio ${aspect} (${orient}), one per shot, using the uploaded photos as reference. Start every image prompt with its shot title exactly as written (e.g. "SHOT 01 –").`);
+  lines.push(`STEP 1 — Generate ${items.length} images with Nano Banana, aspect ratio ${aspect} (${orient}), one per shot${refs.length ? ', using the reference images listed for each shot' : ', using the uploaded photos as reference'}. Start every image prompt with its shot title exactly as written (e.g. "SHOT 01 –").`);
   items.forEach((it) => {
     const no = String(it.index || 0).padStart(2, '0');
-    lines.push(`SHOT ${no} – ${agentClip(it.videoKeyframePrompt || it.storyboardPrompt || it.name, 900)}`);
+    const own = refs.length ? agentShotRefs(it, refs) : [];
+    const use = own.length ? own : refs.filter((r) => r.kind === 'characters');
+    const tail = use.length ? ` [references: ${use.map(agentRefLabel).join(', ')}]` : '';
+    lines.push(`SHOT ${no} – ${agentClip(it.videoKeyframePrompt || it.storyboardPrompt || it.name, 900)}${tail}`);
   });
   lines.push('');
-  lines.push(`STEP 2 — For each image, generate one video using that image as the first frame, aspect ratio ${aspect}, ${duration} seconds, no text or subtitles on screen. Start every video prompt with the same shot title.`);
+  lines.push(`STEP 2 — For each SHOT image from step 1, generate one video using that image as the first frame (start image), aspect ratio ${aspect}, ${duration} seconds, no text or subtitles on screen. Start every video prompt with the same shot title.`);
   items.forEach((it) => {
     const no = String(it.index || 0).padStart(2, '0');
     lines.push(`SHOT ${no} motion – ${agentClip(agentVideoText(it), 900)}`);
   });
+  const proj = (nanoManifest && nanoManifest.project) || {};
+  const thumbPrompt = String(proj.thumbnail_prompt || '').trim();
+  const withThumb = !!thumbPrompt && partNo === partCount;
+  if (withThumb) {
+    const title = String(proj.thumbnail_title || '').trim();
+    const tRefs = refs.filter((r) => r.kind !== 'environments');
+    lines.push('');
+    lines.push(`STEP 3 — Generate 1 thumbnail image with Nano Banana, aspect ratio ${aspect}. Start its prompt with "THUMBNAIL –".${tRefs.length ? ` Use ${tRefs.map(agentRefLabel).join(', ')} as references.` : ''}`);
+    lines.push(`THUMBNAIL – ${agentClip(thumbPrompt, 900)}${title ? ` Title text on the image: "${agentClip(title, 80)}".` : ''}`);
+  }
   lines.push('');
-  lines.push(`Generate all ${items.length} shots in one go and ask for permission only once. When finished, list the shot titles you produced.`);
+  lines.push(`Generate everything in one go and ask for permission only once. When finished, list the titles you produced.`);
   return lines.join('\n');
+}
+// Nạp ảnh nhân vật / bối cảnh / sản phẩm (đã gắn ở mục 👤📦🏠) vào project Flow đang mở.
+// Đây là thao tác upload thường của Flow; extension chỉ ghi lại mã ảnh để đưa vào chỉ dẫn.
+async function uploadAgentRefs() {
+  const statusEl = document.getElementById('nf-agent-status');
+  const say = (t) => { if (statusEl) statusEl.textContent = t; };
+  if (!nanoManifest || !nanoManifest.assets) { say('⚠️ Chưa nạp manifest Nano Flow.'); return; }
+  const refs = [];
+  ['characters', 'environments', 'products'].forEach((kind) => {
+    (nanoManifest.assets[kind] || []).forEach((a, i) => {
+      const data = a && (a.image || (Array.isArray(a.images) && a.images[0]));
+      if (data) refs.push({ key: `${kind}:${a.id || i}`, kind, id: a.id || '', name: String(a.name || `${kind} ${i + 1}`).trim(), data });
+    });
+  });
+  if (!refs.length) { say('⚠️ Chưa gắn ảnh nào ở mục Nhân vật / Bối cảnh / Sản phẩm bên dưới.'); return; }
+  const tabId = await findFlowTab();
+  const pid = tabId ? await flowProjectIdForTab(tabId) : '';
+  if (!pid) { say('⚠️ Mở project trên flow.google.com (URL có /project/…) rồi bấm lại.'); return; }
+  const btn = document.getElementById('btn-nf-agent-refs');
+  if (btn) btn.disabled = true;
+  say(`📤 Đang nạp ${refs.length} ảnh vào project Flow…`);
+  addLog(`📤 Nạp ${refs.length} ảnh tham chiếu (theo tên) vào project Flow ${pid.slice(0, 8)}…`, 'info');
+  const r = await sendToContentAwait({ action: 'AGENT_UPLOAD_REFS', refs: refs.map(({ key, name, data }) => ({ key, name, data })) }, 600000);
+  if (btn) btn.disabled = false;
+  if (!r || !r.success) { say(`❌ Nạp ảnh lỗi: ${(r && r.error) || 'không kết nối được tab Flow'}`); return; }
+  const byKey = new Map((r.refs || []).map((x) => [x.key, x]));
+  const list = [];
+  let fail = 0;
+  refs.forEach((ref) => {
+    const got = byKey.get(ref.key);
+    if (got && got.mediaId) list.push({ kind: ref.kind, id: ref.id, name: ref.name, mediaId: got.mediaId });
+    else fail++;
+  });
+  nanoManifest.agentRefs = { pid: r.pid || pid, list, at: Date.now() };
+  persistNanoProjects();
+  say(fail ? `⚠️ Đã nạp ${list.length}/${refs.length} ảnh (${fail} lỗi — xem Nhật ký).` : `✅ Đã nạp ${list.length} ảnh: ${list.map((x) => x.name).join(', ')}. Giờ bấm Copy chỉ dẫn.`);
 }
 async function copyAgentInstruction() {
   const statusEl = document.getElementById('nf-agent-status');
@@ -5096,7 +5173,11 @@ async function copyAgentInstruction() {
   const parts = Math.ceil(items.length / per);
   if (agentCopyPart >= parts) agentCopyPart = 0;
   const chunk = items.slice(agentCopyPart * per, agentCopyPart * per + per);
-  const text = buildAgentInstruction(chunk, agentCopyPart + 1, parts);
+  const flowTab = await findFlowTab();
+  const pid = flowTab ? await flowProjectIdForTab(flowTab) : '';
+  const refs = agentRefsFor(pid);
+  const hasImages = ['characters', 'environments', 'products'].some((k) => ((nanoManifest && nanoManifest.assets && nanoManifest.assets[k]) || []).some((a) => a && (a.image || (a.images && a.images.length))));
+  const text = buildAgentInstruction(chunk, agentCopyPart + 1, parts, refs);
   try {
     await navigator.clipboard.writeText(text);
   } catch (e) {
@@ -5104,7 +5185,9 @@ async function copyAgentInstruction() {
     try { document.execCommand('copy'); } catch (e2) {} ta.remove();
   }
   const first = String(chunk[0].index).padStart(2, '0'), last = String(chunk[chunk.length - 1].index).padStart(2, '0');
-  if (statusEl) statusEl.textContent = `✅ Đã copy phần ${agentCopyPart + 1}/${parts} (SHOT ${first}–${last}, ${text.length} ký tự). Dán vào khung chat Agent, gửi, rồi bấm Approve.${parts > 1 ? ' Bấm Copy lần nữa để lấy phần tiếp theo.' : ''}`;
+  const refNote = refs.length ? ` Đã ghi ${refs.length} ảnh tham chiếu theo tên — không cần kéo ảnh.`
+    : (hasImages ? ' ⚠️ Chưa nạp ảnh vào project này — bấm "Nạp ảnh vào Flow" trước, nếu không phải kéo ảnh tay.' : '');
+  if (statusEl) statusEl.textContent = `✅ Đã copy phần ${agentCopyPart + 1}/${parts} (SHOT ${first}–${last}, ${text.length} ký tự). Dán vào khung chat Agent, gửi, rồi bấm Approve.${refNote}${parts > 1 ? ' Bấm Copy lần nữa để lấy phần tiếp theo.' : ''}`;
   addLog(`🤖 Đã copy chỉ dẫn Agent phần ${agentCopyPart + 1}/${parts} (SHOT ${first}–${last}).`, 'info');
   agentCopyPart = (agentCopyPart + 1) % parts;
   const lbl = document.getElementById('nf-agent-copy-label');
@@ -5133,6 +5216,7 @@ function initAgentMode() {
   watch?.addEventListener('change', () => pushAgentWatchSetting(true));
   images?.addEventListener('change', () => pushAgentWatchSetting(false));
   document.getElementById('btn-nf-agent-copy')?.addEventListener('click', copyAgentInstruction);
+  document.getElementById('btn-nf-agent-refs')?.addEventListener('click', uploadAgentRefs);
   chrome.runtime.onMessage.addListener((m) => {
     if (!m) return;
     if (m.type === 'AGENT_EVENT' && m.event === 'permission') {

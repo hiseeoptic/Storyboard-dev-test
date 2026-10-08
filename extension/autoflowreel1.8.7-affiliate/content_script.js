@@ -1630,6 +1630,7 @@
   function agentDownloadName(d) {
     const ext = d.mediaKind === 'video' ? 'mp4' : 'jpg';
     const proj = String(d.pid || '').slice(0, 8) || 'flow';
+    if (d.thumb) return `AutoFlow Agent ${proj} - THUMBNAIL ${String(d.mediaId).slice(0, 4)}.${ext}`;
     const shot = Number(d.shot) > 0 ? `SHOT ${String(d.shot).padStart(2, '0')}` : (d.name || String(d.mediaId).slice(0, 8));
     return `AutoFlow Agent ${proj} - ${shot}${d.mediaKind === 'image' ? ' (khung dau)' : ''}.${ext}`;
   }
@@ -1644,6 +1645,7 @@
   function pushAgentWatch(cfg, reset) {
     try { window.postMessage({ __afAgentWatch: true, on: !!(cfg && cfg.on), images: !!(cfg && cfg.images), reset: !!reset }, '*'); } catch (e) {}
   }
+  const _afAgentRefWaiters = new Map();
   // Bật lại theo cài đặt đã lưu mỗi khi trang Flow (mới) tải xong.
   if (isNewFlowHost()) {
     setTimeout(() => {
@@ -4348,6 +4350,16 @@
           }
         });
         break;
+      case 'AGENT_UPLOAD_REFS': {
+        if (!isNewFlowHost()) { sendResponse({ success: false, error: 'Tab đang mở không phải flow.google.com' }); break; }
+        const pid = getProjectIdFromUrl();
+        if (!pid) { sendResponse({ success: false, error: 'Chưa mở project Flow (URL phải có /project/<id>)' }); break; }
+        const reqId = 'ref_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+        const timer = setTimeout(() => { if (_afAgentRefWaiters.delete(reqId)) sendResponse({ success: false, error: 'Hết thời gian nạp ảnh' }); }, 600000);
+        _afAgentRefWaiters.set(reqId, (d) => { clearTimeout(timer); sendResponse({ success: true, pid: d.pid || pid, refs: d.refs || [] }); });
+        window.postMessage({ __afAgentUploadRefs: true, reqId, projectId: pid, refs: Array.isArray(msg.refs) ? msg.refs : [] }, '*');
+        return true;
+      }
       case 'AGENT_WATCH': {
         const cfg = { on: !!msg.on, images: !!msg.images };
         try { chrome.storage.local.set({ afAgentWatch: cfg }); } catch (e) {}
@@ -4545,6 +4557,7 @@
     if (d.kind === 'log') { logUI(d.message || '', 'info'); return; }
     if (d.kind === 'agentEvent') { logUI(d.text || '', d.event === 'timeout' ? 'warning' : 'info'); notify('AGENT_EVENT', { event: d.event || '', text: d.text || '', on: d.on }); return; }
     if (d.kind === 'agentMedia') { handleAgentMedia(d); return; }
+    if (d.kind === 'agentRefs') { const w = _afAgentRefWaiters.get(d.reqId); if (w) { _afAgentRefWaiters.delete(d.reqId); w(d); } return; }
     if (d.kind === 'nanoImagesDone') { notify('NANO_IMAGES_DONE', { results: d.results || [], projectFingerprint: d.projectFingerprint || '', runId: d.runId || '', generationEpoch: Number(d.generationEpoch) || 0, flowProjectId: d.flowProjectId || '' }); return; }
     if (d.kind === 'nanoVideosDone') { notify('NANO_VIDEOS_DONE', { results: d.results || [], projectFingerprint: d.projectFingerprint || '', runId: d.runId || '', generationEpoch: Number(d.generationEpoch) || 0, flowProjectId: d.flowProjectId || '' }); return; }
     if (d.kind === 'nanoThumbDone') { notify('NANO_THUMB_DONE', { result: d.result || null, projectFingerprint: d.projectFingerprint || '', runId: d.runId || '', generationEpoch: Number(d.generationEpoch) || 0, flowProjectId: d.flowProjectId || '' }); return; }
