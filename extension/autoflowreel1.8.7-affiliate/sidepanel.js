@@ -5198,6 +5198,7 @@ async function copyAgentInstruction() {
   const statusEl = document.getElementById('nf-agent-status');
   if (agentRun && agentRun.text) {   // đang chạy tất cả dự án → copy lại đúng phần hiện tại
     const ok = await agentWriteClipboard(agentRun.text);
+    await sendToContentAwait({ action: 'AGENT_PREFILL', text: agentRun.text }, 15000);
     if (statusEl) statusEl.textContent = ok ? `📋 Đã copy lại phần ${agentRun.part + 1}/${agentRun.parts.length} của dự án ${agentRun.keys[agentRun.pos]}.` : '❌ Copy không được.';
     return;
   }
@@ -5213,10 +5214,11 @@ async function copyAgentInstruction() {
   const hasImages = agentHasImages();
   const text = buildAgentInstruction(chunk, agentCopyPart + 1, parts, refs);
   await agentWriteClipboard(text);
+  const filled = await sendToContentAwait({ action: 'AGENT_PREFILL', text }, 15000);
   const first = String(chunk[0].index).padStart(2, '0'), last = String(chunk[chunk.length - 1].index).padStart(2, '0');
   const refNote = refs.length ? ` Đã ghi ${refs.length} ảnh tham chiếu theo tên — không cần kéo ảnh.`
     : (hasImages ? ' ⚠️ Nạp ảnh vào project này chưa được (xem Nhật ký) — phải kéo ảnh tay.' : '');
-  if (statusEl) statusEl.textContent = `✅ Đã copy phần ${agentCopyPart + 1}/${parts} (SHOT ${first}–${last}, ${text.length} ký tự). Dán vào khung chat Agent, gửi, rồi bấm Approve.${refNote}${parts > 1 ? ' Bấm Copy lần nữa để lấy phần tiếp theo.' : ''}`;
+  if (statusEl) statusEl.textContent = `✅ Đã copy phần ${agentCopyPart + 1}/${parts} (SHOT ${first}–${last}, ${text.length} ký tự). ${filled && filled.success ? 'Đã điền sẵn vào khung chat Agent — bấm nút gửi ➜ rồi Approve.' : 'Dán vào khung chat Agent, gửi, rồi bấm Approve.'}${refNote}${parts > 1 ? ' Bấm Copy lần nữa để lấy phần tiếp theo.' : ''}`;
   addLog(`🤖 Đã copy chỉ dẫn Agent phần ${agentCopyPart + 1}/${parts} (SHOT ${first}–${last}).`, 'info');
   agentCopyPart = (agentCopyPart + 1) % parts;
   const lbl = document.getElementById('nf-agent-copy-label');
@@ -5282,9 +5284,12 @@ async function agentRunDeliverPart() {
   run.gotThumb = false;
   run.text = text;
   const ok = await agentWriteClipboard(text);
+  const filled = await sendToContentAwait({ action: 'AGENT_PREFILL', text }, 15000);
   const first = String(chunk[0].index).padStart(2, '0'), lastNo = String(chunk[chunk.length - 1].index).padStart(2, '0');
-  agentRunSay(`📋 Dự án ${run.keys[run.pos]} · phần ${run.part + 1}/${run.parts.length} (SHOT ${first}–${lastNo}) ${ok ? 'đã copy' : '— copy tự động không được, bấm "Copy chỉ dẫn Agent"'}. Dán vào khung Agent → gửi → Approve.${(run.refs || []).length ? ` Đã kèm ${run.refs.length} ảnh tham chiếu.` : ''}`, ok ? 'success' : 'warning');
-  sendToContentAwait({ action: 'AGENT_NOTICE', text: `AutoFlow: đã copy chỉ dẫn phần ${run.part + 1}/${run.parts.length} — dán vào khung Agent, gửi, rồi bấm Approve.` }, 3000);
+  const how = filled && filled.success ? 'đã ĐIỀN SẴN vào khung chat Agent → bấm nút gửi (➜) trên Flow, rồi bấm Approve.'
+    : (ok ? 'đã copy → dán (Ctrl/Cmd+V) vào khung chat Agent, gửi, rồi bấm Approve.' : 'chưa copy được — bấm "Copy chỉ dẫn Agent".');
+  agentRunSay(`📋 Dự án ${run.keys[run.pos]} · phần ${run.part + 1}/${run.parts.length} (SHOT ${first}–${lastNo}) ${how}${(run.refs || []).length ? ` (kèm ${run.refs.length} ảnh tham chiếu)` : ''}`, (filled && filled.success) || ok ? 'success' : 'warning');
+  sendToContentAwait({ action: 'AGENT_NOTICE', text: `AutoFlow: phần ${run.part + 1}/${run.parts.length} ${filled && filled.success ? 'đã điền sẵn — bấm nút gửi ➜ rồi bấm Approve.' : 'đã copy — dán vào khung Agent, gửi, rồi bấm Approve.'}` }, 3000);
 }
 async function agentRunOnSaved(m) {
   const run = agentRun; if (!run || run.busy || !m) return;

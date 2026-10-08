@@ -1646,6 +1646,38 @@
     try { window.postMessage({ __afAgentWatch: true, on: !!(cfg && cfg.on), images: !!(cfg && cfg.images), reset: !!reset }, '*'); } catch (e) {}
   }
   const _afAgentRefWaiters = new Map();
+  // Tìm khung nhập của Agent ("What do you want to create?") và điền sẵn chỉ dẫn.
+  function agentFindComposer() {
+    const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 40 && r.height > 10; };
+    const all = Array.from(document.querySelectorAll('textarea, [contenteditable="true"], [contenteditable=""], [role="textbox"]')).filter(vis);
+    const hint = (el) => [el.getAttribute('placeholder'), el.getAttribute('aria-label'), el.getAttribute('data-placeholder'), el.closest('[data-placeholder]') && el.closest('[data-placeholder]').getAttribute('data-placeholder')].filter(Boolean).join(' ');
+    return all.find((el) => /what do you want to create|bạn muốn tạo gì|create\?/i.test(hint(el)))
+      || all.find((el) => /what do you want to create/i.test((el.closest('form, div') || el).textContent || ''))
+      || all[all.length - 1] || null;
+  }
+  async function agentPrefillComposer(text) {
+    let el = null;
+    for (let i = 0; i < 20 && !(el = agentFindComposer()); i++) await new Promise((r) => setTimeout(r, 500));
+    if (!el) return { success: false, error: 'Không thấy khung chat Agent — mở khung chat Agent trên Flow.' };
+    try {
+      el.focus();
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+        const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set;
+        setter.call(el, text);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        const sel = window.getSelection(); const range = document.createRange();
+        range.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(range);
+        if (!document.execCommand('insertText', false, text)) {
+          el.textContent = text;
+          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+        }
+      }
+      const got = (el.value != null ? el.value : el.textContent) || '';
+      return { success: got.trim().length > 0 };
+    } catch (e) { return { success: false, error: (e && e.message) || String(e) }; }
+  }
   // Bật lại theo cài đặt đã lưu mỗi khi trang Flow (mới) tải xong.
   if (isNewFlowHost()) {
     setTimeout(() => {
@@ -4360,6 +4392,11 @@
           } catch (e) { return false; }
         };
         navigator.clipboard.writeText(text).then(() => sendResponse({ success: true }), () => sendResponse({ success: fallback() }));
+        return true;
+      }
+      case 'AGENT_PREFILL': {
+        // CHỈ điền sẵn chữ vào khung chat Agent — KHÔNG bấm gửi, KHÔNG bấm Approve.
+        agentPrefillComposer(String(msg.text || '')).then((r) => sendResponse(r));
         return true;
       }
       case 'AGENT_NOTICE': {
