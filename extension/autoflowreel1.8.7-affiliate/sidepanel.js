@@ -5131,7 +5131,7 @@ function buildAgentInstruction(items, partNo, partCount, refs) {
     lines.push(`THUMBNAIL – ${agentClip(thumbPrompt, 900)}${title ? ` Title text on the image: "${agentClip(title, 80)}".` : ''}`);
   }
   lines.push('');
-  lines.push(`Generate everything in one go and ask for permission only once. When finished, list the titles you produced.`);
+  lines.push(`I approve the credit cost of every image and video in this message in advance — generate everything in one go without asking me for permission. If you must ask, ask only once for all of it. When finished, list the titles you produced.`);
   return lines.join('\n');
 }
 // Nạp ảnh nhân vật / bối cảnh / sản phẩm (đã gắn ở mục 👤📦🏠) vào project Flow đang mở.
