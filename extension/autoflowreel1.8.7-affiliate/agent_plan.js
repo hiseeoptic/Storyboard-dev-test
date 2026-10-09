@@ -2,13 +2,16 @@
 // AgentPlan — dựng LẠI ĐẦY ĐỦ quy trình Nano Flow cũ cho chế độ Agent của Flow mới.
 //
 // Flow mới chặn lệnh tạo do extension gửi, nên mọi ảnh/video phải do Agent tạo khi
-// người dùng gửi tin nhắn. Module này biến manifest thành các TIN NHẮN theo đúng thứ
-// tự pipeline cũ (genNanoImages / genNanoVideos):
-//   A. SHEET trang phục nhân vật (16:9, ref = ảnh nhân vật đã nạp; đổi đồ → sheet mới)
+// người dùng gửi tin nhắn. Module này biến manifest thành ĐÚNG 3 TIN NHẮN theo thứ
+// tự pipeline cũ (genNanoImages / genNanoVideos), mỗi tin nhắn gom mọi mục cùng lúc:
+//   1. SHEET trang phục nhân vật (16:9, ref = ảnh nhân vật đã nạp; đổi đồ → sheet mới)
 //      + ảnh BỐI CẢNH chuẩn (16:9, khi bối cảnh không có ảnh nạp)
-//   B. THUMBNAIL (ref = sản phẩm + sheet) + KEYFRAME từng shot (ref = sheet + bối
-//      cảnh + sản phẩm — đúng mã ảnh vừa tạo ở bước A)
-//   C. VIDEO từng shot (khung đầu = đúng mã keyframe của shot)
+//      + THUMBNAIL (ref = sản phẩm + ảnh nhân vật đã nạp — sheet chưa có lúc này)
+//   2. KEYFRAME mọi shot (ref = mã sheet + mã ảnh bối cảnh vừa tạo ở tin 1 + sản phẩm)
+//   3. VIDEO mọi shot: mặc định ref = keyframe + sheet + bối cảnh (tối đa 3 ảnh),
+//      hoặc chế độ cũ "khung đầu = keyframe".
+// Mọi ảnh đều có mã (media id) trước khi được dùng: ảnh nạp có mã ngay khi nạp, ảnh
+// Agent tạo được đọc mã từ phản hồi StreamChat rồi ghi vào tin nhắn kế tiếp.
 // Prompt lấy NGUYÊN VĂN từ manifest (không cắt); Agent được yêu cầu chép y nguyên.
 // Hàm thuần — không đụng DOM/Chrome — để kiểm thử được bằng node.
 // ============================================================
@@ -170,6 +173,7 @@
       return {
         key, index: q.index, shotId: q.shotId, name: q.name,
         refKeys: [...prodKeys, ...charKeys, ...envKeys],
+        charKeys, envKeys, prodKeys,
         keyframePrompt: key + ' – ' + kfBody,
         videoPrompt: key + ' – ' + vBody,
         duration: clampDuration(q.durationSeconds || opts.duration),
@@ -186,6 +190,7 @@
     return {
       title: String(proj.title || '').trim(), aspect, thumbAspect, sheets, locs, shots, thumb,
       videoModel: VIDEO_MODEL_NAMES[opts.videoModel] || '',
+      videoMode: opts.videoMode === 'first' ? 'first' : 'refs',
     };
   }
 
@@ -204,16 +209,17 @@
 
   const VERBATIM = 'Copy each PROMPT exactly as written, character for character, into the prompt of that generation — do NOT shorten, summarize, rewrite, translate or merge prompts, and keep the title at the start. Use exactly the aspect ratio and reference media ids listed for each item.';
   const NO_QUESTIONS = 'Do NOT ask me any questions and do not suggest alternatives — just generate.';
+  const ALL_AT_ONCE = 'Generate ALL of them in this one turn (they are independent of each other) — do not stop after the first ones and do not wait for me between items.';
 
   function block(title, lines, prompt) {
     return ['=== ' + title + ' ===', ...lines, 'PROMPT:', prompt, ''].join('\n');
   }
 
-  /** Tin nhắn bước A: sheet nhân vật + ảnh bối cảnh chuẩn. */
+  /** Tin nhắn 1: sheet nhân vật + ảnh bối cảnh chuẩn + thumbnail — tạo cùng lúc. */
   function prepMessage(ctx, keys, state, head) {
     const parts = [];
-    parts.push((head || 'STEP A — reference sheets') + '. ' + NO_QUESTIONS);
-    parts.push('Generate exactly ' + keys.length + ' image(s) with Nano Banana, one per block below, nothing else. ' + VERBATIM);
+    parts.push((head || 'MESSAGE 1 — character sheets, location plates and thumbnail') + '. ' + NO_QUESTIONS);
+    parts.push('Generate exactly ' + keys.length + ' image(s) with Nano Banana, one per block below, nothing else. ' + ALL_AT_ONCE + ' ' + VERBATIM);
     parts.push('');
     keys.forEach((k) => {
       const s = ctx.sheets.find((x) => x.key === k);
@@ -223,17 +229,22 @@
         return;
       }
       const l = ctx.locs.find((x) => x.key === k);
-      if (l) parts.push(block(l.key + ' – location plate: ' + l.name, ['Aspect ratio: 16:9 (landscape)', 'Reference image media id(s): none (no people in this image)'], l.prompt));
+      if (l) { parts.push(block(l.key + ' – location plate: ' + l.name, ['Aspect ratio: 16:9 (landscape)', 'Reference image media id(s): none (no people in this image)'], l.prompt)); return; }
+      if (k === 'THUMBNAIL' && ctx.thumb) {
+        // Sheet chưa có ở tin 1 → resolveIds tự lùi về ảnh nhân vật đã nạp (cùng khuôn mặt).
+        const ids = resolveIds(ctx, ctx.thumb.refKeys, state);
+        parts.push(block('THUMBNAIL', ['Aspect ratio: ' + ctx.thumbAspect, 'Reference image media id(s): ' + (ids.join(', ') || 'none')], ctx.thumb.prompt));
+      }
     });
     parts.push('When finished, list the titles you produced.');
     return parts.join('\n');
   }
 
-  /** Tin nhắn bước B: thumbnail (tuỳ) + keyframe các shot. */
+  /** Tin nhắn 2: keyframe mọi shot (ref = mã sheet + bối cảnh vừa tạo ở tin 1). */
   function framesMessage(ctx, keys, state, head) {
     const parts = [];
-    parts.push((head || 'STEP B — thumbnail and keyframes') + '. ' + NO_QUESTIONS);
-    parts.push('Generate exactly ' + keys.length + ' image(s) with Nano Banana, one per block below, nothing else. Each keyframe is ONE single full-frame still (the first frame of a video) — no grid, collage, split screen or text. ' + VERBATIM);
+    parts.push((head || 'MESSAGE 2 — shot keyframes') + '. ' + NO_QUESTIONS);
+    parts.push('Generate exactly ' + keys.length + ' image(s) with Nano Banana, one per block below, nothing else. Each keyframe is ONE single full-frame still (the first frame of a video) — no grid, collage, split screen or text. ' + ALL_AT_ONCE + ' ' + VERBATIM);
     parts.push('');
     keys.forEach((k) => {
       if (k === 'THUMBNAIL' && ctx.thumb) {
@@ -250,18 +261,43 @@
     return parts.join('\n');
   }
 
-  /** Tin nhắn bước C: video từ đúng keyframe. */
+  /**
+   * Ảnh tham chiếu cho video của 1 shot (chế độ "refs"): keyframe trước, rồi sheet nhân
+   * vật, ảnh bối cảnh, sản phẩm — tối đa 3 (giới hạn ảnh tham chiếu của video Flow).
+   */
+  function videoRefIds(ctx, shot, state) {
+    const media = (state && state.media) || {};
+    const out = [];
+    const add = (id) => { if (id && !out.includes(id) && out.length < 3) out.push(id); };
+    add(media[shot.key] || '');
+    resolveIds(ctx, shot.charKeys || [], state).forEach(add);
+    resolveIds(ctx, shot.envKeys || [], state).slice(0, 1).forEach(add);
+    resolveIds(ctx, shot.prodKeys || [], state).forEach(add);
+    return out;
+  }
+
+  /** Tin nhắn 3: video mọi shot. */
   function videosMessage(ctx, keys, state, head) {
+    const refsMode = ctx.videoMode !== 'first';
     const parts = [];
-    parts.push((head || 'STEP C — videos') + '. ' + NO_QUESTIONS);
+    parts.push((head || 'MESSAGE 3 — shot videos') + '. ' + NO_QUESTIONS);
     parts.push('I approve the credit cost of every video in this message in advance — generate them all without asking for permission (if you must ask, ask only once for all of them).');
-    parts.push('Generate exactly ' + keys.length + ' video(s), one per block below. For each, use the image with the given media id as the FIRST FRAME (start image)' + (ctx.videoModel ? ', with the ' + ctx.videoModel + ' video model (if it is unavailable, use your default video model)' : '') + ', no on-screen text or subtitles. ' + VERBATIM);
+    const model = ctx.videoModel ? ', with the ' + ctx.videoModel + ' video model (if it is unavailable, use your default video model)' : '';
+    parts.push(refsMode
+      ? 'Generate exactly ' + keys.length + ' video(s), one per block below, each as a video WITH REFERENCE IMAGES: pass ALL the reference image media ids listed for that video. The first id is the shot keyframe — keep its composition, characters, wardrobe, product and setting; the others are the character sheet(s) and location plate that lock identity and place' + model + ', no on-screen text or subtitles. ' + ALL_AT_ONCE + ' ' + VERBATIM
+      : 'Generate exactly ' + keys.length + ' video(s), one per block below. For each, use the image with the given media id as the FIRST FRAME (start image)' + model + ', no on-screen text or subtitles. ' + ALL_AT_ONCE + ' ' + VERBATIM);
     parts.push('');
+    const vAspect = ctx.aspect === '1:1' ? '16:9' : ctx.aspect;
     keys.forEach((k) => {
       const s = ctx.shots.find((x) => x.key === k);
       if (!s) return;
+      if (refsMode) {
+        const ids = videoRefIds(ctx, s, state);
+        parts.push(block(s.key + ' – video', ['Reference image media id(s): ' + (ids.join(', ') || 'none — generate from the prompt'), 'Aspect ratio: ' + vAspect, 'Duration: ' + s.duration + ' seconds'], s.videoPrompt));
+        return;
+      }
       const start = ((state && state.media) || {})[s.key] || '';
-      parts.push(block(s.key + ' – video', ['First frame (start image) media id: ' + (start || 'none — generate from the prompt'), 'Aspect ratio: ' + (ctx.aspect === '1:1' ? '16:9' : ctx.aspect), 'Duration: ' + s.duration + ' seconds'], s.videoPrompt));
+      parts.push(block(s.key + ' – video', ['First frame (start image) media id: ' + (start || 'none — generate from the prompt'), 'Aspect ratio: ' + vAspect, 'Duration: ' + s.duration + ' seconds'], s.videoPrompt));
     });
     parts.push('When finished, list the titles you produced.');
     return parts.join('\n');
@@ -279,15 +315,18 @@
     return out;
   }
 
-  /** Danh sách tin nhắn còn phải gửi (bỏ qua những gì đã có trong state.media). */
+  /**
+   * Danh sách tin nhắn còn phải gửi (bỏ qua những gì đã có trong state.media).
+   * Mặc định KHÔNG chia: đúng 3 tin nhắn (1 sheet+bối cảnh+thumbnail · 2 keyframe · 3 video).
+   * Chỉ chia khi đặt maxCount (số mục / tin) hoặc khi khung chat cắt chữ (maxChars).
+   */
   function stages(ctx, state, opts) {
     opts = opts || {};
-    const maxCount = Math.max(1, opts.maxCount || 20);
-    const maxChars = Math.max(4000, opts.maxChars || 30000);
+    const maxCount = opts.maxCount > 0 ? opts.maxCount : Infinity;
+    const maxChars = opts.maxChars > 0 ? Math.max(4000, opts.maxChars) : Infinity;
     const media = (state && state.media) || {};
     const videos = (state && state.videos) || {};
     const out = [];
-    const prep = [...ctx.sheets.map((s) => s.key), ...ctx.locs.map((l) => l.key)].filter((k) => !media[k]);
     const promptOf = (k) => {
       const s = ctx.sheets.find((x) => x.key === k) || ctx.locs.find((x) => x.key === k);
       if (s) return s.prompt.length;
@@ -295,8 +334,9 @@
       const sh = ctx.shots.find((x) => x.key === k);
       return sh ? sh.keyframePrompt.length : 0;
     };
+    const prep = [...ctx.sheets.map((s) => s.key), ...ctx.locs.map((l) => l.key), ...(ctx.thumb ? ['THUMBNAIL'] : [])].filter((k) => !media[k]);
     chunk(prep, promptOf, maxCount, maxChars).forEach((keys) => out.push({ type: 'prep', keys }));
-    const frames = [...(ctx.thumb && !media.THUMBNAIL ? ['THUMBNAIL'] : []), ...ctx.shots.map((s) => s.key).filter((k) => !media[k])];
+    const frames = ctx.shots.map((s) => s.key).filter((k) => !media[k]);
     chunk(frames, promptOf, maxCount, maxChars).forEach((keys) => out.push({ type: 'frames', keys }));
     const vids = ctx.shots.map((s) => s.key).filter((k) => !videos[k]);
     chunk(vids, (k) => (ctx.shots.find((x) => x.key === k) || { videoPrompt: '' }).videoPrompt.length, maxCount, maxChars)
@@ -366,5 +406,5 @@
     return Math.min(1, g.length / e.length);
   }
 
-  return { sheetPrompt, refUploads, buildContext, resolveIds, stages, messageFor, matchKey, fidelity, clampDuration };
+  return { sheetPrompt, refUploads, buildContext, resolveIds, videoRefIds, stages, messageFor, matchKey, fidelity, clampDuration };
 });

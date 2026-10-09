@@ -644,11 +644,18 @@
     if (typeof node[0] === 'string' && node[0] === node[1] && /^(generate_|ask_for_permission)/.test(node[0]) && Array.isArray(node[2])) {
       const kv = {};
       const pairs = Array.isArray(node[2][0]) ? node[2][0] : [];
-      for (const p of pairs) if (Array.isArray(p) && typeof p[0] === 'string') kv[p[0]] = agentArgValue(p[1]);
+      for (const p of pairs) if (Array.isArray(p) && typeof p[0] === 'string') kv[p[0]] = /_ids$/.test(p[0]) ? agentIdList(p[1]) : agentArgValue(p[1]);
       out.push({ tool: node[0], kv, ref: typeof node[3] === 'string' ? node[3] : '' });
       return out;
     }
     for (const x of node) agentFindToolCalls(x, out);
+    return out;
+  }
+  // Mọi chuỗi mã ảnh trong 1 tham số danh sách (reference_image_media_ids lồng nhiều tầng).
+  function agentIdList(v, out) {
+    out = out || [];
+    if (typeof v === 'string') { v.split(/[\s,]+/).forEach((x) => { const id = x.replace(/:reference$/, ''); if (/^[0-9a-f-]{20,}$/i.test(id) && !out.includes(id)) out.push(id); }); }
+    else if (Array.isArray(v)) v.forEach((x) => agentIdList(x, out));
     return out;
   }
   function agentShotOf(text) {
@@ -670,12 +677,12 @@
       const kv = c.kv;
       const ph = kv.placeholder_frontend_id || c.ref;
       if (c.tool === 'ask_for_permission') {
-        post({ via: 'agentEvent', kind: 'agentEvent', event: 'permission', text: '🙋 Agent đang xin phép tạo video — bấm Approve trên Flow (extension không tự bấm).' });
+        post({ via: 'agentEvent', kind: 'agentEvent', event: 'permission', text: '🙋 Agent đang xin phép tạo video — nút Approve đã được chọn sẵn, bạn nhấn Enter (extension không tự bấm).' });
         continue;
       }
       if (!kv.media_id) {
         // Lời gọi (chưa có kết quả): ghi lại prompt theo placeholder để ghép sau.
-        if (ph && kv.prompt) agent.args.set(ph, { tool: c.tool, prompt: String(kv.prompt), aspect: kv.aspect_ratio || '', model: kv.model_usage_key || '', startId: kv.start_image_media_id || kv.first_frame_media_id || '' });
+        if (ph && kv.prompt) agent.args.set(ph, { tool: c.tool, prompt: String(kv.prompt), aspect: kv.aspect_ratio || '', model: kv.model_usage_key || '', startId: kv.start_image_media_id || kv.first_frame_media_id || '', refIds: Array.isArray(kv.reference_image_media_ids) ? kv.reference_image_media_ids : [] });
         continue;
       }
       const id = String(kv.media_id);
@@ -684,7 +691,8 @@
       const prev = agent.media.get(id);
       const prompt = a.prompt || (prev && prev.prompt) || '';
       // Agent có thể viết lại prompt và bỏ "SHOT NN" → video lấy số shot từ ảnh khung đầu.
-      const startRec = a.startId ? agent.media.get(String(a.startId)) : null;
+      // Video tạo bằng ảnh tham chiếu: ảnh đầu (keyframe) mang số shot.
+      const startRec = [a.startId, ...(a.refIds || [])].map((x) => x && agent.media.get(String(x))).find((r) => r && r.shot) || null;
       const rec = Object.assign(prev || { url: '', tries: 0, done: false }, {
         kind: isVideo ? 'video' : 'image',
         shot: agentShotOf(prompt) || agentShotOf(kv.display_name) || (prev && prev.shot) || (startRec && startRec.shot) || 0,
@@ -697,7 +705,7 @@
       if (!prev) added++;
       agent.media.set(id, rec);
       // Sidepanel ghép kết quả vào đúng mục (SHEET/LOCATION/THUMBNAIL/SHOT) để dựng tin nhắn kế tiếp.
-      post({ via: 'agentResult', kind: 'agentResult', mediaId: id, mediaKind: rec.kind, prompt: rec.prompt, name: rec.name, status: rec.status, startId: String(a.startId || ''), pid: rec.pid });
+      post({ via: 'agentResult', kind: 'agentResult', mediaId: id, mediaKind: rec.kind, prompt: rec.prompt, name: rec.name, status: rec.status, startId: String(a.startId || ''), refIds: a.refIds || [], pid: rec.pid });
     }
     if (added) {
       const v = Array.from(agent.media.values());

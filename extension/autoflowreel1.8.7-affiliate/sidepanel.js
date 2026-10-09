@@ -5046,10 +5046,53 @@ function bindLicenseEvents() {
 // CHẾ ĐỘ AGENT (Flow mới). Extension KHÔNG tự gửi tin nhắn và KHÔNG tự bấm Approve
 // (reCAPTCHA chỉ hợp lệ khi chính người dùng thao tác). Extension: nạp ảnh tham
 // chiếu, ĐIỀN SẴN từng tin nhắn vào khung chat Agent theo đúng thứ tự pipeline cũ
-// (agent_plan.js: sheet nhân vật + bối cảnh → thumbnail + keyframe → video), đọc
-// kết quả Agent để lấy mã ảnh cho tin nhắn kế tiếp, và tự tải video về.
+// (agent_plan.js: 3 tin nhắn — sheet + bối cảnh + thumbnail → keyframe → video), đọc
+// kết quả Agent để lấy mã ảnh cho tin nhắn kế tiếp, và tự tải video về. Tới lượt người
+// dùng: rung chuông + thông báo Chrome + đặt sẵn con trỏ vào khung chat / nút Approve
+// để họ chỉ cần nhấn Enter (extension không tự bấm).
 // ─────────────────────────────────────────────────────────────────────────────
-const AGENT_MAX_CHARS = 30000;   // giới hạn chữ / tin nhắn (prompt manifest rất dài)
+const AGENT_MAX_CHARS = 0;   // 0 = không chia tin nhắn; chỉ chia khi khung chat cắt bớt chữ
+let agentAudioCtx = null;
+function agentChime() {
+  if (document.getElementById('nf-agent-bell') && !document.getElementById('nf-agent-bell').checked) return;
+  try {
+    agentAudioCtx = agentAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const ac = agentAudioCtx;
+    if (ac.state === 'suspended') ac.resume().catch(() => {});
+    [[880, 0], [1320, 0.18], [880, 0.5], [1320, 0.68]].forEach(([f, t]) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, ac.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.35, ac.currentTime + t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + t + 0.3);
+      o.connect(g).connect(ac.destination); o.start(ac.currentTime + t); o.stop(ac.currentTime + t + 0.32);
+    });
+  } catch (e) {}
+}
+// Tới lượt người dùng: chuông + thông báo Chrome (bấm vào → về tab Flow, con trỏ đặt sẵn).
+let agentLastAlert = { kind: '', at: 0 };
+async function agentAlert(kind, title, message) {
+  if (kind === 'approve' && agentLastAlert.kind === 'approve' && Date.now() - agentLastAlert.at < 20000) return;
+  agentLastAlert = { kind, at: Date.now() };
+  agentChime();
+  try {
+    chrome.notifications.create('afAgent:' + kind + ':' + Date.now(), {
+      type: 'basic', iconUrl: 'icons/icon128.png', title, message,
+      priority: 2, requireInteraction: kind !== 'done',
+    }, () => { if (chrome.runtime.lastError) {} });
+  } catch (e) {}
+  if (kind !== 'done') sendToContentAwait({ action: 'AGENT_FOCUS', target: kind === 'approve' ? 'approve' : 'composer' }, 15000);
+}
+async function agentFocusFlowTab(target) {
+  const tabId = await findFlowTab();
+  if (!tabId) return;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    await chrome.windows.update(tab.windowId, { focused: true });
+    await chrome.tabs.update(tabId, { active: true });
+  } catch (e) {}
+  if (target) await sendToContentAwait({ action: 'AGENT_FOCUS', target }, 15000);
+}
 function agentSay(t, level) {
   const el = document.getElementById('nf-agent-status'); if (el) el.textContent = t;
   if (level !== 'quiet') addLog(t, level || 'info');
@@ -5095,9 +5138,13 @@ async function agentWriteClipboard(text) {
   const r = await sendToContentAwait({ action: 'AGENT_COPY_TEXT', text }, 5000);
   return !!(r && r.success);
 }
+function agentVideoMode() {
+  return document.getElementById('nf-agent-vmode')?.value === 'first' ? 'first' : 'refs';
+}
 function agentBuildCtx() {
   const plans = window.NanoPipeline ? window.NanoPipeline.buildQueuePlan(nanoQueue).plans : [];
   return window.AgentPlan.buildContext(nanoManifest, nanoQueue, plans, {
+    videoMode: agentVideoMode(),
     videoModel: (typeof settings !== 'undefined' && settings.model) || '',
     duration: (typeof settings !== 'undefined' && settings.duration) || 8,
   });
@@ -5114,7 +5161,7 @@ function agentPersistState(run) {
   persistNanoProjects();
 }
 
-// ── Bộ điều phối: mỗi dự án = chuỗi tin nhắn A (sheet) → B (thumbnail + keyframe) → C (video).
+// ── Bộ điều phối: mỗi dự án = 3 tin nhắn: 1 (sheet + bối cảnh + thumbnail) → 2 (keyframe) → 3 (video).
 let agentRun = null;
 function stopAgentRunAll(reason) {
   if (!agentRun) return;
@@ -5129,12 +5176,14 @@ function agentUpdateButtons() {
   if (lbl) lbl.textContent = agentRun ? 'Điền lại tin nhắn hiện tại' : 'Bắt đầu (dự án đang mở)';
 }
 async function startAgentRunAll(keys) {
-  if (!confirm(`Chạy ${keys.length} dự án bằng Agent của Flow (${keys.map((k) => 'DA' + k).join(', ')})?\n\nMỗi dự án: extension tạo project Flow mới, tự nạp ảnh, rồi ĐIỀN SẴN lần lượt các tin nhắn:\n  A. Sheet trang phục nhân vật + ảnh bối cảnh\n  B. Thumbnail + keyframe từng shot (dùng đúng sheet vừa tạo)\n  C. Video từng shot (khung đầu = đúng keyframe)\nBạn chỉ bấm Gửi mỗi tin nhắn (và Approve khi Agent xin tạo video). Video + thumbnail tự tải về.\n\nGiữ tab Flow mở.`)) return;
+  if (!confirm(`Chạy ${keys.length} dự án bằng Agent của Flow (${keys.map((k) => 'DA' + k).join(', ')})?\n\nMỗi dự án: extension tạo project Flow mới, tự nạp ảnh, rồi ĐIỀN SẴN đúng 3 tin nhắn:\n  1. Sheet trang phục nhân vật + ảnh bối cảnh + thumbnail (cùng lúc)\n  2. Keyframe mọi shot (dùng mã sheet + bối cảnh vừa tạo)\n  3. Video mọi shot (${agentVideoMode() === 'first' ? 'khung đầu = keyframe' : 'tham chiếu keyframe + sheet + bối cảnh'})\nTới lượt bạn: chuông + thông báo, con trỏ đặt sẵn — chỉ cần nhấn Enter để gửi (và Enter để Approve khi Agent hỏi). Video + thumbnail tự tải về.\n\nGiữ tab Flow mở.`)) return;
   await agentStart(keys, true);
 }
 async function agentStart(keys, fresh) {
   if (!window.AgentPlan) { agentSay('❌ Thiếu agent_plan.js — cài lại extension.', 'error'); return; }
-  agentRun = { keys, pos: 0, fresh, pid: '', ctx: null, state: null, stage: null, videoIds: {}, skipped: new Set(), busy: false, maxChars: AGENT_MAX_CHARS, msgNo: 0 };
+  // Mở sẵn bộ phát âm thanh ngay lúc người dùng bấm (để chuông kêu được về sau).
+  try { agentAudioCtx = agentAudioCtx || new (window.AudioContext || window.webkitAudioContext)(); agentAudioCtx.resume().catch(() => {}); } catch (e) {}
+  agentRun = { keys, pos: 0, fresh, pid: '', ctx: null, state: null, stage: null, videoIds: {}, skipped: new Set(), busy: false, maxChars: AGENT_MAX_CHARS, msgNo: 0, total: 0 };
   const w = document.getElementById('nf-agent-watch'); if (w) w.checked = true;
   chrome.storage.local.set({ afAgentWatch: { on: true, images: !!document.getElementById('nf-agent-images')?.checked } });
   document.querySelector('.tab-btn[data-tab="log"]')?.click();
@@ -5144,7 +5193,7 @@ async function agentStart(keys, fresh) {
 async function agentRunProject() {
   const run = agentRun; if (!run) return;
   const key = run.keys[run.pos];
-  if (!key) { agentRun = null; agentSay(`✅ Xong ${run.keys.length} dự án bằng Agent.`, 'success'); agentUpdateButtons(); return; }
+  if (!key) { agentRun = null; agentSay(`✅ Xong ${run.keys.length} dự án bằng Agent.`, 'success'); agentUpdateButtons(); agentAlert('done', 'AutoFlow Reel', `Đã xong ${run.keys.length} dự án bằng Agent.`); return; }
   run.busy = true;
   if (run.fresh) {
     curProj = key;
@@ -5167,9 +5216,10 @@ async function agentRunProject() {
   if (agentRun !== run) return;
   run.ctx = agentBuildCtx();
   run.state = Object.assign(agentSavedState(run.pid), { refs });
-  run.videoIds = {}; run.skipped = new Set(); run.msgNo = 0;
+  run.videoIds = {}; run.skipped = new Set(); run.msgNo = 0; run.maxChars = AGENT_MAX_CHARS;
   const c = run.ctx;
-  addLog(`🧭 Kế hoạch Agent: ${c.sheets.length} sheet nhân vật, ${c.locs.length} ảnh bối cảnh, ${c.thumb ? '1 thumbnail, ' : ''}${c.shots.length} keyframe, ${c.shots.length} video · khung ${c.aspect}.`, 'info');
+  run.total = agentStageList(run).length;
+  addLog(`🧭 Kế hoạch Agent (${run.total} tin nhắn): ${c.sheets.length} sheet nhân vật, ${c.locs.length} ảnh bối cảnh, ${c.thumb ? '1 thumbnail, ' : ''}${c.shots.length} keyframe, ${c.shots.length} video (${c.videoMode === 'first' ? 'khung đầu = keyframe' : 'tham chiếu keyframe + sheet + bối cảnh'}) · khung ${c.aspect}.`, 'info');
   run.busy = false;
   await agentDeliver();
 }
@@ -5177,16 +5227,19 @@ function agentStageKeysLeft(run, stage) {
   const st = run.state;
   return stage.keys.filter((k) => !run.skipped.has(k) && !(stage.type === 'videos' ? st.videos[k] : st.media[k]));
 }
+function agentStageList(run) {
+  const maxCount = Math.max(0, Number(document.getElementById('nf-agent-batch')?.value) || 0);   // 0 = gộp hết
+  return window.AgentPlan.stages(run.ctx, run.state, { maxCount, maxChars: run.maxChars });
+}
 function agentNextStage(run) {
-  const maxCount = Math.max(1, Math.min(20, Number(document.getElementById('nf-agent-batch')?.value) || 20));
-  const all = window.AgentPlan.stages(run.ctx, run.state, { maxCount, maxChars: run.maxChars });
+  const all = agentStageList(run);
   for (const stg of all) {
     const keys = stg.keys.filter((k) => !run.skipped.has(k));
     if (keys.length) return { type: stg.type, keys, left: all.length };
   }
   return null;
 }
-const AGENT_STAGE_LABEL = { prep: 'A · sheet nhân vật + bối cảnh', frames: 'B · thumbnail + keyframe', videos: 'C · video' };
+const AGENT_STAGE_LABEL = { prep: 'sheet nhân vật + bối cảnh + thumbnail', frames: 'keyframe các shot', videos: 'video các shot' };
 async function agentDeliver(onlyRefill) {
   const run = agentRun; if (!run || run.busy) return;
   if (!onlyRefill || !run.stage) run.stage = agentNextStage(run);
@@ -5195,28 +5248,32 @@ async function agentDeliver(onlyRefill) {
     agentPersistState(run);
     addLog(`✅ Xong dự án ${run.keys[run.pos]} bằng Agent.`, 'success');
     run.pos++;
-    if (run.pos >= run.keys.length) { agentRun = null; agentSay(`✅ Hoàn tất ${run.keys.length} dự án bằng Agent.`, 'success'); agentUpdateButtons(); return; }
+    if (run.pos >= run.keys.length) { agentRun = null; agentSay(`✅ Hoàn tất ${run.keys.length} dự án bằng Agent.`, 'success'); agentUpdateButtons(); agentAlert('done', 'AutoFlow Reel', `Đã xong ${run.keys.length} dự án bằng Agent.`); return; }
     return agentRunProject();
   }
   const keys = agentStageKeysLeft(run, stage);
   if (!keys.length) { run.stage = null; return agentDeliver(); }
   if (!onlyRefill) run.msgNo++;
-  const head = `Project "${run.ctx.title || run.keys[run.pos]}" — message ${run.msgNo}: ${stage.type === 'prep' ? 'STEP A — character wardrobe sheets and location plates' : stage.type === 'frames' ? 'STEP B — thumbnail and shot keyframes' : 'STEP C — shot videos'}`;
+  run.total = Math.max(run.total || 0, run.msgNo - 1 + agentStageList(run).length);
+  const head = `Project "${run.ctx.title || run.keys[run.pos]}" — message ${run.msgNo}/${run.total}: ${stage.type === 'prep' ? 'character wardrobe sheets, location plates and thumbnail' : stage.type === 'frames' ? 'shot keyframes' : 'shot videos'}`;
   const text = window.AgentPlan.messageFor(run.ctx, { type: stage.type, keys }, run.state, head);
   run.text = text;
   const copied = await agentWriteClipboard(text);
   const filled = await sendToContentAwait({ action: 'AGENT_PREFILL', text }, 20000);
-  if (filled && filled.success && filled.length && filled.length < text.length * 0.97 && run.maxChars > 6000) {
+  if (filled && filled.success && filled.length && filled.length < text.length * 0.97 && (!run.maxChars || run.maxChars > 6000)) {
     // Khung chat cắt bớt chữ → chia nhỏ tin nhắn rồi điền lại.
     run.maxChars = Math.max(6000, Math.floor(filled.length * 0.9));
     addLog(`✂️ Khung chat Agent chỉ nhận ${filled.length}/${text.length} ký tự — chia nhỏ tin nhắn (≤${run.maxChars} ký tự) rồi điền lại.`, 'warning');
     run.stage = null; run.msgNo--;
     return agentDeliver();
   }
-  const how = filled && filled.success ? 'đã ĐIỀN SẴN vào khung chat Agent → bấm nút gửi ➜'
+  const ok = filled && filled.success;
+  const how = ok ? 'đã ĐIỀN SẴN vào khung chat Agent, con trỏ đặt sẵn → nhấn Enter để gửi'
     : (copied ? 'đã copy → dán (Ctrl/Cmd+V) vào khung chat Agent rồi gửi' : 'chưa copy được — bấm "Điền lại tin nhắn hiện tại"');
-  agentSay(`📨 Dự án ${run.keys[run.pos]} · tin nhắn ${run.msgNo} (${AGENT_STAGE_LABEL[stage.type]}: ${keys.join(', ')}) ${how}${stage.type === 'videos' ? ', rồi bấm Approve khi Agent hỏi.' : '.'}`, (filled && filled.success) || copied ? 'success' : 'warning');
-  sendToContentAwait({ action: 'AGENT_NOTICE', text: `AutoFlow: tin nhắn ${run.msgNo} (${AGENT_STAGE_LABEL[stage.type]}) ${filled && filled.success ? 'đã điền sẵn — bấm nút gửi ➜' : 'đã copy — dán vào khung Agent rồi gửi'}${stage.type === 'videos' ? ', rồi Approve.' : '.'}` }, 3000);
+  const tag = `tin nhắn ${run.msgNo}/${run.total}`;
+  agentSay(`📨 Dự án ${run.keys[run.pos]} · ${tag} (${AGENT_STAGE_LABEL[stage.type]}: ${keys.length} mục) ${how}${stage.type === 'videos' ? ', rồi Enter để Approve nếu Agent hỏi.' : '.'}`, ok || copied ? 'success' : 'warning');
+  sendToContentAwait({ action: 'AGENT_NOTICE', text: `AutoFlow: ${tag} (${AGENT_STAGE_LABEL[stage.type]}) ${ok ? 'đã điền sẵn — nhấn Enter để gửi' : 'đã copy — dán vào khung Agent rồi gửi'}${stage.type === 'videos' ? ', rồi Enter để Approve.' : '.'}` }, 3000);
+  if (!onlyRefill || ok) agentAlert('send', `AutoFlow: dự án ${run.keys[run.pos]} · ${tag}`, `${AGENT_STAGE_LABEL[stage.type]} (${keys.length} mục) ${ok ? 'đã điền sẵn. Bấm vào đây rồi nhấn Enter để gửi.' : 'đã copy. Bấm vào đây, dán rồi gửi.'}`);
 }
 async function agentCheckAdvance() {
   const run = agentRun; if (!run || run.busy || !run.stage) return;
@@ -5244,8 +5301,10 @@ function agentOnResult(m) {
   const run = agentRun; if (!run || !run.ctx || !m || !m.mediaId) return;
   if (m.pid && run.pid && m.pid !== run.pid) return;
   let key = window.AgentPlan.matchKey(run.ctx, m);
-  if (!key && m.mediaKind === 'video' && m.startId) {
-    key = Object.keys(run.state.media).find((k) => /^SHOT /.test(k) && run.state.media[k] === m.startId) || '';
+  if (!key && m.mediaKind === 'video') {
+    // Agent bỏ tiêu đề → nhận shot theo mã keyframe (khung đầu hoặc ảnh tham chiếu đầu).
+    const ids = [m.startId, ...(Array.isArray(m.refIds) ? m.refIds : [])].filter(Boolean);
+    key = Object.keys(run.state.media).find((k) => /^SHOT /.test(k) && ids.includes(run.state.media[k])) || '';
   }
   if (!key) return;
   if (/fail|error/i.test(m.status || '')) { addLog(`⚠️ Agent báo lỗi khi tạo ${key} — bấm "Điền lại tin nhắn hiện tại" để tạo lại mục còn thiếu.`, 'warning'); return; }
@@ -5299,10 +5358,25 @@ async function pushAgentWatchSetting(reset) {
 function initAgentMode() {
   const watch = document.getElementById('nf-agent-watch');
   const images = document.getElementById('nf-agent-images');
-  chrome.storage.local.get(['afAgentWatch'], (v) => {
+  const vmode = document.getElementById('nf-agent-vmode');
+  const bell = document.getElementById('nf-agent-bell');
+  chrome.storage.local.get(['afAgentWatch', 'afAgentOpts'], (v) => {
     const cfg = (v && v.afAgentWatch) || {};
     if (watch) watch.checked = !!cfg.on;
     if (images) images.checked = !!cfg.images;
+    const o = (v && v.afAgentOpts) || {};
+    if (vmode && o.videoMode) vmode.value = o.videoMode === 'first' ? 'first' : 'refs';
+    if (bell && o.bell === false) bell.checked = false;
+  });
+  const saveOpts = () => chrome.storage.local.set({ afAgentOpts: { videoMode: agentVideoMode(), bell: !bell || bell.checked } });
+  vmode?.addEventListener('change', saveOpts);
+  bell?.addEventListener('change', () => { saveOpts(); if (bell.checked) agentChime(); });
+  // Bấm thông báo "tới lượt bạn" → về tab Flow, con trỏ đặt sẵn ở khung chat / nút Approve.
+  chrome.notifications?.onClicked?.addListener((id) => {
+    if (!/^afAgent:/.test(String(id))) return;
+    const kind = String(id).split(':')[1];
+    chrome.notifications.clear(id, () => { if (chrome.runtime.lastError) {} });
+    agentFocusFlowTab(kind === 'approve' ? 'approve' : (kind === 'send' ? 'composer' : ''));
   });
   watch?.addEventListener('change', () => pushAgentWatchSetting(true));
   images?.addEventListener('change', () => pushAgentWatchSetting(false));
@@ -5312,7 +5386,10 @@ function initAgentMode() {
   agentUpdateButtons();
   chrome.runtime.onMessage.addListener((m) => {
     if (!m) return;
-    if (m.type === 'AGENT_EVENT' && m.event === 'permission') agentSay('🙋 Agent đang chờ bạn bấm Approve trên Flow.', 'quiet');
+    if (m.type === 'AGENT_EVENT' && m.event === 'permission') {
+      agentSay('🙋 Agent đang xin phép — nút Approve đã được chọn sẵn, nhấn Enter trên tab Flow.', 'quiet');
+      agentAlert('approve', 'AutoFlow: Agent xin phép tạo video', 'Bấm vào đây rồi nhấn Enter để Approve (nút đã được chọn sẵn).');
+    }
     if (m.type === 'AGENT_RESULT') agentOnResult(m);
     if (m.type === 'AGENT_MEDIA_SAVED') {
       agentSay(m.ok ? `⬇️ Đã tải ${m.name}` : `❌ Tải lỗi: ${m.name}`, 'quiet');

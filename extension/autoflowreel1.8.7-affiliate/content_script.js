@@ -1680,6 +1680,58 @@
       return { success: got.trim().length > 0, length: got.length };
     } catch (e) { return { success: false, error: (e && e.message) || String(e) }; }
   }
+  // ĐẶT CON TRỎ BÀN PHÍM sẵn vào khung chat (để gửi) hoặc nút Approve — để người dùng
+  // tự nhấn Enter. CHỈ focus + viền sáng; extension KHÔNG bấm, KHÔNG gửi phím.
+  let _afAgentFocusWant = null;   // { target, until }
+  function agentFindApprove() {
+    const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 10 && r.height > 10; };
+    const label = (el) => String(el.getAttribute('aria-label') || el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+    const btns = Array.from(document.querySelectorAll('button, [role="button"]')).filter((el) => vis(el) && !el.disabled);
+    return btns.reverse().find((el) => /^(approve|approve all|phê duyệt|chấp thuận|đồng ý|cho phép|allow)$/i.test(label(el)))
+      || btns.find((el) => /^(approve|phê duyệt|chấp thuận)\b/i.test(label(el))) || null;
+  }
+  function agentHighlight(el) {
+    try {
+      const prev = el.style.outline, prevOff = el.style.outlineOffset;
+      el.style.outline = '3px solid #f9ab00'; el.style.outlineOffset = '2px';
+      setTimeout(() => { el.style.outline = prev; el.style.outlineOffset = prevOff; }, 15000);
+    } catch (e) {}
+  }
+  function agentPlaceCaretEnd(el) {
+    try {
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') { const n = (el.value || '').length; el.setSelectionRange(n, n); el.scrollTop = el.scrollHeight; return; }
+      const sel = window.getSelection(); const range = document.createRange();
+      range.selectNodeContents(el); range.collapse(false); sel.removeAllRanges(); sel.addRange(range);
+    } catch (e) {}
+  }
+  async function agentFocusTarget(target) {
+    let el = null;
+    for (let i = 0; i < 20; i++) {
+      el = target === 'approve' ? agentFindApprove() : agentFindComposer();
+      if (el) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (!el) return { success: false, error: target === 'approve' ? 'Chưa thấy nút Approve trên Flow.' : 'Không thấy khung chat Agent.' };
+    try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+    el.focus();
+    if (target !== 'approve') agentPlaceCaretEnd(el);
+    agentHighlight(el);
+    _afAgentFocusWant = { target, until: Date.now() + 10 * 60 * 1000 };
+    return { success: document.activeElement === el || el.contains(document.activeElement), target };
+  }
+  // Người dùng quay lại tab Flow (bấm thông báo / chuyển tab) mà con trỏ rơi ra ngoài →
+  // đặt lại vào đúng chỗ, để chỉ cần nhấn Enter.
+  window.addEventListener('focus', () => {
+    const w = _afAgentFocusWant;
+    if (!w || Date.now() > w.until) return;
+    setTimeout(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body || a === document.documentElement) agentFocusTarget(w.target);
+    }, 150);
+  });
+  // Người dùng đã gửi (Enter/nhấn chuột) → không giữ con trỏ nữa.
+  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && e.isTrusted) _afAgentFocusWant = null; }, true);
+
   // Bật lại theo cài đặt đã lưu mỗi khi trang Flow (mới) tải xong.
   if (isNewFlowHost()) {
     setTimeout(() => {
@@ -4401,6 +4453,11 @@
         agentPrefillComposer(String(msg.text || '')).then((r) => sendResponse(r));
         return true;
       }
+      case 'AGENT_FOCUS': {
+        // Chỉ đặt con trỏ bàn phím (focus) — người dùng tự nhấn Enter / bấm nút.
+        agentFocusTarget(msg.target === 'approve' ? 'approve' : 'composer').then((r) => sendResponse(r));
+        return true;
+      }
       case 'AGENT_NOTICE': {
         logUI(String(msg.text || ''), 'info');
         try {
@@ -4618,7 +4675,7 @@
     if (d.via === 'init') { logUI('🔌 Net hook đã cài — đang lắng nghe API Flow. Hãy TẠO 1 video tay để bắt giao thức.', 'info'); return; }
     if (d.kind === 'log') { logUI(d.message || '', 'info'); return; }
     if (d.kind === 'agentEvent') { logUI(d.text || '', d.event === 'timeout' ? 'warning' : 'info'); notify('AGENT_EVENT', { event: d.event || '', text: d.text || '', on: d.on, mediaId: d.mediaId || '', mediaKind: d.mediaKind || '' }); return; }
-    if (d.kind === 'agentResult') { notify('AGENT_RESULT', { mediaId: d.mediaId, mediaKind: d.mediaKind, prompt: d.prompt || '', name: d.name || '', status: d.status || '', startId: d.startId || '', pid: d.pid || '' }); return; }
+    if (d.kind === 'agentResult') { notify('AGENT_RESULT', { mediaId: d.mediaId, mediaKind: d.mediaKind, prompt: d.prompt || '', name: d.name || '', status: d.status || '', startId: d.startId || '', refIds: Array.isArray(d.refIds) ? d.refIds : [], pid: d.pid || '' }); return; }
     if (d.kind === 'agentMedia') { handleAgentMedia(d); return; }
     if (d.kind === 'agentRefs') { const w = _afAgentRefWaiters.get(d.reqId); if (w) { _afAgentRefWaiters.delete(d.reqId); w(d); } return; }
     if (d.kind === 'nanoImagesDone') { notify('NANO_IMAGES_DONE', { results: d.results || [], projectFingerprint: d.projectFingerprint || '', runId: d.runId || '', generationEpoch: Number(d.generationEpoch) || 0, flowProjectId: d.flowProjectId || '' }); return; }
