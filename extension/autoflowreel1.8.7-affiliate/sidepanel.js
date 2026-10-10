@@ -5081,7 +5081,7 @@ async function agentAlert(kind, title, message) {
       priority: 2, requireInteraction: kind !== 'done',
     }, () => { if (chrome.runtime.lastError) {} });
   } catch (e) {}
-  if (kind !== 'done') sendToContentAwait({ action: 'AGENT_FOCUS', target: kind === 'approve' ? 'approve' : 'composer' }, 15000);
+  if (kind === 'send' || kind === 'approve') sendToContentAwait({ action: 'AGENT_FOCUS', target: kind === 'approve' ? 'approve' : 'composer' }, 15000);
 }
 async function agentFocusFlowTab(target) {
   const tabId = await findFlowTab();
@@ -5165,6 +5165,7 @@ function agentPersistState(run) {
 let agentRun = null;
 function stopAgentRunAll(reason) {
   if (!agentRun) return;
+  clearTimeout(agentRun.agentWaitTimer);
   agentRun = null;
   agentSay(`⏹️ Đã dừng chế độ Agent (${reason}).`, 'warning');
   agentUpdateButtons();
@@ -5216,7 +5217,7 @@ async function agentRunProject() {
   if (agentRun !== run) return;
   run.ctx = agentBuildCtx();
   run.state = Object.assign(agentSavedState(run.pid), { refs });
-  run.videoIds = {}; run.skipped = new Set(); run.msgNo = 0; run.maxChars = AGENT_MAX_CHARS;
+  run.videoIds = {}; run.skipped = new Set(); run.msgNo = 0; run.maxChars = AGENT_MAX_CHARS; run.agentReloaded = false;
   const c = run.ctx;
   run.total = agentStageList(run).length;
   addLog(`🧭 Kế hoạch Agent (${run.total} tin nhắn): ${c.sheets.length} sheet nhân vật, ${c.locs.length} ảnh bối cảnh, ${c.thumb ? '1 thumbnail, ' : ''}${c.shots.length} keyframe, ${c.shots.length} video (${c.videoMode === 'first' ? 'khung đầu = keyframe' : 'tham chiếu keyframe + sheet + bối cảnh'}) · khung ${c.aspect}.`, 'info');
@@ -5260,6 +5261,12 @@ async function agentDeliver(onlyRefill) {
   run.text = text;
   const copied = await agentWriteClipboard(text);
   const filled = await sendToContentAwait({ action: 'AGENT_PREFILL', text }, 20000);
+  if (agentRun !== run) return;
+  if (filled && filled.needAgent) {
+    if (!onlyRefill) run.msgNo--;
+    return agentNeedAgentMode(run, filled);
+  }
+  clearTimeout(run.agentWaitTimer); run.agentWaitTries = 0; run.agentModeAlerted = false;
   if (filled && filled.success && filled.length && filled.length < text.length * 0.97 && (!run.maxChars || run.maxChars > 6000)) {
     // Khung chat cắt bớt chữ → chia nhỏ tin nhắn rồi điền lại.
     run.maxChars = Math.max(6000, Math.floor(filled.length * 0.9));
@@ -5274,6 +5281,29 @@ async function agentDeliver(onlyRefill) {
   agentSay(`📨 Dự án ${run.keys[run.pos]} · ${tag} (${AGENT_STAGE_LABEL[stage.type]}: ${keys.length} mục) ${how}${stage.type === 'videos' ? ', rồi Enter để Approve nếu Agent hỏi.' : '.'}`, ok || copied ? 'success' : 'warning');
   sendToContentAwait({ action: 'AGENT_NOTICE', text: `AutoFlow: ${tag} (${AGENT_STAGE_LABEL[stage.type]}) ${ok ? 'đã điền sẵn — nhấn Enter để gửi' : 'đã copy — dán vào khung Agent rồi gửi'}${stage.type === 'videos' ? ', rồi Enter để Approve.' : '.'}` }, 3000);
   if (!onlyRefill || ok) agentAlert('send', `AutoFlow: dự án ${run.keys[run.pos]} · ${tag}`, `${AGENT_STAGE_LABEL[stage.type]} (${keys.length} mục) ${ok ? 'đã điền sẵn. Bấm vào đây rồi nhấn Enter để gửi.' : 'đã copy. Bấm vào đây, dán rồi gửi.'}`);
+}
+// Flow đang ở chế độ tạo THƯỜNG (Enter = tạo 1 ảnh từ cả khối chữ) → không điền; tải lại
+// trang 1 lần nếu không thấy nút "Agent", rồi nhắc người dùng bật và tự điền khi đã bật.
+async function agentNeedAgentMode(run, info) {
+  if (!info.chip && !run.agentReloaded) {
+    run.agentReloaded = true;
+    addLog('🔄 Flow đang ở chế độ tạo thường và không thấy nút "Agent" — tải lại trang Flow 1 lần để hiện chế độ Agent…', 'warning');
+    const tabId = await findFlowTab();
+    if (tabId) { try { await chrome.tabs.reload(tabId); } catch (e) {} }
+    await new Promise((r) => setTimeout(r, 9000));
+    if (agentRun !== run) return;
+    await pushAgentWatchSetting(false);
+    return agentDeliver();
+  }
+  if (!run.agentModeAlerted) {
+    run.agentModeAlerted = true;
+    agentSay(`⚠️ Flow đang ở chế độ tạo THƯỜNG — extension KHÔNG điền tin nhắn (Enter ở chế độ này chỉ tạo 1 ảnh từ cả khối chữ). ${info.chip ? 'Bấm nút "Agent" trong khung nhập của Flow' : 'Bật chế độ Agent của Flow (nút "Agent" trong khung nhập; nếu không có, tải lại trang)'} — extension sẽ tự điền ngay khi thấy chế độ Agent.`, 'warning');
+    agentAlert('agentmode', 'AutoFlow: cần bật chế độ Agent', 'Bấm nút "Agent" trong khung nhập của Flow. Extension sẽ tự điền tin nhắn ngay sau đó.');
+  }
+  run.agentWaitTries = (run.agentWaitTries || 0) + 1;
+  if (run.agentWaitTries > 120) { agentSay('⏹️ Chờ bật chế độ Agent quá 10 phút — bấm "Điền lại tin nhắn hiện tại" sau khi bật.', 'warning'); run.agentWaitTries = 0; return; }
+  clearTimeout(run.agentWaitTimer);
+  run.agentWaitTimer = setTimeout(() => { if (agentRun === run && !run.busy) agentDeliver(); }, 5000);
 }
 async function agentCheckAdvance() {
   const run = agentRun; if (!run || run.busy || !run.stage) return;

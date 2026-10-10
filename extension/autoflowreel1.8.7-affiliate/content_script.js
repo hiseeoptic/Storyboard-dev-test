@@ -1651,13 +1651,46 @@
   // Tìm khung nhập của Agent ("What do you want to create?") và điền sẵn chỉ dẫn.
   function agentFindComposer() {
     const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 40 && r.height > 10; };
+    const inAgent = Array.from(document.querySelectorAll('flow-creative-agent-prompt-box [contenteditable="true"]')).filter(vis);
+    if (inAgent.length) return inAgent[inAgent.length - 1];
     const all = Array.from(document.querySelectorAll('textarea, [contenteditable="true"], [contenteditable=""], [role="textbox"]')).filter(vis);
     const hint = (el) => [el.getAttribute('placeholder'), el.getAttribute('aria-label'), el.getAttribute('data-placeholder'), el.closest('[data-placeholder]') && el.closest('[data-placeholder]').getAttribute('data-placeholder')].filter(Boolean).join(' ');
     return all.find((el) => /what do you want to create|bạn muốn tạo gì|create\?/i.test(hint(el)))
       || all.find((el) => /what do you want to create/i.test((el.closest('form, div') || el).textContent || ''))
       || all[all.length - 1] || null;
   }
-  async function agentPrefillComposer(text) {
+  // Khung nhập của Flow có 2 chế độ, đổi bằng nút "Agent" (button.agent-mode-chip):
+  //   · thường (aria-pressed=false): nút cài đặt "Nano Banana · x1" hiện → Enter = tạo 1 ảnh
+  //     từ NGUYÊN khối chữ (lỗi 10/10: chỉ ra 1 ảnh thumbnail rồi đứng yên);
+  //   · Agent (aria-pressed=true): có flow-creative-agent-prompt-box / .agent-footer-actions,
+  //     nút cài đặt bị ẩn → Enter = gửi cho Agent (StreamChat).
+  // Flow nhớ chế độ theo tài khoản.
+  function agentModeState() {
+    const shown = (el) => !!el && !el.hidden && el.getClientRects().length > 0;
+    const chip = document.querySelector('button.agent-mode-chip');
+    const pressed = !!chip && chip.getAttribute('aria-pressed') === 'true';
+    const agentBox = !!document.querySelector('flow-creative-agent-prompt-box, .agent-footer-actions');
+    const trig = document.querySelector('.settings-trigger-button');
+    const on = pressed || agentBox || (!chip && !!trig && !shown(trig));
+    return { on, chip: !!chip, classic: !on && shown(trig) };
+  }
+  // Bật chế độ Agent nếu đang ở chế độ thường (chỉ là nút ĐỔI CHẾ ĐỘ — không tạo gì, không gửi gì).
+  async function agentEnsureMode() {
+    let st = agentModeState();
+    if (st.on) return st;
+    const chip = document.querySelector('button.agent-mode-chip');
+    if (!chip || chip.getAttribute('aria-pressed') !== 'false') return st;
+    chip.click();
+    for (let i = 0; i < 16 && !(st = agentModeState()).on; i++) await new Promise((r) => setTimeout(r, 250));
+    if (st.on) { logUI('🤖 Đã chuyển khung nhập Flow sang chế độ Agent.', 'info'); await new Promise((r) => setTimeout(r, 400)); }
+    return st;
+  }
+  async function agentPrefillComposer(text, force) {
+    // Không bao giờ điền vào khung tạo THƯỜNG: Enter ở đó sẽ tạo 1 ảnh từ cả khối chữ.
+    const mode = await agentEnsureMode();
+    if (!mode.on && !force) {
+      return { success: false, needAgent: true, chip: mode.chip, error: mode.chip ? 'Không bật được chế độ Agent.' : 'Flow đang ở chế độ tạo thường và không thấy nút "Agent" trong khung nhập.' };
+    }
     let el = null;
     for (let i = 0; i < 20 && !(el = agentFindComposer()); i++) await new Promise((r) => setTimeout(r, 500));
     if (!el) return { success: false, error: 'Không thấy khung chat Agent — mở khung chat Agent trên Flow.' };
@@ -4450,7 +4483,7 @@
       }
       case 'AGENT_PREFILL': {
         // CHỈ điền sẵn chữ vào khung chat Agent — KHÔNG bấm gửi, KHÔNG bấm Approve.
-        agentPrefillComposer(String(msg.text || '')).then((r) => sendResponse(r));
+        agentPrefillComposer(String(msg.text || ''), !!msg.force).then((r) => sendResponse(r));
         return true;
       }
       case 'AGENT_FOCUS': {
