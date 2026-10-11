@@ -118,17 +118,19 @@ function cameraSelection(input: StoryboardRulePacketInput): ActiveStoryboardRule
   const selectionPolicy = "Treat the selected profiles as an allowed camera palette, never a checklist or rotation schedule. For each Scene Intent choose the minimum compatible grammar justified by spatial scale, geography, subjectivity, action readability and emotional consequence. Large-scale geography/crowds may use an allowed aerial or wide grammar; embodied participation may use an allowed POV; contact, impact or intimate consequence may use an allowed close, macro or handheld grammar. One clip keeps one physically coherent rig and continuous camera path; change profile only at a declared clip boundary.";
   if (explicitMenuProfiles.length > 0) {
     const contextMatchesMenu = profile?.camera_profile_id === explicitMenuProfiles[0];
+    const custom = input.camera_profile_custom?.trim();
+    // The user's own camera note always stays binding — it used to be dropped
+    // whenever the compiled Context grammar matched the menu id.
+    const lockedGrammar = contextMatchesMenu ? grammar : [];
     return {
       mode: "selected_menu_profile",
       selected_profile_id: explicitMenuProfiles[0]!,
       selected_profile_ids: explicitMenuProfiles,
-      locked_grammar: contextMatchesMenu
-        ? grammar
-        : input.camera_profile_custom?.trim()
-          ? [input.camera_profile_custom.trim()]
-          : [],
+      locked_grammar: custom ? [custom, ...lockedGrammar.filter((g) => g !== custom)] : lockedGrammar,
       edit_rhythm: contextMatchesMenu ? profile?.edit_rhythm ?? "" : "",
-      selection_policy: selectionPolicy,
+      selection_policy: explicitMenuProfiles.length > 1
+        ? `The user explicitly selected these camera profiles: ${explicitMenuProfiles.join(", ")}. Use ONLY them: every Scene Intent applies exactly one of the selected grammars (the best fit) and every beats[].camera visibly expresses it. Large-scale geography/crowds take the selected aerial or wide grammar; embodied participation takes the selected POV; contact, impact or intimate consequence takes the selected close, macro or handheld grammar. Never fall back to generic eye-level medium coverage or soften the selected moves. One clip keeps one physically coherent rig and continuous camera path; change profile only at a declared clip boundary.`
+        : `The user explicitly selected the camera profile ${explicitMenuProfiles[0]}. It is mandatory for EVERY scene and every beats[].camera; never substitute generic eye-level medium coverage, never soften its moves into another style, and keep one physically coherent rig per clip.`,
       rationale: contextMatchesMenu
         ? "The locked production profile confirms the explicit directing menu selection; its compiled Context grammar is binding."
         : "The explicit directing menu selection outranks missing or stale compiled context; do not substitute another camera profile.",

@@ -29,6 +29,7 @@ require.extensions[".ts"] = compileTs;
 
 const {
   buildSegmentVeoPrompt,
+  buildScriptWriterUserPrompt,
   buildStoryboardUserPrompt,
   buildThumbnailPrompt,
   buildVeoJson,
@@ -947,4 +948,101 @@ test("ordinary prose containing the word action does not activate the fight dire
   assert.match(JSON.stringify(clip.character_lock), /Silent visible role/);
   assert.doesNotMatch(JSON.stringify(clip.background_lock), /Minimal Glass|concrete|micro-cement|lux|Kelvin/i);
   assert.match(clip.background_lock.setting, /starting line/i);
+});
+
+const { lockGenreProductionProfile } = require("../lib/genre-production-profiles.ts");
+
+function productShootBreakdown(profileInput, beats, cast = []) {
+  return {
+    title: "Đồng hồ",
+    character_locks: [],
+    scene_bible: { lens: "85mm lens, f/1.8", lighting: "soft key", backdrop: "studio", color_grade: "neutral", film_grain: "none" },
+    style_guide: { art_direction: "premium product commercial", color_palette: [] },
+    context_ir: { layers: { environment: { locations: [] } }, production_profile: lockGenreProductionProfile({ story_idea: "Quảng cáo đồng hồ nam Orient", genre: "advertising", style: "commercial", scene_count: 1, ...profileInput }) },
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      title: "Lộ diện",
+      marketing_role: "hook",
+      beats,
+      first_frame_prompt: "A watch on black glass in darkness.",
+      motion_prompt: "A light slice reveals the watch bezel.",
+      dialogue_lines: [],
+      characters_in_scene: cast,
+      environment_ref: "studio",
+    }],
+  };
+}
+
+test("product-only shoot exports the selected style camera, product negatives and no cast", () => {
+  const breakdown = productShootBreakdown(
+    { product_shoot: { presence: "product_only", style: "dark_reveal", category: "auto" } },
+    [
+      { beat: "a glint ignites the bezel edge", camera: "[EXTREME_CLOSE] EXTREME CLOSE-UP, low angle, locked-off" },
+      { beat: "the light slice travels across the dial", camera: "[CLOSE] CLOSE-UP, slow lateral slide left-to-right" },
+    ],
+  );
+  const clip = buildVeoJson(breakdown, { aspectRatio: "9:16" }).clips[0];
+  assert.match(clip.camera.movement, /REVEAL FROM DARKNESS/);
+  assert.match(clip.camera.movement, /0–5s: EXTREME CLOSE-UP/);
+  assert.match(clip.camera.movement, /5–10s: CLOSE-UP, slow lateral slide/);
+  assert.doesNotMatch(clip.camera.movement, /PACING SAFETY VALVE|speaker, silent listener|subtle motivated push/);
+  assert.equal(clip.camera.framing, "ECU");
+  assert.match(clip.camera.lighting_choreography, /chiaroscuro/);
+  assert.deepEqual(clip.characters_in_scene, []);
+  assert.match(clip.negative_prompt, /any person/);
+  assert.match(clip.negative_prompt, /fingers/);
+  assert.doesNotMatch(clip.negative_prompt, /skin|pores|wig/i);
+  assert.match(clip.output_rules.on_screen_text, /product's own printed label/);
+  assert.match(clip.foley_and_ambience.fx[0], /ticking/);
+  assert.equal(clip.product_shoot.presence, "product_only");
+  assert.match(clip.product_shoot.geometry_lock, /10:10/);
+});
+
+test("an explicitly selected camera keeps every beat and the profile laws instead of the generic hold", () => {
+  const breakdown = productShootBreakdown(
+    { directing_profiles: ["handheld_vlog"] },
+    [
+      { beat: "she grabs the bag", camera: "[CLOSE] handheld follow at chest height" },
+      { beat: "she walks out", camera: "[MEDIUM] handheld walk-and-talk from the side" },
+      { beat: "door shuts", camera: "[WIDE] handheld settle on the doorway" },
+    ],
+  );
+  const clip = buildVeoJson(breakdown, { aspectRatio: "9:16" }).clips[0];
+  assert.match(clip.camera.movement, /USER-SELECTED CAMERA: Handheld/i);
+  assert.match(clip.camera.movement, /handheld follow at chest height → .*handheld walk-and-talk from the side → .*handheld settle on the doorway/);
+  assert.match(clip.camera.movement, /natural energy and speed/);
+  assert.doesNotMatch(clip.camera.movement, /PACING SAFETY VALVE|subtle motivated push/);
+});
+
+test("projects without an explicit camera choice keep the legacy single-axis camera", () => {
+  const breakdown = productShootBreakdown({}, [{ beat: "a", camera: "[MEDIUM] eye-level on the counter" }]);
+  const clip = buildVeoJson(breakdown, { aspectRatio: "9:16" }).clips[0];
+  assert.match(clip.camera.movement, /Hold the same medium camera axis/);
+});
+
+test("product-only shoot puts the hard presence + style contract into both script and storyboard prompts", () => {
+  const input = {
+    story_idea: "Quảng cáo đồng hồ nam Orient Bambino",
+    genre: "advertising",
+    content_subtype: "affiliate_short",
+    style: "commercial",
+    scene_count: 3,
+    segment_count: 3,
+    video_goal: "product_ad",
+    dialogue_language: "Vietnamese",
+    product_shoot: { presence: "product_only", style: "dark_reveal", category: "auto" },
+  };
+  for (const prompt of [buildScriptWriterUserPrompt(input), buildStoryboardUserPrompt(input)]) {
+    assert.match(prompt, /PRODUCT SHOOT CONTRACT \(HARD/);
+    assert.match(prompt, /PRODUCT ONLY: no person, no face, no hands/);
+    assert.match(prompt, /Reveal from darkness/);
+    assert.match(prompt, /category Watch/);
+    assert.match(prompt, /10:10/);
+  }
+  const storyboard = buildStoryboardUserPrompt(input);
+  assert.match(storyboard, /CAMERA VOCABULARY \(the ONLY allowed moves\): slow push-in/);
+  const people = buildStoryboardUserPrompt({ ...input, product_shoot: { presence: "with_characters", style: "light_sweep", category: "watch" } });
+  assert.match(people, /AFFILIATE PROBLEM → SOLUTION/);
+  assert.match(people, /Every product insert .* "Light sweep" style/);
 });

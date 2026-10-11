@@ -4,6 +4,7 @@ import type {
   StoryboardGenerationInput,
 } from "@/types";
 import type { LockedGenreProductionProfile } from "@/lib/video-context/types";
+import { resolveProductShoot } from "./product-shoot/contract.ts";
 
 export type DialogueStyleId =
   | "auto"
@@ -418,6 +419,11 @@ export function lockGenreProductionProfile(
   if (selectedCameraProfiles.length === 0 && input.directing_profile && input.directing_profile !== "auto") {
     selectedCameraProfiles.push(input.directing_profile);
   }
+  // The user explicitly picked a camera style in the menu (not "auto"). Their
+  // pick is then the camera AUTHORITY: it leads the direction, the genre default
+  // camera text is dropped (it used to contradict the pick, e.g. "controlled
+  // motion" next to "handheld"), and the custom camera note is never truncated.
+  const cameraExplicit = selectedCameraProfiles.length > 0 || Boolean(compactCustom(input.camera_profile_custom));
   if (selectedCameraProfiles.length === 0) selectedCameraProfiles.push(profile.default_camera_profile);
   const cameraProfileId = selectedCameraProfiles[0]!;
   const customVoice = compactCustom(input.narrator_voice_style);
@@ -428,6 +434,11 @@ export function lockGenreProductionProfile(
   const dialogueDirection = DIALOGUE[dialogueStyleId as keyof typeof DIALOGUE];
   const narratorDirection = VOICE[narratorStyleId as keyof typeof VOICE];
   const selectedCameraDirections = selectedCameraProfiles.map((id) => CAMERA[id]).filter(Boolean);
+  const shoot = resolveProductShoot(input.product_shoot, [
+    input.product_ir?.product_name,
+    input.product_ir?.detected_category,
+    input.story_idea,
+  ]);
   return {
     registry_version: "1.0",
     genre: input.genre,
@@ -435,12 +446,21 @@ export function lockGenreProductionProfile(
     dialogue_style_id: dialogueStyleId,
     narrator_voice_style_id: narratorStyleId,
     camera_profile_id: cameraProfileId,
-    script_direction: compactUnique([
-      profile.script_profile,
-      subtypeDirection?.script_direction,
-      dialogueDirection,
-      dialogueStyleId === "custom" ? customDialogue : "",
-    ]),
+    script_direction: shoot && shoot.presence !== "with_characters"
+      ? compactUnique([
+          shoot.presence === "product_only"
+            ? "product-only film: the product is the protagonist and no person or body part ever appears; hook with a visual mystery (glint, texture, light), reveal the product, tour its signature details, prove one benefit visually, close on a clean hero frame and one CTA"
+            : "hands-only film: anonymous hands/wrist operate or wear the product, never a face; hook on the first touch, reveal, demonstrate the real operation, show the visible result, close on a hero frame and one CTA",
+          "an off-screen narrator voice-over (if enabled) carries every spoken word; no on-camera dialogue",
+          dialogueDirection,
+        ])
+      : compactUnique([
+          profile.script_profile,
+          shoot ? "affiliate problem to solution: open on one recognisable everyday problem with a visible consequence, the product arrives as the solution by 3-5 seconds, one real operation, one visible result, one exact CTA" : "",
+          subtypeDirection?.script_direction,
+          dialogueDirection,
+          dialogueStyleId === "custom" ? customDialogue : "",
+        ]),
     voice_direction: compactUnique([
       profile.voice_performance_profile,
       subtypeDirection?.voice_direction,
@@ -448,19 +468,52 @@ export function lockGenreProductionProfile(
       narratorStyleId === "custom" ? customVoice : "",
       voiceSettingsText(input),
     ]),
-    camera_direction: compactUnique([
-      profile.camera_profile,
-      subtypeDirection?.camera_direction,
-      ...selectedCameraDirections,
-      selectedCameraProfiles.length > 1
-        ? "Treat the selected camera profiles as an allowed palette, not a checklist: route the minimum compatible grammar per Scene Intent and change rigs only at declared clip boundaries"
-        : "",
-      compactCustom(input.camera_profile_custom),
-    ]),
-    edit_rhythm: subtypeDirection?.edit_rhythm || profile.edit_rhythm,
-    sound_direction: subtypeDirection?.sound_direction || profile.sound_profile,
+    camera_direction: shoot && shoot.presence !== "with_characters"
+      ? compactUnique([
+          compactCustom(input.camera_profile_custom),
+          `${shoot.style.label_en} (user-selected product shot style, mandatory for every clip): ${shoot.style.description_en}`,
+          `allowed camera moves only: ${shoot.style.camera_moves.join(", ")}`,
+          `lighting: ${shoot.style.lighting}`,
+          `lens: ${shoot.style.lens}`,
+          `pacing: ${shoot.style.pacing}`,
+        ], 1400)
+      : cameraExplicit
+        ? compactUnique([
+            compactCustom(input.camera_profile_custom),
+            ...selectedCameraDirections,
+            selectedCameraProfiles.length > 1
+              ? "Use ONLY these user-selected camera grammars: every clip applies exactly one of them (the one that fits that clip best) and never falls back to generic coverage"
+              : "User-selected camera grammar: apply it in every clip and every beat",
+            shoot ? `product inserts use the ${shoot.style.label_en} style: ${shoot.style.description_en}` : "",
+            subtypeDirection?.camera_direction,
+            `genre context, only where it does not contradict the selected grammar: ${profile.camera_profile}`,
+          ], 1400)
+        : compactUnique([
+            profile.camera_profile,
+            subtypeDirection?.camera_direction,
+            ...selectedCameraDirections,
+            shoot ? `product inserts use the ${shoot.style.label_en} style: ${shoot.style.description_en}` : "",
+          ]),
+    edit_rhythm: shoot && shoot.presence !== "with_characters"
+      ? `${shoot.style.pacing}; every clip advances hook, reveal, detail, proof or the hero frame`
+      : subtypeDirection?.edit_rhythm || profile.edit_rhythm,
+    sound_direction: shoot && shoot.presence !== "with_characters"
+      ? compactUnique([shoot.style.sound, `product foley: ${shoot.category.foley}`])
+      : subtypeDirection?.sound_direction || profile.sound_profile,
     forbidden_patterns: profile.forbidden_patterns,
     voice_performance: input.voice_performance as LockedGenreProductionProfile["voice_performance"],
+    camera_profile_ids: selectedCameraProfiles,
+    camera_explicit: cameraExplicit,
+    ...(shoot
+      ? {
+          product_shoot: {
+            presence: shoot.presence,
+            style: shoot.styleId,
+            category: shoot.categoryId,
+            ...(shoot.styleNotes ? { style_notes: shoot.styleNotes } : {}),
+          },
+        }
+      : {}),
   };
 }
 

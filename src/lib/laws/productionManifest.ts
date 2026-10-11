@@ -79,7 +79,7 @@ export function lawsSystemDigest(options?: { uploadedCharacterReferences?: boole
         ],
       }
     : PRODUCTION_LAWS.entity_laws;
-  return `PRODUCTION LAWS (9-layer constitution v${PRODUCTION_LAWS.manifest_meta.version} — IMMUTABLE. Every segment, beat, first_frame_prompt, motion_prompt, dialogue and camera note MUST obey ALL of these; they outrank style preferences):
+  return `PRODUCTION LAWS (9-layer constitution v${PRODUCTION_LAWS.manifest_meta.version} — IMMUTABLE. Every segment, beat, first_frame_prompt, motion_prompt, dialogue and camera note MUST obey ALL of these; they outrank style preferences — the ONLY exception is camera move type/speed/lens, which an explicit user camera selection or product shot style governs):
 ${block("TẦNG 1 · WORLD", PRODUCTION_LAWS.world_laws)}
 ▸ TẦNG 2 · ENVIRONMENT: governed by the ENVIRONMENT ENGINE archetypes (materials with real physics, Kelvin+Lux light, locked geometry — see that section).
 ${block("TẦNG 3 · ENTITY", entity)}

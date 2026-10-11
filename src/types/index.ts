@@ -289,6 +289,11 @@ export interface StoryboardGenerationInput {
   /** Affiliate product-video authority. The app requires human approval before
    * generation; legacy and non-affiliate projects omit it entirely. */
   product_ir?: import("@/lib/product-ir").ProductIR;
+  /** Product-ad shooting mode: who is on screen (product only / hands only /
+   * people in an affiliate problem→solution story), the product category and
+   * the product shot style. The chosen style is a hard camera contract.
+   * Omitted for legacy projects and non-product genres. */
+  product_shoot?: import("@/lib/product-shoot/contract").ProductShootSettings;
   affiliate_video_style?: import("@/lib/product-ir").AffiliateVideoStyle;
   affiliate_duration_seconds?: 15 | 20 | 30;
   affiliate_disclosure?: string;

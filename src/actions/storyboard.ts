@@ -35,9 +35,11 @@ import {
 import {
   renderCreativeVisualDirective,
   resolveCreativeRoute,
+  resolveInputProductShoot,
   characterWorldStylePrompt,
   isStylizedCharacterRepresentation,
 } from "@/lib/creative-routing";
+import { enforceProductShootContract, productShootSubject } from "@/lib/product-shoot/storyboard";
 import {
   REFERENCE_CHARACTER_ANTI_PLASTIC,
   REFERENCE_CHARACTER_APPEARANCE_LOCK,
@@ -1613,8 +1615,9 @@ function buildRefContext(
   // from the text so it can't contradict the photo (the model kept adding
   // glasses to a man who wears none).
   const charDescForPoster = preserveRealFace ? stripEyewear(charDescForPosterRaw) : charDescForPosterRaw;
+  const shootSubject = productShootSubject(resolveInputProductShoot(input));
   const fallbackSubject =
-    input.genre === "cooking" ? COOKING_HANDS_ONLY_SUBJECT : "the main character";
+    input.genre === "cooking" ? COOKING_HANDS_ONLY_SUBJECT : shootSubject || "the main character";
   const charDesc = charDescForPoster || fallbackSubject;
   const mainDnaRaw = breakdown.character_locks[0]?.dna;
   const charDescForShots = preserveRealFace ? charDesc : charDescForPoster || fallbackSubject;
@@ -1658,7 +1661,7 @@ function buildRefContext(
   };
   const charDescDna = preserveRealFace
     ? charDescForShots
-    : representationSubject[representation] ?? [charDescForShots, mainDnaRaw].filter(Boolean).join(". ");
+    : shootSubject || (representationSubject[representation] ?? [charDescForShots, mainDnaRaw].filter(Boolean).join(". "));
   // Veo/Flow rejects prompts that read like real-person replication ("the exact
   // man in the photo, keep their real face, same identity"). For the text prompt
   // pasted into Veo, describe the character by NEUTRAL ATTRIBUTES instead — the
@@ -1909,6 +1912,7 @@ function normalizeRepairCandidate(
   sanitizeUploadedCharacterSceneText(input, breakdown);
   normalizeDialogue(breakdown, sourceScript ?? undefined);
   enforceAnonymousNarrationContract(input, breakdown);
+  enforceProductShootContract(resolveInputProductShoot(input), breakdown);
   bindOnScreenSpeakersToCameraBeats(breakdown);
   enforceSingleDialogueClock(breakdown);
   enforceSceneCastContract(breakdown);
@@ -2009,7 +2013,9 @@ function validatePreRenderGates(
       veoClips,
       productNames: (input.product_images ?? []).map((product) => product.name),
       productReferences:
-        input.product_ir?.review_status === "approved" ? input.product_images : undefined,
+        input.product_ir?.review_status === "approved" || input.product_shoot?.presence
+          ? input.product_images
+          : undefined,
       // Embed each uploaded character frontal photo so the extension auto-loads
       // it (no manual per-image attach). No photo ⇒ a null slot as before.
       characterReferences: input.character_images,
@@ -2324,6 +2330,23 @@ export async function generateStoryboardPlan(
         main_character: undefined,
       };
     }
+    // Product shoot without people (product only / hands only): never send face
+    // identities, never write on-camera dialogue — what the user meant as spoken
+    // words becomes an off-screen narrator voice-over (or stays wordless when
+    // both speech channels are off).
+    const shootPresence = resolveInputProductShoot(input)?.presence;
+    if (shootPresence === "product_only" || shootPresence === "hands_only") {
+      const narrate = input.voice_over_enabled === true || input.character_dialogue_enabled !== false;
+      input = {
+        ...input,
+        character_images: undefined,
+        character_descriptions: undefined,
+        main_character: undefined,
+        character_representation: "none",
+        character_dialogue_enabled: false,
+        voice_over_enabled: narrate,
+      };
+    }
     const inputGate = validateStoryboardInput(input);
     if (!inputGate.ok) {
       return {
@@ -2534,6 +2557,9 @@ export async function generateStoryboardPlan(
     softStep("Làm sạch mô tả nhân vật", warnings, () => sanitizeUploadedCharacterSceneText(input, breakdown));
     softStep("Chuẩn hoá thoại", warnings, () => normalizeDialogue(breakdown, sourceScript));
     softStep("Lời dẫn ẩn danh", warnings, () => enforceAnonymousNarrationContract(input, breakdown));
+    softStep("Chế độ quay sản phẩm", warnings, () => {
+      for (const note of enforceProductShootContract(resolveInputProductShoot(input), breakdown)) warnings.push(note);
+    });
     softStep("Người nói / camera", warnings, () => bindOnScreenSpeakersToCameraBeats(breakdown));
     softStep("Nhịp thoại (wpm)", warnings, () => enforceSingleDialogueClock(breakdown));
     softStep("Cast từng cảnh", warnings, () => enforceSceneCastContract(breakdown));
@@ -3132,6 +3158,12 @@ export async function rewriteSegment(params: {
     // keep that text verbatim while still forcing narrator ownership.
     enforceAnonymousNarrationContract(params.input, scopedBreakdown, {
       preserveCurrentText: true,
+    });
+    // Product shoot: plan beats over the WHOLE video so this clip keeps its own
+    // place in the hook → reveal → detail → proof → hero arc.
+    enforceProductShootContract(resolveInputProductShoot(params.input), {
+      character_locks: [...(params.breakdown.character_locks ?? [])],
+      segments: params.breakdown.segments.map((s, i) => (i === params.segmentIndex ? segment : { ...s })),
     });
     bindOnScreenSpeakersToCameraBeats(scopedBreakdown);
     enforceSingleDialogueClock(scopedBreakdown);

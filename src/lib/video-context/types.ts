@@ -22,6 +22,17 @@ export interface LockedGenreProductionProfile {
   sound_direction: string;
   forbidden_patterns: string[];
   voice_performance?: Record<string, string | number | undefined>;
+  /** Every camera profile the user picked (first = camera_profile_id). */
+  camera_profile_ids?: string[];
+  /** True when the user explicitly picked the camera (menu or custom note), not auto. */
+  camera_explicit?: boolean;
+  /** Product-ad shooting mode, resolved (presence + category + shot style). */
+  product_shoot?: {
+    presence: "product_only" | "hands_only" | "with_characters";
+    style: string;
+    category: string;
+    style_notes?: string;
+  };
 }
 
 export type ContextResolutionState = "open" | "resolved" | "locked";

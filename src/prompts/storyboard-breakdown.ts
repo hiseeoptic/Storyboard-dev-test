@@ -33,9 +33,10 @@ import {
   type RealityProfile,
 } from "@/lib/reality";
 import type { WorldContext } from "@/types";
-import { isStylizedCharacterRepresentation } from "@/lib/creative-routing";
+import { isStylizedCharacterRepresentation, resolveInputProductShoot } from "@/lib/creative-routing";
 import { compileCookingRecipeDigest } from "@/lib/cooking";
 import { compileProductIRDigest } from "@/lib/product-ir";
+import { applyCameraAuthorityToClip } from "@/lib/product-shoot/clip-authority";
 import { resolveSpeechMode } from "@/lib/storyboard/anonymous-narration";
 import {
   inferRevolvingDoorOperation,
@@ -783,7 +784,7 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   if (input.key_message) brief.push(`- Key message: ${input.key_message}`);
   if (input.call_to_action) brief.push(`- CTA: ${input.call_to_action}`);
   if (input.product_ir?.review_status === "approved") {
-    brief.push(compileProductIRDigest(input.product_ir));
+    brief.push(compileProductIRDigest(input.product_ir, resolveInputProductShoot(input)?.presence));
     brief.push(`- Affiliate treatment: ${input.affiliate_video_style ?? "problem_solution"}`);
     if (input.affiliate_disclosure) brief.push(`- Disclosure metadata: ${input.affiliate_disclosure}`);
   }
@@ -904,7 +905,7 @@ PHYSICAL REALISM (every clip must look real, not "AI" — this is what eliminate
 - State physics explicitly in the motion_prompt: real-world weight, gravity, momentum and balance; objects keep one solid form (object permanence); hands make real contact with props and never pass through them; liquids and food obey gravity.
 - Every motion_prompt must obey real physics, stable identity and object permanence, but do not append a stock realism sentence when those rules are already carried by the structured export.
 - 🚶 DAILY-MOVEMENT MICRO-GRAMMAR (ordinary body actions MUST show their real mechanics — never jump between states; this is the #1 fix for people teleporting or moving inconsistently): Walking to a spot = feet step in sequence along the declared route, weight rolling heel-to-toe, arriving before the next action. Sitting / taking a seat = walk to the chair, turn the hips toward the seat, align knees and feet, shift weight, bend knees and hips (brace one hand on the chair/table only if natural), the pelvis meets the seat, the spine settles, feet plant. Standing up = feet plant under the body, torso leans forward, weight transfers onto the feet, knees and hips extend, hands leave the support, balance settles. Opening a door / entering = the named hand reaches the handle, grips it, the hinge or slide visibly moves, the leaf swings or slides through its real arc, THEN the body crosses the threshold through the clear connector — the door is NEVER already open and its open/closed state stays physically consistent the whole clip. Carrying or moving furniture (e.g. lifting and repositioning a chair) = grip it with the hand(s) its weight demands, lift as the body leans to counter the load, carry it along one continuous walked path, then set it fully down on the floor BEFORE the hands release. Include only the steps the shot needs, but NEVER skip the contact or the weight transfer that connects one state to the next.
-- Camera moves are smooth and minimal (a slow push-in or gentle pan). Avoid combining a big camera move with big subject motion — that compounding warps the image.
+- Camera moves are smooth and minimal (a slow push-in or gentle pan) BY DEFAULT. Avoid combining a big camera move with big subject motion — that compounding warps the image. An explicit user camera selection or product shot style in the user message replaces this default.
 
 STAGING & BLOCKING (a real director's coverage — this is what separates a watchable video from a flat, monotonous one):
 - 🧭 SPATIAL TOPOLOGY FIRST (mandatory before writing a first frame, beat, motion or camera for every multi-zone / threshold / boundary scene): create ONE compact "spatial_layout" and make every field consume it. (1) "zone_order" lists the physically connected zones in order; (2) "fixed_architecture" locks walls, door/window openings, thresholds, stairs, counters and perimeter barriers; (3) "character_placement" assigns EACH visible character an exact zone + named architectural/prop anchor + approximate distance + facing direction; (4) "walkable_path" declares the connected load-bearing route that must remain clear; (5) "camera_zone" gives the camera a real supported position and unobstructed line of sight. Do not describe the same geometry differently in first_frame_prompt, beats, motion_prompt or camera notes.
@@ -916,8 +917,8 @@ STAGING & BLOCKING (a real director's coverage — this is what separates a watc
 - ⏱️ FIRST 2-3 SECONDS DECIDE EVERYTHING (every genre, not just hooks): segment 1 must open ON an arresting, concrete, already-in-motion image — a visible action or a charged human moment mid-beat — never a static establishing wide, never someone simply standing/sitting waiting to speak, never a slow fade-in. The very first frame should make a scrolling viewer ask "what is happening here?".
 - 🎭 GESTURE MUST CARRY THE LINE'S EMOTION: every spoken line is paired with a physical action whose emotion MATCHES that exact line — the body says what the words say (or deliberately contradicts them when the story wants subtext). Name the specific action tied to that line's feeling: hurt = fingers tightening on the glass and a swallow before speaking; guilt = eyes dropping, phone lowered slowly, shoulders folding in; tenderness = hands stilling, a step closer, voice softening as the chin lifts. NEVER attach a neutral/idle gesture to an emotional line, and never write vague acting ("looks sad", "reacts", "shows emotion") — write the observable movement that produces that emotion on camera.
 - ✋ CHARACTER BUSINESS: every visible character has ONE concrete piece of physical business per clip that serves the story (setting the phone face-down on the table, wrapping both hands around a warm cup, straightening the modem's cable, folding the throw blanket while listening) — hands are NEVER idle mannequin hands hanging at the sides. Listeners react with specific micro-actions: a slow eyebrow raise, a suppressed smile tugging one corner of the mouth, a slow exhale, fingers tightening on the cup — name the exact micro-expression, never write "reacts" or "looks at him".
-- 🎬 CAMERA VARIETY ACROSS CLIPS: still ONE smooth move per clip, but the MOVE ITSELF must vary across the video — rotate through the vocabulary: slow push-in / lateral drift / gentle arc-orbit / slow pull-back reveal / static frame with only a subtle reframe / over-the-shoulder favoring the listener. NEVER repeat the identical camera recipe (e.g. "hold A, pan to B, push in") in more than two consecutive clips.
-- 🐢 CAMERA PACING — NO RUSHED MOVES: the single camera move breathes across the WHOLE clip at real human operator speed — a pan that must reach the other speaker travels gently during the natural pause BETWEEN lines, never whips in one second. The camera starts settled, eases in, eases out, ends settled (so the last frame chains cleanly into the next clip). If a move cannot fit calmly inside 10s, choose a smaller move.
+- 🎬 CAMERA VARIETY ACROSS CLIPS (only when the user did NOT select a camera profile or product shot style — a selection is applied consistently instead): still ONE smooth move per clip, but the MOVE ITSELF must vary across the video — rotate through the vocabulary: slow push-in / lateral drift / gentle arc-orbit / slow pull-back reveal / static frame with only a subtle reframe / over-the-shoulder favoring the listener. NEVER repeat the identical camera recipe (e.g. "hold A, pan to B, push in") in more than two consecutive clips.
+- 🐢 CAMERA PACING — NO RUSHED MOVES: the single camera move breathes across the WHOLE clip at real human operator speed — a pan that must reach the other speaker travels gently during the natural pause BETWEEN lines, never whips in one second. The camera starts settled, eases in, eases out, ends settled (so the last frame chains cleanly into the next clip). If a move cannot fit calmly inside 10s, choose a smaller move. A user-selected energetic grammar (motion-control, handheld, action, music-video, colour-pop) keeps its real speed — its fast moves end in crisp holds instead.
 - ⚡ ENERGY-AWARE PERFORMANCE (Director's Engine): infer each clip's energy (low / medium / high) from its emotion, and write the acting to match — low: minimal movement, internalized emotion; medium: natural gestures, conversational pacing; high: focused intensity, never flailing. Adjacent clips never jump low→high (motion shows energy BUILDING gradually — restrained first, opening up) and never crash high→low (motion shows tension RELEASING slowly — controlled breathing, shoulders dropping). Chained clips also keep CAMERA temperament continuity: never cut from a locked-off static clip straight into a handheld-feeling energetic move — step through a controlled push-in first.
 
 MATERIAL & SKIN REALISM (this is what kills the "AI/CGI/plastic" look — treat every clip as REAL filmed footage, never a 3D render):
@@ -1013,14 +1014,16 @@ export function buildStoryboardUserPrompt(
   if (input.key_message) briefLines.push(`- Key message: ${input.key_message}`);
   if (input.call_to_action) briefLines.push(`- Call to action (CTA): ${input.call_to_action}`);
   if (input.product_ir?.review_status === "approved") {
-    briefLines.push(compileProductIRDigest(input.product_ir));
+    briefLines.push(compileProductIRDigest(input.product_ir, resolveInputProductShoot(input)?.presence));
     briefLines.push(`- Affiliate treatment: ${input.affiliate_video_style ?? "problem_solution"}`);
   }
   const productBriefBlock =
     briefLines.length > 0
       ? `\n\nPRODUCT / TVC BRIEF — this is a product advertisement; build the whole script around it:\n${briefLines.join(
           "\n"
-        )}\nFeature the product clearly, dramatize the selling points for the target audience, land the key message, and close on the exact CTA above.`
+        )}\n${resolveInputProductShoot(input)?.presence === "product_only"
+          ? "Feature the product as the ONLY subject (no people), reveal its selling points visually through light, detail and proof, land the key message by voice-over, and close on the exact CTA above."
+          : "Feature the product clearly, dramatize the selling points for the target audience, land the key message, and close on the exact CTA above."}`
       : "";
 
   // Story / film brief — for narrative (non-ad) genres.
@@ -1205,7 +1208,7 @@ Visual Style: ${input.style}
 Number of SEGMENTS: ${segmentCount} (${clipDurationDescription}; exact total ${totalDuration} seconds)
 Beats per segment: ${beatsExactText} progressive camera framings of ONE continuous action inside each 10s clip (use the number the action naturally needs)${activeSceneIntentRulesBlock}${resolvedContextBlock}${scriptBlock}${productBriefBlock}${storyBriefBlock}${numerologyBlock}${dialogueBlock}${anonymousNarrationBlock}${stickFigureNarrationBlock ? `\n\n${stickFigureNarrationBlock}` : ""}${characterBlock}${settingBlock}${shotLocationBlock}${toneBlock}${customBlock}${actionDramaBlock}
 
-Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous take of its declared duration (${clipDurationDescription}) showing a SINGLE primary action, filmed as ${beatsExactText} progressive camera framings (${beatsIsAuto ? "3 to 5" : beatsPerSegment} beats) of that SAME ongoing action — smooth reframes (push-in, pan, angle change), NOT hard cuts to separate shots. Beats preserve a clear chronological order while the subject, props and locked physics stay continuous, but beats and camera notes contain NO numeric timecodes. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" describes that ONE continuous action as an untimed ordered physical sequence using deliberate, specific verbs (body part + verb + manner) plus an explicit final state/anchor. dialogue_lines.start_s/end_s is the clip's ONLY clock. Keep ONE primary action per clip — never stack multiple actions beyond the model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. ${firstFrameIdentityRule} Inside the motion_prompt use only the exact name plus position, action and expression for an uploaded-reference character.
+Produce EXACTLY ${segmentCount} segments. ${structureDirective} Each segment = ONE continuous take of its declared duration (${clipDurationDescription}) showing a SINGLE primary action, filmed as ${beatsExactText} progressive camera framings (${beatsIsAuto ? "3 to 5" : beatsPerSegment} beats) of that SAME ongoing action — reframes written in the user-selected camera grammar / product shot style when one is declared above (otherwise smooth push-in, pan or angle change), NOT hard cuts to separate shots. Beats preserve a clear chronological order while the subject, props and locked physics stay continuous, but beats and camera notes contain NO numeric timecodes. CONTINUITY IS PROFILE-LED: read resolved_context.layers.motion_continuity.continuity_mode. Strict continuity requires END state N = START state N+1; montage, match-cut, soft, symbolic, dream or scene-cut continuity instead preserves only its declared anchor(s) and may intentionally change location/time. Never force spatial sameness across a declared location/time transition. The "motion_prompt" describes that ONE continuous action as an untimed ordered physical sequence using deliberate, specific verbs (body part + verb + manner) plus an explicit final state/anchor. dialogue_lines.start_s/end_s is the clip's ONLY clock. Keep ONE primary action per clip — never stack multiple actions beyond the model's motion budget. NOTE: the system auto-wraps each motion_prompt with the relevant character/product references, selected style/reality rules, the spoken line and a compact negative list — so do NOT repeat identity details, physics laws, dialogue text or negative lists inside the motion_prompt. ${firstFrameIdentityRule} Inside the motion_prompt use only the exact name plus position, action and expression for an uploaded-reference character.
 
 Return a JSON object with this EXACT structure (the "beats" array must contain ${beatsExactText} items):
 {
@@ -3677,13 +3680,19 @@ export function buildVeoJson(
     };
   });
 
+  // Re-apply the user's explicit camera / product-shoot selection last, so the
+  // generic coverage recipe above can never replace it (see clip-authority.ts).
+  const productionProfile = breakdown.context_ir?.production_profile;
+  const authoredClips = clips.map((clip, i) =>
+    applyCameraAuthorityToClip(clip, breakdown.segments[i] ?? {}, productionProfile)
+  );
   return {
     format: "flow-veo-scene-json-v2",
     usage: "Each clips item is one compact structured Veo scene. Use characters_in_scene to attach only that scene's named references; do not flatten or prepend another prose prompt.",
     production_prompt_language: promptLang,
     spoken_language: lang,
     aspect_ratio: opts.aspectRatio,
-    clip_count: clips.length,
-    clips,
+    clip_count: authoredClips.length,
+    clips: authoredClips,
   };
 }

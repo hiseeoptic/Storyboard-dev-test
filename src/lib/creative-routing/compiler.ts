@@ -19,6 +19,17 @@ import {
   TOPIC_LAWS,
 } from "./profiles.ts";
 import { genreProductionProfile } from "../genre-production-profiles.ts";
+import type { PresenceMode } from "../product-shoot/catalog.ts";
+import { productShootScriptDirective, resolveProductShoot } from "../product-shoot/contract.ts";
+
+/** The product-shoot settings of this request, resolved once (null when not a product shoot). */
+export function resolveInputProductShoot(input: StoryboardGenerationInput) {
+  return resolveProductShoot(input.product_shoot, [
+    input.product_ir?.product_name,
+    input.product_ir?.detected_category,
+    input.story_idea,
+  ]);
+}
 
 export interface CreativeRoute {
   topic: Genre;
@@ -29,6 +40,11 @@ export interface CreativeRoute {
   effective_character_representation: CharacterRepresentation;
   directing_profile: DirectingProfileId;
   directing_profiles?: DirectingProfileId[];
+  /** True when the user picked the camera profile(s) in the menu (not auto). */
+  directing_explicit?: boolean;
+  /** Hard product-shoot contract text (presence + shot style), when selected. */
+  product_shoot_directive?: string;
+  product_shoot_presence?: PresenceMode;
   character_reference_lock: "strict_photoreal" | "none";
   specialist_dna: string[];
   resolution_notes: string[];
@@ -87,6 +103,10 @@ function inferInterpretation(input: StoryboardGenerationInput, format: StoryForm
 }
 
 function inferCharacterRepresentation(input: StoryboardGenerationInput): CharacterRepresentation {
+  // Product-only / hands-only shoots never invent a person (hands are anonymous
+  // body parts governed by the product-shoot contract, not a character).
+  const shootPresence = resolveInputProductShoot(input)?.presence;
+  if (shootPresence === "product_only" || shootPresence === "hands_only") return "none";
   if ((input.character_images?.length ?? 0) > 0) return "uploaded_photoreal";
   if (input.character_representation && input.character_representation !== "auto") return input.character_representation;
   const scriptStyleSignal = [
@@ -162,15 +182,25 @@ export function resolveCreativeRoute(input: StoryboardGenerationInput): Creative
   const storyFormat = inferStoryFormat(input, audienceGoal);
   let interpretation = inferInterpretation(input, storyFormat);
   const requestedCharacter = input.character_representation ?? "auto";
-  const hasCharacterReferences = (input.character_images?.length ?? 0) > 0;
+  const shoot = resolveInputProductShoot(input);
+  const peopleFree = shoot?.presence === "product_only" || shoot?.presence === "hands_only";
+  const hasCharacterReferences = !peopleFree && (input.character_images?.length ?? 0) > 0;
   const hasExplicitStylizedChoice = isStylizedCharacterRepresentation(requestedCharacter);
-  const effectiveCharacter = hasExplicitStylizedChoice
+  const effectiveCharacter = peopleFree
+    ? "none"
+    : hasExplicitStylizedChoice
     ? requestedCharacter
     : hasCharacterReferences
       ? "uploaded_photoreal"
       : inferCharacterRepresentation(input);
   const strictPhotorealReferences = hasCharacterReferences && !hasExplicitStylizedChoice;
   const notes: string[] = [];
+  if (peopleFree && (input.character_images?.length ?? 0) > 0) {
+    notes.push("Uploaded character references are ignored: the user chose a product-shoot mode without people.");
+  }
+  if (shoot?.presence === "hands_only") {
+    notes.push("Hands-only exception to the no-character medium: anonymous hands, wrists and forearms may perform the real product action; never a face, head or full body.");
+  }
 
   if (hasCharacterReferences && hasExplicitStylizedChoice) {
     notes.push("The explicit stylized medium remains authoritative; uploaded real-person references are incompatible and must be removed before generation.");
@@ -199,6 +229,13 @@ export function resolveCreativeRoute(input: StoryboardGenerationInput): Creative
     effective_character_representation: effectiveCharacter,
     directing_profile: directingProfile,
     directing_profiles: directingProfiles,
+    directing_explicit: (input.directing_profiles ?? []).some((id) => id !== "auto") || Boolean(input.directing_profile && input.directing_profile !== "auto"),
+    ...(shoot
+      ? {
+          product_shoot_directive: productShootScriptDirective(shoot, { productName: input.product_ir?.product_name }),
+          product_shoot_presence: shoot.presence,
+        }
+      : {}),
     character_reference_lock: strictPhotorealReferences ? "strict_photoreal" : "none",
     specialist_dna: [...new Set(directingProfiles.flatMap((profile) => specialistDnaFor(input, profile)))],
     resolution_notes: notes,
@@ -236,10 +273,12 @@ export function renderCreativeRouteDirective(inputOrRoute: StoryboardGenerationI
 Reference policy: ${route.character_reference_lock}
 
 ROUTING LAWS
-- The order above is binding. Topic decides specialist knowledge; audience goal decides the intended change; format decides structure; interpretation decides literal/metaphorical treatment; character medium decides representation; the directing-profile palette limits the camera/light/sound grammars available to Scene Intent.
-- The directing-profile palette is not a checklist or rotation schedule. For each scene, choose the minimum compatible grammar justified by scale, geography, subjectivity, action and emotional consequence. Change profile only at a declared clip boundary; never combine incompatible physical rigs inside one continuous take.
+- The order above is binding. Topic decides specialist knowledge; audience goal decides the intended change; format decides structure; interpretation decides literal/metaphorical treatment; character medium decides representation; ${route.directing_explicit ? "the USER-SELECTED directing profile(s) ARE the camera/light/sound grammar" : "the directing-profile palette limits the camera/light/sound grammars available to Scene Intent"}.
+${route.directing_explicit
+    ? `- CAMERA AUTHORITY: the user explicitly selected ${profiles.join(", ")} in the menu. Every segment and every beats[].camera MUST visibly apply ${profiles.length > 1 ? "one of these selected grammars (state which one in the camera line)" : "this grammar"}. Never substitute generic coverage (eye-level medium + slow push-in) and never soften the selected moves into a different style. Change profile only at a declared clip boundary; never combine incompatible physical rigs inside one continuous take.`
+    : "- The directing-profile palette is not a checklist or rotation schedule. For each scene, choose the minimum compatible grammar justified by scale, geography, subjectivity, action and emotional consequence. Change profile only at a declared clip boundary; never combine incompatible physical rigs inside one continuous take."}
 - Never import props, ambience, actions, terminology or visual clichés from an inactive topic/profile. Existing legacy style/video_goal fields are secondary compatibility hints and cannot override this route.
-${bulletLines(allLaws)}${route.resolution_notes.length ? `\nRESOLUTION NOTES\n${bulletLines(route.resolution_notes)}` : ""}`;
+${bulletLines(allLaws)}${route.resolution_notes.length ? `\nRESOLUTION NOTES\n${bulletLines(route.resolution_notes)}` : ""}${route.product_shoot_directive ? `\n\n${route.product_shoot_directive}` : ""}`;
 }
 
 /** Script authorship deliberately stops before camera/directing selection.
@@ -265,7 +304,7 @@ export function renderCreativeScriptRouteDirective(
 SCRIPT ROUTING LAWS
 - These authorities govern premise, structure, causal meaning and character performance only.
 - Camera/directing profiles are intentionally absent at this stage. They must not change dialogue wording, number of turns, speaker ownership, subtext, reply structure or ending. Stage 2 will translate the approved script into camera coverage.
-${bulletLines(laws)}`;
+${bulletLines(laws)}${route.product_shoot_directive ? `\n\n${route.product_shoot_directive}\n- For this product shoot the script's ACTION lines describe what the product, the light${route.product_shoot_presence === "hands_only" ? ", the anonymous hands" : ""} and the set do in the chosen shot style${route.product_shoot_presence === "with_characters" ? " (people only in the problem and solution beats)" : "; CHARACTERS and IN SCENE stay empty (write \"none\")"}.` : ""}`;
 }
 
 export function renderCreativeVisualDirective(inputOrRoute: StoryboardGenerationInput | CreativeRoute): string {
@@ -289,5 +328,5 @@ ${bulletLines([
     ...INTERPRETATION_LAWS[route.visual_interpretation],
     ...directing,
     ...materials,
-  ])}`;
+  ])}${route.product_shoot_directive ? `\n${route.product_shoot_directive}` : ""}`;
 }

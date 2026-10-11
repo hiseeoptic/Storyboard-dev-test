@@ -14,6 +14,12 @@ import type {
 } from "@/types/nano-flow";
 import { buildProductionState } from "../production-state/normalizer.ts";
 import {
+  productShootKeyframeContract,
+  productShootNegatives,
+  shootFromProfile,
+  type ResolvedProductShoot,
+} from "../product-shoot/contract.ts";
+import {
   buildNanoFlowShotStateAuthority,
   compactBoardAuthority,
   compactPromptAuthority,
@@ -657,7 +663,14 @@ function buildKeyframePrompt(params: {
   continueFromPrevious?: string;
   lockedTimeOfDay?: string;
   placementContract?: BoardPlacementContract;
+  productShoot?: ResolvedProductShoot | null;
+  hasProductRefs?: boolean;
+  /** The user picked a POV / overhead / macro camera: operator hands may appear without a face. */
+  handInsertAllowed?: boolean;
 }): string {
+  if (params.productShoot && params.productShoot.presence !== "with_characters") {
+    return buildProductKeyframePrompt({ ...params, productShoot: params.productShoot });
+  }
   const {
     moment,
     primaryVideoPrompt,
@@ -820,7 +833,9 @@ function buildKeyframePrompt(params: {
     },
     body_visibility_contract: characterStyleLock
       ? "Every visible hand, limb or character part stays visibly connected to its named owner's head/body per the locked character-design grammar. Never render an isolated hand, arm, limb or headless fragment unless the script explicitly requires an object-only insert."
-      : "A visible hand, wrist, arm or finger stays anatomically connected to its named owner's visible face, shoulders and upper torso. Never render a hand-only, arm-only, headless or disembodied human crop as the Veo input frame.",
+      : params.handInsertAllowed
+        ? "A visible hand, wrist, arm or finger stays anatomically correct. Because the user selected a POV / overhead / macro camera, an anonymous operator's hands may appear entering from the frame edge without a face (first-person or insert framing); otherwise hands stay connected to their named owner's visible body. Never render a headless torso or a floating, unattached hand."
+        : "A visible hand, wrist, arm or finger stays anatomically connected to its named owner's visible face, shoulders and upper torso. Never render a hand-only, arm-only, headless or disembodied human crop as the Veo input frame.",
     camera_subject_contract: {
       required_on_camera: requiredOnCamera,
       permitted_off_camera: permittedOffCamera,
@@ -877,14 +892,108 @@ function buildKeyframePrompt(params: {
       ? "Each attached character/design sheet controls only that same-named stylized identity's proportions, line/shape/material language, palette and role markers. The attached location sheet controls the script-derived terrain/architecture, landmarks, layout and light in the SAME locked medium. Never translate a sheet into another rendering medium."
       : KEYFRAME_REFERENCE_AUTHORITY,
     wardrobe_note: wardrobeClause ? wardrobeClause.trim() : undefined,
+    ...(params.hasProductRefs
+      ? {
+          product_reference_authority:
+            "When the product is in frame, the attached product image(s) are the absolute authority for its shape, proportions, colour, material, printed label and logo — reproduce them exactly; the product's own printed markings are the only text allowed.",
+        }
+      : {}),
+    ...(params.productShoot
+      ? { product_insert_style: `${params.productShoot.style.label_en}: ${params.productShoot.style.description_en}` }
+      : {}),
     negative: characterStyleLock
       ? "Stay strictly in the locked visual medium/style — do NOT drift to a different style and do NOT convert to live-action photography. This is ONE single frame: no storyboard grid, no panels, no split frames, no collage, no captions, no numbers, NO text of any kind. No identity drift; never duplicate a character; consistent location and style."
       : liveAction
-        ? "Photorealistic only — NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT painting, NOT drawing. This is ONE single film frame: no storyboard grid, no panels, no split frames, no collage, no captions, no numbers, no watermark, no logo, NO text of any kind. No identity drift; never duplicate a character; never render disembodied hands, arm-only crops or headless people; no extra, missing or fused fingers."
+        ? `Photorealistic only — NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT painting, NOT drawing. This is ONE single film frame: no storyboard grid, no panels, no split frames, no collage, no captions, no numbers, no watermark, ${params.hasProductRefs ? "no added logo or text (the product's own printed label and logo stay exactly as on its reference)" : "no logo, NO text of any kind"}. No identity drift; never duplicate a character; ${params.handInsertAllowed ? "never render floating unattached hands or headless people" : "never render disembodied hands, arm-only crops or headless people"}; no extra, missing or fused fingers.`
         : "No visual-medium drift, no accidental photoreal conversion, no inconsistent character design. This is ONE single frame: no storyboard grid, no panels, no split frames, no collage, no captions, no numbers, NO text of any kind. Consistent location and style.",
   };
   // JSON.stringify drops undefined-valued keys, leaving a clean single-frame payload.
   return JSON.stringify(prompt);
+}
+
+/**
+ * Keyframe for a people-free product shoot (product only / hands only). The
+ * human-centric contracts (faces, wardrobe sheets, seating, "never a hand-only
+ * crop", "no logo / no text") are replaced by a product-fidelity contract and
+ * the chosen shot style's light, set, lens and first-frame rule.
+ */
+function buildProductKeyframePrompt(params: {
+  moment: "start" | "end";
+  primaryVideoPrompt: Record<string, unknown> | string;
+  stateAuthority: NanoFlowShotStateAuthority;
+  aspectRatio: string;
+  beats: Array<{ beat?: string; camera?: string }>;
+  hasLocationPhoto: boolean;
+  lockedSetting?: string;
+  lockedTimeOfDay?: string;
+  productShoot: ResolvedProductShoot;
+}): string {
+  const { moment, primaryVideoPrompt, stateAuthority, aspectRatio, beats, hasLocationPhoto, productShoot } = params;
+  const clip = primaryVideoPrompt && typeof primaryVideoPrompt === "object" ? primaryVideoPrompt : undefined;
+  const list = (Array.isArray(beats) ? beats : []).filter((b) => clipStr(b?.camera) || clipStr(b?.beat));
+  const pick = moment === "end" ? list[list.length - 1] : list[0];
+  const beat = pick
+    ? { role: "detail" as const, camera: clipStr(pick.camera) || "[CLOSE] locked-off", action: clipStr(pick.beat), start: 0, end: 0 }
+    : undefined;
+  const contract = productShootKeyframeContract(productShoot, beat);
+  const handsOnly = productShoot.presence === "hands_only";
+  const prompt: Record<string, unknown> = {
+    authority_fingerprint: stateAuthority.authority_fingerprint,
+    authority_order: stateAuthority.authority_order,
+    semantic_authority:
+      "This keyframe is a SINGLE product film still — a STATIC VISUAL PROJECTION of the primary video prompt. It MAY NOT add, remove or reinterpret the action, camera intent or ending it declares.",
+    reference_fidelity_contract:
+      `The attached PRODUCT reference image(s) are LAW and override any text here: copy the product's exact shape, proportions, colour, materials, printed label and logo (${productShoot.category.geometry_lock}). ${hasLocationPhoto ? "The attached set/location photo controls the background only." : "Any attached set plate controls the background only."} A frame with a drifted, simplified or re-designed product is a rejection.`,
+    production_state_authority: compactBoardAuthority(stateAuthority),
+    video_prompt_projection: clip
+      ? { scene_action: clip.scene_action, camera: clip.camera, background_lock: clip.background_lock, product_shoot: clip.product_shoot }
+      : { exact_primary_video_prompt: primaryVideoPrompt },
+    type: handsOnly ? "photoreal_hands_product_keyframe" : "photoreal_product_keyframe",
+    aspect_ratio: aspectRatio,
+    output_count: 1,
+    interpolation_role: moment,
+    layout:
+      `ONE single ${aspectRatio} product film still that FILLS the whole image — not a grid, collage, split frame or contact sheet; no captions, numbers or added text. The ONLY text allowed is the product's own printed label/logo exactly as on the reference.`,
+    moment: `${moment === "end" ? "THE LAST FRAME" : "THE FIRST FRAME"} of this shot: ${contract.first_frame}`,
+    camera: beat?.camera || contract.first_frame,
+    product_shoot: contract,
+    body_visibility_contract: handsOnly
+      ? "Intentional hands-only product insert: only anonymous hands, wrists and forearms appear, cropped at the forearm, anatomically correct with five fingers each; never a face, head, hair, torso or full body, and no mirror reflection of a person."
+      : "Product-only frame: no person, face, hand, finger, arm or any body part, mannequin, silhouette or reflection of a person appears anywhere.",
+    setting: params.lockedSetting || contract.set,
+    lighting: (params.lockedTimeOfDay ? `${params.lockedTimeOfDay}: ` : "") + contract.lighting,
+    lens: contract.lens,
+    render:
+      "Photorealistic high-end product photography still from a professional cinema camera: true-to-life materials, accurate reflections and speculars, crisp edges, controlled depth of field on the product, ultra-detailed — a real photograph.",
+    negative: [
+      "cartoon, illustration, 3D render look, CGI plastic sheen, watermark, captions, added text",
+      ...productShootNegatives(productShoot),
+    ].join(", "),
+  };
+  return JSON.stringify(prompt);
+}
+
+/**
+ * Product-hero thumbnail for a people-free product shoot: no cast, the product
+ * as the giant hero in the chosen style's light, and the headline.
+ */
+function buildProductThumbnailPrompt(params: {
+  headline: string;
+  aspect: "16:9" | "9:16";
+  productShoot: ResolvedProductShoot;
+}): string {
+  const s = params.productShoot.style;
+  return JSON.stringify({
+    type: "photoreal_product_thumbnail",
+    aspect: params.aspect === "9:16" ? "9:16 vertical" : "16:9 horizontal",
+    goal: "A scroll-stopping product thumbnail: instantly readable, premium and high-contrast.",
+    hero_item: `The product from the ATTACHED product reference image(s), large and centred, reproduced EXACTLY (${params.productShoot.category.geometry_lock}), lit in the "${s.label_en}" style: ${s.lighting}.`,
+    background: s.set,
+    headline: `Bold, clean headline "${params.headline}" in the top third, spelled EXACTLY as given, crisp and fully legible, styled to match the product's premium look.`,
+    composition: "product fills the centre and lower two-thirds with a strong highlight on its signature detail; headline in the top third; clean negative space.",
+    render: "Photoreal high-end product photography with graphic headline overlay; tack-sharp product, rich contrast.",
+    negative: `no people, no faces, no hands or body parts, no extra products, no gibberish or misspelled text, no watermark; ${productShootNegatives(params.productShoot).slice(0, 6).join(", ")}`,
+  });
 }
 
 /**
@@ -1203,6 +1312,8 @@ export function buildNanoFlowManifest(
     (entry) => `${entry.entity_id} (${entry.display_name})`
   );
   const realityMode = breakdown.context_ir?.reality_profile.mode ?? "cinematic";
+  // Product shoot recorded in the locked production profile (presence + style).
+  const productShoot = shootFromProfile(breakdown.context_ir?.production_profile);
   // Selected video style (one of the ten locked media). Photoreal representations
   // (auto/uploaded/human/none) add NO lock and keep the board photoreal; any
   // stylized medium hard-locks every board + video prompt to that style.
@@ -1523,9 +1634,14 @@ export function buildNanoFlowManifest(
           stateAuthority,
           visualMediumLock
         );
+    // Product refs: approved affiliate projects (legacy rule) and every product
+    // shoot whose products carry reference images — a product-only / hands-only
+    // film is unusable without the real product attached to each frame.
     const affiliateProductIds = opts.affiliateProductIR?.review_status === "approved"
       ? products.map((product) => product.id)
-      : [];
+      : productShoot
+        ? products.filter((product) => product.image).map((product) => product.id)
+        : [];
     const image_refs: NanoFlowRefSelector = {
       characters: charIds(inScene),
       environments: envIds,
@@ -1651,6 +1767,11 @@ export function buildNanoFlowManifest(
       continueFromPrevious,
       lockedTimeOfDay,
       placementContract,
+      productShoot,
+      hasProductRefs: affiliateProductIds.length > 0,
+      handInsertAllowed: (breakdown.context_ir?.production_profile?.camera_profile_ids ?? []).some((id) =>
+        ["pov_first_person", "overhead_flatlay", "macro_detail"].includes(id)
+      ),
     };
 
     return {
@@ -1774,7 +1895,9 @@ export function buildNanoFlowManifest(
             },
           }
         : {}),
-      thumbnail_prompt: buildThumbnailPrompt({
+      thumbnail_prompt: productShoot && productShoot.presence !== "with_characters"
+        ? buildProductThumbnailPrompt({ headline: breakdown.thumbnail_title || title, aspect: thumbnailAspect, productShoot })
+        : buildThumbnailPrompt({
         headline: breakdown.thumbnail_title || title,
         castNames: characters.map((c) => c.name).slice(0, 3),
         hero:

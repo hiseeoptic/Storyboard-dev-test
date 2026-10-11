@@ -1361,3 +1361,83 @@ test("without characterReferences the character assets stay null slots (backward
   const m = buildNanoFlowManifest(framesFixture(), { veoClips: framesClips });
   for (const c of m.assets.characters ?? []) assert.equal(c.image, null);
 });
+
+function productShootFixture(presence: "product_only" | "hands_only") {
+  return {
+    title: "Đúng Giờ",
+    total_duration_seconds: 20,
+    thumbnail_title: "ĐÚNG GIỜ",
+    character_locks: [],
+    context_ir: {
+      reality_profile: { mode: "commercial" },
+      production_profile: {
+        registry_version: "1.0",
+        genre: "advertising",
+        dialogue_style_id: "commercial",
+        narrator_voice_style_id: "commercial",
+        camera_profile_id: "product_commercial",
+        script_direction: "product-only film",
+        voice_direction: "",
+        camera_direction: "Reveal from darkness",
+        edit_rhythm: "",
+        sound_direction: "",
+        forbidden_patterns: [],
+        product_shoot: { presence, style: "dark_reveal", category: "watch" },
+      },
+    },
+    segments: [1, 2].map((n) => ({
+      segment_number: n,
+      duration_seconds: 10,
+      marketing_role: n === 1 ? "hook" : "cta",
+      first_frame_prompt: "the watch on black glass",
+      motion_prompt: "a light slice reveals the bezel",
+      characters_in_scene: [],
+      environment_ref: "black_void_studio",
+      beats: [
+        { beat: "a glint ignites the bezel edge", camera: "[EXTREME_CLOSE] EXTREME CLOSE-UP, low angle, locked-off" },
+        { beat: "the light slice travels across the dial", camera: "[CLOSE] CLOSE-UP, slow lateral slide" },
+      ],
+    })),
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+}
+
+test("product-only shoot exports product keyframes, a product thumbnail and product refs without any cast", () => {
+  const m = buildNanoFlowManifest(productShootFixture("product_only"), {
+    productNames: ["Orient Bambino"],
+    productReferences: [{ name: "Orient Bambino", images: ["BASE64_FRONT", "BASE64_SIDE", "BASE64_BACK"] }],
+  });
+  assert.equal(m.assets.characters?.length ?? 0, 0);
+  assert.deepEqual(m.assets.products?.[0]?.images, ["BASE64_FRONT", "BASE64_SIDE", "BASE64_BACK"]);
+  const productId = m.assets.products?.[0]?.id;
+  assert.equal(m.project.production_profile?.product_shoot?.presence, "product_only");
+  for (const shot of m.shots) {
+    assert.deepEqual(shot.image_refs?.characters, []);
+    assert.deepEqual(shot.image_refs?.products, [productId]);
+    assert.deepEqual(shot.video_refs?.products, [productId]);
+    const kf = JSON.parse(shot.storyboard_prompt);
+    assert.equal(kf.type, "photoreal_product_keyframe");
+    assert.match(kf.camera, /^\[EXTREME_CLOSE\]/);
+    assert.match(kf.product_shoot.style, /Reveal from darkness/);
+    assert.match(kf.product_shoot.keyframe_rule, /HALF-LIT/);
+    assert.match(kf.reference_fidelity_contract, /10:10/);
+    assert.match(kf.body_visibility_contract, /no person/i);
+    assert.match(kf.layout, /product's own printed label/);
+    assert.doesNotMatch(shot.storyboard_prompt, /wardrobe sheet|skin|seated character|FRONTAL FACE/i);
+  }
+  const thumb = JSON.parse(m.project.thumbnail_prompt!);
+  assert.equal(thumb.type, "photoreal_product_thumbnail");
+  assert.doesNotMatch(m.project.thumbnail_prompt!, /main character|sticker|open-mouth/i);
+  assert.match(thumb.negative, /no people/);
+});
+
+test("hands-only product keyframe allows anonymous hands but never a face", () => {
+  const m = buildNanoFlowManifest(productShootFixture("hands_only"), {
+    productReferences: [{ name: "Orient Bambino", images: ["BASE64_FRONT"] }],
+  });
+  const kf = JSON.parse(m.shots[0]!.storyboard_prompt);
+  assert.equal(kf.type, "photoreal_hands_product_keyframe");
+  assert.match(kf.body_visibility_contract, /hands-only product insert/);
+  assert.match(kf.negative, /face/);
+  const img005 = validatePromptExports(m).findings.filter((f) => f.code === "IMG-005");
+  assert.deepEqual(img005, []);
+});

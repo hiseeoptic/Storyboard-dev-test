@@ -70,9 +70,14 @@
         name: String(a.name || 'Location ' + (i + 1)).trim() + (imgs.length > 1 ? ' (góc ' + (j + 1) + ')' : ''), data: img,
       }));
     });
+    // Sản phẩm: nạp MỌI góc ảnh (tối đa 4) — quay "chỉ sản phẩm" lấy hình dáng từ đủ các góc.
     (assets.products || []).forEach((a, i) => {
-      const img = assetImages(a)[0];
-      if (img) out.push({ key: 'products:' + (a.id || i), kind: 'products', id: a.id || '', name: String(a.name || 'Product ' + (i + 1)).trim(), data: img });
+      const imgs = assetImages(a).slice(0, 4);
+      const base = String(a.name || 'Product ' + (i + 1)).trim();
+      imgs.forEach((img, j) => out.push({
+        key: 'products:' + (a.id || i) + (j ? ':' + j : ''), kind: 'products', id: a.id || '',
+        name: base + (imgs.length > 1 ? ' (góc ' + (j + 1) + ')' : ''), data: img,
+      }));
     });
     (queue || []).forEach((q) => {
       if (q && q.boardLocationImage) out.push({ key: 'shotloc:' + q.shotId, kind: 'environments', id: '', name: 'SHOT ' + pad(q.index) + ' location', data: q.boardLocationImage });
@@ -140,7 +145,19 @@
     (assets.characters || []).forEach((a) => { if (charById[a.id] && charById[a.id].photoKey) sheetFor(a, outfit[lc(a.name)]); });
 
     const productKeys = [];
-    (assets.products || []).forEach((a, i) => { if (assetImages(a).length) productKeys.push('products:' + (a.id || i)); });
+    const productAngles = {};   // 'products:<id>' → mọi góc ảnh đã nạp của sản phẩm đó
+    (assets.products || []).forEach((a, i) => {
+      const imgs = assetImages(a).slice(0, 4);
+      if (!imgs.length) return;
+      const k = 'products:' + (a.id || i);
+      productKeys.push(k);
+      productAngles[k] = imgs.map((_, j) => k + (j ? ':' + j : ''));
+    });
+    // Quay không có người (app storyboard: production_profile.product_shoot), hoặc dự án
+    // không có nhân vật nào → sản phẩm là chủ thể: mỗi khung hình kèm nhiều góc sản phẩm.
+    const shootPresence = String(((proj.production_profile || {}).product_shoot || {}).presence || '');
+    const peopleFree = shootPresence === 'product_only' || shootPresence === 'hands_only'
+      || (!shootPresence && !(assets.characters || []).length);
 
     const shots = sortedQueue.map((q) => {
       if (q.wardrobeChange && typeof q.wardrobeChange === 'object') {
@@ -165,7 +182,7 @@
         const all = assets.products || [];
         const i = all.findIndex((x) => x && a && x.id === a.id);
         const k = 'products:' + (a.id || i);
-        if (productKeys.includes(k)) prodKeys.push(k);
+        if (productKeys.includes(k)) (peopleFree ? productAngles[k].slice(0, 3) : [k]).forEach((x) => prodKeys.push(x));
       });
       const key = 'SHOT ' + pad(q.index);
       const kfBody = String((p.videoKeyframeStep && p.videoKeyframeStep.prompt) || (p.imageStep && p.imageStep.prompt) || q.videoKeyframePrompt || q.storyboardPrompt || q.name || '').trim();
@@ -184,13 +201,16 @@
     const thumb = thumbBody ? {
       key: 'THUMBNAIL',
       prompt: 'THUMBNAIL – ' + thumbBody,
-      refKeys: [...productKeys.slice(0, 1), ...sheets.filter((s, i, arr) => arr.findIndex((x) => lc(x.name) === lc(s.name)) === i).map((s) => s.key)].slice(0, 4),
+      refKeys: peopleFree
+        ? (productKeys.length ? productAngles[productKeys[0]].slice(0, 3) : [])
+        : [...productKeys.slice(0, 1), ...sheets.filter((s, i, arr) => arr.findIndex((x) => lc(x.name) === lc(s.name)) === i).map((s) => s.key)].slice(0, 4),
     } : null;
 
     return {
       title: String(proj.title || '').trim(), aspect, thumbAspect, sheets, locs, shots, thumb,
       videoModel: VIDEO_MODEL_NAMES[opts.videoModel] || '',
       videoMode: opts.videoMode === 'first' ? 'first' : 'refs',
+      peopleFree,
     };
   }
 
@@ -270,6 +290,12 @@
     const out = [];
     const add = (id) => { if (id && !out.includes(id) && out.length < 3) out.push(id); };
     add(media[shot.key] || '');
+    if (ctx.peopleFree) {
+      // Không có người: keyframe + các góc sản phẩm giữ đúng hình dáng/nhãn, rồi tới bối cảnh.
+      resolveIds(ctx, shot.prodKeys || [], state).forEach(add);
+      resolveIds(ctx, shot.envKeys || [], state).slice(0, 1).forEach(add);
+      return out;
+    }
     resolveIds(ctx, shot.charKeys || [], state).forEach(add);
     resolveIds(ctx, shot.envKeys || [], state).slice(0, 1).forEach(add);
     resolveIds(ctx, shot.prodKeys || [], state).forEach(add);
@@ -284,7 +310,7 @@
     parts.push('I approve the credit cost of every video in this message in advance — generate them all without asking for permission (if you must ask, ask only once for all of them).');
     const model = ctx.videoModel ? ', with the ' + ctx.videoModel + ' video model (if it is unavailable, use your default video model)' : '';
     parts.push(refsMode
-      ? 'Generate exactly ' + keys.length + ' video(s), one per block below, each as a video WITH REFERENCE IMAGES: pass ALL the reference image media ids listed for that video. The first id is the shot keyframe — keep its composition, characters, wardrobe, product and setting; the others are the character sheet(s) and location plate that lock identity and place' + model + ', no on-screen text or subtitles. ' + ALL_AT_ONCE + ' ' + VERBATIM
+      ? 'Generate exactly ' + keys.length + ' video(s), one per block below, each as a video WITH REFERENCE IMAGES: pass ALL the reference image media ids listed for that video. The first id is the shot keyframe — keep its composition, ' + (ctx.peopleFree ? 'product, light and set; the others are the product photos (exact shape, colour, label and logo) and the set plate' : 'characters, wardrobe, product and setting; the others are the character sheet(s) and location plate that lock identity and place') + model + ', no on-screen text or subtitles. ' + ALL_AT_ONCE + ' ' + VERBATIM
       : 'Generate exactly ' + keys.length + ' video(s), one per block below. For each, use the image with the given media id as the FIRST FRAME (start image)' + model + ', no on-screen text or subtitles. ' + ALL_AT_ONCE + ' ' + VERBATIM);
     parts.push('');
     const vAspect = ctx.aspect === '1:1' ? '16:9' : ctx.aspect;

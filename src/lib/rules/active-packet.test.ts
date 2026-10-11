@@ -153,7 +153,7 @@ test("explicit camera menu outranks a stale mismatched context profile", () => {
   assert.doesNotMatch(packet.prompt_digest, /handheld sway/);
 });
 
-test("multiple camera selections remain an intent-routed palette rather than a forced sequence", () => {
+test("multiple camera selections are binding and routed per intent rather than a forced sequence", () => {
   const packet = buildActiveStoryboardRulePacket({
     directing_profile: "aerial_drone",
     directing_profiles: ["aerial_drone", "pov_first_person", "immersive_action", "macro_detail"],
@@ -161,7 +161,8 @@ test("multiple camera selections remain an intent-routed palette rather than a f
   assert.deepEqual(packet.camera.selected_profile_ids, [
     "aerial_drone", "pov_first_person", "immersive_action", "macro_detail",
   ]);
-  assert.match(packet.camera.selection_policy, /allowed camera palette/i);
+  // Explicit menu picks are binding: only the selected grammars, routed per intent.
+  assert.match(packet.camera.selection_policy, /Use ONLY them/i);
   assert.match(packet.camera.selection_policy, /Large-scale geography\/crowds.*aerial/i);
   assert.match(packet.camera.selection_policy, /embodied participation.*POV/i);
   assert.match(packet.camera.selection_policy, /change profile only at a declared clip boundary/i);

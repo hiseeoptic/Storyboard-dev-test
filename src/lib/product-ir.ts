@@ -64,7 +64,10 @@ JSON SHAPE
 {"version":"1.0","product_name":"...","detected_category":"...","confidence":0.0,"visible_features":["..."],"probable_uses":["..."],"approved_claims":["..."],"prohibited_claims":["..."],"handling_contract":["..."],"demo_actions":["..."],"recommended_environments":["..."],"safety_notes":["..."],"product_reference_lock":"...","review_status":"pending"}`;
 }
 
-export function compileProductIRDigest(ir: ProductIR): string {
+export function compileProductIRDigest(
+  ir: ProductIR,
+  presence?: "product_only" | "hands_only" | "with_characters"
+): string {
   const line = (label: string, values: string[]) =>
     values.length ? `${label}: ${values.join("; ")}` : `${label}: none supplied`;
   return [
@@ -80,6 +83,10 @@ export function compileProductIRDigest(ir: ProductIR): string {
     line("Suitable real-use environments", ir.recommended_environments),
     line("Safety/uncertainty", ir.safety_notes),
     `Reference lock: ${ir.product_reference_lock}`,
-    `Commercial arc: 0-3s recognisable problem hook → product visible by 3-5s → real operation → observable proof/result → one approved benefit → exact CTA. Do not delay the product reveal, recite a feature list or state a prohibited claim.`,
+    presence === "product_only"
+      ? `Commercial arc (product only, no people): 0-3s visual hook on the product (glint, texture, light) → full product reveal → signature details → one visual proof of an approved benefit → hero frame → exact CTA. Physical handling rules apply to the set and light, never to a person. Do not recite a feature list or state a prohibited claim.`
+      : presence === "hands_only"
+        ? `Commercial arc (hands only, no face): 0-3s first touch on the product → reveal → the real operation by anonymous hands → observable proof/result → one approved benefit → exact CTA. Do not recite a feature list or state a prohibited claim.`
+        : `Commercial arc: 0-3s recognisable problem hook → product visible by 3-5s → real operation → observable proof/result → one approved benefit → exact CTA. Do not delay the product reveal, recite a feature list or state a prohibited claim.`,
   ].join("\n");
 }

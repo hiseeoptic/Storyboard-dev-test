@@ -85,6 +85,18 @@ import {
   NANO_FLOW_MESSAGE_TYPE,
 } from "@/types/nano-flow";
 import { Send } from "lucide-react";
+import {
+  PRESENCE_OPTIONS,
+  PRODUCT_CATEGORIES,
+  PRODUCT_SHOT_STYLES,
+  STYLE_BY_ID,
+  CATEGORY_BY_ID,
+  detectProductCategory,
+  recommendedStyles,
+  type PresenceMode,
+  type ProductCategoryId,
+  type ProductShotStyleId,
+} from "@/lib/product-shoot/catalog";
 import type {
   StoryboardStyle,
   StoryboardGenerationInput,
@@ -153,6 +165,149 @@ function creativeOptionLabel<T extends string>(
   const option = options.find((item) => item.value === value);
   if (!option) return value;
   return lang === "vi" ? option.label_vi : option.label_en;
+}
+
+/** Product-ad shooting mode: presence (product only / hands only / people), product
+ * category and product shot style — styles that suit the category are listed first. */
+function ProductShootPanel({
+  lang,
+  presence,
+  onPresence,
+  category,
+  onCategory,
+  style,
+  onStyle,
+  notes,
+  onNotes,
+  detectedCategory,
+}: {
+  lang: Lang;
+  presence: PresenceMode;
+  onPresence: (value: PresenceMode) => void;
+  category: ProductCategoryId | "auto";
+  onCategory: (value: ProductCategoryId | "auto") => void;
+  style: ProductShotStyleId | "auto";
+  onStyle: (value: ProductShotStyleId | "auto") => void;
+  notes: string;
+  onNotes: (value: string) => void;
+  detectedCategory: ProductCategoryId;
+}) {
+  const vi = lang === "vi";
+  const effectiveCategory = category === "auto" ? detectedCategory : category;
+  const recommended = recommendedStyles(effectiveCategory, presence);
+  const compatible = PRODUCT_SHOT_STYLES.filter((s) =>
+    presence === "with_characters" ? s.value !== "hand_demo" : s.presence.includes(presence)
+  ).map((s) => s.value);
+  const others = compatible.filter((id) => !recommended.includes(id));
+  const activeStyleId = style !== "auto" && compatible.includes(style) ? style : recommended[0];
+  const activeStyle = activeStyleId ? STYLE_BY_ID[activeStyleId] : undefined;
+  const suitsCategories = activeStyle
+    ? PRODUCT_CATEGORIES.filter((c) => c.value !== "general" && c.recommended_styles.includes(activeStyle.value))
+    : [];
+  const styleLabel = (id: ProductShotStyleId) => (vi ? STYLE_BY_ID[id].label_vi : STYLE_BY_ID[id].label_en);
+  return (
+    <div className="space-y-3 rounded-lg border p-3">
+      <label className="text-sm font-medium">
+        {vi ? "Cách quay quảng cáo sản phẩm" : "Product ad shooting mode"}
+      </label>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {PRESENCE_OPTIONS.map((option) => (
+          <label
+            key={option.value}
+            className={cn(
+              "flex cursor-pointer items-start gap-2 rounded-md border p-2.5 transition-colors",
+              presence === option.value ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+            )}
+          >
+            <input
+              type="radio"
+              name="product-presence"
+              checked={presence === option.value}
+              onChange={() => onPresence(option.value)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">{vi ? option.label_vi : option.label_en}</span>
+              <span className="block text-[11px] leading-relaxed text-muted-foreground">
+                {vi ? option.description_vi : option.description_en}
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="space-y-1">
+          <span className="text-xs font-medium">{vi ? "Loại sản phẩm" : "Product category"}</span>
+          <Select
+            value={category}
+            onChange={(e) => onCategory(e.target.value as ProductCategoryId | "auto")}
+            options={[
+              {
+                value: "auto",
+                label: vi
+                  ? `Tự nhận diện (${CATEGORY_BY_ID[detectedCategory].label_vi})`
+                  : `Auto-detect (${CATEGORY_BY_ID[detectedCategory].label_en})`,
+              },
+              ...PRODUCT_CATEGORIES.map((c) => ({ value: c.value, label: vi ? c.label_vi : c.label_en })),
+            ]}
+          />
+        </div>
+        <div className="space-y-1">
+          <span className="text-xs font-medium">
+            {presence === "with_characters"
+              ? vi ? "Phong cách cảnh cận sản phẩm" : "Product insert style"
+              : vi ? "Phong cách quay sản phẩm" : "Product shot style"}
+          </span>
+          <Select
+            value={style}
+            onChange={(e) => onStyle(e.target.value as ProductShotStyleId | "auto")}
+            options={[
+              {
+                value: "auto",
+                label: recommended[0]
+                  ? vi ? `Tự chọn theo sản phẩm (${styleLabel(recommended[0])})` : `Best fit (${styleLabel(recommended[0])})`
+                  : vi ? "Tự chọn theo sản phẩm" : "Best fit",
+              },
+              ...recommended.map((id) => ({ value: id, label: `★ ${styleLabel(id)}` })),
+              ...others.map((id) => ({ value: id, label: styleLabel(id) })),
+            ]}
+          />
+        </div>
+      </div>
+      {activeStyle && (
+        <div className="rounded-md bg-muted/40 p-2.5 text-xs leading-relaxed">
+          <span className="block font-medium">{vi ? activeStyle.label_vi : activeStyle.label_en}</span>
+          <span className="block text-muted-foreground">{vi ? activeStyle.description_vi : activeStyle.description_en}</span>
+          {suitsCategories.length > 0 && (
+            <span className="mt-1 block text-muted-foreground">
+              {vi ? "Hợp với: " : "Suits: "}
+              {suitsCategories.map((c) => (vi ? c.label_vi : c.label_en)).join(", ")}
+            </span>
+          )}
+          <span className="mt-1 block text-muted-foreground">
+            {vi ? "Kiểu máy quay được phép: " : "Allowed camera moves: "}
+            {activeStyle.camera_moves.join(" · ")}
+          </span>
+        </div>
+      )}
+      <Input
+        value={notes}
+        onChange={(e) => onNotes(e.target.value)}
+        placeholder={vi
+          ? "Mô tả video mẫu / phong cách mong muốn (tuỳ chọn) — vd: như quảng cáo đồng hồ cao cấp, ánh sáng vàng ấm, nhạc chậm"
+          : "Describe a reference video / desired look (optional)"}
+      />
+      <p className="text-xs text-muted-foreground">
+        {presence === "with_characters"
+          ? vi
+            ? "Có người diễn: kịch bản theo kiểu affiliate — người gặp vấn đề quen thuộc → sản phẩm xuất hiện giải quyết → chứng minh kết quả → kêu gọi mua. Các cảnh cận sản phẩm quay theo phong cách đã chọn."
+            : "With people: affiliate problem → product solution → proof → CTA. Product inserts use the chosen style."
+          : vi
+            ? "Không dùng nhân vật (ảnh nhân vật sẽ bị bỏ qua); lời thoại chuyển thành giọng đọc ngoài khung hình; mọi cảnh quay đúng phong cách đã chọn."
+            : "No characters (character photos are ignored); speech becomes off-screen voice-over; every shot follows the chosen style."}
+      </p>
+    </div>
+  );
 }
 
 function CameraProfileChecklist({
@@ -1360,6 +1515,12 @@ function ProjectWorkspace() {
   const [narratorVoiceCustom, setNarratorVoiceCustom] = useState("");
   const [contentSubtype, setContentSubtype] = useState("");
   const [cameraProfileCustom, setCameraProfileCustom] = useState("");
+  // Product-ad shooting mode (ad genres): who is on screen, product category and
+  // the product shot style. The style is a hard camera contract end to end.
+  const [productPresence, setProductPresence] = useState<PresenceMode>("with_characters");
+  const [productCategory, setProductCategory] = useState<ProductCategoryId | "auto">("auto");
+  const [productShotStyle, setProductShotStyle] = useState<ProductShotStyleId | "auto">("auto");
+  const [productStyleNotes, setProductStyleNotes] = useState("");
   const [voiceRole, setVoiceRole] = useState("auto");
   const [voicePitch, setVoicePitch] = useState("auto");
   const [voicePace, setVoicePace] = useState("auto");
@@ -1420,6 +1581,10 @@ function ProjectWorkspace() {
 
   const isAdGenre = AD_GENRES.has(genre);
   const isAffiliateMode = genre === "advertising" && contentSubtype === "affiliate_short";
+  // People-free product shoots need the real product photos in-app (they are the
+  // only subject of every frame), so the uploader is shown for them too.
+  const productShootActive = isAdGenre;
+  const peopleFreeShoot = isAdGenre && productPresence !== "with_characters";
 
   // Resolve dropdown selection (or custom text) into the value sent to the AI.
   const effectiveSetting =
@@ -2029,7 +2194,7 @@ function ProjectWorkspace() {
     // Affiliate reference authority: preserve at least the canonical product
     // image before optional extra character/location angles. Other modes keep
     // the established character-first budget policy unchanged.
-    const affiliateProductImages = isAffiliateMode ? fitRefs(productImages, true) : [];
+    const affiliateProductImages = isAffiliateMode || peopleFreeShoot ? fitRefs(productImages, true) : [];
     const cappedCharacterImages = fitCharacterRefs(characterImages);
     // Nano Flow "has real photo" characters carry NO bytes in-app (the photo is
     // attached later in the extension), so the downscale/fit passes above drop
@@ -2039,7 +2204,7 @@ function ProjectWorkspace() {
       .filter((c) => !!c.hasRealPhoto && (c.images?.length ?? 0) === 0)
       .map((c) => ({ name: c.name, images: [], isReference: true }));
     const finalCharacterImages = [...cappedCharacterImages, ...referenceOnlyChars];
-    const cappedProductImages = isAffiliateMode
+    const cappedProductImages = isAffiliateMode || peopleFreeShoot
       ? affiliateProductImages
       : fitRefs(productImages, false);
     const cappedBackgroundImages = fitRefs(backgroundImages, false);
@@ -2126,6 +2291,14 @@ function ProjectWorkspace() {
       affiliate_duration_seconds: isAffiliateMode ? affiliateDuration : undefined,
       affiliate_disclosure: isAffiliateMode ? affiliateDisclosure.trim() || undefined : undefined,
       camera_profile_custom: cameraProfileCustom.trim() || undefined,
+      product_shoot: productShootActive
+        ? {
+            presence: productPresence,
+            style: productShotStyle,
+            category: productCategory,
+            ...(productStyleNotes.trim() ? { style_notes: productStyleNotes.trim() } : {}),
+          }
+        : undefined,
       voice_performance: voiceOverEnabled
         ? {
             role: voiceRole as NonNullable<StoryboardGenerationInput["voice_performance"]>["role"],
@@ -2685,7 +2858,9 @@ function ProjectWorkspace() {
       veoClips,
       productNames: (genInput?.product_images ?? []).map((product) => product.name),
       productReferences:
-        genInput?.product_ir?.review_status === "approved" ? genInput.product_images : undefined,
+        genInput?.product_ir?.review_status === "approved" || genInput?.product_shoot?.presence
+          ? genInput.product_images
+          : undefined,
       // Embed each uploaded character frontal photo so the extension auto-loads
       // it (no manual per-image attach). No photo ⇒ a null slot as before.
       characterReferences: manifestCharacterRefs.length > 0 ? manifestCharacterRefs : undefined,
@@ -4706,8 +4881,14 @@ function ProjectWorkspace() {
                     // topic can compile its own structure without stale DNA.
                     setStoryFormat("auto");
                     setVisualInterpretation("auto");
-                    setDirectingProfile("auto");
-                    setDirectingProfiles([]);
+                    // Keep the user's camera picks that the new genre still offers
+                    // (they used to be wiped silently on every genre change).
+                    {
+                      const allowed = new Set(genreProductionProfile(g as Genre).allowed_camera_profiles);
+                      const kept = directingProfiles.filter((id) => allowed.has(id));
+                      setDirectingProfiles(kept);
+                      setDirectingProfile(kept[0] ?? "auto");
+                    }
                     // Genre is the hard router. Reset stale specialist goals so
                     // Cooking can never leak into numerology/film/etc.
                     if (g === "numerology") {
@@ -4757,8 +4938,6 @@ function ProjectWorkspace() {
                     setContentSubtype("");
                     setToneSel("auto");
                     setNarratorVoiceSel("auto");
-                    setDirectingProfile("auto");
-                    setDirectingProfiles([]);
                   }} options={GENRE_OPTIONS[lang]} />
                 </div>
                 <div className="space-y-2">
@@ -4827,6 +5006,26 @@ function ProjectWorkspace() {
                 </p>
               </div>
               )}
+              {productShootActive && (
+                <ProductShootPanel
+                  lang={lang}
+                  presence={productPresence}
+                  onPresence={setProductPresence}
+                  category={productCategory}
+                  onCategory={setProductCategory}
+                  style={productShotStyle}
+                  onStyle={setProductShotStyle}
+                  notes={productStyleNotes}
+                  onNotes={setProductStyleNotes}
+                  detectedCategory={detectProductCategory(
+                    storyIdea,
+                    prodName,
+                    ...products.map((product) => product.name),
+                    productIR?.product_name,
+                    productIR?.detected_category,
+                  )}
+                />
+              )}
               {genre === "advertising" && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium">
@@ -4862,9 +5061,13 @@ function ProjectWorkspace() {
                   placeholder={lang === "vi" ? "Mô tả camera bổ sung (tuỳ chọn)" : "Additional camera direction (optional)"}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {lang === "vi"
-                    ? "Có thể tick nhiều kiểu quay. Đây là bảng màu được phép: AI chọn kiểu phù hợp cho từng Scene Intent, không bắt buộc dùng hết hoặc xoay vòng máy móc."
-                    : "Select multiple camera grammars. This is an allowed palette: AI routes each Scene Intent without forced use or mechanical rotation."}
+                  {peopleFreeShoot
+                    ? lang === "vi"
+                      ? "Đang quay không có người: camera đi theo phong cách quay sản phẩm đã chọn ở trên; mô tả camera bổ sung (nếu có) được ưu tiên đầu tiên."
+                      : "People-free shoot: the camera follows the product shot style above; your extra camera note (if any) comes first."
+                    : lang === "vi"
+                      ? "Kiểu quay đã tick là BẮT BUỘC: mọi cảnh và mọi nhịp phải dùng đúng kiểu này (tick nhiều kiểu thì mỗi cảnh dùng một kiểu phù hợp nhất trong số đã tick). Để \"Tự động\" nếu muốn AI tự chọn."
+                      : "Ticked camera grammars are MANDATORY: every scene and beat uses them (with several ticked, each scene uses the best-fitting one). Leave Auto to let AI choose."}
                 </p>
               </div>
               {characterDialogueEnabled && (
@@ -5746,12 +5949,19 @@ function ProjectWorkspace() {
                 </div>
                 {/* Nano Flow: real product photos are attached in the extension;
                     here the product is declared by name + description only. */}
-                {(!NANO_FLOW_TEXT_ONLY || isAffiliateMode) && (
+                {(!NANO_FLOW_TEXT_ONLY || isAffiliateMode || peopleFreeShoot) && (
                   <>
+                    {peopleFreeShoot && (
+                      <p className="text-xs text-muted-foreground">
+                        {lang === "vi"
+                          ? "Quay chỉ sản phẩm: nên tải 3–4 ảnh nhiều góc (chính diện, cạnh, mặt sau, chi tiết) — mọi khung hình đều lấy sản phẩm từ các ảnh này."
+                          : "Product-only shoot: upload 3–4 angles (front, side, back, detail) — every frame takes the product from these images."}
+                      </p>
+                    )}
                     <ImageUploader
                       images={prodImages}
                       onChange={(images) => { setProdImages(images); setProductIR(null); }}
-                      maxImages={isAffiliateMode ? 4 : 3}
+                      maxImages={isAffiliateMode || peopleFreeShoot ? 4 : 3}
                       label={L("prodPhotos")}
                       hint={L("prodPhotosHint")}
                     />

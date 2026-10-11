@@ -84,7 +84,45 @@ test("multi-camera selection compiles every selected grammar while keeping a leg
   assert.match(lock.camera_direction, /aerial establishing scale/i);
   assert.match(lock.camera_direction, /first-person eye-line/i);
   assert.match(lock.camera_direction, /threat distance|attack-defence-consequence/i);
-  assert.match(lock.camera_direction, /allowed palette, not a checklist/i);
+  // The user's selection is the camera authority, not an optional palette.
+  assert.match(lock.camera_direction, /ONLY these user-selected camera grammars/i);
+  assert.doesNotMatch(lock.camera_direction, /allowed palette, not a checklist/i);
+});
+
+test("an explicit camera pick leads the direction and the custom note is never truncated", () => {
+  const custom = "Always first-person POV from the buyer eye-line, hands only, phone-style handheld, never a tripod, never a face, short punchy reframes on every product touch";
+  const lock = lockGenreProductionProfile(input({
+    genre: "advertising",
+    content_subtype: "affiliate_short",
+    directing_profiles: ["pov_first_person", "handheld_vlog"],
+    camera_profile_custom: custom,
+  }));
+  assert.ok(lock.camera_direction.startsWith(custom.slice(0, 40)), lock.camera_direction.slice(0, 80));
+  assert.ok(lock.camera_direction.includes(custom));
+  const pov = lock.camera_direction.indexOf("first-person eye-line");
+  const genre = lock.camera_direction.indexOf("genre context");
+  assert.ok(pov >= 0 && genre > pov, "selected grammar precedes genre context");
+});
+
+test("product-only shoot replaces the people-centric affiliate arc and camera", () => {
+  const lock = lockGenreProductionProfile(input({
+    genre: "advertising",
+    content_subtype: "affiliate_short",
+    story_idea: "Quảng cáo đồng hồ nam Orient",
+    product_shoot: { presence: "product_only", style: "dark_reveal", category: "auto" },
+  }));
+  assert.match(lock.script_direction, /product-only film/i);
+  assert.doesNotMatch(lock.script_direction, /user problem/i);
+  assert.match(lock.camera_direction, /Reveal from darkness/i);
+  assert.doesNotMatch(lock.camera_direction, /hand-to-product/i);
+  assert.match(lock.sound_direction, /ticking/i);
+  const people = lockGenreProductionProfile(input({
+    genre: "advertising",
+    content_subtype: "affiliate_short",
+    product_shoot: { presence: "with_characters", style: "light_sweep", category: "watch" },
+  }));
+  assert.match(people.script_direction, /problem to solution/i);
+  assert.match(people.camera_direction, /product inserts use the Light sweep style/i);
 });
 
 test("advertising subtypes compile different production grammar", () => {
