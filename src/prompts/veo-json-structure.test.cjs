@@ -1046,3 +1046,25 @@ test("product-only shoot puts the hard presence + style contract into both scrip
   assert.match(people, /AFFILIATE PROBLEM → SOLUTION/);
   assert.match(people, /Every product insert .* "Light sweep" style/);
 });
+
+test("placement items reach both prompts for a non-ad genre without turning it into an ad", () => {
+  const input = {
+    story_idea: "Sitcom văn phòng: Lan đi làm muộn ngày đầu tuần",
+    genre: "sitcom",
+    style: "cinematic",
+    scene_count: 3,
+    segment_count: 3,
+    dialogue_language: "Vietnamese",
+    product_placements: [
+      { name: "Áo blazer kem", kind: "outfit", worn_by: "Lan", placement: "natural", link: "https://shopee.vn/blazer", has_images: true },
+      { name: "Bình giữ nhiệt", kind: "product", placement: "featured" },
+    ],
+  };
+  for (const prompt of [buildScriptWriterUserPrompt(input), buildStoryboardUserPrompt(input)]) {
+    assert.match(prompt, /PRODUCT PLACEMENT CONTRACT/);
+    assert.match(prompt, /Lan wears EXACTLY this outfit/);
+    assert.match(prompt, /keep the story\/genre the user chose/);
+    assert.doesNotMatch(prompt, /https:\/\/shopee/);
+  }
+  assert.doesNotMatch(buildStoryboardUserPrompt(input), /this is a product advertisement; build the whole script around it/);
+});

@@ -294,6 +294,10 @@ export interface StoryboardGenerationInput {
    * the product shot style. The chosen style is a hard camera contract.
    * Omitted for legacy projects and non-product genres. */
   product_shoot?: import("@/lib/product-shoot/contract").ProductShootSettings;
+  /** Products, outfits and props attached to ANY genre (sitcom, drama, ads…),
+   * each with an optional shop link and reference photos (photos travel in
+   * product_images under the same name). Outfits are worn by a named character. */
+  product_placements?: import("@/lib/product-placement").ProductPlacement[];
   affiliate_video_style?: import("@/lib/product-ir").AffiliateVideoStyle;
   affiliate_duration_seconds?: 15 | 20 | 30;
   affiliate_disclosure?: string;

@@ -36,6 +36,7 @@ import type { WorldContext } from "@/types";
 import { isStylizedCharacterRepresentation, resolveInputProductShoot } from "@/lib/creative-routing";
 import { compileCookingRecipeDigest } from "@/lib/cooking";
 import { compileProductIRDigest } from "@/lib/product-ir";
+import { productPlacementDirective } from "@/lib/product-placement";
 import { applyCameraAuthorityToClip } from "@/lib/product-shoot/clip-authority";
 import { resolveSpeechMode } from "@/lib/storyboard/anonymous-narration";
 import {
@@ -751,6 +752,8 @@ function affiliateClipDurations(input: StoryboardGenerationInput): number[] | nu
   return [10, 10];
 }
 
+const PLACEMENT_AD_GENRES = new Set<string>(["advertising", "product_demo", "brand_film", "luxury", "promo", "unboxing"]);
+
 export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): string {
   const creativeRouteDirective = renderCreativeScriptRouteDirective(input);
   const segmentCount = input.segment_count ?? 5;
@@ -820,9 +823,10 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   const uploadedRule = uploadedNames.length
     ? `\nREFERENCE-IDENTITY CHARACTERS (${uploadedNames.join(", ")}): use the attached image only for each exact named identity, face, body proportions and hair. Do not restate those traits in prose. Generate one practical context-appropriate initial outfit from the approved story/location/weather/activity, store it only in character_locks.costume, and never copy clothing from the reference image. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
     : "";
-  const briefBlock = brief.length
+  const placementDirective = productPlacementDirective(input.product_placements, { adGenre: PLACEMENT_AD_GENRES.has(input.genre) });
+  const briefBlock = (brief.length
     ? `\nBrief:\n${brief.join("\n")}${closedCastRule}${uploadedRule}`
-    : `${closedCastRule}${uploadedRule}`;
+    : `${closedCastRule}${uploadedRule}`) + (placementDirective ? `\n\n${placementDirective}` : "");
 
   const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
   const speechDirective = speechModeDirective(input, lang);
@@ -1017,7 +1021,7 @@ export function buildStoryboardUserPrompt(
     briefLines.push(compileProductIRDigest(input.product_ir, resolveInputProductShoot(input)?.presence));
     briefLines.push(`- Affiliate treatment: ${input.affiliate_video_style ?? "problem_solution"}`);
   }
-  const productBriefBlock =
+  const productBriefBlockBase =
     briefLines.length > 0
       ? `\n\nPRODUCT / TVC BRIEF — this is a product advertisement; build the whole script around it:\n${briefLines.join(
           "\n"
@@ -1025,6 +1029,8 @@ export function buildStoryboardUserPrompt(
           ? "Feature the product as the ONLY subject (no people), reveal its selling points visually through light, detail and proof, land the key message by voice-over, and close on the exact CTA above."
           : "Feature the product clearly, dramatize the selling points for the target audience, land the key message, and close on the exact CTA above."}`
       : "";
+  const storyboardPlacement = productPlacementDirective(input.product_placements, { adGenre: PLACEMENT_AD_GENRES.has(input.genre) });
+  const productBriefBlock = `${productBriefBlockBase}${storyboardPlacement ? `\n\n${storyboardPlacement}` : ""}`;
 
   // Story / film brief — for narrative (non-ad) genres.
   const storyLines: string[] = [];

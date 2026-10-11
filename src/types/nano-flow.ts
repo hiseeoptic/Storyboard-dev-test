@@ -83,6 +83,17 @@ export interface NanoFlowAsset {
    * containing exactly two clearly different angles of the same empty set.
    * This costs one generation and cannot return two near-duplicate files. */
   location_sheet_prompt?: string;
+  /** Products only: shop link (Shopee / Amazon / …) — never rendered on screen. */
+  link?: string;
+  /** Products only: what this attached item is (sellable product, outfit, prop). */
+  placement_kind?: "product" | "outfit" | "prop";
+  /** Products only: how it appears in the story. */
+  placement?: "natural" | "featured";
+  /** Outfit products only: the character (name) who wears it. */
+  worn_by?: string;
+  /** Characters only: product asset id of the outfit this character wears — its
+   * images are the wardrobe authority for the character's wardrobe sheet. */
+  outfit_product_id?: string;
 }
 
 /** Which declared assets to attach at a given step (STEP A — image gen). */
@@ -280,6 +291,8 @@ export interface NanoFlowProject {
   thumbnail_prompt?: string;
   /** Reuses the existing Storyboard SocialPosts shape verbatim. */
   social_posts?: unknown;
+  /** Shop links of the attached placement items (for captions / descriptions). */
+  product_links?: Array<{ name: string; link: string; kind: "product" | "outfit" | "prop"; worn_by?: string }>;
   /** Exact character/environment visual medium selected in Storyboard (one of
    * the ten locked video styles). Its `prompt` (the style-lock law) is also
    * stamped into every board image prompt and Veo video prompt so consumers

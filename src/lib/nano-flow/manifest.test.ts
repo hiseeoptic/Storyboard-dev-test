@@ -1441,3 +1441,37 @@ test("hands-only product keyframe allows anonymous hands but never a face", () =
   const img005 = validatePromptExports(m).findings.filter((f) => f.code === "IMG-005");
   assert.deepEqual(img005, []);
 });
+
+test("placement items (any genre) carry links, dress their wearer and ride only on their shots", () => {
+  const bd = {
+    ...fixture(),
+    segments: [
+      { segment_number: 1, duration_seconds: 10, marketing_role: "hook", first_frame_prompt: "Lan at her desk", motion_prompt: "Lan pours coffee from the thermos bottle", characters_in_scene: ["Lan"], environment_ref: "office", beats: [{ beat: "pours", camera: "[CU] push-in" }] },
+      { segment_number: 2, duration_seconds: 10, marketing_role: "body", first_frame_prompt: "Minh at the window", motion_prompt: "Minh laughs", characters_in_scene: ["Minh"], environment_ref: "office", beats: [{ beat: "laughs", camera: "[MEDIUM] hold" }] },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    productReferences: [
+      { name: "Áo blazer kem", images: ["BASE64_BLAZER"] },
+      { name: "thermos bottle", images: ["BASE64_BOTTLE"] },
+    ],
+    productPlacements: [
+      { name: "Áo blazer kem", kind: "outfit", worn_by: "Lan", placement: "natural", link: "https://shopee.vn/blazer", has_images: true },
+      { name: "thermos bottle", kind: "product", placement: "featured", link: "https://www.amazon.com/dp/B0X", has_images: true },
+      { name: "Đèn bàn", kind: "prop", placement: "natural" },
+    ],
+  });
+  const products = m.assets.products ?? [];
+  const blazer = products.find((p) => p.name === "Áo blazer kem")!;
+  const bottle = products.find((p) => p.name === "thermos bottle")!;
+  assert.equal(blazer.link, "https://shopee.vn/blazer");
+  assert.equal(blazer.placement_kind, "outfit");
+  assert.equal(blazer.worn_by, "Lan");
+  assert.equal(bottle.placement, "featured");
+  assert.ok(products.some((p) => p.name === "Đèn bàn" && p.image === null), "text-only prop declared");
+  const lan = (m.assets.characters ?? []).find((c) => c.name === "Lan")!;
+  assert.equal(lan.outfit_product_id, blazer.id);
+  assert.deepEqual(m.shots[0]!.image_refs?.products?.sort(), [blazer.id, bottle.id].sort());
+  assert.deepEqual(m.shots[1]!.image_refs?.products, []);
+  assert.deepEqual(m.project.product_links?.map((l) => l.link), ["https://shopee.vn/blazer", "https://www.amazon.com/dp/B0X"]);
+});

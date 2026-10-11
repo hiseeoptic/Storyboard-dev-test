@@ -26,8 +26,9 @@
   const lc = (s) => String(s || '').trim().toLowerCase();
 
   // Cùng prompt sheet nhân vật của pipeline cũ (inject.js · sheetPromptFor).
-  function sheetPrompt(name, outfit, sceneHint) {
-    return JSON.stringify({
+  function sheetPrompt(name, outfit, sceneHint, opts) {
+    const outfitRef = !!(opts && opts.outfitRef);
+    return JSON.stringify(Object.assign({
       type: 'photoreal_character_board_sheet',
       canvas_contract: 'Exactly ONE 16:9 landscape image. Split it at x=50%. The LEFT region occupies x=0–50%, y=0–100%. Split only the RIGHT region horizontally: RIGHT-TOP occupies x=50–100%, y=0–50%; RIGHT-BOTTOM occupies x=50–100%, y=50–100%. Use thin clean dividers. Never swap, mirror, reorder or resize these three cells. No labels, text or numbers.',
       left_cell_x0_50_y0_100: 'ONE 3/4-to-front FULL-BODY view of the person, entire body visible continuously from top of head through both shoes, standing relaxed and wearing the complete locked outfit. This is the ONLY full-body or torso view on the sheet.',
@@ -40,7 +41,12 @@
       background: 'plain light-grey seamless studio background, soft even lighting, no props, no text',
       render: 'Photorealistic, true-to-life skin and fabric textures, sharp focus, ultra-detailed — a real photograph.',
       negative: 'swapped cells, frontal close-up in the LEFT cell, full-body or half-body person in either RIGHT cell, shoulders in either RIGHT cell, chest in either RIGHT cell, torso in either RIGHT cell, arms or hands in either RIGHT cell, three-quarter face in the RIGHT-BOTTOM cell, cut-off feet in the LEFT cell, different face between cells, beautified or altered face, mismatched outfit, cartoon, anime, illustration, 3D render, CGI, on-screen text, watermark',
-    });
+    }, outfitRef ? {
+      // Trang phục người dùng gắn (ảnh sản phẩm Shopee/Amazon…): ảnh 1 = khuôn mặt, ảnh 2+ = bộ đồ.
+      reference_roles: 'The FIRST attached image is the PERSON (face and identity only). The NEXT attached image(s) are the OUTFIT product photos — they define the clothing exactly.',
+      wardrobe: (outfit || 'the attached outfit') + ' — copy EXACTLY the garments shown in the attached OUTFIT reference image(s): same pieces, colours, fabric, pattern, cut, buttons and details; fit them naturally on this person.',
+      wardrobe_rule: 'ONLY the LEFT full-body cell shows the complete outfit, taken from the OUTFIT reference image(s), never from the clothes in the person photo. BOTH RIGHT cells terminate at the base of the neck. Do not add, remove or restyle any garment.',
+    } : {}));
   }
 
   function assetImages(a) {
@@ -104,6 +110,15 @@
     const sceneHint = String((plans && plans[0] && plans[0].imageStep && plans[0].imageStep.prompt) || '').slice(0, 300);
     const charById = {};
     (assets.characters || []).forEach((a, i) => { charById[a.id || i] = { asset: a, photoKey: assetImages(a).length ? 'characters:' + (a.id || i) : '' }; });
+    // Trang phục gắn link/ảnh (product asset loại outfit) → ảnh của nó tham chiếu khi tạo sheet.
+    const outfitKeysFor = (asset) => {
+      const pid = asset && asset.outfit_product_id;
+      if (!pid) return [];
+      const all = assets.products || [];
+      const idx = all.findIndex((p) => p && p.id === pid);
+      if (idx < 0) return [];
+      return assetImages(all[idx]).slice(0, 2).map((_, j) => 'products:' + (all[idx].id || idx) + (j ? ':' + j : ''));
+    };
 
     const sheets = [];
     const sheetByCombo = {};
@@ -114,7 +129,8 @@
       if (sheetByCombo[combo]) return sheetByCombo[combo];
       const key = 'SHEET ' + pad(sheets.length + 1);
       const name = String(asset.name || '').trim();
-      sheets.push({ key, name, outfit, photoKey: ent.photoKey, prompt: key + ' – ' + name + ' ' + sheetPrompt(name, outfit, sceneHint) });
+      const outfitKeys = outfitKeysFor(ent.asset);
+      sheets.push({ key, name, outfit, photoKey: ent.photoKey, outfitKeys, prompt: key + ' – ' + name + ' ' + sheetPrompt(name, outfit, sceneHint, { outfitRef: outfitKeys.length > 0 }) });
       sheetByCombo[combo] = key;
       return key;
     };
@@ -244,7 +260,7 @@
     keys.forEach((k) => {
       const s = ctx.sheets.find((x) => x.key === k);
       if (s) {
-        const ids = resolveIds(ctx, [s.photoKey], state);
+        const ids = resolveIds(ctx, [s.photoKey, ...(s.outfitKeys || [])], state);
         parts.push(block(s.key + ' – character sheet: ' + s.name, ['Aspect ratio: 16:9 (landscape)', 'Reference image media id(s): ' + (ids.join(', ') || 'none')], s.prompt));
         return;
       }

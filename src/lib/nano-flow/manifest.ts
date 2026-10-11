@@ -13,6 +13,7 @@ import type {
   NanoFlowShotStateAuthority,
 } from "@/types/nano-flow";
 import { buildProductionState } from "../production-state/normalizer.ts";
+import { placementItems, shotsForPlacement, type ProductPlacement } from "../product-placement.ts";
 import {
   productShootKeyframeContract,
   productShootNegatives,
@@ -71,6 +72,8 @@ export interface BuildNanoFlowManifestOptions {
   /** Embedded affiliate product refs. This is opt-in; legacy Nano Flow projects
    * continue to declare extension-side empty slots exactly as before. */
   productReferences?: ImageReference[];
+  /** Products / outfits / props attached to any genre, with shop links. */
+  productPlacements?: ProductPlacement[];
   affiliateProductIR?: ProductIR;
   affiliateDisclosure?: string;
   /** Explicit character medium selected in the app (one of the ten locked video
@@ -1430,6 +1433,31 @@ export function buildNanoFlowManifest(
   } else if (breakdown.product_dna) {
     products.push({ id: "prod_main", name: "Product", image: null });
   }
+  // Placement items (any genre): shop link, kind and wearer travel on the
+  // product asset; a text-only item still gets a declared slot.
+  const placements = placementItems(opts.productPlacements);
+  const placementByProductId = new Map<string, ProductPlacement>();
+  for (const item of placements) {
+    let asset = products.find((p) => p.name.trim().toLowerCase() === item.name.toLowerCase());
+    if (!asset) {
+      asset = { id: `prod_${slugify(item.name) || products.length + 1}`, name: item.name, image: null };
+      products.push(asset);
+    }
+    if (item.link) asset.link = item.link;
+    asset.placement_kind = item.kind;
+    asset.placement = item.placement;
+    if (item.worn_by) asset.worn_by = item.worn_by;
+    placementByProductId.set(asset.id, item);
+  }
+  // Outfit → the wearer's character asset points at it (wardrobe authority).
+  for (const [productId, item] of placementByProductId) {
+    if (item.kind !== "outfit") continue;
+    const wearer = item.worn_by
+      ? characters.find((c) => c.name.trim().toLowerCase() === item.worn_by!.toLowerCase())
+      : characters[0];
+    if (wearer) wearer.outfit_product_id = productId;
+  }
+  const firstWearerName = characters[0]?.name;
 
   const charIds = (names?: string[]): string[] =>
     (names ?? [])
@@ -1637,11 +1665,21 @@ export function buildNanoFlowManifest(
     // Product refs: approved affiliate projects (legacy rule) and every product
     // shoot whose products carry reference images — a product-only / hands-only
     // film is unusable without the real product attached to each frame.
-    const affiliateProductIds = opts.affiliateProductIR?.review_status === "approved"
-      ? products.map((product) => product.id)
-      : productShoot
-        ? products.filter((product) => product.image).map((product) => product.id)
-        : [];
+    const affiliateProductIds = [...new Set([
+      ...(opts.affiliateProductIR?.review_status === "approved"
+        ? products.map((product) => product.id)
+        : productShoot
+          ? products.filter((product) => product.image).map((product) => product.id)
+          : []),
+      // Placement items with photos ride only on the shots where they appear
+      // (an outfit on its wearer's shots, a product where the story uses it).
+      ...[...placementByProductId]
+        .filter(([id, item]) =>
+          products.find((p) => p.id === id)?.image &&
+          shotsForPlacement(item, segments, firstWearerName).includes(i)
+        )
+        .map(([id]) => id),
+    ])];
     const image_refs: NanoFlowRefSelector = {
       characters: charIds(inScene),
       environments: envIds,
@@ -1913,6 +1951,13 @@ export function buildNanoFlowManifest(
         characterStyleId: characterRepresentation,
       }),
       social_posts: breakdown.social_posts,
+      ...(placements.some((p) => p.link)
+        ? {
+            product_links: placements
+              .filter((p) => p.link)
+              .map((p) => ({ name: p.name, link: p.link!, kind: p.kind, ...(p.worn_by ? { worn_by: p.worn_by } : {}) })),
+          }
+        : {}),
     },
     assets: {
       characters,

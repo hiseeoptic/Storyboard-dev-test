@@ -40,6 +40,7 @@ import {
   isStylizedCharacterRepresentation,
 } from "@/lib/creative-routing";
 import { enforceProductShootContract, productShootSubject } from "@/lib/product-shoot/storyboard";
+import { enforceProductPlacements, placementItems } from "@/lib/product-placement";
 import {
   REFERENCE_CHARACTER_ANTI_PLASTIC,
   REFERENCE_CHARACTER_APPEARANCE_LOCK,
@@ -1010,7 +1011,9 @@ function enhanceInput(
         ? `FINISHED-DISH VISUAL REFERENCE — use for the opening money-shot hook (the finished dish only, with one appetising trigger interaction) and again for the final plating payoff when the dish is served into the eating vessel; never treat it as retail packaging: ${productNames
             .map((n) => `"${n}": ${analysis.productDescriptions[n]}`)
             .join(". ")}`
-        : `Products to feature: ${productNames
+        : `${placementItems(input.product_placements).length
+            ? "Visual descriptions of the attached placement items (outfits are WORN by their character, products/props follow the PRODUCT PLACEMENT CONTRACT)"
+            : "Products to feature"}: ${productNames
             .map((n) => `"${n}": ${analysis.productDescriptions[n]}`)
             .join(". ")}`
     );
@@ -1913,6 +1916,7 @@ function normalizeRepairCandidate(
   normalizeDialogue(breakdown, sourceScript ?? undefined);
   enforceAnonymousNarrationContract(input, breakdown);
   enforceProductShootContract(resolveInputProductShoot(input), breakdown);
+  enforceProductPlacements(input.product_placements, breakdown);
   bindOnScreenSpeakersToCameraBeats(breakdown);
   enforceSingleDialogueClock(breakdown);
   enforceSceneCastContract(breakdown);
@@ -2013,9 +2017,10 @@ function validatePreRenderGates(
       veoClips,
       productNames: (input.product_images ?? []).map((product) => product.name),
       productReferences:
-        input.product_ir?.review_status === "approved" || input.product_shoot?.presence
+        input.product_ir?.review_status === "approved" || input.product_shoot?.presence || placementItems(input.product_placements).length
           ? input.product_images
           : undefined,
+      productPlacements: input.product_placements,
       // Embed each uploaded character frontal photo so the extension auto-loads
       // it (no manual per-image attach). No photo ⇒ a null slot as before.
       characterReferences: input.character_images,
@@ -2557,6 +2562,9 @@ export async function generateStoryboardPlan(
     softStep("Làm sạch mô tả nhân vật", warnings, () => sanitizeUploadedCharacterSceneText(input, breakdown));
     softStep("Chuẩn hoá thoại", warnings, () => normalizeDialogue(breakdown, sourceScript));
     softStep("Lời dẫn ẩn danh", warnings, () => enforceAnonymousNarrationContract(input, breakdown));
+    softStep("Gắn sản phẩm / trang phục", warnings, () => {
+      for (const note of enforceProductPlacements(input.product_placements, breakdown)) warnings.push(note);
+    });
     softStep("Chế độ quay sản phẩm", warnings, () => {
       for (const note of enforceProductShootContract(resolveInputProductShoot(input), breakdown)) warnings.push(note);
     });

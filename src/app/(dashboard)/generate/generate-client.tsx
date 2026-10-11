@@ -86,6 +86,14 @@ import {
 } from "@/types/nano-flow";
 import { Send } from "lucide-react";
 import {
+  normalizeShopLink,
+  placementItems,
+  shopName,
+  type PlacementKind,
+  type PlacementMode,
+  type ProductPlacement,
+} from "@/lib/product-placement";
+import {
   PRESENCE_OPTIONS,
   PRODUCT_CATEGORIES,
   PRODUCT_SHOT_STYLES,
@@ -483,14 +491,14 @@ const t = {
 
   // Step 3: Products
   prodHint: {
-    vi: "Tải lên 2-3 ảnh sản phẩm để đưa vào các cảnh storyboard.",
-    en: "Upload product photos to include in your storyboard scenes.",
+    vi: "Gắn sản phẩm, trang phục hoặc đồ vật vào video (mọi thể loại): tải ảnh, dán link Shopee/Amazon; trang phục thì chọn nhân vật mặc.",
+    en: "Attach products, outfits or props to any video: upload photos, paste a Shopee/Amazon link; outfits are worn by the chosen character.",
   },
   prodName: { vi: "Tên sản phẩm", en: "Product name" },
   prodDesc: { vi: "Mô tả sản phẩm (không bắt buộc)", en: "Product description (optional)" },
-  prodPhotos: { vi: "Ảnh sản phẩm", en: "Product Photos" },
-  prodPhotosHint: { vi: "Tải lên 2-3 ảnh sản phẩm từ các góc khác nhau", en: "Upload 2-3 product photos from different angles" },
-  addProduct: { vi: "Thêm sản phẩm", en: "Add Product" },
+  prodPhotos: { vi: "Ảnh sản phẩm / trang phục / đồ vật", en: "Product / outfit / prop photos" },
+  prodPhotosHint: { vi: "Tải 1–4 ảnh nhiều góc (lưu từ trang Shopee/Amazon cũng được)", en: "Upload 1–4 angles (photos saved from the Shopee/Amazon page work)" },
+  addProduct: { vi: "Thêm vào video", en: "Add to video" },
   // Non-cooking auxiliary object/component references. Cooking has its own
   // separate, explicitly-labelled ingredient intake UI below.
   ingTitle: { vi: "Ảnh phụ / đồ vật tham chiếu (gọi theo tên)", en: "Auxiliary object/component references (by name)" },
@@ -1267,6 +1275,11 @@ interface ProductEntry {
   name: string;
   description: string;
   images: UploadedImage[];
+  /** Placement (any genre): shop link, kind, wearer and how it appears. */
+  link?: string;
+  kind?: PlacementKind;
+  wornBy?: string;
+  placement?: PlacementMode;
 }
 
 interface BackgroundEntry {
@@ -1628,6 +1641,10 @@ function ProjectWorkspace() {
   const [prodDesc, setProdDesc] = useState("");
   const [prodDescSel, setProdDescSel] = useState("");
   const [prodImages, setProdImages] = useState<UploadedImage[]>([]);
+  const [prodLink, setProdLink] = useState("");
+  const [prodKind, setProdKind] = useState<PlacementKind>("product");
+  const [prodWornBy, setProdWornBy] = useState("");
+  const [prodPlacement, setProdPlacement] = useState<PlacementMode>("natural");
   // Legacy shared state: non-cooking = named objects/components; cooking =
   // food ingredients. The render branches and server router keep them apart.
   const [ingredients, setIngredients] = useState<ProductEntry[]>([]);
@@ -1905,9 +1922,19 @@ function ProjectWorkspace() {
     if (!prodName.trim()) return;
     setProducts((prev) => [
       ...prev,
-      { name: prodName, description: effectiveProdDesc, images: prodImages },
+      {
+        name: prodName,
+        description: effectiveProdDesc,
+        images: prodImages,
+        link: normalizeShopLink(prodLink) || undefined,
+        kind: prodKind,
+        wornBy: prodKind === "outfit" ? prodWornBy || undefined : undefined,
+        placement: prodPlacement,
+      },
     ]);
     setProdName("");
+    setProdLink("");
+    setProdWornBy("");
     setProdDesc("");
     setProdDescSel("");
     setProdImages([]);
@@ -2063,12 +2090,33 @@ function ProjectWorkspace() {
               }]
             : []),
         ];
-    const effectiveProducts = [
+    const effectiveProducts: ProductEntry[] = [
       ...products,
-      ...(prodImages.length > 0
-        ? [{ name: prodName.trim() || "Product", description: effectiveProdDesc, images: prodImages }]
+      // A filled-in but not yet "added" item still counts (photos or a link).
+      ...(prodImages.length > 0 || (prodName.trim() && normalizeShopLink(prodLink))
+        ? [{
+            name: prodName.trim() || "Product",
+            description: effectiveProdDesc,
+            images: prodImages,
+            link: normalizeShopLink(prodLink) || undefined,
+            kind: prodKind,
+            wornBy: prodKind === "outfit" ? prodWornBy || undefined : undefined,
+            placement: prodPlacement,
+          }]
         : []),
     ];
+    // Placement items are only meaningful outside Cooking (where the "product" is the dish).
+    const productPlacementsForInput: ProductPlacement[] = genre === "cooking"
+      ? []
+      : placementItems(effectiveProducts.map((p) => ({
+          name: p.name,
+          description: p.description,
+          link: p.link,
+          kind: p.kind ?? "product",
+          worn_by: p.wornBy,
+          placement: p.placement ?? "natural",
+          has_images: p.images.length > 0,
+        })));
     // Per-segment location sets are stored directly in `backgrounds` now.
     const effectiveBackgrounds: BackgroundEntry[] = backgrounds;
 
@@ -2291,6 +2339,7 @@ function ProjectWorkspace() {
       affiliate_duration_seconds: isAffiliateMode ? affiliateDuration : undefined,
       affiliate_disclosure: isAffiliateMode ? affiliateDisclosure.trim() || undefined : undefined,
       camera_profile_custom: cameraProfileCustom.trim() || undefined,
+      product_placements: productPlacementsForInput.length > 0 ? productPlacementsForInput : undefined,
       product_shoot: productShootActive
         ? {
             presence: productPresence,
@@ -2858,9 +2907,10 @@ function ProjectWorkspace() {
       veoClips,
       productNames: (genInput?.product_images ?? []).map((product) => product.name),
       productReferences:
-        genInput?.product_ir?.review_status === "approved" || genInput?.product_shoot?.presence
-          ? genInput.product_images
+        genInput?.product_ir?.review_status === "approved" || genInput?.product_shoot?.presence || (genInput?.product_placements?.length ?? 0) > 0
+          ? genInput?.product_images
           : undefined,
+      productPlacements: genInput?.product_placements,
       // Embed each uploaded character frontal photo so the extension auto-loads
       // it (no manual per-image attach). No photo ⇒ a null slot as before.
       characterReferences: manifestCharacterRefs.length > 0 ? manifestCharacterRefs : undefined,
@@ -5918,9 +5968,29 @@ function ProjectWorkspace() {
                           </div>
                         )}
                         <div>
-                          <p className="font-medium">{p.name}</p>
+                          <p className="font-medium">
+                            {p.name}
+                            {genre !== "cooking" && (
+                              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                                {p.kind === "outfit"
+                                  ? lang === "vi" ? `Trang phục${p.wornBy ? ` · ${p.wornBy} mặc` : ""}` : `Outfit${p.wornBy ? ` · worn by ${p.wornBy}` : ""}`
+                                  : p.kind === "prop"
+                                    ? lang === "vi" ? "Đồ vật" : "Prop"
+                                    : lang === "vi" ? "Sản phẩm" : "Product"}
+                                {" · "}
+                                {p.placement === "featured"
+                                  ? lang === "vi" ? "làm nổi bật" : "featured"
+                                  : lang === "vi" ? "lồng ghép tự nhiên" : "natural"}
+                              </span>
+                            )}
+                          </p>
                           <p className="text-xs text-muted-foreground">{p.description || L("noDesc")}</p>
                           <p className="text-xs text-muted-foreground">{p.images.length} {L("photos")}</p>
+                          {p.link && (
+                            <a href={p.link} target="_blank" rel="noreferrer" className="text-xs text-primary underline">
+                              🛒 {shopName(p.link)}
+                            </a>
+                          )}
                         </div>
                       </div>
                       <Button variant="ghost" size="sm" onClick={() => { setProducts((prev) => prev.filter((_, j) => j !== i)); setProductIR(null); }}>
@@ -5932,7 +6002,45 @@ function ProjectWorkspace() {
               )}
 
               <div className="space-y-3 rounded-lg border border-dashed p-4">
-                <Input value={prodName} onChange={(e) => { setProdName(e.target.value); setProductIR(null); }} placeholder={L("prodName")} />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Select
+                    value={prodKind}
+                    onChange={(e) => setProdKind(e.target.value as PlacementKind)}
+                    options={[
+                      { value: "product", label: lang === "vi" ? "Sản phẩm (bán hàng)" : "Product (to sell)" },
+                      { value: "outfit", label: lang === "vi" ? "Trang phục cho nhân vật mặc" : "Outfit worn by a character" },
+                      { value: "prop", label: lang === "vi" ? "Đồ vật / phụ kiện trong cảnh" : "Prop / accessory in the scene" },
+                    ]}
+                  />
+                  <Select
+                    value={prodPlacement}
+                    onChange={(e) => setProdPlacement(e.target.value as PlacementMode)}
+                    options={[
+                      { value: "natural", label: lang === "vi" ? "Lồng ghép tự nhiên vào câu chuyện" : "Natural placement in the story" },
+                      { value: "featured", label: lang === "vi" ? "Làm nổi bật + nhắc tới + kêu gọi mua" : "Featured + mentioned + CTA" },
+                    ]}
+                  />
+                </div>
+                {prodKind === "outfit" && (
+                  <Select
+                    value={prodWornBy}
+                    onChange={(e) => setProdWornBy(e.target.value)}
+                    placeholder={lang === "vi" ? "Nhân vật mặc trang phục này (mặc định: nhân vật chính)" : "Character wearing it (default: main character)"}
+                    options={[
+                      ...characters.map((c) => c.name),
+                      ...(charName.trim() && !characters.some((c) => c.name === charName.trim()) ? [charName.trim()] : []),
+                    ].filter(Boolean).map((name) => ({ value: name, label: name }))}
+                  />
+                )}
+                <Input value={prodName} onChange={(e) => { setProdName(e.target.value); setProductIR(null); }} placeholder={prodKind === "outfit" ? (lang === "vi" ? "Tên trang phục (vd: Áo blazer kem nữ)" : "Outfit name") : L("prodName")} />
+                <Input
+                  value={prodLink}
+                  onChange={(e) => setProdLink(e.target.value)}
+                  placeholder={lang === "vi" ? "Link sản phẩm Shopee / Amazon / Lazada / TikTok Shop (tuỳ chọn)" : "Shopee / Amazon / Lazada / TikTok Shop link (optional)"}
+                />
+                {prodLink.trim() && !normalizeShopLink(prodLink) && (
+                  <p className="text-xs text-red-600">{lang === "vi" ? "Link chưa hợp lệ — dán đầy đủ dạng https://…" : "Invalid link — paste a full https://… URL"}</p>
+                )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-muted-foreground">
                     {lang === "vi" ? "Mô tả sản phẩm (chọn nhanh)" : "Product description (quick pick)"}
@@ -5949,8 +6057,16 @@ function ProjectWorkspace() {
                 </div>
                 {/* Nano Flow: real product photos are attached in the extension;
                     here the product is declared by name + description only. */}
-                {(!NANO_FLOW_TEXT_ONLY || isAffiliateMode || peopleFreeShoot) && (
+                {/* Product / outfit / prop photos are the visual authority in every genre. */}
+                {(!NANO_FLOW_TEXT_ONLY || genre !== "cooking" || isAffiliateMode || peopleFreeShoot) && (
                   <>
+                    {prodLink.trim() && prodImages.length === 0 && (
+                      <p className="text-xs text-amber-600">
+                        {lang === "vi"
+                          ? "Shopee/Amazon không cho tự đọc ảnh từ link — hãy lưu 1–4 ảnh từ trang sản phẩm rồi tải lên đây để video giữ đúng sản phẩm/trang phục."
+                          : "Shopee/Amazon block reading images from a link — save 1–4 photos from the product page and upload them here."}
+                      </p>
+                    )}
                     {peopleFreeShoot && (
                       <p className="text-xs text-muted-foreground">
                         {lang === "vi"
@@ -5961,7 +6077,7 @@ function ProjectWorkspace() {
                     <ImageUploader
                       images={prodImages}
                       onChange={(images) => { setProdImages(images); setProductIR(null); }}
-                      maxImages={isAffiliateMode || peopleFreeShoot ? 4 : 3}
+                      maxImages={4}
                       label={L("prodPhotos")}
                       hint={L("prodPhotosHint")}
                     />
