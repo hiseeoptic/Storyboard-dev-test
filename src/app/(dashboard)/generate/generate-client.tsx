@@ -52,6 +52,8 @@ import {
 import type { TopicCategory } from "@/services/topics";
 import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
+import { WritersRoom } from "./writers-room";
+import type { RoomFormPatch } from "@/lib/writers-room/export";
 import { loadHandoff } from "@/lib/handoff";
 import {
   saveCharacterPreset,
@@ -1519,6 +1521,7 @@ function ProjectWorkspace() {
   // Step 1: Story
   const [storyIdea, setStoryIdea] = useState("");
   const [scriptTreatment, setScriptTreatment] = useState<"preserve" | "polish">("polish");
+  const [showWritersRoom, setShowWritersRoom] = useState(false);
   const [voiceOverEnabled, setVoiceOverEnabled] = useState(false);
   const [characterDialogueEnabled, setCharacterDialogueEnabled] = useState(true);
   // Legacy state name retained so existing code/data remains compatible. In
@@ -4422,6 +4425,100 @@ function ProjectWorkspace() {
 
   // ─── Input Phase (Wizard) ──────────────────────────────────────────
 
+  // Genre is the hard router: every place that changes it (the select and the
+  // writers' room hand-off) goes through here so the side effects stay identical.
+  const changeGenre = (g: string) => {
+    if (genre === "nature" && g !== "nature" && characterRepresentation === "none") {
+      setCharacterRepresentation("auto");
+    }
+    setGenre(g);
+    // Reset only the new route axes to AUTO so the selected
+    // topic can compile its own structure without stale DNA.
+    setStoryFormat("auto");
+    setVisualInterpretation("auto");
+    // Keep the user's camera picks that the new genre still offers
+    // (they used to be wiped silently on every genre change).
+    {
+      const allowed = new Set(genreProductionProfile(g as Genre).allowed_camera_profiles);
+      const kept = directingProfiles.filter((id) => allowed.has(id));
+      setDirectingProfiles(kept);
+      setDirectingProfile(kept[0] ?? "auto");
+    }
+    // Genre is the hard router. Reset stale specialist goals so
+    // Cooking can never leak into numerology/film/etc.
+    if (g === "numerology") {
+      setVideoGoal("numerology");
+      setAudienceGoal("reflection");
+    }
+    else if (g === "health") {
+      setVideoGoal("health");
+      setAudienceGoal("explain");
+    }
+    else if (g === "psychology") {
+      setVideoGoal("psychology");
+      setAudienceGoal("reflection");
+    }
+    else if (g === "life_wisdom") {
+      setVideoGoal("storytelling");
+      setAudienceGoal("reflection");
+    }
+    else if (g === "cooking") {
+      setVideoGoal("cooking");
+      setAudienceGoal("retention");
+      setSegmentCount(6);
+      setForceVietnameseDialogue(false);
+      setAspectRatio("9:16");
+    }
+    else if (g === "fitness") {
+      setVideoGoal("fitness");
+      setAudienceGoal("explain");
+    }
+    else if (g === "nature") {
+      setVideoGoal("documentary_story");
+      setAudienceGoal("retention");
+      setCharacterRepresentation("none");
+    }
+    else if (["education", "finance", "tech"].includes(g)) {
+      setVideoGoal("educational");
+      setAudienceGoal("explain");
+    }
+    else if (AD_GENRES.has(g)) {
+      setVideoGoal("product_ad");
+      setAudienceGoal("action");
+    }
+    else {
+      setVideoGoal("storytelling");
+      setAudienceGoal(["comedy", "action", "horror", "thriller"].includes(g) ? "retention" : "empathy");
+    }
+    setContentSubtype("");
+    setToneSel("auto");
+    setNarratorVoiceSel("auto");
+  };
+
+  // Writers' room hand-off: the approved shot script is kept verbatim (one
+  // CẢNH per 10-second segment) and the cast/genre/look follow the chosen plan.
+  const applyWritersRoom = (patch: RoomFormPatch) => {
+    if (patch.genre && GENRE_OPTIONS.vi.some((o) => o.value === patch.genre)) changeGenre(patch.genre);
+    if (patch.style && STYLE_OPTIONS.vi.some((o) => o.value === patch.style)) setStyle(patch.style as StoryboardStyle);
+    if (patch.characterRepresentation) setCharacterRepresentation(patch.characterRepresentation as CharacterRepresentation);
+    setStoryIdea(patch.storyIdea);
+    setScriptTreatment("preserve");
+    setSegmentCount(Math.max(1, patch.segmentCount));
+    setVoiceOverEnabled(patch.voiceOver);
+    setCharacterDialogueEnabled(patch.dialogue);
+    if (patch.characters.length) {
+      setCharacters(patch.characters.map((c) => ({
+        name: c.name,
+        role: c.role,
+        appearance: c.appearance,
+        bodyType: "standard" as const,
+        isChild: c.isChild,
+        images: [],
+      })));
+    }
+    setShowWritersRoom(false);
+  };
+
   const canNext = step === 0 ? storyIdea.trim().length > 0 : true;
 
   // ─── Admin Modal (hidden double-click trigger) ───────────────────
@@ -4623,6 +4720,30 @@ function ProjectWorkspace() {
           {/* ── Step 1: Story ─────────────────────────────────────── */}
           {step === 0 && (
             <>
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/40 bg-primary/[0.06] p-3">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium">
+                    📖 {lang === "vi" ? "Phòng biên kịch (từ ảnh sách / ý tưởng)" : "Writers' room (book photos / idea)"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {lang === "vi"
+                      ? "Chụp trang sách hoặc dán ý tưởng → AI phân tích, đề xuất phương án, viết kịch bản từng shot 10 giây, tự chấm điểm và cùng bạn chỉnh sửa qua chat."
+                      : "Photograph pages or paste an idea → the AI plans, writes 10-second shots, scores them and revises with you in chat."}
+                  </p>
+                </div>
+                <Button size="sm" onClick={() => setShowWritersRoom(true)}>
+                  <BookOpen className="h-4 w-4" />
+                  {lang === "vi" ? "Mở phòng biên kịch" : "Open"}
+                </Button>
+              </div>
+              {showWritersRoom && (
+                <WritersRoom
+                  lang={lang}
+                  provider={scriptProvider}
+                  onApply={applyWritersRoom}
+                  onClose={() => setShowWritersRoom(false)}
+                />
+              )}
               <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-primary">
                   <BookOpen className="h-4 w-4" />
@@ -4921,74 +5042,7 @@ function ProjectWorkspace() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">{L("genre")}</label>
-                  <Select value={genre} onChange={(e) => {
-                    const g = e.target.value;
-                    if (genre === "nature" && g !== "nature" && characterRepresentation === "none") {
-                      setCharacterRepresentation("auto");
-                    }
-                    setGenre(g);
-                    // Reset only the new route axes to AUTO so the selected
-                    // topic can compile its own structure without stale DNA.
-                    setStoryFormat("auto");
-                    setVisualInterpretation("auto");
-                    // Keep the user's camera picks that the new genre still offers
-                    // (they used to be wiped silently on every genre change).
-                    {
-                      const allowed = new Set(genreProductionProfile(g as Genre).allowed_camera_profiles);
-                      const kept = directingProfiles.filter((id) => allowed.has(id));
-                      setDirectingProfiles(kept);
-                      setDirectingProfile(kept[0] ?? "auto");
-                    }
-                    // Genre is the hard router. Reset stale specialist goals so
-                    // Cooking can never leak into numerology/film/etc.
-                    if (g === "numerology") {
-                      setVideoGoal("numerology");
-                      setAudienceGoal("reflection");
-                    }
-                    else if (g === "health") {
-                      setVideoGoal("health");
-                      setAudienceGoal("explain");
-                    }
-                    else if (g === "psychology") {
-                      setVideoGoal("psychology");
-                      setAudienceGoal("reflection");
-                    }
-                    else if (g === "life_wisdom") {
-                      setVideoGoal("storytelling");
-                      setAudienceGoal("reflection");
-                    }
-                    else if (g === "cooking") {
-                      setVideoGoal("cooking");
-                      setAudienceGoal("retention");
-                      setSegmentCount(6);
-                      setForceVietnameseDialogue(false);
-                      setAspectRatio("9:16");
-                    }
-                    else if (g === "fitness") {
-                      setVideoGoal("fitness");
-                      setAudienceGoal("explain");
-                    }
-                    else if (g === "nature") {
-                      setVideoGoal("documentary_story");
-                      setAudienceGoal("retention");
-                      setCharacterRepresentation("none");
-                    }
-                    else if (["education", "finance", "tech"].includes(g)) {
-                      setVideoGoal("educational");
-                      setAudienceGoal("explain");
-                    }
-                    else if (AD_GENRES.has(g)) {
-                      setVideoGoal("product_ad");
-                      setAudienceGoal("action");
-                    }
-                    else {
-                      setVideoGoal("storytelling");
-                      setAudienceGoal(["comedy", "action", "horror", "thriller"].includes(g) ? "retention" : "empathy");
-                    }
-                    setContentSubtype("");
-                    setToneSel("auto");
-                    setNarratorVoiceSel("auto");
-                  }} options={GENRE_OPTIONS[lang]} />
+                  <Select value={genre} onChange={(e) => changeGenre(e.target.value)} options={GENRE_OPTIONS[lang]} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">{L("setting")}</label>
@@ -6260,7 +6314,7 @@ function ProjectWorkspace() {
                   cảnh theo hành động) — không còn ô chọn tay, tránh ép số gây lỗi. */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">{L("segmentCount")}</label>
-                <Select value={String(segmentCount)} onChange={(e) => setSegmentCount(Number(e.target.value))} options={SEGMENT_OPTIONS} />
+                <Select value={String(segmentCount)} onChange={(e) => setSegmentCount(Number(e.target.value))} options={SEGMENT_OPTIONS.some((o) => o.value === String(segmentCount)) ? SEGMENT_OPTIONS : [...SEGMENT_OPTIONS, { value: String(segmentCount), label: `${segmentCount} (~${segmentCount * 10}s)` }].sort((a, b) => Number(a.value) - Number(b.value))} />
                 <p className="text-xs text-muted-foreground">{L("segmentCountHint")}</p>
               </div>
 
