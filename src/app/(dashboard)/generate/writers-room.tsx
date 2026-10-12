@@ -10,7 +10,7 @@
 // The room is kept in this browser (localStorage) so a refresh loses nothing.
 // ============================================================
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Check, Loader2, RotateCcw, Send, Sparkles, Undo2, X } from "lucide-react";
+import { BookOpen, Camera, Check, Loader2, RefreshCw, RotateCcw, Send, Sparkles, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
@@ -21,6 +21,7 @@ import { writersRoomOcr, writersRoomTurn } from "@/actions/writers-room";
 import { emptyRoom, type Faithfulness, type RoomAction, type RoomState, type ScriptShot } from "@/lib/writers-room/types";
 import { shotCapacity } from "@/lib/writers-room/shot-rules";
 import { roomToFormPatch, type RoomFormPatch } from "@/lib/writers-room/export";
+import { PageCamera, makePageShot, type PageShot } from "./page-camera";
 
 type Lang = "vi" | "en";
 const STORAGE_KEY = "afWritersRoom.v1";
@@ -52,22 +53,6 @@ const SCORE_LABEL: Record<string, string> = {
   faithfulness: "Bám nguồn",
   shot_fit_10s: "Khớp clip 10s",
 };
-
-async function downscaleForOcr(base64: string, maxDim = 1800): Promise<string> {
-  try {
-    const img = new Image();
-    img.src = `data:image/jpeg;base64,${base64}`;
-    await img.decode();
-    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(img.width * scale);
-    canvas.height = Math.round(img.height * scale);
-    canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.85).split(",")[1] ?? base64;
-  } catch {
-    return base64;
-  }
-}
 
 function loadRoom(): RoomState {
   try {
@@ -120,9 +105,16 @@ export function WritersRoom({
   const [showPages, setShowPages] = useState(false);
   // The source panel folds away once there is an analysis so the chat gets the room.
   const [showSource, setShowSource] = useState(() => !room.analysis);
+  // Page photos (camera or upload) waiting to be read, in page order.
+  const [shots, setShots] = useState<PageShot[]>([]);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [analyzeWhenRead, setAnalyzeWhenRead] = useState(false);
+  const roomRef = useRef(room);
+  const reading = useRef(false);
   const chatEnd = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    roomRef.current = room;
     try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(room)); } catch { /* quota */ }
   }, [room]);
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [room.messages.length, busy]);
@@ -152,42 +144,73 @@ export function WritersRoom({
     }
   };
 
-  const readPages = async () => {
+  const pendingShots = shots.filter((x) => x.status === "queued" || x.status === "reading").length;
+  const pagesLeft = Math.max(0, MAX_PAGES - room.pages.length - pendingShots);
+
+  /** Camera shots and uploads join one queue that is read in the background. */
+  const addShots = async (images: string[]) => {
+    for (const base64 of images.slice(0, pagesLeft)) {
+      const shot = await makePageShot(base64);
+      const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+      setShots((list) => [...list, { id, ...shot, status: "queued" }]);
+    }
+  };
+
+  // Read queued pages one batch at a time (≤ OCR_BATCH photos and under the
+  // ~4.5 MB hosting request limit), in capture order.
+  useEffect(() => {
+    if (reading.current) return;
+    const batch: PageShot[] = [];
+    let size = 0;
+    for (const shot of shots) {
+      if (shot.status !== "queued") continue;
+      if (batch.length >= OCR_BATCH || (batch.length && size + shot.base64.length > OCR_BATCH_CHARS)) break;
+      batch.push(shot);
+      size += shot.base64.length;
+    }
+    if (!batch.length) return;
+    reading.current = true;
+    const ids = new Set(batch.map((x) => x.id));
+    const mark = (patch: Partial<PageShot>) => setShots((list) => list.map((x) => (ids.has(x.id) ? { ...x, ...patch } : x)));
+    mark({ status: "reading", error: undefined });
+    void (async () => {
+      let outcome: Partial<PageShot>;
+      try {
+        const firstPage = roomRef.current.pages.reduce((m, pg) => Math.max(m, pg.index), 0) + 1;
+        const res = await writersRoomOcr({ images: batch.map((x) => x.base64), firstPage });
+        if (res.success) {
+          // Number pages here so they always follow the ones already read.
+          setRoom((r) => {
+            const base = r.pages.reduce((m, pg) => Math.max(m, pg.index), 0) + 1;
+            return { ...r, pages: [...r.pages, ...res.data.pages.map((pg, i) => ({ ...pg, index: base + i }))] };
+          });
+          outcome = { status: "done", base64: "" };
+        } else {
+          outcome = { status: "error", error: res.error };
+        }
+      } catch (err) {
+        outcome = { status: "error", error: err instanceof Error ? err.message : String(err) };
+      }
+      reading.current = false;
+      mark(outcome);
+    })();
+  }, [shots]);
+
+  const readUploads = async () => {
     if (!pageImages.length) return;
     setError("");
-    const already = room.pages.length;
-    const images = pageImages.slice(0, Math.max(0, MAX_PAGES - already));
-    let pages = [...room.pages];
-    let done = 0;
-    while (done < images.length) {
-      // Batches stay under the hosting request limit (~4.5 MB): at most
-      // OCR_BATCH pages and OCR_BATCH_CHARS of base64 per call.
-      const batch: string[] = [];
-      let size = 0;
-      setBusy(vi ? `Đang chuẩn bị ảnh ${done + 1}/${images.length}…` : "Preparing pages…");
-      while (done + batch.length < images.length && batch.length < OCR_BATCH) {
-        const next = await downscaleForOcr(images[done + batch.length]!.base64);
-        if (batch.length && size + next.length > OCR_BATCH_CHARS) break;
-        batch.push(next);
-        size += next.length;
-      }
-      setBusy(vi ? `Đang đọc ảnh ${done + 1}–${done + batch.length}/${images.length}…` : "Reading pages…");
-      try {
-        const nextIndex = pages.reduce((m, pg) => Math.max(m, pg.index), 0) + 1;
-        const res = await writersRoomOcr({ images: batch, firstPage: nextIndex });
-        if (!res.success) { setError(res.error); break; }
-        pages = [...pages, ...res.data.pages].sort((x, y) => x.index - y.index);
-        setRoom((r) => ({ ...r, pages }));
-        done += batch.length;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        break;
-      }
-    }
-    // Keep the photos that were not read so a retry continues where it stopped.
-    setPageImages(images.slice(done));
-    setBusy("");
+    const images = pageImages.map((img) => img.base64);
+    setPageImages([]);
+    await addShots(images);
   };
+
+  useEffect(() => {
+    if (!analyzeWhenRead || pendingShots > 0 || busy) return;
+    setAnalyzeWhenRead(false);
+    if (room.pages.length) void run({ type: "analyze" }, vi ? "Đang phân tích và lập kế hoạch…" : "Analysing…");
+    // run() reads the latest room; this fires once when the queue drains.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analyzeWhenRead, pendingShots, busy]);
 
   const send = () => {
     const text = input.trim();
@@ -222,6 +245,7 @@ export function WritersRoom({
     if (!window.confirm(vi ? "Xoá toàn bộ phòng biên kịch hiện tại?" : "Clear this writers' room?")) return;
     setRoom(emptyRoom(room.faithfulness));
     setPageImages([]);
+    setShots([]);
   };
 
   const evaluation = room.evaluation;
@@ -229,6 +253,22 @@ export function WritersRoom({
 
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-2 sm:p-4">
+      {cameraOpen && (
+        <PageCamera
+          lang={lang}
+          shots={shots}
+          remaining={pagesLeft}
+          onCapture={(base64) => void addShots([base64])}
+          onRetry={(id) => setShots((l) => l.map((x) => (x.id === id ? { ...x, status: "queued" } : x)))}
+          onRemove={(id) => setShots((l) => l.filter((x) => x.id !== id))}
+          onClose={() => setCameraOpen(false)}
+          onFinish={() => {
+            setCameraOpen(false);
+            setShowSource(true);
+            setAnalyzeWhenRead(true);
+          }}
+        />
+      )}
       <div className="flex w-full max-w-7xl flex-col overflow-hidden rounded-xl border bg-background shadow-xl">
         <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
           <BookOpen className="h-5 w-5 text-primary" />
@@ -264,12 +304,15 @@ export function WritersRoom({
               <ImageUploader
                 images={pageImages}
                 onChange={setPageImages}
-                maxImages={Math.max(1, MAX_PAGES - room.pages.length)}
+                maxImages={Math.max(1, pagesLeft)}
                 label={vi ? `Ảnh trang sách (đã đọc ${room.pages.length}/${MAX_PAGES} trang)` : `Book page photos (${room.pages.length}/${MAX_PAGES} read)`}
-                hint={vi ? "Chụp thẳng, đủ sáng, mỗi ảnh một trang, đúng thứ tự." : "One page per photo, straight and well lit, in order."}
+                hint={vi ? "Tải ảnh lên, hoặc bấm \"Chụp bằng camera\" để chụp trực tiếp bằng webcam / camera điện thoại. Mỗi ảnh một trang, đúng thứ tự." : "Upload photos, or use the camera. One page per photo, in order."}
               />
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={readPages} disabled={!pageImages.length || !!busy}>
+                <Button size="sm" variant="outline" onClick={() => setCameraOpen(true)} disabled={pagesLeft <= 0}>
+                  <Camera className="h-4 w-4" />{vi ? "Chụp bằng camera" : "Use camera"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => void readUploads()} disabled={!pageImages.length}>
                   <BookOpen className="h-4 w-4" />{vi ? "Đọc trang sách" : "Read pages"}
                 </Button>
                 {room.pages.length > 0 && (
@@ -277,10 +320,46 @@ export function WritersRoom({
                     {showPages ? (vi ? "Ẩn chữ đã đọc" : "Hide text") : (vi ? `Xem/sửa chữ ${room.pages.length} trang` : "Review text")}
                   </Button>
                 )}
-                <Button size="sm" onClick={() => run({ type: "analyze" }, vi ? "Đang phân tích và lập kế hoạch…" : "Analysing…")} disabled={!!busy || (!room.pages.length && !room.idea?.trim())}>
-                  <Sparkles className="h-4 w-4" />{room.analysis ? (vi ? "Phân tích lại" : "Re-analyse") : (vi ? "Phân tích & đề xuất" : "Analyse & plan")}
+                <Button size="sm" onClick={() => run({ type: "analyze" }, vi ? "Đang phân tích và lập kế hoạch…" : "Analysing…")} disabled={!!busy || pendingShots > 0 || (!room.pages.length && !room.idea?.trim())}>
+                  {pendingShots > 0 ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  {pendingShots > 0
+                    ? (vi ? `Đang đọc ${pendingShots} trang…` : `Reading ${pendingShots}…`)
+                    : room.analysis ? (vi ? "Phân tích lại" : "Re-analyse") : (vi ? "Phân tích & đề xuất" : "Analyse & plan")}
                 </Button>
               </div>
+              {shots.length > 0 && (
+                <div className="space-y-1">
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {shots.map((x, i) => (
+                      <div key={x.id} className="relative h-16 w-12 shrink-0 overflow-hidden rounded border" title={x.error}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={x.thumb} alt={`${vi ? "Ảnh" : "Photo"} ${i + 1}`} className="h-full w-full object-cover" />
+                        <span className={cn(
+                          "absolute inset-x-0 bottom-0 flex justify-center py-0.5 text-[9px] text-white",
+                          x.status === "done" ? "bg-emerald-600/90" : x.status === "error" ? "bg-red-600/90" : "bg-black/60"
+                        )}>
+                          {x.status === "done" && <Check className="h-3 w-3" />}
+                          {x.status === "reading" && <Loader2 className="h-3 w-3 animate-spin" />}
+                          {x.status === "queued" && (vi ? "chờ" : "wait")}
+                          {x.status === "error" && (
+                            <button type="button" onClick={() => setShots((l) => l.map((y) => (y.id === x.id ? { ...y, status: "queued" } : y)))}>
+                              <RefreshCw className="h-3 w-3" />
+                            </button>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {shots.some((x) => x.status === "error") && (
+                    <p className="text-xs text-red-600">{vi ? "Có ảnh chưa đọc được — bấm ↻ trên ảnh để đọc lại, hoặc chụp lại rõ hơn." : "Some photos failed — tap ↻ to retry."}</p>
+                  )}
+                  {shots.every((x) => x.status === "done") && (
+                    <button type="button" className="text-xs text-muted-foreground underline" onClick={() => setShots([])}>
+                      {vi ? "Ẩn ảnh đã đọc" : "Hide read photos"}
+                    </button>
+                  )}
+                </div>
+              )}
               {showPages && (
                 <div className="max-h-56 space-y-2 overflow-y-auto">
                   {room.pages.map((p) => (
@@ -315,7 +394,7 @@ export function WritersRoom({
               {room.messages.length === 0 && (
                 <p className="text-sm text-muted-foreground">
                   {vi
-                    ? "Bắt đầu: chụp 1 hoặc nhiều trang sách (hoặc dán ý tưởng) → Đọc trang sách → Phân tích & đề xuất. Biên kịch sẽ đưa phương án, viết kịch bản theo từng shot 10 giây, tự chấm điểm và gợi ý sửa. Bạn trò chuyện để chỉnh bất cứ điều gì."
+                    ? "Bắt đầu: bấm Chụp bằng camera (webcam / camera điện thoại) — mỗi trang chụp xong được tự đọc và đưa vào phòng; hoặc tải ảnh lên rồi bấm Đọc trang sách, hoặc dán ý tưởng → Phân tích & đề xuất. Biên kịch sẽ đưa phương án, viết kịch bản theo từng shot 10 giây, tự chấm điểm và gợi ý sửa. Bạn trò chuyện để chỉnh bất cứ điều gì."
                     : "Start: photograph pages (or paste an idea) → Read pages → Analyse & plan."}
                 </p>
               )}
