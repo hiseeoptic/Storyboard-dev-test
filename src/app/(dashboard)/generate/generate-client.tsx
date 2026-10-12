@@ -646,8 +646,8 @@ const t = {
   adminClose: { vi: "Đóng", en: "Close" },
   adminProviderLabel: { vi: "Nhà cung cấp AI", en: "AI Provider" },
   adminProviderHint: {
-    vi: "Lựa chọn được lưu lại cho lần sau. OpenAI dùng GPT-4o + DALL-E 3, Gemini dùng Nano Banana / Nano Banana Pro (giữ khuôn mặt).",
-    en: "Your choice is saved for next time. OpenAI uses GPT-4o + DALL-E 3, Gemini uses Nano Banana / Nano Banana Pro (face lock).",
+    vi: "Lựa chọn được lưu lại cho lần sau. OpenAI dùng GPT-6.1 Sol (kịch bản, storyboard) + DALL-E 3 (ảnh), Gemini dùng Nano Banana / Nano Banana Pro (giữ khuôn mặt).",
+    en: "Your choice is saved for next time. OpenAI uses GPT-6.1 Sol (script, storyboard) + DALL-E 3 (images), Gemini uses Nano Banana / Nano Banana Pro (face lock).",
   },
   adminCurrentProvider: { vi: "Đang dùng", en: "Currently using" },
 } as const;
@@ -1414,8 +1414,8 @@ function ProjectWorkspace() {
   };
 
   // ─── Script model (default OpenAI — the whole text pipeline is on OpenAI now:
-  // gpt-5.6-terra writes the creative script; the lower-cost structured stage
-  // builds the storyboard JSON. Claude
+  // GPT-6.1 Sol writes the creative script and builds the storyboard JSON
+  // (src/lib/ai/openai-models.ts). Claude
   // Opus timed out too often on the 60s script budget. Still switchable via the
   // hidden panel (double-click the title, passcode 2502). ──
   const [scriptProvider, setScriptProvider] = useState<AIProvider>("openai");

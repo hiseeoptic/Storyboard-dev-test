@@ -32,6 +32,7 @@ import {
 } from "@/lib/validation";
 import { shouldRetryAiError } from "@/lib/ai/retry-policy";
 import { logOpenAiUsage } from "@/lib/ai/usage";
+import { createOpenAiChat } from "@/lib/ai/openai-models";
 import { isStylizedCharacterRepresentation } from "@/lib/creative-routing";
 import { environmentCatalogForPrompt } from "@/lib/environment";
 import { buildActiveStoryboardRulePacket, buildStoryboardStageSystemPrompt, compileGenerationSystemPrompt, isPromptRuleRouterEnabled, isPromptRuleRouterV7Enabled, type StoryboardRuleStage } from "@/lib/rules";
@@ -786,39 +787,36 @@ export async function analyzeVideoContext(
           timeoutMs: boundedTimeoutMs(timing, 45_000, "Gemini context analysis"),
         });
       } else {
-        const openai = getOpenAIClient();
-        const contextModel =
-          process.env.OPENAI_CONTEXT_MODEL || "gpt-4o-mini";
-        const completion = await openai.chat.completions.create(
-          {
-            model: contextModel,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt },
-            ],
-            temperature: 0.15,
-            max_tokens: 7000,
-            response_format: {
-              type: "json_schema",
-              json_schema: {
-                name: "resolved_video_context",
-                description:
-                  "The complete canonical 10-layer Context IR used before storyboard generation.",
-                strict: true,
-                schema: OPENAI_VIDEO_CONTEXT_RESPONSE_SCHEMA,
-              },
+        // GPT-6.1 Sol (see openai-models.ts). Reasoning at "low" still needs
+        // more wall-clock than gpt-4o-mini did, hence 75s instead of 45s.
+        const completion = await createOpenAiChat(getOpenAIClient(), {
+          stage: "context",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.15,
+          maxTokens: 7000,
+          responseFormat: {
+            type: "json_schema",
+            json_schema: {
+              name: "resolved_video_context",
+              description:
+                "The complete canonical 10-layer Context IR used before storyboard generation.",
+              strict: true,
+              schema: OPENAI_VIDEO_CONTEXT_RESPONSE_SCHEMA,
             },
           },
-          { timeout: boundedTimeoutMs(timing, 45_000, "OpenAI context analysis") }
-        );
+          timeoutMs: boundedTimeoutMs(timing, 75_000, "OpenAI context analysis"),
+        });
         logOpenAiUsage({
           stage: "context_ir",
-          model: contextModel,
+          model: completion.model,
           attempt: attempt + 1,
           usage: completion.usage,
           promptParts: [systemPrompt, userPrompt],
         });
-        rawContent = completion.choices[0]?.message?.content ?? null;
+        rawContent = completion.content;
       }
 
       if (!rawContent) throw new Error(`Empty context response from ${provider}`);
@@ -941,41 +939,27 @@ export async function generateScript(
           timeoutMs: boundedTimeoutMs(timing, 45_000, "Gemini script generation"),
         });
       } else {
-        // Script writing needs stronger character voice and dramatic judgment
-        // than the structured storyboard expansion stage. Terra is the balanced
-        // GPT-5.6 tier; callers can still select Sol or a cheaper model through
-        // OPENAI_SCRIPT_MODEL without changing downstream provider routing.
-        // GPT-5-series models take `max_completion_tokens` (NOT `max_tokens`)
-        // and only support the default temperature — sending either legacy
-        // param 400s the request. Overridable via OPENAI_SCRIPT_MODEL.
-        const openai = getOpenAIClient();
-        const scriptModel = process.env.OPENAI_SCRIPT_MODEL || "gpt-5.6-terra";
-        const isGpt5 = scriptModel.startsWith("gpt-5") || scriptModel.startsWith("o");
-        const isGpt56 = scriptModel.startsWith("gpt-5.6");
-        const completion = await openai.chat.completions.create(
-          {
-            model: scriptModel,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt },
-            ],
-            ...(isGpt5
-              ? {
-                  max_completion_tokens: 8000,
-                  ...(isGpt56 ? { reasoning_effort: "low" as const } : {}),
-                }
-              : { temperature: 0.85, max_tokens: 4000 }),
-          },
-          { timeout: boundedTimeoutMs(timing, 60_000, "OpenAI script generation") }
-        );
+        // Script writing needs strong character voice and dramatic judgment:
+        // GPT-6.1 Sol at "low" effort (model + parameters: openai-models.ts,
+        // override with OPENAI_SCRIPT_MODEL).
+        const completion = await createOpenAiChat(getOpenAIClient(), {
+          stage: "script",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.85,
+          maxTokens: 4000,
+          timeoutMs: boundedTimeoutMs(timing, 60_000, "OpenAI script generation"),
+        });
         logOpenAiUsage({
           stage: "script",
-          model: scriptModel,
+          model: completion.model,
           attempt: attempt + 1,
           usage: completion.usage,
           promptParts: [systemPrompt, userPrompt],
         });
-        text = completion.choices[0]?.message?.content ?? null;
+        text = completion.content;
       }
 
       const script = (text ?? "").trim();
@@ -1076,45 +1060,38 @@ export async function generateStoryboardBreakdown(
           timeoutMs: boundedTimeoutMs(timing, 150_000, "Gemini storyboard generation"),
         });
       } else {
-        const openai = getOpenAIClient();
-        const storyboardModel =
-          process.env.OPENAI_STORYBOARD_MODEL || "gpt-4.1-mini";
         const storyboardSystemPrompt = buildActiveStoryboardSystemPrompt(input);
         const storyboardUserPrompt = buildActiveStoryboardUserPrompt(input);
-        const completion = await openai.chat.completions.create(
-          {
-            // gpt-4.1-mini is reliable for the strict large JSON while costing
-            // far less than gpt-4o. Override only when a project explicitly
-            // accepts the additional spend.
-            model: storyboardModel,
-            messages: [
-              {
-                role: "system",
-                content: storyboardSystemPrompt,
-              },
-              { role: "user", content: storyboardUserPrompt },
-            ],
-            temperature: 0.7,
-            // Richer segments need more room — 8k truncated tails into stubs
-            // when this path runs as the rescue provider. gpt-4o caps at 16384.
-            max_tokens: 14000,
-            response_format: { type: "json_object" },
-          },
-          // Raised from 75s: with the whole pipeline on OpenAI and no separate
-          // script stage, this single call writes the script AND the full
-          // storyboard JSON, so it needs the budget headroom (context analysis
-          // ~45s + this ≈ 225s, still inside the 270s plan budget). boundedTimeoutMs
-          // still clamps it to whatever budget actually remains.
-          { timeout: boundedTimeoutMs(timing, 180_000, "OpenAI storyboard generation") }
-        );
+        // This stage decides whether every line and action fits its 10-second
+        // shot, so it runs on GPT-6.1 Sol (openai-models.ts; override with
+        // OPENAI_STORYBOARD_MODEL), with gpt-4.1-mini as the automatic backup.
+        const completion = await createOpenAiChat(getOpenAIClient(), {
+          stage: "storyboard",
+          messages: [
+            {
+              role: "system",
+              content: storyboardSystemPrompt,
+            },
+            { role: "user", content: storyboardUserPrompt },
+          ],
+          temperature: 0.7,
+          // Richer segments need more room — 8k truncated tails into stubs
+          // when this path runs as the rescue provider.
+          maxTokens: 14000,
+          responseFormat: { type: "json_object" },
+          // With the whole pipeline on OpenAI this single call may write the
+          // script AND the full storyboard JSON, so it needs the headroom.
+          // boundedTimeoutMs clamps it to whatever budget actually remains.
+          timeoutMs: boundedTimeoutMs(timing, 180_000, "OpenAI storyboard generation"),
+        });
         logOpenAiUsage({
           stage: "storyboard",
-          model: storyboardModel,
+          model: completion.model,
           attempt: attempt + 1,
           usage: completion.usage,
           promptParts: [storyboardSystemPrompt, storyboardUserPrompt],
         });
-        rawContent = completion.choices[0]?.message?.content ?? null;
+        rawContent = completion.content;
       }
 
       if (!rawContent) {
@@ -1463,27 +1440,24 @@ export async function rewriteStoryboardSegment(params: {
           thinkingLevel: "low",
         });
       } else {
-        const openai = getOpenAIClient();
-        const rewriteModel =
-          process.env.OPENAI_STORYBOARD_REWRITE_MODEL || "gpt-4.1-mini";
-        const completion = await openai.chat.completions.create({
-          model: rewriteModel,
+        const completion = await createOpenAiChat(getOpenAIClient(), {
+          stage: "rewrite",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
           temperature: 0.7,
-          max_tokens: 2500,
-          response_format: { type: "json_object" },
+          maxTokens: 2500,
+          responseFormat: { type: "json_object" },
         });
         logOpenAiUsage({
           stage: "segment_rewrite",
-          model: rewriteModel,
+          model: completion.model,
           attempt: attempt + 1,
           usage: completion.usage,
           promptParts: [systemPrompt, userPrompt],
         });
-        rawContent = completion.choices[0]?.message?.content ?? null;
+        rawContent = completion.content;
       }
 
       if (!rawContent) {
@@ -1607,36 +1581,29 @@ export async function critiqueStoryboard(params: {
           ),
         });
       } else {
-        const openai = getOpenAIClient();
-        const criticModel =
-          process.env.OPENAI_STORYBOARD_CRITIC_MODEL || "gpt-4o-mini";
-        const completion = await openai.chat.completions.create(
-          {
-            model: criticModel,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt },
-            ],
-            temperature: 0.1,
-            max_tokens: 4000,
-            response_format: { type: "json_object" },
-          },
-          {
-            timeout: boundedTimeoutMs(
-              params.timing,
-              70_000,
-              "OpenAI storyboard critic"
-            ),
-          }
-        );
+        const completion = await createOpenAiChat(getOpenAIClient(), {
+          stage: "critic",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.1,
+          maxTokens: 4000,
+          responseFormat: { type: "json_object" },
+          timeoutMs: boundedTimeoutMs(
+            params.timing,
+            70_000,
+            "OpenAI storyboard critic"
+          ),
+        });
         logOpenAiUsage({
           stage: "storyboard_critic",
-          model: criticModel,
+          model: completion.model,
           attempt: attempt + 1,
           usage: completion.usage,
           promptParts: [systemPrompt, userPrompt],
         });
-        rawContent = completion.choices[0]?.message?.content ?? null;
+        rawContent = completion.content;
       }
 
       if (!rawContent) throw new Error(`Empty critic response from ${provider}`);
@@ -1821,44 +1788,35 @@ export async function repairStoryboardSegments(params: {
           ),
         });
       } else {
-        const openai = getOpenAIClient();
-        const repairModel =
-          process.env.OPENAI_STORYBOARD_REPAIR_MODEL ||
-          process.env.OPENAI_STORYBOARD_MODEL ||
-          "gpt-4.1-mini";
-        const completion = await openai.chat.completions.create(
-          {
-            model: repairModel,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt },
-            ],
-            temperature: attempt === 0 ? 0.2 : 0.1,
-            max_tokens: Math.min(
-              14000,
-              Math.max(
-                5000,
-                requested.size * 3500 + requestedCharacters.size * 1200
-              )
-            ),
-            response_format: { type: "json_object" },
-          },
-          {
-            timeout: boundedTimeoutMs(
-              params.timing,
-              100_000,
-              "OpenAI storyboard repair"
-            ),
-          }
-        );
+        const completion = await createOpenAiChat(getOpenAIClient(), {
+          stage: "repair",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: attempt === 0 ? 0.2 : 0.1,
+          maxTokens: Math.min(
+            14000,
+            Math.max(
+              5000,
+              requested.size * 3500 + requestedCharacters.size * 1200
+            )
+          ),
+          responseFormat: { type: "json_object" },
+          timeoutMs: boundedTimeoutMs(
+            params.timing,
+            100_000,
+            "OpenAI storyboard repair"
+          ),
+        });
         logOpenAiUsage({
           stage: "storyboard_repair",
-          model: repairModel,
+          model: completion.model,
           attempt: attempt + 1,
           usage: completion.usage,
           promptParts: [systemPrompt, userPrompt],
         });
-        rawContent = completion.choices[0]?.message?.content ?? null;
+        rawContent = completion.content;
       }
 
       if (!rawContent) throw new Error(`Empty repair response from ${provider}`);

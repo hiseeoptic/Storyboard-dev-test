@@ -115,11 +115,18 @@ test("ten-second storyboard action is capacity-limited and sequential", () => {
   assert.match(promptSource, /ACTION CAPACITY REPAIR/);
 });
 
-test("the OpenAI script writer defaults to balanced Terra at low reasoning", () => {
+test("the OpenAI script, context and storyboard stages run on GPT-6.1 Sol at low reasoning", () => {
   const engineSource = readFileSync(
     new URL("../../services/ai-engine.ts", import.meta.url),
     "utf8"
   );
-  assert.match(engineSource, /OPENAI_SCRIPT_MODEL \|\| "gpt-5\.6-terra"/);
-  assert.match(engineSource, /reasoning_effort: "low"/);
+  const modelsSource = readFileSync(
+    new URL("../ai/openai-models.ts", import.meta.url),
+    "utf8"
+  );
+  for (const stage of ["script", "context", "storyboard"]) {
+    assert.match(engineSource, new RegExp(`createOpenAiChat\\(getOpenAIClient\\(\\), \\{\\s*stage: "${stage}"`));
+  }
+  assert.match(modelsSource, /DEFAULT_OPENAI_TEXT_MODEL = "gpt-6\.1-sol"/);
+  assert.match(modelsSource, /reasoning_effort: "low"/);
 });

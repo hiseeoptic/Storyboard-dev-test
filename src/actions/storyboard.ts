@@ -2406,8 +2406,8 @@ export async function generateStoryboardPlan(
     // (PACING AUDIT + natural dramatic exchanges, without a creative word cap)
     // ONLY runs in this stage — a single storyboard call
     // that also improvises the story produces thin, one-line-per-clip dialogue.
-    // On OpenAI the script is written by gpt-5.6-terra (quality/cost balance),
-    // then the lower-cost structured stage expands it into storyboard JSON.
+    // On OpenAI both the script and the storyboard JSON run on GPT-6.1 Sol
+    // (src/lib/ai/openai-models.ts).
     if (!compiledCooking && !sourceScript) {
       // Script fallback chain — NEVER Claude (this deployment has no Anthropic
       // credit): if the chosen writer fails, try the other OpenAI/Gemini writer.

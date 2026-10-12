@@ -10,13 +10,14 @@
 //     rules + an AI script editor) so the chat always shows scores, problems
 //     and one-click fixes.
 // The room state lives on the client and is passed in/out (no storage here).
-// Uses the app's configured script providers; model upgrades come later.
+// Uses the app's configured script providers (OpenAI: GPT-6.1 Sol).
 // ============================================================
 import { jsonrepair } from "jsonrepair";
 import { geminiGenerateText } from "@/lib/gemini/client";
 import { claudeGenerateText } from "@/lib/anthropic/client";
 import { getOpenAIClient } from "@/lib/openai/client";
 import { logOpenAiUsage } from "@/lib/ai/usage";
+import { createOpenAiChat } from "@/lib/ai/openai-models";
 import type { ActionResult, AIProvider } from "@/types";
 import {
   OCR_SYSTEM_PROMPT,
@@ -72,29 +73,26 @@ async function callProvider(provider: AIProvider, userPrompt: string, maxTokens:
       timeoutMs,
     });
   }
-  const model = process.env.OPENAI_SCRIPT_MODEL || "gpt-5.6-terra";
-  const reasoning = model.startsWith("gpt-5") || model.startsWith("o");
-  const completion = await getOpenAIClient().chat.completions.create(
-    {
-      model,
-      messages: [
-        { role: "system", content: ROOM_SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      ...(reasoning
-        ? { max_completion_tokens: maxTokens * 2, ...(model.startsWith("gpt-5.6") ? { reasoning_effort: "low" as const } : {}) }
-        : { temperature: 0.7, max_tokens: maxTokens }),
-    },
-    { timeout: timeoutMs }
-  );
-  logOpenAiUsage({ stage: "writers_room", model, usage: completion.usage, promptParts: [ROOM_SYSTEM_PROMPT, userPrompt] });
-  return completion.choices[0]?.message?.content ?? "";
+  // GPT-6.1 Sol, same as the storyboard script writer (openai-models.ts).
+  const completion = await createOpenAiChat(getOpenAIClient(), {
+    stage: "writers_room",
+    messages: [
+      { role: "system", content: ROOM_SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.7,
+    maxTokens,
+    responseFormat: { type: "json_object" },
+    timeoutMs,
+  });
+  logOpenAiUsage({ stage: "writers_room", model: completion.model, usage: completion.usage, promptParts: [ROOM_SYSTEM_PROMPT, userPrompt] });
+  return completion.content ?? "";
 }
 
-/** Chosen provider first, then the other configured writers (Claude only when chosen). */
 /** One turn must finish inside the page's 300 s serverless window. */
 const TURN_BUDGET_MS = 280_000;
+
+/** Chosen provider first, then the other configured writers (Claude only when chosen). */
 
 async function roomLLM<T>(provider: AIProvider, userPrompt: string, deadline: number, maxTokens = 12_000): Promise<{ data: T; usedProvider: AIProvider }> {
   const remainingMs = () => deadline - Date.now();
