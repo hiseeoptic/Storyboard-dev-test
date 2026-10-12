@@ -16,15 +16,20 @@ test("every text stage defaults to GPT-6.1 Sol", () => {
   }
 });
 
-test("env overrides: stage variable > OPENAI_TEXT_MODEL > default", () => {
-  assert.equal(openAiModelFor("storyboard", { OPENAI_TEXT_MODEL: "gpt-6-astra" }), "gpt-6-astra");
-  assert.equal(
-    openAiModelFor("storyboard", { OPENAI_TEXT_MODEL: "gpt-6-astra", OPENAI_STORYBOARD_MODEL: "gpt-4.1-mini" }),
-    "gpt-4.1-mini"
-  );
-  assert.equal(openAiModelFor("repair", { OPENAI_STORYBOARD_MODEL: "gpt-4.1" }), "gpt-4.1");
-  assert.equal(openAiModelFor("writers_room", { OPENAI_SCRIPT_MODEL: "gpt-5.6-terra" }), "gpt-5.6-terra");
-  assert.equal(openAiModelFor("context", { OPENAI_CONTEXT_MODEL: "  " }), "gpt-6.1-sol");
+test("old per-stage env variables cannot keep a stage on an old model", () => {
+  const stale = {
+    OPENAI_SCRIPT_MODEL: "gpt-5.6-terra",
+    OPENAI_STORYBOARD_MODEL: "gpt-4.1-mini",
+    OPENAI_STORYBOARD_REWRITE_MODEL: "gpt-4.1-mini",
+    OPENAI_STORYBOARD_REPAIR_MODEL: "gpt-4.1-mini",
+    OPENAI_CONTEXT_MODEL: "gpt-4o-mini",
+    OPENAI_STORYBOARD_CRITIC_MODEL: "gpt-4o-mini",
+  };
+  for (const stage of ["script", "context", "storyboard", "rewrite", "critic", "repair", "writers_room"] as const) {
+    assert.equal(openAiModelFor(stage, stale), "gpt-6.1-sol", stage);
+  }
+  assert.equal(openAiModelFor("storyboard", { ...stale, OPENAI_TEXT_MODEL: "gpt-6-astra" }), "gpt-6-astra");
+  assert.equal(openAiModelFor("context", { OPENAI_TEXT_MODEL: "  " }), "gpt-6.1-sol");
 });
 
 test("Sol gets reasoning parameters, never temperature or max_tokens", () => {

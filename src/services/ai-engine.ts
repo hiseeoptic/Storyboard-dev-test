@@ -940,8 +940,7 @@ export async function generateScript(
         });
       } else {
         // Script writing needs strong character voice and dramatic judgment:
-        // GPT-6.1 Sol at "low" effort (model + parameters: openai-models.ts,
-        // override with OPENAI_SCRIPT_MODEL).
+        // GPT-6.1 Sol at "low" effort (model + parameters: openai-models.ts).
         const completion = await createOpenAiChat(getOpenAIClient(), {
           stage: "script",
           messages: [
@@ -1063,8 +1062,8 @@ export async function generateStoryboardBreakdown(
         const storyboardSystemPrompt = buildActiveStoryboardSystemPrompt(input);
         const storyboardUserPrompt = buildActiveStoryboardUserPrompt(input);
         // This stage decides whether every line and action fits its 10-second
-        // shot, so it runs on GPT-6.1 Sol (openai-models.ts; override with
-        // OPENAI_STORYBOARD_MODEL), with gpt-4.1-mini as the automatic backup.
+        // shot, so it runs on GPT-6.1 Sol (openai-models.ts), with
+        // gpt-4.1-mini as the automatic backup.
         const completion = await createOpenAiChat(getOpenAIClient(), {
           stage: "storyboard",
           messages: [

@@ -12,9 +12,11 @@
 // repeated once on the backup instead of failing the user's generation. The
 // switch is remembered for the life of the server instance.
 //
-// Overrides (Vercel env): OPENAI_TEXT_MODEL changes every stage at once; the
-// per-stage variables (OPENAI_SCRIPT_MODEL, OPENAI_STORYBOARD_MODEL, …) win
-// over it.
+// The model is decided here in code. The old per-stage variables
+// (OPENAI_SCRIPT_MODEL, OPENAI_STORYBOARD_MODEL, OPENAI_CONTEXT_MODEL, …) are
+// deliberately ignored so a value left in the deployment cannot keep a stage
+// on an old model. OPENAI_TEXT_MODEL (new, unset by default) is the only
+// override and changes every stage at once.
 // ============================================================
 import { aiErrorCode, aiErrorMessage, aiErrorStatus } from "./retry-policy.ts";
 
@@ -29,16 +31,6 @@ export type OpenAiTextStage =
   | "repair"
   | "writers_room";
 
-const STAGE_ENV: Record<OpenAiTextStage, string[]> = {
-  script: ["OPENAI_SCRIPT_MODEL"],
-  context: ["OPENAI_CONTEXT_MODEL"],
-  storyboard: ["OPENAI_STORYBOARD_MODEL"],
-  rewrite: ["OPENAI_STORYBOARD_REWRITE_MODEL"],
-  critic: ["OPENAI_STORYBOARD_CRITIC_MODEL"],
-  repair: ["OPENAI_STORYBOARD_REPAIR_MODEL", "OPENAI_STORYBOARD_MODEL"],
-  writers_room: ["OPENAI_WRITERS_ROOM_MODEL", "OPENAI_SCRIPT_MODEL"],
-};
-
 /** What each stage ran on before GPT-6.1 Sol — the automatic backup. */
 export const LEGACY_OPENAI_MODEL: Record<OpenAiTextStage, string> = {
   script: "gpt-5.6-terra",
@@ -52,11 +44,8 @@ export const LEGACY_OPENAI_MODEL: Record<OpenAiTextStage, string> = {
 
 type Env = Record<string, string | undefined>;
 
-export function openAiModelFor(stage: OpenAiTextStage, env: Env = process.env): string {
-  for (const key of STAGE_ENV[stage]) {
-    const value = env[key]?.trim();
-    if (value) return value;
-  }
+// `stage` is kept so a future stage-specific choice stays a one-line change.
+export function openAiModelFor(_stage: OpenAiTextStage, env: Env = process.env): string {
   return env.OPENAI_TEXT_MODEL?.trim() || DEFAULT_OPENAI_TEXT_MODEL;
 }
 
