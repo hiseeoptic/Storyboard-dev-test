@@ -115,7 +115,7 @@ test("ten-second storyboard action is capacity-limited and sequential", () => {
   assert.match(promptSource, /ACTION CAPACITY REPAIR/);
 });
 
-test("the OpenAI script, context and storyboard stages run on GPT-6.1 Sol at low reasoning", () => {
+test("OpenAI: Sol writes the script, Luna builds context and storyboard JSON", () => {
   const engineSource = readFileSync(
     new URL("../../services/ai-engine.ts", import.meta.url),
     "utf8"
@@ -127,8 +127,9 @@ test("the OpenAI script, context and storyboard stages run on GPT-6.1 Sol at low
   for (const stage of ["script", "context", "storyboard"]) {
     assert.match(engineSource, new RegExp(`createOpenAiChat\\(getOpenAIClient\\(\\), \\{\\s*stage: "${stage}"`));
   }
-  assert.match(modelsSource, /DEFAULT_OPENAI_TEXT_MODEL = "gpt-6\.1-sol"/);
-  assert.match(modelsSource, /reasoning_effort: "low"/);
+  assert.match(modelsSource, /script: \{ model: GPT_SOL/);
+  assert.match(modelsSource, /storyboard: \{ model: GPT_LUNA, effort: "none"/);
+  assert.match(modelsSource, /context: \{ model: GPT_LUNA, effort: "none"/);
 });
 
 test("the storyboard plan runs as two requests, each with its own time budget", () => {

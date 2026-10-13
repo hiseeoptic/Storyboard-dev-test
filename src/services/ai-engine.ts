@@ -787,8 +787,8 @@ export async function analyzeVideoContext(
           timeoutMs: boundedTimeoutMs(timing, 45_000, "Gemini context analysis"),
         });
       } else {
-        // GPT-6.1 Sol (see openai-models.ts). Reasoning at "low" still needs
-        // more wall-clock than gpt-4o-mini did, hence 75s instead of 45s.
+        // GPT-6 Luna without reasoning (see openai-models.ts); 75s leaves room
+        // for a large Context IR.
         const completion = await createOpenAiChat(getOpenAIClient(), {
           stage: "context",
           messages: [
@@ -940,7 +940,8 @@ export async function generateScript(
         });
       } else {
         // Script writing needs strong character voice and dramatic judgment:
-        // GPT-6.1 Sol at "low" effort (model + parameters: openai-models.ts).
+        // GPT-6.1 Sol, with GPT-6 Luna taking over when Sol is too slow
+        // (model + parameters: openai-models.ts).
         const completion = await createOpenAiChat(getOpenAIClient(), {
           stage: "script",
           messages: [
@@ -949,9 +950,10 @@ export async function generateScript(
           ],
           temperature: 0.85,
           maxTokens: 4000,
-          // Sol reasons before writing; the script stage now shares its request
-          // only with image analysis and the Context IR (plan phase A).
-          timeoutMs: boundedTimeoutMs(timing, 90_000, "OpenAI script generation"),
+          // GPT-6.1 Sol gets up to ~115s, then GPT-6 Luna the last 45s
+          // (openai-models.ts). The script shares plan phase A only with
+          // image analysis and the Context IR.
+          timeoutMs: boundedTimeoutMs(timing, 160_000, "OpenAI script generation"),
         });
         logOpenAiUsage({
           stage: "script",
@@ -1063,9 +1065,10 @@ export async function generateStoryboardBreakdown(
       } else {
         const storyboardSystemPrompt = buildActiveStoryboardSystemPrompt(input);
         const storyboardUserPrompt = buildActiveStoryboardUserPrompt(input);
-        // This stage decides whether every line and action fits its 10-second
-        // shot, so it runs on GPT-6.1 Sol (openai-models.ts), with
-        // gpt-4.1-mini as the automatic backup.
+        // Long rule-bound JSON that keeps the approved script's lines and
+        // actions verbatim: GPT-6 Luna without reasoning (~120 tok/s) so it
+        // fits the request; gpt-4.1-mini is the automatic backup
+        // (openai-models.ts).
         const completion = await createOpenAiChat(getOpenAIClient(), {
           stage: "storyboard",
           messages: [
@@ -1080,8 +1083,8 @@ export async function generateStoryboardBreakdown(
           // when this path runs as the rescue provider.
           maxTokens: 14000,
           responseFormat: { type: "json_object" },
-          // Plan phase B gives this call its own request: up to 200s for Sol,
-          // leaving ~70s of the 270s budget for the rescue provider.
+          // Plan phase B gives this call its own request: up to 200s, leaving
+          // ~70s of the 270s budget for the rescue provider.
           // boundedTimeoutMs clamps it to whatever budget actually remains.
           timeoutMs: boundedTimeoutMs(timing, 200_000, "OpenAI storyboard generation"),
         });

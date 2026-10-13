@@ -2383,7 +2383,10 @@ function friendlyPlanError(err: unknown): string {
     : /server components render|digest/i.test(raw)
       ? "Máy chủ gặp lỗi tạm thời khi tạo kịch bản (có thể do AI quá tải hoặc ảnh quá lớn). Vui lòng bấm Tạo Storyboard lại sau vài giây."
       : `Tạo kịch bản thất bại: ${raw}`;
-  return friendly;
+  // Name the step that ran out of time so a report pinpoints it.
+  return /time budget|server timeout|timed out|aborted due to timeout/i.test(raw)
+    ? `${friendly} (Chi tiết: ${raw.slice(0, 220)})`
+    : friendly;
 }
 
 // GENERAL TWO-STAGE PIPELINE, run as TWO requests so each gets its own
@@ -2443,8 +2446,8 @@ async function runPlanPrep(
   // (PACING AUDIT + natural dramatic exchanges, without a creative word cap)
   // ONLY runs in this stage — a single storyboard call
   // that also improvises the story produces thin, one-line-per-clip dialogue.
-  // On OpenAI both the script and the storyboard JSON run on GPT-6.1 Sol
-  // (src/lib/ai/openai-models.ts).
+  // On OpenAI the script is written by GPT-6.1 Sol and the storyboard JSON
+  // by GPT-6 Luna (src/lib/ai/openai-models.ts).
   if (!compiledCooking && !sourceScript) {
     // Script fallback chain — NEVER Claude (this deployment has no Anthropic
     // credit): if the chosen writer fails, try the other OpenAI/Gemini writer.
