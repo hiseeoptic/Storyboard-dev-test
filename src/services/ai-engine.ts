@@ -949,7 +949,9 @@ export async function generateScript(
           ],
           temperature: 0.85,
           maxTokens: 4000,
-          timeoutMs: boundedTimeoutMs(timing, 60_000, "OpenAI script generation"),
+          // Sol reasons before writing; the script stage now shares its request
+          // only with image analysis and the Context IR (plan phase A).
+          timeoutMs: boundedTimeoutMs(timing, 90_000, "OpenAI script generation"),
         });
         logOpenAiUsage({
           stage: "script",
@@ -1078,10 +1080,10 @@ export async function generateStoryboardBreakdown(
           // when this path runs as the rescue provider.
           maxTokens: 14000,
           responseFormat: { type: "json_object" },
-          // With the whole pipeline on OpenAI this single call may write the
-          // script AND the full storyboard JSON, so it needs the headroom.
+          // Plan phase B gives this call its own request: up to 200s for Sol,
+          // leaving ~70s of the 270s budget for the rescue provider.
           // boundedTimeoutMs clamps it to whatever budget actually remains.
-          timeoutMs: boundedTimeoutMs(timing, 180_000, "OpenAI storyboard generation"),
+          timeoutMs: boundedTimeoutMs(timing, 200_000, "OpenAI storyboard generation"),
         });
         logOpenAiUsage({
           stage: "storyboard",

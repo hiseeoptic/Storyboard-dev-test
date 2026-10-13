@@ -2313,394 +2313,503 @@ async function runPreRenderLayerC(params: {
   };
 }
 
+/**
+ * Plan phase A output — the paid AI work done before the storyboard JSON
+ * (image analysis, script, locked Context IR). Small, text only.
+ */
+export interface StoryboardPlanPrep {
+  analysis: StoryboardAnalysis;
+  sourceScript: string | null;
+  sourceScriptRevision?: StoryboardGenerationInput["source_script_revision"];
+  resolvedContext: NonNullable<StoryboardGenerationInput["resolved_context"]>;
+  warnings: string[];
+}
+
+/** Server-side input guards shared by both plan phases (deterministic). */
+function normalizePlanInput(input: StoryboardGenerationInput): StoryboardGenerationInput {
+  // Defense in depth: specialist Cooking data is legal only behind the exact
+  // genre router, never merely because a stale goal/state contains cooking.
+  if (input.genre !== "cooking") {
+    input = { ...input, cooking_recipe: undefined, cooking_style: undefined };
+  } else if (["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")) {
+    // Hands/POV ASMR never needs a face identity. Drop face payloads before
+    // Vision so they cannot add latency or lure image generation into showing
+    // a presenter. This is a server-side guarantee, not only a UI convention.
+    input = {
+      ...input,
+      character_images: undefined,
+      character_descriptions: undefined,
+      main_character: undefined,
+    };
+  }
+  // Product shoot without people (product only / hands only): never send face
+  // identities, never write on-camera dialogue — what the user meant as spoken
+  // words becomes an off-screen narrator voice-over (or stays wordless when
+  // both speech channels are off).
+  const shootPresence = resolveInputProductShoot(input)?.presence;
+  if (shootPresence === "product_only" || shootPresence === "hands_only") {
+    const narrate = input.voice_over_enabled === true || input.character_dialogue_enabled !== false;
+    input = {
+      ...input,
+      character_images: undefined,
+      character_descriptions: undefined,
+      main_character: undefined,
+      character_representation: "none",
+      character_dialogue_enabled: false,
+      voice_over_enabled: narrate,
+    };
+  }
+  return input;
+}
+
+function invalidPlanInput(input: StoryboardGenerationInput): string | null {
+  const inputGate = validateStoryboardInput(input);
+  return inputGate.ok
+    ? null
+    : "Dữ liệu đầu vào chưa hợp lệ nên đã dừng trước mọi lời gọi AI.\n" +
+        formatSemanticReport(inputGate);
+}
+
+function friendlyPlanError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : "AI generation failed";
+  // In production Next.js hides the real message behind a generic
+  // "Server Components render" digest — show a clear, actionable message.
+  const friendly = isAiBillingError(err)
+    ? "Tài khoản OpenAI đã hết credit hoặc đã chạm giới hạn chi tiêu. Hệ thống đã dừng ngay tại lời gọi bị từ chối, không retry và không chuyển sang bước AI tiếp theo. Hãy nạp credit hoặc tăng giới hạn Billing/Project rồi thử lại."
+    : /time budget|server timeout/i.test(raw)
+    ? "AI phản hồi quá lâu nên hệ thống đã dừng an toàn trước giới hạn Vercel. JSON và cấu trúc storyboard không bị chuyển sang định dạng khác; vui lòng bấm Tạo Storyboard lại."
+    : /aborted due to timeout|timed out/i.test(raw)
+      ? "Nhà cung cấp AI không trả lời trong thời gian cho phép. Đây không phải lỗi giới hạn 300 giây của Vercel; vui lòng thử lại, hệ thống sẽ tiếp tục giữ nguyên cấu trúc JSON storyboard."
+    : /server components render|digest/i.test(raw)
+      ? "Máy chủ gặp lỗi tạm thời khi tạo kịch bản (có thể do AI quá tải hoặc ảnh quá lớn). Vui lòng bấm Tạo Storyboard lại sau vài giây."
+      : `Tạo kịch bản thất bại: ${raw}`;
+  return friendly;
+}
+
+// GENERAL TWO-STAGE PIPELINE, run as TWO requests so each gets its own
+// Vercel time budget (GPT-6.1 Sol reasons before answering; script + Context
+// IR + storyboard JSON no longer fit one 270 s window):
+//   phase A (prepareStoryboardPlan) — image analysis, creative script,
+//     locked Context IR;
+//   phase B (buildStoryboardPlan) — storyboard JSON + deterministic guards.
+async function runPlanPrep(
+  input: StoryboardGenerationInput,
+  provider: AIProvider,
+  deadlineMs: number,
+  warnings: string[]
+): Promise<StoryboardPlanPrep> {
+  const analysis = await runAnalysis(input, provider, warnings);
+  const enhanced = enhanceInput(input, analysis);
+
+  // GENERAL TWO-STAGE PIPELINE:
+  //   Stage 1 — the SCRIPT (creative text) is written by input.script_provider
+  //     (default Claude Opus 4.8), which is the strongest at Vietnamese
+  //     numerology/health scripts.
+  //   Stage 2 — the technical shot/keyframe plan is built by the main provider
+  //     from either the menu-preserved original or Stage-1 creative revision.
+  //   Images always stay on Nano Banana.
+  // If Stage 1's model is unavailable (e.g. ANTHROPIC_API_KEY not set), we skip
+  // the script and let Stage 2 write directly. If Stage 2 fails but we have a
+  // script, we fall back to building the storyboard with the script model.
+  // Cooking deliberately bypasses the generic creative-script + giant JSON
+  // path. Recipe IR already is the approved script source; the model returns
+  // only a small scene plan and deterministic code compiles compatibility
+  // fields/laws. Other genres keep the established two-stage flow.
+  const compiledCooking =
+    enhanced.genre === "cooking" && !!enhanced.cooking_recipe;
+  const scriptProvider = input.script_provider ?? provider;
+
+  const pastedScript = compiledCooking
+    ? null
+    : approvedScriptFromStoryIdea(enhanced.story_idea);
+  // Backward compatibility: old callers that do not send script_treatment
+  // retain the original zero-cost verbatim path. The app now exposes an
+  // explicit "polish" choice which deliberately runs the scriptwriter once.
+  let sourceScript: string | null =
+    pastedScript && input.script_treatment !== "polish" ? pastedScript : null;
+  let sourceScriptRevision: StoryboardGenerationInput["source_script_revision"] =
+    sourceScript ? "user_verbatim" : undefined;
+  if (sourceScript) {
+    warnings.push(
+      "Đã nhận diện nội dung nhập là kịch bản hoàn chỉnh và dùng trực tiếp; không gọi API viết lại kịch bản."
+    );
+  } else if (pastedScript && input.script_treatment === "polish") {
+    warnings.push(
+      "Đã nhận diện kịch bản hoàn chỉnh và chuyển qua biên tập nâng cấp hook 30 giây, hành động, biểu cảm và lời thoại; giữ nguyên cốt truyện, đạo cụ, quan hệ và thông điệp kết."
+    );
+  }
+  // Always run a dedicated creative SCRIPT stage (except cooking, which uses
+  // its own Recipe-IR path). The script writer's dialogue-density rules
+  // (PACING AUDIT + natural dramatic exchanges, without a creative word cap)
+  // ONLY runs in this stage — a single storyboard call
+  // that also improvises the story produces thin, one-line-per-clip dialogue.
+  // On OpenAI both the script and the storyboard JSON run on GPT-6.1 Sol
+  // (src/lib/ai/openai-models.ts).
+  if (!compiledCooking && !sourceScript) {
+    // Script fallback chain — NEVER Claude (this deployment has no Anthropic
+    // credit): if the chosen writer fails, try the other OpenAI/Gemini writer.
+    const scriptChain: AIProvider[] = [
+      scriptProvider,
+      ...(["openai", "gemini"] as AIProvider[]).filter(
+        (p) => p !== scriptProvider && p !== provider
+      ),
+    ];
+    for (const [chainIndex, sp] of scriptChain.entries()) {
+      if (deadlineMs - Date.now() < MIN_PROVIDER_FALLBACK_BUDGET_MS) break;
+      try {
+        sourceScript = await generateScript(enhanced, sp, {
+          deadlineMs,
+          maxAttempts: chainIndex === 0 ? 2 : 1,
+        });
+        sourceScriptRevision =
+          pastedScript && input.script_treatment === "polish"
+            ? "editorial_revision"
+            : "generated_script";
+        if (chainIndex > 0) {
+          warnings.push(
+            `Kịch bản do ${sp} viết thay vì ${scriptProvider} (model chính không phản hồi).`
+          );
+        }
+        if (pastedScript && input.script_treatment === "polish") {
+          warnings.push(
+            `Đã biên tập kịch bản bằng ${sp}; bản đã biên tập trở thành nguồn thoại/hành động duy nhất cho storyboard.`
+          );
+        }
+        break;
+      } catch (e) {
+        if (shouldAbortAiPipeline(e)) throw e;
+        warnings.push(
+          `Không viết được kịch bản bằng ${sp}. (${e instanceof Error ? e.message : String(e)})`
+        );
+      }
+    }
+    if (!sourceScript) {
+      warnings.push(`${provider} sẽ tự viết kịch bản luôn ở bước dựng storyboard.`);
+    }
+  }
+
+  const stage2Input = sourceScript
+    ? { ...enhanced, source_script: sourceScript, source_script_revision: sourceScriptRevision }
+    : enhanced;
+
+  // Stage 1.5: analyse the approved script/brief into the canonical neutral
+  // 10-layer Context IR. New generation fails closed here: continuing without
+  // location/transition/state authorities would spend more API credit on a
+  // storyboard that cannot pass the export gate.
+  try {
+    const resolvedContext = await analyzeVideoContext(stage2Input, provider, {
+      deadlineMs,
+      maxAttempts: 2,
+    });
+    // Context analysis deliberately returns "resolved". This server boundary
+    // is the single deterministic owner that promotes the reviewed payload to
+    // "locked"; no downstream scene may reopen or reinterpret it.
+    const sanitizedContext = {
+      ...sanitizeUploadedCharacterContext(input, resolvedContext),
+      state: "locked" as const,
+      production_profile: lockGenreProductionProfile(stage2Input),
+    };
+    const contextGate = validateResolvedVideoContext(
+      sanitizedContext,
+      stage2Input
+    );
+    if (!contextGate.ok) {
+      throw new Error(
+        `Context IR không đạt khóa deterministic nên đã dừng trước API tạo storyboard.\n${formatSemanticReport(contextGate)}`
+      );
+    }
+    return { analysis, sourceScript, sourceScriptRevision, resolvedContext: sanitizedContext, warnings };
+  } catch (e) {
+    throw new Error(
+      `Không khóa được Context IR 10 tầng nên đã dừng trước bước tạo storyboard; không gọi API tạo lại hoặc tiếp tục bằng dữ liệu thiếu khóa. (${e instanceof Error ? e.message : String(e)})`
+    );
+  }
+}
+
+async function runPlanBuild(
+  input: StoryboardGenerationInput,
+  provider: AIProvider,
+  prep: StoryboardPlanPrep,
+  deadlineMs: number,
+  warnings: string[]
+): Promise<ActionResult<StoryboardPlan>> {
+  const analysis = prep.analysis;
+  const enhanced = enhanceInput(input, analysis);
+  const compiledCooking =
+    enhanced.genre === "cooking" && !!enhanced.cooking_recipe;
+  const scriptProvider = input.script_provider ?? provider;
+  const sourceScript = prep.sourceScript;
+  const stage2Input = sourceScript
+    ? { ...enhanced, source_script: sourceScript, source_script_revision: prep.sourceScriptRevision }
+    : enhanced;
+  // The locked context travels through the browser between the two requests:
+  // re-apply the server-side sanitising and lock, and re-run the deterministic
+  // gate before any paid storyboard call.
+  const sanitizedContext = {
+    ...sanitizeUploadedCharacterContext(input, prep.resolvedContext),
+    state: "locked" as const,
+    production_profile: lockGenreProductionProfile(stage2Input),
+  };
+  const contextGate = validateResolvedVideoContext(sanitizedContext, stage2Input);
+  if (!contextGate.ok) {
+    throw new Error(
+      `Context IR không đạt khóa deterministic nên đã dừng trước API tạo storyboard.\n${formatSemanticReport(contextGate)}`
+    );
+  }
+  const contextBoundInput: StoryboardGenerationInput = {
+    ...stage2Input,
+    resolved_context: sanitizedContext,
+  };
+
+  let breakdown: StoryboardGenerationOutput;
+  let activeStoryboardProvider = provider;
+  if (compiledCooking) {
+    const compactPlan = await generateCompactCookingScenePlan(
+      contextBoundInput,
+      provider
+    );
+    breakdown = compileCookingStoryboard(contextBoundInput, compactPlan);
+  } else {
+    try {
+      // Stage 2: main provider expands the approved script into storyboard JSON.
+      breakdown = await generateStoryboardBreakdown(contextBoundInput, provider, {
+        deadlineMs,
+      });
+    } catch (e) {
+      if (shouldAbortAiPipeline(e)) throw e;
+      // Stage 2 failed (usually a provider timeout). ALWAYS give it one
+      // bounded rescue attempt on a DIFFERENT provider — retrying the same
+      // stalled provider tends to time out again, while the other one
+      // usually completes. Prefer the script model (it already knows the
+      // story); otherwise flip gemini↔openai.
+      // NEVER fall back to Claude: this deployment has no Anthropic credit and
+      // the text pipeline standardises on OpenAI (with Gemini as the only
+      // alternate). A Claude rescue here is what surfaced the misleading
+      // "credit balance is too low" error even after switching to OpenAI.
+      const fallbackProvider: AIProvider =
+        scriptProvider !== provider && scriptProvider !== "claude"
+          ? scriptProvider
+          : provider === "gemini"
+            ? "openai"
+            : "gemini";
+      const remainingMs = deadlineMs - Date.now();
+      if (remainingMs < MIN_PROVIDER_FALLBACK_BUDGET_MS) {
+        throw new Error(
+          `Storyboard JSON could not be completed within the safe request budget; ` +
+            `stopped before the Vercel server timeout. Please retry storyboard generation.`
+        );
+      }
+      warnings.push(
+        `${provider} không dựng được storyboard — đã tự chuyển sang ${fallbackProvider} dựng tiếp. (${e instanceof Error ? e.message : String(e)})`
+      );
+      breakdown = await generateStoryboardBreakdown(contextBoundInput, fallbackProvider, {
+        deadlineMs,
+        maxAttempts: 1,
+      });
+      activeStoryboardProvider = fallbackProvider;
+    }
+  }
+
+  // Defensive: the model can occasionally return JSON missing whole sections.
+  // Guard so a malformed breakdown returns a clean error instead of throwing
+  // an unhandled exception ("An error occurred in the Server Components render").
+  if (!Array.isArray(breakdown.segments) || breakdown.segments.length === 0) {
+    return { success: false, error: "AI không trả về cảnh nào. Vui lòng thử lại." };
+  }
+  enforceAffiliateDeliveryDuration(input, breakdown);
+  if (!Array.isArray(breakdown.character_locks)) breakdown.character_locks = [];
+
+  // Deterministic post-model guard: menu names/photo groups win over any
+  // invented, omitted or renamed cast returned by the storyboard model.
+  // NON-BLOCKING content normalisation/validation. Each step may find a defect,
+  // but a defect must NEVER abort the whole project — the user always gets the
+  // preview + prompts, and a flawed scene is only flagged (per their request:
+  // "ra bản preview và báo scene nào lỗi, đừng chặn"). Any throw here (character
+  // menu, dialogue clock/wpm, cast, spatial…) becomes a warning via softStep.
+  // TẦNG 9 turn-taking + speaker credit still run first so the export is clean.
+  softStep("Nhân vật / menu", warnings, () => enforceMenuCharacterContract(input, breakdown, analysis));
+  softStep("Làm sạch mô tả nhân vật", warnings, () => sanitizeUploadedCharacterSceneText(input, breakdown));
+  softStep("Chuẩn hoá thoại", warnings, () => normalizeDialogue(breakdown, sourceScript));
+  softStep("Lời dẫn ẩn danh", warnings, () => enforceAnonymousNarrationContract(input, breakdown));
+  softStep("Gắn sản phẩm / trang phục", warnings, () => {
+    for (const note of enforceProductPlacements(input.product_placements, breakdown)) warnings.push(note);
+  });
+  softStep("Chế độ quay sản phẩm", warnings, () => {
+    for (const note of enforceProductShootContract(resolveInputProductShoot(input), breakdown)) warnings.push(note);
+  });
+  softStep("Người nói / camera", warnings, () => bindOnScreenSpeakersToCameraBeats(breakdown));
+  softStep("Nhịp thoại (wpm)", warnings, () => enforceSingleDialogueClock(breakdown));
+  softStep("Cast từng cảnh", warnings, () => enforceSceneCastContract(breakdown));
+  softStep("Continuity notes", warnings, () => sanitizeContinuityNotes(breakdown));
+  softStep("Cooking", warnings, () => enforceCookingContract(input, breakdown));
+  softStep("Bố cục không gian", warnings, () => enforceSpatialTopology(breakdown));
+  softStep("Đồng bộ continuity", warnings, () => synchronizeContinuityContracts(breakdown));
+  softStep("Âm học theo bối cảnh", warnings, () => normalizeSegmentAudioAuthority(breakdown));
+  softStep("Production contracts", warnings, () => normalizeProductionContracts(breakdown));
+
+  const referencedCharacterNames = uploadedCharacterNameSet(input);
+  for (const lock of breakdown.character_locks) {
+    if (referencedCharacterNames.has(lock.name.trim().toLowerCase())) continue;
+    const analyzed = analysis.characterDescriptions[lock.name];
+    if (analyzed) {
+      lock.signature_features = lock.signature_features
+        ? `${lock.signature_features}. From reference: ${analyzed}`
+        : analyzed;
+    }
+  }
+
+  // Neutralise any "replicate the exact real person/face" wording the model
+  // baked into the script — Veo/Flow rejects it as harmful (deepfake) content.
+  // Keeps the editor's action text and the Veo prompts policy-safe.
+  for (const seg of breakdown.segments) {
+    if (seg.motion_prompt) seg.motion_prompt = makeVeoSafe(seg.motion_prompt);
+    if (seg.first_frame_prompt) seg.first_frame_prompt = makeVeoSafe(seg.first_frame_prompt);
+  }
+
+  // PRODUCTION LAWS validation (ported from the GỐC promptValidator): lazy
+  // continuity shorthand ("same as before"…) makes Veo drift — surface it.
+  for (const seg of breakdown.segments) {
+    const violations = findLawViolations(
+      `${seg.motion_prompt ?? ""} ${seg.first_frame_prompt ?? ""}`
+    );
+    if (violations.length > 0) {
+      warnings.push(
+        `Cảnh ${seg.segment_number}: phát hiện cách viết tắt bị cấm (${violations.join(", ")}) — mô tả phải tự chứa đầy đủ, không tham chiếu cảnh trước. Hãy sửa lại cảnh này trong trình chỉnh sửa.`
+      );
+    }
+  }
+
+  // When the user uploaded reference images, the photos are the source of
+  // truth — strip the AI-invented RGB hex colour codes out of the script so
+  // they can't contradict the references (and so the editor stays clean).
+  const hasRefImages =
+    (input.character_images?.length ?? 0) > 0 || (input.product_images?.length ?? 0) > 0;
+  if (hasRefImages) {
+    for (const seg of breakdown.segments) {
+      if (seg.motion_prompt) seg.motion_prompt = stripHexCodes(seg.motion_prompt);
+      if (seg.first_frame_prompt) seg.first_frame_prompt = stripHexCodes(seg.first_frame_prompt);
+    }
+    for (const lock of breakdown.character_locks) {
+      if (lock.dna) lock.dna = stripHexCodes(lock.dna);
+      if (lock.signature_features) lock.signature_features = stripHexCodes(lock.signature_features);
+    }
+    if (breakdown.product_dna) breakdown.product_dna = stripHexCodes(breakdown.product_dna);
+  }
+  // A backdrop photo makes the scene-bible hex redundant too — strip it so the
+  // uploaded location stays the single source of truth.
+  if ((input.background_images?.length ?? 0) > 0 && breakdown.scene_bible) {
+    const sb = breakdown.scene_bible;
+    sb.backdrop = stripHexCodes(sb.backdrop ?? "");
+    sb.color_grade = stripHexCodes(sb.color_grade ?? "");
+    sb.lighting = stripHexCodes(sb.lighting ?? "");
+  }
+
+  // LỚP C — automatic, targeted PRE-RENDER repair. A+B validation itself is
+  // free. Only critical/high segments are sent together in one compact text
+  // repair call per round; clean segments and approved dialogue stay frozen.
+  // This never calls Nano Banana, Veo or any image/video generation endpoint.
+  let preRenderReport: SemanticValidationReport;
+  if (LLM_REPAIR_ENABLED) {
+    const repairResult = await runPreRenderLayerC({
+      input: contextBoundInput,
+      breakdown,
+      analysis,
+      provider: activeStoryboardProvider,
+      deadlineMs,
+      sourceScript,
+    });
+    breakdown = repairResult.breakdown;
+    preRenderReport = repairResult.report;
+    if (repairResult.repairRounds > 0) {
+      const repairedParts = [
+        repairResult.repairedSegmentNumbers.length > 0
+          ? `cảnh ${repairResult.repairedSegmentNumbers.join(", ")}`
+          : "",
+        repairResult.repairedCharacterNames.length > 0
+          ? `khóa nhân vật ${repairResult.repairedCharacterNames.join(", ")}`
+          : "",
+      ].filter(Boolean);
+      warnings.push(
+        `Lớp C đã tự sửa ${repairedParts.join(" và ")} ` +
+          `trong ${repairResult.repairRounds} vòng, được critic xác nhận sạch sau ` +
+          `${repairResult.criticAudits} lượt; không tạo lại cảnh sạch.`
+      );
+    }
+  } else {
+    // FREE deterministic gate only — no LLM critic/repair, so ZERO token burn.
+    preRenderReport = validatePreRenderGates(contextBoundInput, breakdown);
+  }
+  // NON-BLOCKING PREVIEW: never throw here. Any unresolved Critical/High is
+  // carried to the result screen; the separate Export Readiness gate then
+  // locks JSON/PUSH/ZIP until explicit targeted repair confirms a clean state.
+  if (!preRenderReport.ok) flagUnresolvedScenes(preRenderReport, warnings);
+
+  // Prompt assembly is best-effort: if it fails, still return the script so
+  // the user can review/edit it (the prompts get rebuilt on finalize anyway).
+  let videoPrompt = "";
+  try {
+    videoPrompt = assemblePlanPrompts(input, breakdown, analysis, provider);
+  } catch (e) {
+    console.error("[Storyboard] prompt assembly failed:", e);
+    warnings.push("Một số prompt chưa dựng được, sẽ tạo lại khi bạn duyệt kịch bản.");
+  }
+
+  return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
+}
+
+/** Phase A — its own request and time budget. */
+export async function prepareStoryboardPlan(
+  input: StoryboardGenerationInput,
+  provider: AIProvider = "gemini"
+): Promise<ActionResult<StoryboardPlanPrep>> {
+  const warnings: string[] = [];
+  const deadlineMs = Date.now() + PLAN_GENERATION_BUDGET_MS;
+  try {
+    input = normalizePlanInput(input);
+    const invalid = invalidPlanInput(input);
+    if (invalid) return { success: false, error: invalid };
+    return { success: true, data: await runPlanPrep(input, provider, deadlineMs, warnings) };
+  } catch (err) {
+    console.error("[Storyboard] plan preparation failed:", err);
+    return { success: false, error: friendlyPlanError(err) };
+  }
+}
+
+/** Phase B — storyboard JSON from phase A's result, with a fresh time budget. */
+export async function buildStoryboardPlan(
+  input: StoryboardGenerationInput,
+  provider: AIProvider,
+  prep: StoryboardPlanPrep
+): Promise<ActionResult<StoryboardPlan>> {
+  const warnings: string[] = [...(prep.warnings ?? [])];
+  const deadlineMs = Date.now() + PLAN_GENERATION_BUDGET_MS;
+  try {
+    input = normalizePlanInput(input);
+    const invalid = invalidPlanInput(input);
+    if (invalid) return { success: false, error: invalid };
+    return await runPlanBuild(input, provider, prep, deadlineMs, warnings);
+  } catch (err) {
+    console.error("[Storyboard] plan generation failed:", err);
+    return { success: false, error: friendlyPlanError(err) };
+  }
+}
+
+/** Both phases in ONE request (one shared budget) — kept for older callers. */
 export async function generateStoryboardPlan(
   input: StoryboardGenerationInput,
   provider: AIProvider = "gemini"
 ): Promise<ActionResult<StoryboardPlan>> {
   const warnings: string[] = [];
-  const generationDeadlineMs = Date.now() + PLAN_GENERATION_BUDGET_MS;
+  const deadlineMs = Date.now() + PLAN_GENERATION_BUDGET_MS;
   try {
-    // Defense in depth: specialist Cooking data is legal only behind the exact
-    // genre router, never merely because a stale goal/state contains cooking.
-    if (input.genre !== "cooking") {
-      input = { ...input, cooking_recipe: undefined, cooking_style: undefined };
-    } else if (["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")) {
-      // Hands/POV ASMR never needs a face identity. Drop face payloads before
-      // Vision so they cannot add latency or lure image generation into showing
-      // a presenter. This is a server-side guarantee, not only a UI convention.
-      input = {
-        ...input,
-        character_images: undefined,
-        character_descriptions: undefined,
-        main_character: undefined,
-      };
-    }
-    // Product shoot without people (product only / hands only): never send face
-    // identities, never write on-camera dialogue — what the user meant as spoken
-    // words becomes an off-screen narrator voice-over (or stays wordless when
-    // both speech channels are off).
-    const shootPresence = resolveInputProductShoot(input)?.presence;
-    if (shootPresence === "product_only" || shootPresence === "hands_only") {
-      const narrate = input.voice_over_enabled === true || input.character_dialogue_enabled !== false;
-      input = {
-        ...input,
-        character_images: undefined,
-        character_descriptions: undefined,
-        main_character: undefined,
-        character_representation: "none",
-        character_dialogue_enabled: false,
-        voice_over_enabled: narrate,
-      };
-    }
-    const inputGate = validateStoryboardInput(input);
-    if (!inputGate.ok) {
-      return {
-        success: false,
-        error:
-          "Dữ liệu đầu vào chưa hợp lệ nên đã dừng trước mọi lời gọi AI.\n" +
-          formatSemanticReport(inputGate),
-      };
-    }
-    const analysis = await runAnalysis(input, provider, warnings);
-    const enhanced = enhanceInput(input, analysis);
-
-    // GENERAL TWO-STAGE PIPELINE:
-    //   Stage 1 — the SCRIPT (creative text) is written by input.script_provider
-    //     (default Claude Opus 4.8), which is the strongest at Vietnamese
-    //     numerology/health scripts.
-    //   Stage 2 — the technical shot/keyframe plan is built by the main provider
-    //     from either the menu-preserved original or Stage-1 creative revision.
-    //   Images always stay on Nano Banana.
-    // If Stage 1's model is unavailable (e.g. ANTHROPIC_API_KEY not set), we skip
-    // the script and let Stage 2 write directly. If Stage 2 fails but we have a
-    // script, we fall back to building the storyboard with the script model.
-    // Cooking deliberately bypasses the generic creative-script + giant JSON
-    // path. Recipe IR already is the approved script source; the model returns
-    // only a small scene plan and deterministic code compiles compatibility
-    // fields/laws. Other genres keep the established two-stage flow.
-    const compiledCooking =
-      enhanced.genre === "cooking" && !!enhanced.cooking_recipe;
-    const scriptProvider = input.script_provider ?? provider;
-
-    const pastedScript = compiledCooking
-      ? null
-      : approvedScriptFromStoryIdea(enhanced.story_idea);
-    // Backward compatibility: old callers that do not send script_treatment
-    // retain the original zero-cost verbatim path. The app now exposes an
-    // explicit "polish" choice which deliberately runs the scriptwriter once.
-    let sourceScript: string | null =
-      pastedScript && input.script_treatment !== "polish" ? pastedScript : null;
-    let sourceScriptRevision: StoryboardGenerationInput["source_script_revision"] =
-      sourceScript ? "user_verbatim" : undefined;
-    if (sourceScript) {
-      warnings.push(
-        "Đã nhận diện nội dung nhập là kịch bản hoàn chỉnh và dùng trực tiếp; không gọi API viết lại kịch bản."
-      );
-    } else if (pastedScript && input.script_treatment === "polish") {
-      warnings.push(
-        "Đã nhận diện kịch bản hoàn chỉnh và chuyển qua biên tập nâng cấp hook 30 giây, hành động, biểu cảm và lời thoại; giữ nguyên cốt truyện, đạo cụ, quan hệ và thông điệp kết."
-      );
-    }
-    // Always run a dedicated creative SCRIPT stage (except cooking, which uses
-    // its own Recipe-IR path). The script writer's dialogue-density rules
-    // (PACING AUDIT + natural dramatic exchanges, without a creative word cap)
-    // ONLY runs in this stage — a single storyboard call
-    // that also improvises the story produces thin, one-line-per-clip dialogue.
-    // On OpenAI both the script and the storyboard JSON run on GPT-6.1 Sol
-    // (src/lib/ai/openai-models.ts).
-    if (!compiledCooking && !sourceScript) {
-      // Script fallback chain — NEVER Claude (this deployment has no Anthropic
-      // credit): if the chosen writer fails, try the other OpenAI/Gemini writer.
-      const scriptChain: AIProvider[] = [
-        scriptProvider,
-        ...(["openai", "gemini"] as AIProvider[]).filter(
-          (p) => p !== scriptProvider && p !== provider
-        ),
-      ];
-      for (const [chainIndex, sp] of scriptChain.entries()) {
-        if (generationDeadlineMs - Date.now() < MIN_PROVIDER_FALLBACK_BUDGET_MS) break;
-        try {
-          sourceScript = await generateScript(enhanced, sp, {
-            deadlineMs: generationDeadlineMs,
-            maxAttempts: chainIndex === 0 ? 2 : 1,
-          });
-          sourceScriptRevision =
-            pastedScript && input.script_treatment === "polish"
-              ? "editorial_revision"
-              : "generated_script";
-          if (chainIndex > 0) {
-            warnings.push(
-              `Kịch bản do ${sp} viết thay vì ${scriptProvider} (model chính không phản hồi).`
-            );
-          }
-          if (pastedScript && input.script_treatment === "polish") {
-            warnings.push(
-              `Đã biên tập kịch bản bằng ${sp}; bản đã biên tập trở thành nguồn thoại/hành động duy nhất cho storyboard.`
-            );
-          }
-          break;
-        } catch (e) {
-          if (shouldAbortAiPipeline(e)) throw e;
-          warnings.push(
-            `Không viết được kịch bản bằng ${sp}. (${e instanceof Error ? e.message : String(e)})`
-          );
-        }
-      }
-      if (!sourceScript) {
-        warnings.push(`${provider} sẽ tự viết kịch bản luôn ở bước dựng storyboard.`);
-      }
-    }
-
-    const stage2Input = sourceScript
-      ? { ...enhanced, source_script: sourceScript, source_script_revision: sourceScriptRevision }
-      : enhanced;
-
-    // Stage 1.5: analyse the approved script/brief into the canonical neutral
-    // 10-layer Context IR. New generation fails closed here: continuing without
-    // location/transition/state authorities would spend more API credit on a
-    // storyboard that cannot pass the export gate.
-    let contextBoundInput = stage2Input;
-    try {
-      const resolvedContext = await analyzeVideoContext(stage2Input, provider, {
-        deadlineMs: generationDeadlineMs,
-        maxAttempts: 2,
-      });
-      // Context analysis deliberately returns "resolved". This server boundary
-      // is the single deterministic owner that promotes the reviewed payload to
-      // "locked"; no downstream scene may reopen or reinterpret it.
-      const sanitizedContext = {
-        ...sanitizeUploadedCharacterContext(input, resolvedContext),
-        state: "locked" as const,
-        production_profile: lockGenreProductionProfile(stage2Input),
-      };
-      const contextGate = validateResolvedVideoContext(
-        sanitizedContext,
-        stage2Input
-      );
-      if (!contextGate.ok) {
-        throw new Error(
-          `Context IR không đạt khóa deterministic nên đã dừng trước API tạo storyboard.\n${formatSemanticReport(contextGate)}`
-        );
-      }
-      contextBoundInput = {
-        ...stage2Input,
-        resolved_context: sanitizedContext,
-      };
-    } catch (e) {
-      throw new Error(
-        `Không khóa được Context IR 10 tầng nên đã dừng trước bước tạo storyboard; không gọi API tạo lại hoặc tiếp tục bằng dữ liệu thiếu khóa. (${e instanceof Error ? e.message : String(e)})`
-      );
-    }
-
-    let breakdown: StoryboardGenerationOutput;
-    let activeStoryboardProvider = provider;
-    if (compiledCooking) {
-      const compactPlan = await generateCompactCookingScenePlan(
-        contextBoundInput,
-        provider
-      );
-      breakdown = compileCookingStoryboard(contextBoundInput, compactPlan);
-    } else {
-      try {
-        // Stage 2: main provider expands the approved script into storyboard JSON.
-        breakdown = await generateStoryboardBreakdown(contextBoundInput, provider, {
-          deadlineMs: generationDeadlineMs,
-        });
-      } catch (e) {
-        if (shouldAbortAiPipeline(e)) throw e;
-        // Stage 2 failed (usually a provider timeout). ALWAYS give it one
-        // bounded rescue attempt on a DIFFERENT provider — retrying the same
-        // stalled provider tends to time out again, while the other one
-        // usually completes. Prefer the script model (it already knows the
-        // story); otherwise flip gemini↔openai.
-        // NEVER fall back to Claude: this deployment has no Anthropic credit and
-        // the text pipeline standardises on OpenAI (with Gemini as the only
-        // alternate). A Claude rescue here is what surfaced the misleading
-        // "credit balance is too low" error even after switching to OpenAI.
-        const fallbackProvider: AIProvider =
-          scriptProvider !== provider && scriptProvider !== "claude"
-            ? scriptProvider
-            : provider === "gemini"
-              ? "openai"
-              : "gemini";
-        const remainingMs = generationDeadlineMs - Date.now();
-        if (remainingMs < MIN_PROVIDER_FALLBACK_BUDGET_MS) {
-          throw new Error(
-            `Storyboard JSON could not be completed within the safe request budget; ` +
-              `stopped before the Vercel server timeout. Please retry storyboard generation.`
-          );
-        }
-        warnings.push(
-          `${provider} không dựng được storyboard — đã tự chuyển sang ${fallbackProvider} dựng tiếp. (${e instanceof Error ? e.message : String(e)})`
-        );
-        breakdown = await generateStoryboardBreakdown(contextBoundInput, fallbackProvider, {
-          deadlineMs: generationDeadlineMs,
-          maxAttempts: 1,
-        });
-        activeStoryboardProvider = fallbackProvider;
-      }
-    }
-
-    // Defensive: the model can occasionally return JSON missing whole sections.
-    // Guard so a malformed breakdown returns a clean error instead of throwing
-    // an unhandled exception ("An error occurred in the Server Components render").
-    if (!Array.isArray(breakdown.segments) || breakdown.segments.length === 0) {
-      return { success: false, error: "AI không trả về cảnh nào. Vui lòng thử lại." };
-    }
-    enforceAffiliateDeliveryDuration(input, breakdown);
-    if (!Array.isArray(breakdown.character_locks)) breakdown.character_locks = [];
-
-    // Deterministic post-model guard: menu names/photo groups win over any
-    // invented, omitted or renamed cast returned by the storyboard model.
-    // NON-BLOCKING content normalisation/validation. Each step may find a defect,
-    // but a defect must NEVER abort the whole project — the user always gets the
-    // preview + prompts, and a flawed scene is only flagged (per their request:
-    // "ra bản preview và báo scene nào lỗi, đừng chặn"). Any throw here (character
-    // menu, dialogue clock/wpm, cast, spatial…) becomes a warning via softStep.
-    // TẦNG 9 turn-taking + speaker credit still run first so the export is clean.
-    softStep("Nhân vật / menu", warnings, () => enforceMenuCharacterContract(input, breakdown, analysis));
-    softStep("Làm sạch mô tả nhân vật", warnings, () => sanitizeUploadedCharacterSceneText(input, breakdown));
-    softStep("Chuẩn hoá thoại", warnings, () => normalizeDialogue(breakdown, sourceScript));
-    softStep("Lời dẫn ẩn danh", warnings, () => enforceAnonymousNarrationContract(input, breakdown));
-    softStep("Gắn sản phẩm / trang phục", warnings, () => {
-      for (const note of enforceProductPlacements(input.product_placements, breakdown)) warnings.push(note);
-    });
-    softStep("Chế độ quay sản phẩm", warnings, () => {
-      for (const note of enforceProductShootContract(resolveInputProductShoot(input), breakdown)) warnings.push(note);
-    });
-    softStep("Người nói / camera", warnings, () => bindOnScreenSpeakersToCameraBeats(breakdown));
-    softStep("Nhịp thoại (wpm)", warnings, () => enforceSingleDialogueClock(breakdown));
-    softStep("Cast từng cảnh", warnings, () => enforceSceneCastContract(breakdown));
-    softStep("Continuity notes", warnings, () => sanitizeContinuityNotes(breakdown));
-    softStep("Cooking", warnings, () => enforceCookingContract(input, breakdown));
-    softStep("Bố cục không gian", warnings, () => enforceSpatialTopology(breakdown));
-    softStep("Đồng bộ continuity", warnings, () => synchronizeContinuityContracts(breakdown));
-    softStep("Âm học theo bối cảnh", warnings, () => normalizeSegmentAudioAuthority(breakdown));
-    softStep("Production contracts", warnings, () => normalizeProductionContracts(breakdown));
-
-    const referencedCharacterNames = uploadedCharacterNameSet(input);
-    for (const lock of breakdown.character_locks) {
-      if (referencedCharacterNames.has(lock.name.trim().toLowerCase())) continue;
-      const analyzed = analysis.characterDescriptions[lock.name];
-      if (analyzed) {
-        lock.signature_features = lock.signature_features
-          ? `${lock.signature_features}. From reference: ${analyzed}`
-          : analyzed;
-      }
-    }
-
-    // Neutralise any "replicate the exact real person/face" wording the model
-    // baked into the script — Veo/Flow rejects it as harmful (deepfake) content.
-    // Keeps the editor's action text and the Veo prompts policy-safe.
-    for (const seg of breakdown.segments) {
-      if (seg.motion_prompt) seg.motion_prompt = makeVeoSafe(seg.motion_prompt);
-      if (seg.first_frame_prompt) seg.first_frame_prompt = makeVeoSafe(seg.first_frame_prompt);
-    }
-
-    // PRODUCTION LAWS validation (ported from the GỐC promptValidator): lazy
-    // continuity shorthand ("same as before"…) makes Veo drift — surface it.
-    for (const seg of breakdown.segments) {
-      const violations = findLawViolations(
-        `${seg.motion_prompt ?? ""} ${seg.first_frame_prompt ?? ""}`
-      );
-      if (violations.length > 0) {
-        warnings.push(
-          `Cảnh ${seg.segment_number}: phát hiện cách viết tắt bị cấm (${violations.join(", ")}) — mô tả phải tự chứa đầy đủ, không tham chiếu cảnh trước. Hãy sửa lại cảnh này trong trình chỉnh sửa.`
-        );
-      }
-    }
-
-    // When the user uploaded reference images, the photos are the source of
-    // truth — strip the AI-invented RGB hex colour codes out of the script so
-    // they can't contradict the references (and so the editor stays clean).
-    const hasRefImages =
-      (input.character_images?.length ?? 0) > 0 || (input.product_images?.length ?? 0) > 0;
-    if (hasRefImages) {
-      for (const seg of breakdown.segments) {
-        if (seg.motion_prompt) seg.motion_prompt = stripHexCodes(seg.motion_prompt);
-        if (seg.first_frame_prompt) seg.first_frame_prompt = stripHexCodes(seg.first_frame_prompt);
-      }
-      for (const lock of breakdown.character_locks) {
-        if (lock.dna) lock.dna = stripHexCodes(lock.dna);
-        if (lock.signature_features) lock.signature_features = stripHexCodes(lock.signature_features);
-      }
-      if (breakdown.product_dna) breakdown.product_dna = stripHexCodes(breakdown.product_dna);
-    }
-    // A backdrop photo makes the scene-bible hex redundant too — strip it so the
-    // uploaded location stays the single source of truth.
-    if ((input.background_images?.length ?? 0) > 0 && breakdown.scene_bible) {
-      const sb = breakdown.scene_bible;
-      sb.backdrop = stripHexCodes(sb.backdrop ?? "");
-      sb.color_grade = stripHexCodes(sb.color_grade ?? "");
-      sb.lighting = stripHexCodes(sb.lighting ?? "");
-    }
-
-    // LỚP C — automatic, targeted PRE-RENDER repair. A+B validation itself is
-    // free. Only critical/high segments are sent together in one compact text
-    // repair call per round; clean segments and approved dialogue stay frozen.
-    // This never calls Nano Banana, Veo or any image/video generation endpoint.
-    let preRenderReport: SemanticValidationReport;
-    if (LLM_REPAIR_ENABLED) {
-      const repairResult = await runPreRenderLayerC({
-        input: contextBoundInput,
-        breakdown,
-        analysis,
-        provider: activeStoryboardProvider,
-        deadlineMs: generationDeadlineMs,
-        sourceScript,
-      });
-      breakdown = repairResult.breakdown;
-      preRenderReport = repairResult.report;
-      if (repairResult.repairRounds > 0) {
-        const repairedParts = [
-          repairResult.repairedSegmentNumbers.length > 0
-            ? `cảnh ${repairResult.repairedSegmentNumbers.join(", ")}`
-            : "",
-          repairResult.repairedCharacterNames.length > 0
-            ? `khóa nhân vật ${repairResult.repairedCharacterNames.join(", ")}`
-            : "",
-        ].filter(Boolean);
-        warnings.push(
-          `Lớp C đã tự sửa ${repairedParts.join(" và ")} ` +
-            `trong ${repairResult.repairRounds} vòng, được critic xác nhận sạch sau ` +
-            `${repairResult.criticAudits} lượt; không tạo lại cảnh sạch.`
-        );
-      }
-    } else {
-      // FREE deterministic gate only — no LLM critic/repair, so ZERO token burn.
-      preRenderReport = validatePreRenderGates(contextBoundInput, breakdown);
-    }
-    // NON-BLOCKING PREVIEW: never throw here. Any unresolved Critical/High is
-    // carried to the result screen; the separate Export Readiness gate then
-    // locks JSON/PUSH/ZIP until explicit targeted repair confirms a clean state.
-    if (!preRenderReport.ok) flagUnresolvedScenes(preRenderReport, warnings);
-
-    // Prompt assembly is best-effort: if it fails, still return the script so
-    // the user can review/edit it (the prompts get rebuilt on finalize anyway).
-    let videoPrompt = "";
-    try {
-      videoPrompt = assemblePlanPrompts(input, breakdown, analysis, provider);
-    } catch (e) {
-      console.error("[Storyboard] prompt assembly failed:", e);
-      warnings.push("Một số prompt chưa dựng được, sẽ tạo lại khi bạn duyệt kịch bản.");
-    }
-
-    return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
+    input = normalizePlanInput(input);
+    const invalid = invalidPlanInput(input);
+    if (invalid) return { success: false, error: invalid };
+    const prep = await runPlanPrep(input, provider, deadlineMs, warnings);
+    return await runPlanBuild(input, provider, prep, deadlineMs, warnings);
   } catch (err) {
     console.error("[Storyboard] plan generation failed:", err);
-    const raw = err instanceof Error ? err.message : "AI generation failed";
-    // In production Next.js hides the real message behind a generic
-    // "Server Components render" digest — show a clear, actionable message.
-    const friendly = isAiBillingError(err)
-      ? "Tài khoản OpenAI đã hết credit hoặc đã chạm giới hạn chi tiêu. Hệ thống đã dừng ngay tại lời gọi bị từ chối, không retry và không chuyển sang bước AI tiếp theo. Hãy nạp credit hoặc tăng giới hạn Billing/Project rồi thử lại."
-      : /time budget|server timeout/i.test(raw)
-      ? "AI phản hồi quá lâu nên hệ thống đã dừng an toàn trước giới hạn Vercel. JSON và cấu trúc storyboard không bị chuyển sang định dạng khác; vui lòng bấm Tạo Storyboard lại."
-      : /aborted due to timeout|timed out/i.test(raw)
-        ? "Nhà cung cấp AI không trả lời trong thời gian cho phép. Đây không phải lỗi giới hạn 300 giây của Vercel; vui lòng thử lại, hệ thống sẽ tiếp tục giữ nguyên cấu trúc JSON storyboard."
-      : /server components render|digest/i.test(raw)
-        ? "Máy chủ gặp lỗi tạm thời khi tạo kịch bản (có thể do AI quá tải hoặc ảnh quá lớn). Vui lòng bấm Tạo Storyboard lại sau vài giây."
-        : `Tạo kịch bản thất bại: ${raw}`;
-    return { success: false, error: friendly };
+    return { success: false, error: friendlyPlanError(err) };
   }
 }
 

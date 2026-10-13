@@ -38,7 +38,9 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploader";
 import {
-  generateStoryboardPlan,
+  prepareStoryboardPlan,
+  buildStoryboardPlan,
+  type StoryboardPlanPrep,
   analyzeAffiliateProduct,
   analyzeCookingRecipe,
   generateBoardImage,
@@ -1362,6 +1364,9 @@ function ProjectWorkspace() {
   // Browser-page-only cache: identical inputs reuse the finished text plan
   // instead of paying for the script + Context IR + storyboard calls again.
   const planCacheRef = useRef(new StoryboardPlanCache<CachedStoryboardPlan>(3));
+  // Phase-A results (script + locked context) by the same fingerprint, so a
+  // retry after a failed storyboard step does not pay for them again.
+  const planPrepCacheRef = useRef(new StoryboardPlanCache<StoryboardPlanPrep>(3));
   // Per-scene AI rewrite in the script editor (index being rewritten, or null).
   const [rewriteTarget, setRewriteTarget] = useState<number | null>(null);
 
@@ -2478,9 +2483,30 @@ function ProjectWorkspace() {
     setProgressMessage(L("creatingScenes"));
 
     try {
-      // Phase 1: script + ready-to-paste prompts (fast, tiny payload).
-      const plan = await generateStoryboardPlan(input, provider);
+      // The plan runs as two requests, each with its own server time budget:
+      // A = image analysis + script + locked context, B = storyboard JSON.
+      let prep = planPrepCacheRef.current.get(planFingerprint);
+      if (!prep) {
+        const prepared = await prepareStoryboardPlan(input, provider);
+        if (!prepared.success) {
+          setError(prepared.error);
+          setPhase("input");
+          return;
+        }
+        prep = prepared.data;
+        planPrepCacheRef.current.set(planFingerprint, structuredClone(prep));
+      }
+      setProgressPercent(45);
+      setProgressMessage(
+        lang === "vi"
+          ? "Đã có kịch bản — đang dựng storyboard từng cảnh 10 giây…"
+          : "Script ready — building the 10-second storyboard…"
+      );
+      const plan = await buildStoryboardPlan(input, provider, structuredClone(prep));
       if (!plan.success) {
+        // Keep the script/context for a retry only when the storyboard call ran
+        // out of time; any other failure starts the next attempt from scratch.
+        if (!/quá lâu|không trả lời|time/i.test(plan.error)) planPrepCacheRef.current.delete(planFingerprint);
         setError(plan.error);
         setPhase("input");
         return;

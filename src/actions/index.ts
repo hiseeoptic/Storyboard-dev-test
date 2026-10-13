@@ -4,6 +4,8 @@ export {
 } from "./studio";
 export {
   generateStoryboardPlan,
+  prepareStoryboardPlan,
+  buildStoryboardPlan,
   generateBoardImage,
   finalizeScript,
   repairExportFindings,
@@ -12,6 +14,7 @@ export {
   type StoryboardResult,
   type StoryboardAnalysis,
   type StoryboardPlan,
+  type StoryboardPlanPrep,
   type ExportRepairResult,
 } from "./storyboard";
 export { analyzeVideoFrames, type VideoAnalysisResult } from "./analyze-video";

@@ -130,3 +130,26 @@ test("the OpenAI script, context and storyboard stages run on GPT-6.1 Sol at low
   assert.match(modelsSource, /DEFAULT_OPENAI_TEXT_MODEL = "gpt-6\.1-sol"/);
   assert.match(modelsSource, /reasoning_effort: "low"/);
 });
+
+test("the storyboard plan runs as two requests, each with its own time budget", () => {
+  const actionSource = readFileSync(
+    new URL("../../actions/storyboard.ts", import.meta.url),
+    "utf8"
+  );
+  const clientSource = readFileSync(
+    new URL("../../app/(dashboard)/generate/generate-client.tsx", import.meta.url),
+    "utf8"
+  );
+  for (const name of ["prepareStoryboardPlan", "buildStoryboardPlan"]) {
+    const body = actionSource.slice(actionSource.indexOf(`export async function ${name}(`));
+    assert.match(body.slice(0, 600), /Date\.now\(\) \+ PLAN_GENERATION_BUDGET_MS/, name);
+  }
+  // Phase B never trusts the context that travelled through the browser.
+  const build = actionSource.slice(actionSource.indexOf("async function runPlanBuild("));
+  assert.ok(
+    build.indexOf("validateResolvedVideoContext(") < build.indexOf("generateStoryboardBreakdown("),
+    "context gate runs before the storyboard call"
+  );
+  assert.ok(clientSource.indexOf("prepareStoryboardPlan(input, provider)") < clientSource.indexOf("buildStoryboardPlan(input, provider"));
+  assert.doesNotMatch(clientSource, /await generateStoryboardPlan\(/);
+});
