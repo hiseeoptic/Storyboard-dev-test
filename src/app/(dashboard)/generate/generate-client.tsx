@@ -1820,6 +1820,21 @@ function ProjectWorkspace() {
   const explicitStylizedRepresentation = isStylizedCharacterRepresentation(
     characterRepresentation
   );
+  // A stylised character look and real identity photos cannot both apply
+  // (server input gate INPUT-008): the photos lock an exact real face, the
+  // style asks for an invented drawn/3D character. Let the user pick one.
+  const representationConflict = explicitStylizedRepresentation && hasCharacterUploads;
+  const resolveConflictWithPhotos = () => {
+    setCharacterRepresentation("uploaded_photoreal");
+    if (["anime", "comic", "watercolor", "pencil_sketch", "3d_render", "pixel_art"].includes(style)) setStyle("cinematic");
+    setError(null);
+  };
+  const resolveConflictWithStyle = () => {
+    setCharacters((prev) => prev.map((c) => ({ ...c, images: [], hasRealPhoto: false })));
+    setCharImages([]);
+    setCharHasRealPhoto(false);
+    setError(null);
+  };
   const effectiveCharacterRepresentation: CharacterRepresentation =
     explicitStylizedRepresentation
       ? characterRepresentation
@@ -2052,6 +2067,12 @@ function ProjectWorkspace() {
   // ─── Generate ────────────────────────────────────────────────────
 
   const handleGenerate = async () => {
+    if (representationConflict) {
+      setError(lang === "vi"
+        ? "Nhân vật đang chọn kiểu cách điệu (3D / hoạt hình) nhưng lại có ảnh người thật — hãy chọn một trong hai cách ở khung vàng phía trên."
+        : "A stylized character look is selected but real character photos are attached — pick one option in the yellow box above.");
+      return;
+    }
     if (isAffiliateMode && productIR?.review_status !== "approved") {
       setError(lang === "vi"
         ? "Hãy phân tích ảnh sản phẩm, kiểm tra công dụng/claim rồi tích xác nhận Product IR trước khi dựng."
@@ -6646,6 +6667,30 @@ function ProjectWorkspace() {
                 )}
               </div>
             </>
+          )}
+
+          {/* ── Stylised look vs real photos ─────────────────────── */}
+          {representationConflict && (
+            <div className="space-y-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+              <p className="font-medium">
+                {lang === "vi"
+                  ? `Bạn chọn "${creativeOptionLabel(CREATIVE_CHARACTER_OPTIONS, characterRepresentation, lang)}" nhưng nhân vật lại có ảnh người thật.`
+                  : `"${creativeOptionLabel(CREATIVE_CHARACTER_OPTIONS, characterRepresentation, lang)}" is selected but the characters have real photos.`}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {lang === "vi"
+                  ? "Ảnh thật khoá đúng khuôn mặt người thật, còn kiểu cách điệu là nhân vật vẽ / 3D do AI thiết kế — hai thứ này không dùng cùng lúc được. Chọn một:"
+                  : "Real photos lock an exact real face; a stylized look is an AI-designed drawn/3D character. Pick one:"}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={resolveConflictWithPhotos}>
+                  {lang === "vi" ? "Dùng ảnh thật (nhân vật người thật)" : "Use the photos (real people)"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={resolveConflictWithStyle}>
+                  {lang === "vi" ? "Giữ kiểu cách điệu, bỏ ảnh thật" : "Keep the stylized look, drop the photos"}
+                </Button>
+              </div>
+            </div>
           )}
 
           {/* ── Error ────────────────────────────────────────────── */}

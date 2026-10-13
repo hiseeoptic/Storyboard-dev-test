@@ -145,7 +145,7 @@ export function validateStoryboardInput(
       severity: "high",
       scope: "project",
       message:
-        "Stylized character representation conflicts with real character-photo identity authority.",
+        "Nhân vật kiểu cách điệu (3D / hoạt hình) không dùng chung được với ảnh người thật: chọn \"Người thật từ ảnh tải lên\" hoặc bỏ ảnh thật để giữ kiểu cách điệu. (Stylized character representation conflicts with real character-photo identity authority.)",
       evidence: `character_representation=${input.character_representation}`,
     });
   }
