@@ -89,8 +89,17 @@ export function fillLineClock(shot: ScriptShot): ScriptShot {
   return { ...shot, dialogue, voice_over: voiceOver };
 }
 
+/** Below this a shot of a speaking plan sounds empty (≈ 3 s of speech). */
+export const MIN_SHOT_WORDS = 8;
+
+export interface ScriptRuleOptions {
+  /** false when the chosen plan is wordless (no dialogue, no narrator). */
+  speech?: boolean;
+}
+
 /** Deterministic findings for the whole script. */
-export function checkScriptRules(script: RoomScript): EvaluationIssue[] {
+export function checkScriptRules(script: RoomScript, opts: ScriptRuleOptions = {}): EvaluationIssue[] {
+  const speech = opts.speech !== false;
   const issues: EvaluationIssue[] = [];
   const cast = new Set((script.characters ?? []).map((c) => c.name.trim().toLowerCase()));
   if (!script.shots?.length) {
@@ -111,6 +120,21 @@ export function checkScriptRules(script: RoomScript): EvaluationIssue[] {
         shot: shot.n, severity: "warning", source: "rules",
         message: `Shot ${shot.n}: lời nói hơi dày (${total} chữ ~${cap.speechSeconds}s), ít chỗ cho hành động.`,
         fix: `Shot ${shot.n}: tighten the spoken words to about ${Math.max(6, cap.comfortableWords - 4)} Vietnamese words so the action can breathe.`,
+      });
+    }
+    // A speaking plan needs words in every shot; shot 1 is covered by the
+    // spoken-hook check below.
+    if (speech && shot.n !== 1 && total === 0) {
+      issues.push({
+        shot: shot.n, severity: shot.n === 2 ? "error" : "warning", source: "rules", code: "no_speech",
+        message: `Shot ${shot.n}: không có câu thoại / lời dẫn nào — ${shot.n === 2 ? "đoạn mở đầu im lặng làm người xem lướt qua" : "khán giả dễ mất mạch truyện"}.`,
+        fix: `Shot ${shot.n}: add 10–16 Vietnamese words of speech that play over the action (a line between the characters on screen, or narrator voice-over) and move the story forward; keep the action.`,
+      });
+    } else if (speech && total > 0 && total < MIN_SHOT_WORDS) {
+      issues.push({
+        shot: shot.n, severity: "warning", source: "rules", code: "thin_speech",
+        message: `Shot ${shot.n}: chỉ ${total} chữ lời nói — clip 10 giây còn trống nhiều, nên có 10–20 chữ.`,
+        fix: `Shot ${shot.n}: expand the speech to about 10–16 Vietnamese words (an answer, a reaction or a narrator line) without changing the action.`,
       });
     }
     const actions = actionCount(shot.action);
@@ -138,6 +162,20 @@ export function checkScriptRules(script: RoomScript): EvaluationIssue[] {
     }
   }
   const first = script.shots[0]!;
+  if (speech) {
+    const timed = fillLineClock(first);
+    const lines = [...(timed.dialogue ?? []), ...(timed.voice_over?.text ? [timed.voice_over] : [])];
+    const opensWithSpeech = lines.some((l) => (l.start_s ?? 0) <= 1 && wordCount(l.text) >= 3);
+    if (!opensWithSpeech) {
+      issues.push({
+        shot: first.n, severity: "error", source: "rules", code: "no_hook_line",
+        message: lines.length
+          ? "Shot 1: câu nói đầu tiên vào muộn — 3 giây đầu cần một câu hook để giữ chân người xem."
+          : "Shot 1: không có câu nói nào — 3 giây đầu cần một câu hook để giữ chân người xem.",
+        fix: "Shot 1: open with a spoken hook line of 6–12 Vietnamese words starting at 0–0.5 s (a question, a conflict line or a surprising statement), said over the opening visual; keep the rest of the shot.",
+      });
+    }
+  }
   if (wordCount(first.action) < 4) {
     issues.push({ shot: first.n, severity: "warning", source: "rules", message: "Shot 1 chưa có hook hình ảnh rõ trong 3 giây đầu.", fix: "Shot 1: open on a striking visual hook within the first 3 seconds." });
   }

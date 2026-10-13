@@ -5,7 +5,7 @@
 // one Omni Flash clip with ONE continuous action and a spoken-word budget the
 // clip can actually carry.
 // ============================================================
-import type { BookAnalysis, Faithfulness, PlanOption, RoomScript, RoomState } from "./types.ts";
+import type { BookAnalysis, Faithfulness, PlanOption, RoomScript, RoomState, ShotLine } from "./types.ts";
 
 export const ROOM_GENRES = [
   "drama", "comedy", "sitcom", "romance", "action", "thriller", "horror", "fantasy", "historical",
@@ -28,11 +28,12 @@ const FAITHFULNESS_RULE: Record<Faithfulness, string> = {
 
 const SHOT_CONTRACT = `SHOT CONTRACT (each shot = ONE 10-second Omni Flash / Veo clip, the clip cannot cut):
 - "action": ONE continuous physical action that fits 10 seconds (what the camera sees), specific body-part + verb + object; never a list of separate actions.
-- Spoken words per shot: comfortably ≤ 20 Vietnamese words in total (dialogue ≈ 0.4 s/word, narrator ≈ 0.47 s/word), never more than 28. Give each line start_s/end_s inside 0–10 with no overlap and leave ~1.5 s for the action to read.
+- SPEECH IN EVERY SHOT (unless the plan is wordless): 10–20 spoken Vietnamese words per shot — dialogue and/or narrator voice-over, ≈ 4–8 s of speech (dialogue ≈ 0.4 s/word, narrator ≈ 0.47 s/word), never more than 28 words. Speech plays OVER the action at the same time; never leave a shot silent "so the action can breathe" — a shot without speech loses the viewer and is a script error.
+- Clock: every line has start_s/end_s inside 0–10, lines do not overlap, and the last line ends by ~9 s.
 - "characters": every person visible in the shot; a speaker who is not visible speaks off-screen.
 - Voice-over goes in "voice_over" ({"speaker":"Lời dẫn","text":...}); character lines go in "dialogue".
 - "camera": one framing + one move that suits the action (e.g. "[CLOSE] slow push-in").
-- Shot 1 opens on a striking visual hook within 3 seconds; every shot advances the story; the last shot lands the message / ending.
+- HOOK: the first 3 seconds decide whether people keep watching. Shot 1's first spoken line starts at 0–0.5 s and hooks (a question, a conflict, a surprising claim or a promise), said over a striking opening visual; shot 2 keeps the tension with speech too. Every shot advances the story; the last shot lands the message / ending.
 - Spoken text is natural Vietnamese; everything else (action, camera, location) is concise Vietnamese too.`;
 
 const SCRIPT_JSON = `{"title":"…","logline":"…","characters":[{"name":"…","age":"…","gender":"…","appearance":"…","personality":"…","role":"…","wardrobe":"…"}],"shots":[{"n":1,"duration_s":10,"location":"…","characters":["…"],"action":"…","dialogue":[{"speaker":"…","text":"…","start_s":0.5,"end_s":3.5}],"voice_over":{"speaker":"Lời dẫn","text":"…","start_s":4,"end_s":8} ,"camera":"…","transition":"…","pages":[1]}]}`;
@@ -63,6 +64,29 @@ Return JSON:
 Plans must differ in format or tone (e.g. dramatised adaptation vs. visual explainer vs. kids animation vs. review). shot_count is the number of 10-second shots (4–12 for one episode); if the material needs more than ~12 shots, set "episodes" > 1 and describe the split.`;
 }
 
+/** What the chosen plan allows the characters / narrator to say. */
+export function speechModeLine(option?: Pick<PlanOption, "dialogue" | "voice_over">): string {
+  if (!option) return "SPEECH: dialogue and/or narrator voice-over in every shot.";
+  if (option.dialogue && option.voice_over) {
+    return "SPEECH: characters talk on screen in every shot where they appear; the narrator voice-over carries the shots where nobody talks and may deliver the opening hook.";
+  }
+  if (option.dialogue) {
+    return "SPEECH: on-screen dialogue only (no narrator). Every shot needs at least one line — give a character a line, or let one speak from off screen.";
+  }
+  if (option.voice_over) {
+    return "SPEECH: narrator voice-over only (no on-screen dialogue). Every shot carries narration; put it in \"voice_over\".";
+  }
+  return "SPEECH: this plan is WORDLESS — no dialogue and no narrator; leave \"dialogue\" empty and \"voice_over\" null; music and sound carry the story.";
+}
+
+/** Whether the chosen plan has any spoken words at all. */
+export const planHasSpeech = (state: RoomState) => {
+  const option = state.options?.find((o) => o.id === state.chosenOptionId);
+  return option ? option.dialogue || option.voice_over : true;
+};
+
+const chosenOption = (state: RoomState) => state.options?.find((o) => o.id === state.chosenOptionId);
+
 /** How much of the book the script writer sees: all of it when faithful, the key passages when condensing. */
 const SOURCE_CHARS: Record<Faithfulness, number> = { faithful: 40_000, condensed: 20_000, reimagined: 6_000 };
 
@@ -73,7 +97,8 @@ CHOSEN PLAN: ${JSON.stringify(option)}
 ANALYSIS: ${compactAnalysis(state.analysis)}
 ${pagesBlock(state, SOURCE_CHARS[state.faithfulness])}
 ${SHOT_CONTRACT}
-Write exactly ${Math.max(1, option.shot_count)} shots${option.episodes > 1 ? " for EPISODE 1 only" : ""}. ${option.dialogue ? "Characters speak on screen." : "No on-screen dialogue."} ${option.voice_over ? "A narrator voice-over is allowed." : "No narrator."}
+Write exactly ${Math.max(1, option.shot_count)} shots${option.episodes > 1 ? " for EPISODE 1 only" : ""}.
+${speechModeLine(option)}
 ${extra}
 Return JSON: {"script":${SCRIPT_JSON},"reply":"1-2 câu tiếng Việt giới thiệu kịch bản"}`;
 }
@@ -85,6 +110,7 @@ ANALYSIS: ${compactAnalysis(state.analysis)}
 CURRENT SCRIPT: ${JSON.stringify(state.script)}
 INSTRUCTION: ${instruction}
 ${SHOT_CONTRACT}
+${speechModeLine(chosenOption(state))}
 Return JSON: {"script":${SCRIPT_JSON},"reply":"1-2 câu tiếng Việt nói đã sửa gì"}`;
 }
 
@@ -95,7 +121,7 @@ ANALYSIS: ${compactAnalysis(state.analysis)}
 CURRENT SCRIPT: ${JSON.stringify(state.script)}
 AUTOMATIC 10-SECOND CHECKS ALREADY FOUND:
 ${rulesFindings || "none"}
-Score 0–10: hook (first 3 s), story (clear arc, every shot advances), dialogue (natural Vietnamese, character voice), action_fit (one filmable continuous action per 10 s clip), character (consistent look/role), faithfulness (to the source at the chosen level). Then list the most important problems the automatic checks did not already cover, each with a concrete fix instruction, and 3–5 one-click improvement options.
+Score 0–10: hook (first 3 s: a spoken hook line from 0–0.5 s AND a striking visual), story (clear arc, every shot advances), dialogue (every shot carries natural Vietnamese speech in the character's voice; silent shots score low), action_fit (one filmable continuous action per 10 s clip), character (consistent look/role), faithfulness (to the source at the chosen level). Then list the most important problems the automatic checks did not already cover, each with a concrete fix instruction, and 3–5 one-click improvement options.
 Return JSON: {"scores":{"hook":0,"story":0,"dialogue":0,"action_fit":0,"character":0,"faithfulness":0},"summary":"2-3 câu tiếng Việt","issues":[{"shot":2,"severity":"error|warning|info","message":"tiếng Việt","fix":"English instruction for the writer"}],"options":[{"label":"nhãn nút tiếng Việt ngắn","instruction":"English instruction for the writer"}]}`;
 }
 
@@ -109,7 +135,7 @@ CURRENT SCRIPT: ${state.script ? JSON.stringify(state.script) : "chưa có"}
 RECENT CONVERSATION:
 ${recent || "(trống)"}
 USER: ${message}
-${state.script ? SHOT_CONTRACT : ""}
+${state.script ? `${SHOT_CONTRACT}\n${speechModeLine(chosenOption(state))}` : ""}
 Return JSON: {"reply":"tiếng Việt","script":${state.script ? `null or ${SCRIPT_JSON}` : "null"}}`;
 }
 
@@ -131,6 +157,42 @@ export function parseRoomJson<T>(raw: string): T {
 }
 
 /** Normalise a script returned by the model (numbers, arrays, names). */
+type RawLine = Record<string, unknown> | string | null | undefined;
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() && Number.isFinite(Number(v)) ? Number(v) : undefined);
+
+/** A spoken line in any of the shapes models return ({speaker,text}, {character,line}, "Lan: …"). */
+function toLine(raw: RawLine): ShotLine | null {
+  if (!raw) return null;
+  if (typeof raw === "string") {
+    const m = raw.match(/^\s*([^:：]{1,40})[:：]\s*(.+)$/u);
+    const text = (m ? m[2]! : raw).trim().replace(/^["“]|["”]$/gu, "");
+    return text ? { speaker: m ? m[1]!.trim() : "", text } : null;
+  }
+  const text = String(raw.text ?? raw.line ?? raw.content ?? raw.dialogue ?? "").trim();
+  if (!text) return null;
+  const start = num(raw.start_s ?? raw.start);
+  const end = num(raw.end_s ?? raw.end);
+  return {
+    speaker: String(raw.speaker ?? raw.character ?? raw.name ?? raw.who ?? "").trim(),
+    text,
+    ...(start !== undefined ? { start_s: start } : {}),
+    ...(end !== undefined ? { end_s: end } : {}),
+  };
+}
+
+function toVoiceOver(raw: unknown): ShotLine | null {
+  const parts = (Array.isArray(raw) ? raw : [raw]).map((r) => toLine(r as RawLine)).filter((l): l is ShotLine => !!l);
+  if (!parts.length) return null;
+  const first = parts[0]!;
+  const last = parts[parts.length - 1]!;
+  return {
+    speaker: first.speaker || "Lời dẫn",
+    text: parts.map((l) => l.text).join(" "),
+    ...(first.start_s !== undefined ? { start_s: first.start_s } : {}),
+    ...(last.end_s !== undefined ? { end_s: last.end_s } : {}),
+  };
+}
+
 export function normalizeScript(raw: unknown): RoomScript | null {
   const r = (raw ?? null) as Partial<RoomScript> | null;
   if (!r || !Array.isArray(r.shots) || !r.shots.length) return null;
@@ -148,16 +210,8 @@ export function normalizeScript(raw: unknown): RoomScript | null {
       location: str(s?.location),
       characters: (Array.isArray(s?.characters) ? s.characters : []).map(str).filter(Boolean),
       action: str(s?.action),
-      dialogue: (Array.isArray(s?.dialogue) ? s.dialogue : []).filter((l) => str(l?.text)).map((l) => ({
-        speaker: str(l.speaker), text: str(l.text),
-        ...(typeof l.start_s === "number" ? { start_s: l.start_s } : {}),
-        ...(typeof l.end_s === "number" ? { end_s: l.end_s } : {}),
-      })),
-      voice_over: s?.voice_over && str(s.voice_over.text)
-        ? { speaker: str(s.voice_over.speaker) || "Lời dẫn", text: str(s.voice_over.text),
-            ...(typeof s.voice_over.start_s === "number" ? { start_s: s.voice_over.start_s } : {}),
-            ...(typeof s.voice_over.end_s === "number" ? { end_s: s.voice_over.end_s } : {}) }
-        : null,
+      dialogue: (Array.isArray(s?.dialogue) ? (s.dialogue as unknown[]) : []).map((l) => toLine(l as RawLine)).filter((l): l is ShotLine => !!l),
+      voice_over: toVoiceOver(s?.voice_over),
       camera: str(s?.camera) || undefined,
       transition: str(s?.transition) || undefined,
       pages: Array.isArray(s?.pages) ? s.pages.filter((p) => Number.isFinite(p)) : undefined,

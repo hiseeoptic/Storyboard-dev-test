@@ -102,6 +102,8 @@ export interface EvaluationIssue {
   /** Instruction the writer model can apply with one click. */
   fix?: string;
   source: "rules" | "ai";
+  /** Rule identifier for findings the room can repair automatically. */
+  code?: "no_speech" | "thin_speech" | "no_hook_line";
 }
 
 export interface ScriptEvaluation {

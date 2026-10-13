@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { actionCount, checkScriptRules, fillLineClock, rulesScore, shotCapacity, wordCount } from "./shot-rules.ts";
 import { roomToFormPatch, scriptToScreenplay } from "./export.ts";
-import { analyzePrompt, normalizeScript, writeScriptPrompt } from "./prompts.ts";
+import { analyzePrompt, normalizeScript, speechModeLine, writeScriptPrompt } from "./prompts.ts";
 import { approvedScriptFromStoryIdea } from "../storyboard/source-script.ts";
 import { emptyRoom, type RoomScript } from "./types.ts";
 
@@ -102,7 +102,9 @@ test("prompts carry the faithfulness level, the source and the 10-second contrac
   const w = writeScriptPrompt(state, { id: "A", title: "x", format: "adaptation", logline: "", shot_count: 6, episodes: 1, structure: [], voice_over: true, dialogue: true, why: "" });
   assert.match(w, /SHOT CONTRACT/);
   assert.match(w, /Write exactly 6 shots/);
-  assert.match(w, /≤ 20 Vietnamese words/);
+  assert.match(w, /10–20 spoken Vietnamese words per shot/);
+  assert.match(w, /first spoken line starts at 0–0\.5 s/);
+  assert.match(w, /characters talk on screen in every shot/);
 });
 
 test("model output is normalised into numbered 10 s shots", () => {
@@ -112,4 +114,50 @@ test("model output is normalised into numbered 10 s shots", () => {
   assert.equal(s.shots[0]!.dialogue.length, 1);
   assert.equal(s.shots[0]!.voice_over, null);
   assert.equal(normalizeScript({ shots: [] }), null);
+});
+
+test("a speaking plan never leaves the opening silent", () => {
+  const s = script();
+  s.shots[0] = { ...s.shots[0]!, dialogue: [], voice_over: null };
+  s.shots[1] = { ...s.shots[1]!, dialogue: [] };
+  s.shots[2] = { ...s.shots[2]!, dialogue: [{ speaker: "Na", text: "Lại đây" }] };
+  const issues = checkScriptRules(s);
+  const byCode = (code: string) => issues.filter((i) => i.code === code).map((i) => `${i.shot}:${i.severity}`);
+  assert.deepEqual(byCode("no_hook_line"), ["1:error"]);
+  assert.deepEqual(byCode("no_speech"), ["2:error"]);
+  assert.deepEqual(byCode("thin_speech"), ["3:warning"]);
+  assert.ok(issues.filter((i) => i.code).every((i) => i.fix), "speech findings carry a fix for the writer");
+});
+
+test("the hook line must start in the first second", () => {
+  const s = script();
+  s.shots[0] = { ...s.shots[0]!, dialogue: [{ speaker: "Na", text: "Mưa to quá bà ơi", start_s: 4, end_s: 6 }], voice_over: null };
+  assert.ok(checkScriptRules(s).some((i) => i.code === "no_hook_line"));
+  s.shots[0] = { ...s.shots[0]!, dialogue: [{ speaker: "Na", text: "Bà ơi, con mèo đâu rồi?", start_s: 0.3, end_s: 2.3 }] };
+  assert.ok(!checkScriptRules(s).some((i) => i.code === "no_hook_line"));
+});
+
+test("a wordless plan is not asked for speech", () => {
+  const s = script();
+  for (const shot of s.shots) { shot.dialogue = []; shot.voice_over = null; }
+  assert.equal(checkScriptRules(s, { speech: false }).filter((i) => i.code).length, 0);
+  assert.match(speechModeLine({ dialogue: false, voice_over: false }), /WORDLESS/);
+  assert.match(speechModeLine({ dialogue: false, voice_over: true }), /narrator voice-over only/);
+  assert.match(speechModeLine({ dialogue: true, voice_over: false }), /on-screen dialogue only/);
+});
+
+test("spoken lines survive the shapes models return", () => {
+  const s = normalizeScript({
+    title: "T",
+    shots: [
+      { action: "a", dialogue: [{ character: "Lan", line: "Anh đi đâu đấy?", start: "0.4", end: 2 }, "Minh: Đi làm", { text: "  " }], voice_over: "Sáng hôm ấy trời mưa" },
+      { action: "b", voice_over: [{ text: "Câu một", start_s: 1 }, { text: "câu hai", end_s: 6 }] },
+    ],
+  })!;
+  assert.deepEqual(s.shots[0]!.dialogue, [
+    { speaker: "Lan", text: "Anh đi đâu đấy?", start_s: 0.4, end_s: 2 },
+    { speaker: "Minh", text: "Đi làm" },
+  ]);
+  assert.deepEqual(s.shots[0]!.voice_over, { speaker: "Lời dẫn", text: "Sáng hôm ấy trời mưa" });
+  assert.deepEqual(s.shots[1]!.voice_over, { speaker: "Lời dẫn", text: "Câu một câu hai", start_s: 1, end_s: 6 });
 });

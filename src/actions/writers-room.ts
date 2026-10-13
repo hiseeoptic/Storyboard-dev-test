@@ -29,6 +29,7 @@ import {
   ocrPrompt,
   revisePrompt,
   writeScriptPrompt,
+  planHasSpeech,
 } from "@/lib/writers-room/prompts";
 import { checkScriptRules, rulesScore } from "@/lib/writers-room/shot-rules";
 import type {
@@ -119,10 +120,40 @@ function pushScript(state: RoomState, script: RoomScript): RoomState {
   return { ...state, script, history, evaluation: undefined };
 }
 
+/**
+ * Silent shots and a late first line are fixed before the user sees the
+ * script: one automatic revision asks the writer for exactly the missing
+ * speech. It replaces the version just written (no extra undo step) only when
+ * it really has fewer speech problems, and is skipped when time is short.
+ */
+async function autoFixSpeech(state: RoomState, provider: AIProvider, deadline: number): Promise<{ state: RoomState; fixedShots: number[] }> {
+  const speech = planHasSpeech(state);
+  if (!state.script || !speech || deadline - Date.now() < 120_000) return { state, fixedShots: [] };
+  const speechIssues = (script: RoomScript) => checkScriptRules(script, { speech }).filter((i) => i.code && i.fix);
+  const before = speechIssues(state.script);
+  if (!before.length) return { state, fixedShots: [] };
+  const instruction = `Fix ONLY the spoken words of these shots and keep every action, camera and other line exactly as it is:\n${before.map((i) => `- ${i.fix}`).join("\n")}`;
+  try {
+    const { data } = await roomLLM<{ script?: unknown }>(provider, revisePrompt(state, instruction), deadline, 14_000);
+    const script = normalizeScript(data.script);
+    if (!script || script.shots.length !== state.script.shots.length) return { state, fixedShots: [] };
+    const after = speechIssues(script);
+    if (after.length >= before.length) return { state, fixedShots: [] };
+    const still = new Set(after.map((i) => i.shot));
+    return {
+      state: { ...state, script },
+      fixedShots: [...new Set(before.map((i) => i.shot ?? 0))].filter((n) => n && !still.has(n)).sort((a, b) => a - b),
+    };
+  } catch (err) {
+    console.error("[WritersRoom] automatic speech fix failed:", err);
+    return { state, fixedShots: [] };
+  }
+}
+
 async function evaluate(state: RoomState, provider: AIProvider, deadline: number): Promise<ScriptEvaluation | undefined> {
   const remainingMs = () => deadline - Date.now();
   if (!state.script) return undefined;
-  const ruleIssues = checkScriptRules(state.script);
+  const ruleIssues = checkScriptRules(state.script, { speech: planHasSpeech(state) });
   const rulesText = ruleIssues.map((i) => `- ${i.message}`).join("\n");
   const fit = rulesScore(ruleIssues, state.script.shots.length);
   const rulesOnly = (summary: string): ScriptEvaluation => ({ scores: { shot_fit_10s: fit }, overall: fit, issues: ruleIssues, options: [], summary });
@@ -241,6 +272,13 @@ export async function writersRoomTurn(params: {
   const addUser = (text: string) => { state = { ...state, messages: [...state.messages, { role: "user", text, at: Date.now() }] }; };
   const addAssistant = (m: ChatMessage) => { state = { ...state, messages: [...state.messages, m] }; };
   let usedProvider: AIProvider | undefined;
+  const speechPass = async () => {
+    const fixed = await autoFixSpeech(state, provider, deadline);
+    state = fixed.state;
+    if (fixed.fixedShots.length) {
+      addAssistant(say(`Mình đã tự bổ sung lời thoại cho shot ${fixed.fixedShots.join(", ")} — 3 giây đầu có câu mở màn và không shot nào bị im lặng.`, "text"));
+    }
+  };
 
   try {
     if (action.type === "analyze") {
@@ -271,6 +309,7 @@ export async function writersRoomTurn(params: {
       if (!script) throw new Error("AI chưa trả về kịch bản theo shot.");
       state = pushScript({ ...state, chosenOptionId: option.id }, script);
       addAssistant(say(data.reply || `Kịch bản ${script.shots.length} shot × 10 giây đã sẵn sàng.`, "script"));
+      await speechPass();
       const ev = await evaluate(state, provider, deadline);
       if (ev) { state = { ...state, evaluation: ev }; addAssistant(evaluationMessage(ev)); }
     } else if (action.type === "revise") {
@@ -282,6 +321,7 @@ export async function writersRoomTurn(params: {
       if (!script) throw new Error("AI chưa trả về kịch bản đã sửa.");
       state = pushScript(state, script);
       addAssistant(say(data.reply || "Đã sửa kịch bản.", "script"));
+      await speechPass();
       const ev = await evaluate(state, provider, deadline);
       if (ev) { state = { ...state, evaluation: ev }; addAssistant(evaluationMessage(ev)); }
     } else if (action.type === "evaluate") {
@@ -299,6 +339,7 @@ export async function writersRoomTurn(params: {
       if (script) {
         state = pushScript(state, script);
         addAssistant(say(data.reply || "Đã cập nhật kịch bản.", "script"));
+        await speechPass();
         const ev = await evaluate(state, provider, deadline);
         if (ev) { state = { ...state, evaluation: ev }; addAssistant(evaluationMessage(ev)); }
       } else {
