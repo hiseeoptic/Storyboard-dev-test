@@ -140,7 +140,7 @@ test("the hook line must start in the first second", () => {
 test("a wordless plan is not asked for speech", () => {
   const s = script();
   for (const shot of s.shots) { shot.dialogue = []; shot.voice_over = null; }
-  assert.equal(checkScriptRules(s, { speech: false }).filter((i) => i.code).length, 0);
+  assert.equal(checkScriptRules(s, { speech: false }).filter((i) => ["no_speech", "thin_speech", "no_hook_line"].includes(i.code ?? "")).length, 0);
   assert.match(speechModeLine({ dialogue: false, voice_over: false }), /WORDLESS/);
   assert.match(speechModeLine({ dialogue: false, voice_over: true }), /narrator voice-over only/);
   assert.match(speechModeLine({ dialogue: true, voice_over: false }), /on-screen dialogue only/);
@@ -160,4 +160,25 @@ test("spoken lines survive the shapes models return", () => {
   ]);
   assert.deepEqual(s.shots[0]!.voice_over, { speaker: "Lời dẫn", text: "Sáng hôm ấy trời mưa" });
   assert.deepEqual(s.shots[1]!.voice_over, { speaker: "Lời dẫn", text: "Câu một câu hai", start_s: 1, end_s: 6 });
+});
+
+test("shots name their opening state and give moved furniture a real path", () => {
+  const s = script();
+  s.shots[0] = { ...s.shots[0]!, start: "Na ngồi trên ghế cạnh cửa sổ" };
+  s.shots[1] = { ...s.shots[1]!, start: "Bà đứng cạnh Na", action: "Bà kéo chiếc ghế sang phía bên kia bàn" };
+  const issues = checkScriptRules(s);
+  const codes = (code: string) => issues.filter((i) => i.code === code).map((i) => i.shot);
+  assert.deepEqual(codes("no_start"), [3]);
+  assert.deepEqual(codes("unclear_path"), [2]);
+  s.shots[1] = { ...s.shots[1]!, action: "Bà kéo chiếc ghế ra, nhấc lên, bê vòng qua đầu bàn rồi đặt xuống phía bên kia" };
+  assert.deepEqual(checkScriptRules(s).filter((i) => i.code === "unclear_path").map((i) => i.shot), []);
+});
+
+test("the opening state reaches the storyboard screenplay", () => {
+  const s = script();
+  s.shots[0] = { ...s.shots[0]!, start: "Na ngồi trên ghế cạnh cửa sổ" };
+  const text = scriptToScreenplay(s);
+  assert.match(text, /Mở cảnh: Na ngồi trên ghế cạnh cửa sổ/);
+  assert.match(text, /nối tiếp liền mạch/);
+  assert.equal(normalizeScript({ shots: [{ action: "a", start: " Na ngồi " }] })!.shots[0]!.start, "Na ngồi");
 });

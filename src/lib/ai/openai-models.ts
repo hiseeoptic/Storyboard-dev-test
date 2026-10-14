@@ -10,7 +10,10 @@
 //     GPT-6 Luna when Sol does not answer in time.
 //   · context IR / storyboard JSON / rewrite / repair / critic — long,
 //     rule-bound JSON that keeps the approved script's lines verbatim:
-//     GPT-6 Luna (~120 tok/s), reasoning "none" (critic: "low").
+//     GPT-6 Luna (~120 tok/s). Storyboard and context reason ("low"; the
+//     storyboard caller asks for "medium" on short videos) because without
+//     reasoning Luna contradicts itself across shots (who stands/sits, where
+//     a chair goes); rewrite/repair stay at "none".
 //
 // Reasoning models take `max_completion_tokens` (reasoning tokens count
 // against it) and refuse `temperature`/`max_tokens`; GPT-6.1 Sol / GPT-6
@@ -42,7 +45,7 @@ export type OpenAiTextStage =
   | "repair"
   | "writers_room";
 
-export type ReasoningEffort = "none" | "low";
+export type ReasoningEffort = "none" | "low" | "medium";
 
 interface StagePlan {
   model: string;
@@ -58,8 +61,8 @@ const SOL_WITH_LUNA_RESCUE = { model: GPT_LUNA, effort: "low" as const, reserveM
 export const STAGE_PLAN: Record<OpenAiTextStage, StagePlan> = {
   script: { model: GPT_SOL, effort: "low", onTimeout: SOL_WITH_LUNA_RESCUE, legacy: "gpt-5.6-terra" },
   writers_room: { model: GPT_SOL, effort: "low", onTimeout: SOL_WITH_LUNA_RESCUE, legacy: "gpt-5.6-terra" },
-  context: { model: GPT_LUNA, effort: "none", legacy: "gpt-4.1-mini" },
-  storyboard: { model: GPT_LUNA, effort: "none", legacy: "gpt-4.1-mini" },
+  context: { model: GPT_LUNA, effort: "low", legacy: "gpt-4.1-mini" },
+  storyboard: { model: GPT_LUNA, effort: "low", legacy: "gpt-4.1-mini" },
   rewrite: { model: GPT_LUNA, effort: "none", legacy: "gpt-4.1-mini" },
   repair: { model: GPT_LUNA, effort: "none", legacy: "gpt-4.1-mini" },
   critic: { model: GPT_LUNA, effort: "low", legacy: "gpt-4o-mini" },
@@ -81,6 +84,7 @@ export const isReasoningModel = (model: string) => /^(gpt-5|gpt-6|o\d)/i.test(mo
 
 /** Room for the hidden reasoning tokens on top of the visible answer. */
 const REASONING_HEADROOM_TOKENS = 4000;
+const MEDIUM_REASONING_HEADROOM_TOKENS = 8000;
 
 export interface OpenAiTextParams {
   max_tokens?: number;
@@ -110,11 +114,10 @@ export function openAiTextParams(
     return { max_completion_tokens: opts.maxTokens + REASONING_HEADROOM_TOKENS };
   }
   const noNone = /^gpt-6(\.\d+)?-(sol|astra)/.test(m) || m.startsWith("gpt-5.6");
-  const effort: ReasoningEffort = opts.effort === "none" && !noNone ? "none" : "low";
-  return {
-    max_completion_tokens: opts.maxTokens + (effort === "none" ? 0 : REASONING_HEADROOM_TOKENS),
-    reasoning_effort: effort,
-  };
+  const effort: ReasoningEffort =
+    opts.effort === "medium" ? "medium" : opts.effort === "none" && !noNone ? "none" : "low";
+  const headroom = effort === "none" ? 0 : effort === "medium" ? MEDIUM_REASONING_HEADROOM_TOKENS : REASONING_HEADROOM_TOKENS;
+  return { max_completion_tokens: opts.maxTokens + headroom, reasoning_effort: effort };
 }
 
 const BILLING_OR_AUTH = /insufficient_quota|billing|spend_limit|usage_limit|invalid_api_key|incorrect api key/i;
@@ -188,11 +191,13 @@ export async function createOpenAiChat(
     temperature?: number;
     responseFormat?: unknown;
     timeoutMs?: number;
+    /** Overrides the stage's planned reasoning effort for this call. */
+    effort?: ReasoningEffort;
   }
 ): Promise<{ content: string | null; model: string; usage: ChatCompletionLike["usage"] }> {
   const plan = STAGE_PLAN[params.stage];
   const effortFor = (model: string) =>
-    model === plan.onTimeout?.model && model !== plan.model ? plan.onTimeout.effort : plan.effort;
+    model === plan.onTimeout?.model && model !== plan.model ? plan.onTimeout.effort : params.effort ?? plan.effort;
   const call = async (model: string, timeoutMs?: number) => {
     const body = {
       model,

@@ -120,24 +120,29 @@ function pushScript(state: RoomState, script: RoomScript): RoomState {
   return { ...state, script, history, evaluation: undefined };
 }
 
+/** Rule findings the writer can repair without changing the story. */
+const AUTO_FIX_CODES = new Set(["no_speech", "thin_speech", "no_hook_line", "no_start", "unclear_path"]);
+
 /**
- * Silent shots and a late first line are fixed before the user sees the
- * script: one automatic revision asks the writer for exactly the missing
- * speech. It replaces the version just written (no extra undo step) only when
- * it really has fewer speech problems, and is skipped when time is short.
+ * Silent shots, a late first line, a missing opening state and furniture moved
+ * without a path are fixed before the user sees the script: one automatic
+ * revision asks the writer for exactly those fixes. It replaces the version
+ * just written (no extra undo step) only when it really has fewer of these
+ * problems, and is skipped when time is short.
  */
-async function autoFixSpeech(state: RoomState, provider: AIProvider, deadline: number): Promise<{ state: RoomState; fixedShots: number[] }> {
+async function autoFixScript(state: RoomState, provider: AIProvider, deadline: number): Promise<{ state: RoomState; fixedShots: number[] }> {
+  if (!state.script || deadline - Date.now() < 120_000) return { state, fixedShots: [] };
   const speech = planHasSpeech(state);
-  if (!state.script || !speech || deadline - Date.now() < 120_000) return { state, fixedShots: [] };
-  const speechIssues = (script: RoomScript) => checkScriptRules(script, { speech }).filter((i) => i.code && i.fix);
-  const before = speechIssues(state.script);
+  const fixable = (script: RoomScript) =>
+    checkScriptRules(script, { speech }).filter((i) => i.code && AUTO_FIX_CODES.has(i.code) && i.fix);
+  const before = fixable(state.script);
   if (!before.length) return { state, fixedShots: [] };
-  const instruction = `Fix ONLY the spoken words of these shots and keep every action, camera and other line exactly as it is:\n${before.map((i) => `- ${i.fix}`).join("\n")}`;
+  const instruction = `Fix ONLY these problems and keep every other line, action and camera exactly as it is:\n${before.map((i) => `- ${i.fix}`).join("\n")}`;
   try {
     const { data } = await roomLLM<{ script?: unknown }>(provider, revisePrompt(state, instruction), deadline, 14_000);
     const script = normalizeScript(data.script);
     if (!script || script.shots.length !== state.script.shots.length) return { state, fixedShots: [] };
-    const after = speechIssues(script);
+    const after = fixable(script);
     if (after.length >= before.length) return { state, fixedShots: [] };
     const still = new Set(after.map((i) => i.shot));
     return {
@@ -145,7 +150,7 @@ async function autoFixSpeech(state: RoomState, provider: AIProvider, deadline: n
       fixedShots: [...new Set(before.map((i) => i.shot ?? 0))].filter((n) => n && !still.has(n)).sort((a, b) => a - b),
     };
   } catch (err) {
-    console.error("[WritersRoom] automatic speech fix failed:", err);
+    console.error("[WritersRoom] automatic script fix failed:", err);
     return { state, fixedShots: [] };
   }
 }
@@ -273,10 +278,10 @@ export async function writersRoomTurn(params: {
   const addAssistant = (m: ChatMessage) => { state = { ...state, messages: [...state.messages, m] }; };
   let usedProvider: AIProvider | undefined;
   const speechPass = async () => {
-    const fixed = await autoFixSpeech(state, provider, deadline);
+    const fixed = await autoFixScript(state, provider, deadline);
     state = fixed.state;
     if (fixed.fixedShots.length) {
-      addAssistant(say(`Mình đã tự bổ sung lời thoại cho shot ${fixed.fixedShots.join(", ")} — 3 giây đầu có câu mở màn và không shot nào bị im lặng.`, "text"));
+      addAssistant(say(`Mình đã tự sửa shot ${fixed.fixedShots.join(", ")}: bổ sung lời thoại / câu mở màn, ghi rõ vị trí mở cảnh và đường đi của đồ vật cho liền mạch.`, "text"));
     }
   };
 

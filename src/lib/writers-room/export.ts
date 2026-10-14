@@ -20,11 +20,12 @@ export function scriptToScreenplay(script: RoomScript): string {
       out.push(`- ${c.name}${[c.age, c.gender].filter(Boolean).length ? ` (${[c.age, c.gender].filter(Boolean).join(", ")})` : ""}${c.role ? ` — ${c.role}` : ""}${c.appearance ? `. Ngoại hình: ${c.appearance}` : ""}${c.wardrobe ? `. Trang phục: ${c.wardrobe}` : ""}${c.personality ? `. Tính cách: ${c.personality}` : ""}`);
     }
   }
-  out.push("", `MỖI CẢNH DƯỚI ĐÂY LÀ ĐÚNG MỘT CLIP 10 GIÂY (${script.shots.length} cảnh). Giữ nguyên thứ tự, lời thoại và hành động.`);
+  out.push("", `MỖI CẢNH DƯỚI ĐÂY LÀ ĐÚNG MỘT CLIP 10 GIÂY (${script.shots.length} cảnh). Giữ nguyên thứ tự, lời thoại và hành động. Các cảnh nối tiếp liền mạch trong cùng không gian: cảnh sau mở đúng vị trí, tư thế và đồ vật mà cảnh trước kết thúc, trừ khi ghi "cắt cảnh".`);
   for (const raw of script.shots) {
     const shot = fillLineClock(raw);
     out.push("", `CẢNH ${shot.n} (10 giây) — ${shot.location || "bối cảnh như cảnh trước"}${shot.transition ? ` · chuyển cảnh: ${shot.transition}` : ""}`);
     if (shot.characters.length) out.push(`Nhân vật trong cảnh: ${shot.characters.join(", ")}`);
+    if (shot.start) out.push(`Mở cảnh: ${shot.start}`);
     out.push(`Hành động: ${shot.action}`);
     if (shot.camera) out.push(`Camera: ${shot.camera}`);
     const lines = [...(shot.dialogue ?? [])];

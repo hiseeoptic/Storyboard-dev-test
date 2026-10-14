@@ -21,7 +21,9 @@ test("Sol writes, Luna builds the long JSON stages", () => {
   for (const stage of ["context", "storyboard", "rewrite", "repair", "critic"] as const) {
     assert.equal(openAiModelFor(stage, {}), GPT_LUNA, stage);
   }
-  assert.equal(STAGE_PLAN.storyboard.effort, "none");
+  assert.equal(STAGE_PLAN.storyboard.effort, "low");
+  assert.equal(STAGE_PLAN.context.effort, "low");
+  assert.equal(STAGE_PLAN.rewrite.effort, "none");
   assert.equal(STAGE_PLAN.script.onTimeout?.model, GPT_LUNA);
 });
 
@@ -94,7 +96,7 @@ const quiet = async <T>(fn: () => Promise<T>) => {
   try { return await fn(); } finally { console.warn = warn; }
 };
 
-test("storyboard JSON goes to Luna without reasoning and keeps its response format", async () => {
+test("storyboard JSON goes to Luna, reasons, and keeps its response format", async () => {
   resetOpenAiModelFallbacks();
   const { client, calls } = fakeClient(() => ok("{}"));
   const res = await createOpenAiChat(client, {
@@ -107,8 +109,13 @@ test("storyboard JSON goes to Luna without reasoning and keeps its response form
   });
   assert.equal(res.model, GPT_LUNA);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0]!.body.reasoning_effort, "none");
+  assert.equal(calls[0]!.body.reasoning_effort, "low");
+  assert.equal(calls[0]!.body.max_completion_tokens, 18000);
   assert.deepEqual(calls[0]!.body.response_format, { type: "json_object" });
+  // A short video asks for more thought, with room for it.
+  await createOpenAiChat(client, { stage: "storyboard", messages: [], maxTokens: 14000, effort: "medium" });
+  assert.equal(calls[1]!.body.reasoning_effort, "medium");
+  assert.equal(calls[1]!.body.max_completion_tokens, 22000);
   assert.equal(calls[0]!.body.temperature, undefined);
   assert.equal(calls[0]!.timeout, 200_000);
 });

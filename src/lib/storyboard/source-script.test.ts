@@ -128,8 +128,9 @@ test("OpenAI: Sol writes the script, Luna builds context and storyboard JSON", (
     assert.match(engineSource, new RegExp(`createOpenAiChat\\(getOpenAIClient\\(\\), \\{\\s*stage: "${stage}"`));
   }
   assert.match(modelsSource, /script: \{ model: GPT_SOL/);
-  assert.match(modelsSource, /storyboard: \{ model: GPT_LUNA, effort: "none"/);
-  assert.match(modelsSource, /context: \{ model: GPT_LUNA, effort: "none"/);
+  assert.match(modelsSource, /storyboard: \{ model: GPT_LUNA, effort: "low"/);
+  assert.match(modelsSource, /context: \{ model: GPT_LUNA, effort: "low"/);
+  assert.match(engineSource, /effort: segmentsWanted <= 6 \? "medium" : "low"/);
 });
 
 test("the storyboard plan runs as two requests, each with its own time budget", () => {

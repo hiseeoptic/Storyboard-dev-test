@@ -77,6 +77,8 @@ export interface ScriptShot {
   duration_s: number;
   location: string;
   characters: string[];
+  /** Where every visible person and key object is when the shot opens (room terms). */
+  start?: string;
   /** ONE continuous primary action for the whole clip. */
   action: string;
   dialogue: ShotLine[];
@@ -103,7 +105,7 @@ export interface EvaluationIssue {
   fix?: string;
   source: "rules" | "ai";
   /** Rule identifier for findings the room can repair automatically. */
-  code?: "no_speech" | "thin_speech" | "no_hook_line";
+  code?: "no_speech" | "thin_speech" | "no_hook_line" | "no_start" | "unclear_path";
 }
 
 export interface ScriptEvaluation {

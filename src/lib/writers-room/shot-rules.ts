@@ -97,6 +97,11 @@ export interface ScriptRuleOptions {
   speech?: boolean;
 }
 
+const MOVE_ACROSS = /(?<!\p{L})(sang|qua|về)\s+(phía\s+|chỗ\s+|bên\s+)?(bên\s+)?(kia|đối diện)|qua\s+(mặt\s+)?bàn|across the table|to the other side/iu;
+// JS \b is ASCII-only, so Vietnamese words use letter lookarounds instead.
+const HANDLED_OBJECT = /(?<!\p{L})(ghế|bàn|túi|vali|thùng|hộp|ly|cốc|đĩa|bát|chair|bag|box|cup|plate)(?!\p{L})/iu;
+const PATH_WORDS = /(?<!\p{L})(vòng|nhấc|bê|khiêng|mang|đi quanh|kéo lùi|kéo ra|đặt xuống|around|lift|carry)(?!\p{L})/iu;
+
 /** Deterministic findings for the whole script. */
 export function checkScriptRules(script: RoomScript, opts: ScriptRuleOptions = {}): EvaluationIssue[] {
   const speech = opts.speech !== false;
@@ -156,6 +161,22 @@ export function checkScriptRules(script: RoomScript, opts: ScriptRuleOptions = {
       } else if (onScreen.size && !onScreen.has(who)) {
         issues.push({ shot: shot.n, severity: "info", source: "rules", message: `Shot ${shot.n}: "${line.speaker}" nói nhưng không có mặt trong cảnh (sẽ thành giọng ngoài khung hình).` });
       }
+    }
+    if (!String(shot.start ?? "").trim()) {
+      issues.push({
+        shot: shot.n, severity: "warning", source: "rules", code: "no_start",
+        message: `Shot ${shot.n}: chưa ghi "mở cảnh" — AI video sẽ tự đoán ai ngồi/đứng ở đâu, dễ lệch với shot trước.`,
+        fix: `Shot ${shot.n}: write "start": where every visible person and key object is when the shot opens (who sits or stands on which side of which furniture, facing whom, holding what), continuing exactly from the previous shot's end.`,
+      });
+    }
+    // Moving something to the other side of furniture needs a visible path.
+    const motion = `${shot.start ?? ""} ${shot.action}`;
+    if (MOVE_ACROSS.test(motion) && HANDLED_OBJECT.test(motion) && !PATH_WORDS.test(shot.action)) {
+      issues.push({
+        shot: shot.n, severity: "warning", source: "rules", code: "unclear_path",
+        message: `Shot ${shot.n}: đồ vật được chuyển sang phía khác nhưng chưa tả đường đi — AI video có thể cho nó xuyên qua bàn.`,
+        fix: `Shot ${shot.n}: describe the move as ordered steps along a real path (pull it out, lift it, carry it around the end of the table, set it down) — never across or through the furniture.`,
+      });
     }
     if (!String(shot.location ?? "").trim()) {
       issues.push({ shot: shot.n, severity: "warning", source: "rules", message: `Shot ${shot.n}: chưa ghi bối cảnh.`, fix: `Shot ${shot.n}: state the exact location.` });

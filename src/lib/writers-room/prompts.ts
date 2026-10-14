@@ -27,16 +27,20 @@ const FAITHFULNESS_RULE: Record<Faithfulness, string> = {
 };
 
 const SHOT_CONTRACT = `SHOT CONTRACT (each shot = ONE 10-second Omni Flash / Veo clip, the clip cannot cut):
+- "start": where every visible person and key object is when the shot OPENS, in room terms — who sits or stands, on which side of which furniture, facing whom, holding what in which hand (e.g. "Minh ngồi ghế bên trái bàn, hai tay cầm thực đơn; Lan đứng sau chiếc ghế trống bên phải bàn, tay trái xách túi").
+- CONTINUITY: a shot's "start" is exactly the previous shot's end — same seats, sitting/standing, objects in the same hands — unless "transition" is "cắt cảnh: <lý do>" (time skip or new place). Nobody stands up, sits down, walks over or picks something up between shots without it being shown in an "action".
 - "action": ONE continuous physical action that fits 10 seconds (what the camera sees), specific body-part + verb + object; never a list of separate actions.
 - SPEECH IN EVERY SHOT (unless the plan is wordless): 10–20 spoken Vietnamese words per shot — dialogue and/or narrator voice-over, ≈ 4–8 s of speech (dialogue ≈ 0.4 s/word, narrator ≈ 0.47 s/word), never more than 28 words. Speech plays OVER the action at the same time; never leave a shot silent "so the action can breathe" — a shot without speech loses the viewer and is a script error.
 - Clock: every line has start_s/end_s inside 0–10, lines do not overlap, and the last line ends by ~9 s.
+- PHYSICAL LOGIC: say where a handled object is relative to the furniture ("chiếc ghế kẹt dưới mép bàn phía Lan"), which way it moves in room terms ("kéo lùi ra khỏi mép bàn") and where it ends. Moving something to the other side of a table or room is a sequence along a real path — kéo ra → nhấc lên → bê vòng qua đầu bàn → đặt xuống → ngồi — never through or across the tabletop; if the steps do not fit one 10-second clip, split them over consecutive shots.
 - "characters": every person visible in the shot; a speaker who is not visible speaks off-screen.
 - Voice-over goes in "voice_over" ({"speaker":"Lời dẫn","text":...}); character lines go in "dialogue".
 - "camera": one framing + one move that suits the action (e.g. "[CLOSE] slow push-in").
 - HOOK: the first 3 seconds decide whether people keep watching. Shot 1's first spoken line starts at 0–0.5 s and hooks (a question, a conflict, a surprising claim or a promise), said over a striking opening visual; shot 2 keeps the tension with speech too. Every shot advances the story; the last shot lands the message / ending.
-- Spoken text is natural Vietnamese; everything else (action, camera, location) is concise Vietnamese too.`;
+- NATURAL DIALOGUE — Vietnamese the way these people really talk to each other: short spoken sentences, everyday words and particles (ơi, à, nhé, mà, chứ, đâu, thôi, hả), half-sentences and interruptions are fine. Every line reacts to what just happened on screen or to the previous line; nobody ignores the action in front of them (someone fighting a stuck chair talks about the chair or asks for help). No written or literary phrasing, no stated morals or feelings, no captions of what we can already see, no quote-like lines. Bad → good: "Em mong anh thấy em loay hoay trước khi em phải nói." → "Em đứng đây nãy giờ rồi đấy anh." · "Để ý chút thôi, em cũng thấy được nâng niu." → "Anh chỉ cần ngẩng lên một chút thôi mà." Each character keeps their own voice; the listener's visible reaction (khựng lại, liếc nhìn, thở dài) goes into "action".
+- "action", "start", camera and location are concise Vietnamese.`;
 
-const SCRIPT_JSON = `{"title":"…","logline":"…","characters":[{"name":"…","age":"…","gender":"…","appearance":"…","personality":"…","role":"…","wardrobe":"…"}],"shots":[{"n":1,"duration_s":10,"location":"…","characters":["…"],"action":"…","dialogue":[{"speaker":"…","text":"…","start_s":0.5,"end_s":3.5}],"voice_over":{"speaker":"Lời dẫn","text":"…","start_s":4,"end_s":8} ,"camera":"…","transition":"…","pages":[1]}]}`;
+const SCRIPT_JSON = `{"title":"…","logline":"…","characters":[{"name":"…","age":"…","gender":"…","appearance":"…","personality":"…","role":"…","wardrobe":"…"}],"shots":[{"n":1,"duration_s":10,"location":"…","characters":["…"],"start":"…","action":"…","dialogue":[{"speaker":"…","text":"…","start_s":0.5,"end_s":3.5}],"voice_over":{"speaker":"Lời dẫn","text":"…","start_s":4,"end_s":8} ,"camera":"…","transition":"liền mạch | cắt cảnh: lý do","pages":[1]}]}`;
 
 export const ROOM_SYSTEM_PROMPT = `You are the head writer of a short-video writers' room for Vietnamese creators. You turn books, chapters or ideas into video plans and shot-by-shot scripts made of 10-second AI video clips (Omni Flash / Veo), then evaluate and improve them with the user.
 Rules: answer ONLY with the single JSON object requested; Vietnamese for every human-facing text field; never invent facts about a real book that its pages do not support (mark guesses as such); keep characters consistent across shots; respect the user's chosen faithfulness level.`;
@@ -121,8 +125,8 @@ ANALYSIS: ${compactAnalysis(state.analysis)}
 CURRENT SCRIPT: ${JSON.stringify(state.script)}
 AUTOMATIC 10-SECOND CHECKS ALREADY FOUND:
 ${rulesFindings || "none"}
-Score 0–10: hook (first 3 s: a spoken hook line from 0–0.5 s AND a striking visual), story (clear arc, every shot advances), dialogue (every shot carries natural Vietnamese speech in the character's voice; silent shots score low), action_fit (one filmable continuous action per 10 s clip), character (consistent look/role), faithfulness (to the source at the chosen level). Then list the most important problems the automatic checks did not already cover, each with a concrete fix instruction, and 3–5 one-click improvement options.
-Return JSON: {"scores":{"hook":0,"story":0,"dialogue":0,"action_fit":0,"character":0,"faithfulness":0},"summary":"2-3 câu tiếng Việt","issues":[{"shot":2,"severity":"error|warning|info","message":"tiếng Việt","fix":"English instruction for the writer"}],"options":[{"label":"nhãn nút tiếng Việt ngắn","instruction":"English instruction for the writer"}]}`;
+Score 0–10: hook (first 3 s: a spoken hook line from 0–0.5 s AND a striking visual), story (clear arc, every shot advances), dialogue (every shot carries speech in the character's voice; silent shots score low), natural_speech (sounds like real people talking — spoken register, particles, lines that react to the action; literary, moralising or caption-like lines score low), continuity (each shot starts where the previous ended; handled objects move along physically possible paths, never through furniture), action_fit (one filmable continuous action per 10 s clip), character (consistent look/role), faithfulness (to the source at the chosen level). Then list the most important problems the automatic checks did not already cover, each with a concrete fix instruction, and 3–5 one-click improvement options.
+Return JSON: {"scores":{"hook":0,"story":0,"dialogue":0,"natural_speech":0,"continuity":0,"action_fit":0,"character":0,"faithfulness":0},"summary":"2-3 câu tiếng Việt","issues":[{"shot":2,"severity":"error|warning|info","message":"tiếng Việt","fix":"English instruction for the writer"}],"options":[{"label":"nhãn nút tiếng Việt ngắn","instruction":"English instruction for the writer"}]}`;
 }
 
 export function chatPrompt(state: RoomState, message: string): string {
@@ -209,6 +213,7 @@ export function normalizeScript(raw: unknown): RoomScript | null {
       duration_s: 10,
       location: str(s?.location),
       characters: (Array.isArray(s?.characters) ? s.characters : []).map(str).filter(Boolean),
+      ...(str(s?.start) ? { start: str(s?.start) } : {}),
       action: str(s?.action),
       dialogue: (Array.isArray(s?.dialogue) ? (s.dialogue as unknown[]) : []).map((l) => toLine(l as RawLine)).filter((l): l is ShotLine => !!l),
       voice_over: toVoiceOver(s?.voice_over),

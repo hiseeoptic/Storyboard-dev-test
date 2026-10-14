@@ -48,6 +48,8 @@ const SCORE_LABEL: Record<string, string> = {
   hook: "Hook 3 giây",
   story: "Mạch truyện",
   dialogue: "Lời thoại",
+  natural_speech: "Thoại tự nhiên",
+  continuity: "Liền mạch & vật lý",
   action_fit: "Hành động/10s",
   character: "Nhân vật",
   faithfulness: "Bám nguồn",
@@ -552,6 +554,7 @@ export function WritersRoom({
                         <span className="text-xs text-muted-foreground">{s.location}{s.characters.length ? ` · ${s.characters.join(", ")}` : ""}</span>
                         <span className="ml-auto"><LoadBadge shot={s} /></span>
                       </div>
+                      {s.start && <p className="text-xs text-muted-foreground">{vi ? "Mở cảnh: " : "Opens: "}{s.start}</p>}
                       <p><span className="text-xs text-muted-foreground">{vi ? "Hành động: " : "Action: "}</span>{s.action}</p>
                       {s.camera && <p className="text-xs text-muted-foreground">🎥 {s.camera}</p>}
                       {[...s.dialogue, ...(s.voice_over ? [s.voice_over] : [])].map((l, j) => (

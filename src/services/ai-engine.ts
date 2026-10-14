@@ -787,8 +787,8 @@ export async function analyzeVideoContext(
           timeoutMs: boundedTimeoutMs(timing, 45_000, "Gemini context analysis"),
         });
       } else {
-        // GPT-6 Luna without reasoning (see openai-models.ts); 75s leaves room
-        // for a large Context IR.
+        // GPT-6 Luna at "low" reasoning (see openai-models.ts); 75s leaves
+        // room for a large Context IR.
         const completion = await createOpenAiChat(getOpenAIClient(), {
           stage: "context",
           messages: [
@@ -1066,11 +1066,14 @@ export async function generateStoryboardBreakdown(
         const storyboardSystemPrompt = buildActiveStoryboardSystemPrompt(input);
         const storyboardUserPrompt = buildActiveStoryboardUserPrompt(input);
         // Long rule-bound JSON that keeps the approved script's lines and
-        // actions verbatim: GPT-6 Luna without reasoning (~120 tok/s) so it
-        // fits the request; gpt-4.1-mini is the automatic backup
-        // (openai-models.ts).
+        // actions verbatim: GPT-6 Luna (~120 tok/s); gpt-4.1-mini is the
+        // automatic backup (openai-models.ts). Short videos get "medium"
+        // reasoning — it keeps positions, poses and object paths consistent
+        // from shot to shot; longer ones stay at "low" to fit the request.
+        const segmentsWanted = input.segment_count ?? input.scene_count ?? 5;
         const completion = await createOpenAiChat(getOpenAIClient(), {
           stage: "storyboard",
+          effort: segmentsWanted <= 6 ? "medium" : "low",
           messages: [
             {
               role: "system",
