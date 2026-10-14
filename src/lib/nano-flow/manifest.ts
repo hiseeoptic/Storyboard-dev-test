@@ -13,6 +13,7 @@ import type {
   NanoFlowShotStateAuthority,
 } from "@/types/nano-flow";
 import { buildProductionState } from "../production-state/normalizer.ts";
+import { SET_QUALITY_NEGATIVE, SET_QUALITY_NOTE, stripBlandSetClauses } from "../production-design.ts";
 import { placementItems, shotsForPlacement, type ProductPlacement } from "../product-placement.ts";
 import {
   productShootKeyframeContract,
@@ -138,6 +139,19 @@ export interface BuildNanoFlowManifestOptions {
   frameModeDefault?: "single" | "auto" | "double";
 }
 
+/** A clip whose set/light text no longer tells the image model to build an empty room. */
+function withDesignableSet(clip: Record<string, unknown>): Record<string, unknown> {
+  const clean = (v: unknown) => (typeof v === "string" ? stripBlandSetClauses(v) : v);
+  const bg = clip.background_lock && typeof clip.background_lock === "object" ? (clip.background_lock as Record<string, unknown>) : null;
+  const bible = clip.scene_bible_tokens && typeof clip.scene_bible_tokens === "object" ? (clip.scene_bible_tokens as Record<string, unknown>) : null;
+  return {
+    ...clip,
+    ...(typeof clip.visual_style === "string" ? { visual_style: clean(clip.visual_style) } : {}),
+    ...(bg ? { background_lock: { ...bg, setting: clean(bg.setting), scenery: clean(bg.scenery), lighting: clean(bg.lighting) } } : {}),
+    ...(bible ? { scene_bible_tokens: { ...bible, backdrop: clean(bible.backdrop), lighting: clean(bible.lighting) } } : {}),
+  };
+}
+
 /** Extract a trimmed string field from an unknown clip sub-object. */
 function clipStr(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
@@ -165,9 +179,10 @@ function buildLocationContinuitySheetPrompt(params: {
       "ONE single clean 16:9 WIDE establishing frame filling the entire canvas. Show the complete script-defined place: terrain and route for an exterior, or architecture and circulation for an interior, plus every fixed landmark, support surface and main spatial anchor required by the story. No panels, divider, grid, collage, inset, caption or label.",
     continuity:
       "This image becomes the canonical spatial authority for every storyboard keyframe and video shot assigned to this location. Preserve its exact terrain/architecture, boundaries, landmark positions, support surfaces, circulation paths, materials, colours, time of day and light direction. Later prompts may change camera position only; they may not move, mirror, replace or redesign the place.",
+    production_design: SET_QUALITY_NOTE,
     render: params.visualMediumLock || KEYFRAME_RENDER_NOTE,
     negative:
-      "No people, characters, hands, products, readable text, watermark, split panels, contact sheet, duplicated or mirrored room, moved furniture, changed geometry, changed weather or changed time of day.",
+      `No people, characters, hands, products, readable text, watermark, split panels, contact sheet, duplicated or mirrored room, moved furniture, changed geometry, changed weather or changed time of day; ${SET_QUALITY_NEGATIVE}.`,
   });
 }
 
@@ -526,6 +541,7 @@ function buildLocationBoardPrompt(
     visual_style: characterStyleLock || visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
+    production_design: hasLocationPhoto ? undefined : SET_QUALITY_NOTE,
     time_of_day: lockedTimeOfDay || undefined,
     time_of_day_lock: lockedTimeOfDay
       ? `TIME OF DAY = ${lockedTimeOfDay} (locked for this board). Every panel shows ${lockedTimeOfDay} light, sky and shadows. Across the whole project the time only moves FORWARD with the script — never flip a board back to a different time than the story's flow (no day→night→day).`
@@ -721,7 +737,7 @@ export function withOpeningFrame(
 
 /** Image-description fields first, long authority contracts after. */
 const KEYFRAME_KEY_ORDER = [
-  "opening_frame", "type", "aspect_ratio", "layout", "moment", "camera", "cast", "setting", "scenery",
+  "opening_frame", "type", "aspect_ratio", "layout", "moment", "camera", "cast", "setting", "scenery", "production_design",
   "time_of_day", "lighting", "render", "visual_style", "wardrobe_note", "reference_fidelity_contract",
 ];
 
@@ -955,6 +971,7 @@ function buildKeyframePrompt(params: {
     visual_style: characterStyleLock || visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
+    production_design: hasLocationPhoto ? undefined : SET_QUALITY_NOTE,
     time_of_day: lockedTimeOfDay || undefined,
     lighting: ((lockedTimeOfDay ? `${lockedTimeOfDay}: ` : "") + (lighting || "")) || undefined,
     cast,
@@ -1200,10 +1217,11 @@ function buildLocationSheetViews(params: {
     scenery: scenery && scenery !== setting ? scenery : undefined,
     lighting: lighting || undefined,
     visual_style: characterStyleLock || visualStyle || undefined,
+    production_design: SET_QUALITY_NOTE,
     consistency:
       "This exact image is the immutable spatial source of truth: terrain/architecture, boundaries, route, landmark positions, anchor geometry, materials, colours, time-of-day and light direction must remain unchanged. Later shot cameras may view the place from another valid position but may not move, mirror, add, remove or redesign fixed elements.",
     render,
-    negative,
+    negative: `${negative} Avoid: ${SET_QUALITY_NEGATIVE}.`,
   });
   return [{ angle: "establishing", prompt }];
 }
@@ -1401,6 +1419,10 @@ export function buildNanoFlowManifest(
   breakdown: StoryboardGenerationOutput,
   opts: BuildNanoFlowManifestOptions = {}
 ): NanoFlowManifest {
+  // Remove "no added decor / geographically unspecified / no new light
+  // fixtures" clauses from every set description before anything is built
+  // from them: they make the location plate, keyframes and clips look bare.
+  if (opts.veoClips) opts = { ...opts, veoClips: opts.veoClips.map(withDesignableSet) };
   const segments = breakdown.segments ?? [];
   // Additive compatibility path: normalized server output already carries this;
   // saved/legacy breakdowns are compiled locally without rewriting old fields.

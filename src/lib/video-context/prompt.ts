@@ -1,6 +1,7 @@
 import type { StoryboardGenerationInput } from "@/types";
 import { resolveCreativeRoute } from "@/lib/creative-routing";
 import { resolveSpeechMode } from "@/lib/storyboard/anonymous-narration";
+import { PRODUCTION_DESIGN_DOCTRINE } from "@/lib/production-design";
 
 /**
  * Compact framework digest for downstream planners. The expensive reasoning is
@@ -25,7 +26,8 @@ CORE RULES:
 - The creative route is a production instruction, not permission to invent content. The approved script and explicit references remain factual evidence.
 - Uploaded character references force strict photographic identity. Uploaded environment/product references force their respective geometry, material and layout facts regardless of a conflicting legacy style label.
 - Never choose a kitchen, living room, mountain, country, culture, era, social class, visual style or marketing formula just because a preset/library contains it.
-- If evidence is absent, write "unspecified" and record an assumption instead of silently defaulting.
+- If evidence is absent, write "unspecified" and record an assumption instead of silently defaulting. This applies to story FACTS (what happens, who, when, which place); it does NOT apply to the look of a place.
+- ${PRODUCTION_DESIGN_DOCTRINE} Write that design into layers.environment (setting, scenery/materials, light motivation) for every location without an uploaded photo, and record it as a production-design decision.
 - REQUIRED TEMPORAL AUTHORITY: layers.temporal.time_of_day must not be a bare placeholder. Prefer an explicit script/setting/lighting cue; when no clock-time cue exists, declare "continuity-neutral daytime (source does not specify clock time)" and record that bounded assumption. Never change an explicit morning/afternoon/evening/night cue.
 - REQUIRED WORLD AUTHORITY: layers.world_context.time_period must not be a bare placeholder. Preserve an explicit historical/future period; otherwise declare a contemporary era-neutral setting and record that the source does not specify an era.
 - Environment location ids are PROJECT-LOCAL semantic ids such as "location_01". Never output an environment library/archetype id.

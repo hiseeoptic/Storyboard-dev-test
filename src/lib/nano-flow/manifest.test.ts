@@ -1525,3 +1525,38 @@ test("keyframe and video prompt share one opening-frame description, and the key
   assert.match(rules.semantic_priority!, /storyboard image is downstream/i);
   assert.match(rules.storyboard_reference_role!, /visual continuity only/i);
 });
+
+test("generated sets are designed, not bare: bland clauses are removed and a design note is added", () => {
+  const bd = {
+    title: "Set",
+    total_duration_seconds: 10,
+    character_locks: [{ name: "Lan", costume: "cream dress" }],
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      characters_in_scene: ["Lan"],
+      location_id: "location_01",
+      first_frame_prompt: "Lan sits at the table.",
+      motion_prompt: "Lan opens the menu.",
+      beats: [{ beat: "Lan opens the menu", camera: "[MEDIUM]" }],
+    }],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    beatsPerSegment: 1,
+    veoClips: [{
+      scene_id: "1",
+      background_lock: {
+        setting: "A small restaurant interior at evening.",
+        scenery: "One small restaurant interior at evening: a table, two seats, and no added distinctive decor or readable signage.",
+        lighting: "Soft warm light; gentle falloff, and no newly featured light fixtures.",
+      },
+      scene_action: { start_state: "Lan sits at the table.", motion: "Lan opens the menu.", end_state: "The menu is open." },
+    }],
+  });
+  const all = JSON.stringify(m);
+  assert.doesNotMatch(all, /no added distinctive decor|no newly featured light fixtures/i);
+  const env = m.assets.environments?.[0] as unknown as { location_sheet_prompt?: string };
+  assert.match(String(env?.location_sheet_prompt), /channel-quality set/);
+  const board = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  assert.match(String(board.production_design), /channel-quality set/);
+});

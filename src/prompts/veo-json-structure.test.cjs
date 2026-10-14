@@ -1068,3 +1068,23 @@ test("placement items reach both prompts for a non-ad genre without turning it i
   }
   assert.doesNotMatch(buildStoryboardUserPrompt(input), /this is a product advertisement; build the whole script around it/);
 });
+
+test("script writer and storyboard prompts carry production design and the spoken-language test", () => {
+  const { buildScriptWriterSystemPrompt, buildStoryboardSystemPrompt } = require("./storyboard-breakdown.ts");
+  const writer = buildScriptWriterSystemPrompt();
+  assert.match(writer, /SPOKEN-LANGUAGE TEST/);
+  assert.match(writer, /SET & WARDROBE LOOK/);
+  assert.match(writer, /Ngẩng lên nhìn em một cái là được rồi/);
+  const board = buildStoryboardSystemPrompt({ story_idea: "x", genre: "romance", style: "cinematic" });
+  assert.match(board, /PRODUCTION DESIGN — CHANNEL-QUALITY SETS/);
+  assert.match(board, /COSTUME: practical for the story AND camera-ready/);
+  assert.match(board, /SPOKEN-LANGUAGE TEST/);
+  assert.doesNotMatch(board, /\$\{PRODUCTION_DESIGN_DOCTRINE\}/);
+});
+
+test("context analysis designs the look of a place instead of leaving it unspecified", () => {
+  const { buildContextAnalysisSystemPrompt } = require("../lib/video-context/prompt.ts");
+  const prompt = buildContextAnalysisSystemPrompt();
+  assert.match(prompt, /does NOT apply to the look of a place/);
+  assert.match(prompt, /PRODUCTION DESIGN — CHANNEL-QUALITY SETS/);
+});
