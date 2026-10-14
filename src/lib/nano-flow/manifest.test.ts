@@ -1475,3 +1475,53 @@ test("placement items (any genre) carry links, dress their wearer and ride only 
   assert.deepEqual(m.shots[1]!.image_refs?.products, []);
   assert.deepEqual(m.project.product_links?.map((l) => l.link), ["https://shopee.vn/blazer", "https://www.amazon.com/dp/B0X"]);
 });
+
+test("keyframe and video prompt share one opening-frame description, and the keyframe owns the opening look", () => {
+  const bd = {
+    title: "Opening",
+    total_duration_seconds: 10,
+    character_locks: [{ name: "Lan", costume: "cream dress" }, { name: "Minh", costume: "blue shirt" }],
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      characters_in_scene: ["Minh", "Lan"],
+      environment_ref: "restaurant",
+      first_frame_prompt: "Minh and Lan sit facing each other.",
+      motion_prompt: "Minh pushes the menu to the middle.",
+      full_prompt: "Minh pushes the menu to the middle.",
+      beats: [{ beat: "Minh pushes the menu", camera: "[MEDIUM TWO-SHOT] eye-level across the table, Minh left, Lan right" }],
+    }],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    beatsPerSegment: 1,
+    veoClips: [{
+      scene_id: "1",
+      aspect_ratio: "9:16",
+      character_lock: {
+        CHAR_1: { name: "Minh", outfit_top: "Light-blue shirt" },
+        CHAR_2: { name: "Lan", outfit_top: "Cream dress" },
+      },
+      background_lock: { setting: "small restaurant at evening", lighting: "warm yellow light" },
+      scene_action: {
+        start_state: "Minh sits on the left and Lan on the right, facing each other; the open menu lies between them.",
+        motion: "Minh pushes the open menu to the middle of the table.",
+        end_state: "The menu rests between them.",
+      },
+      camera: { framing: "MS", angle: "eye level" },
+    }],
+  });
+  const shot = m.shots[0]!;
+  const video = shot.video_prompt as Record<string, unknown>;
+  const board = JSON.parse(shot.storyboard_prompt) as Record<string, unknown>;
+  assert.equal(Object.keys(board)[0], "opening_frame", "the frame description leads the keyframe prompt");
+  assert.equal(video.opening_frame, board.opening_frame, "both models read the same words");
+  assert.match(String(video.opening_frame), /Minh sits on the left and Lan on the right, facing each other/);
+  assert.match(String(video.opening_frame), /Wardrobe: Minh — Light-blue shirt; Lan — Cream dress\./);
+  assert.ok(Object.keys(video).indexOf("opening_frame") < Object.keys(video).indexOf("scene_action"));
+  const rules = video.output_rules as Record<string, string>;
+  assert.match(rules.reference_priority!, /KEYFRAME is the OPENING FRAME/);
+  assert.match(rules.reference_priority!, /KEEP THE KEYFRAME'S LAYOUT AND SET/);
+  // Semantics still come from the script (validator wording kept).
+  assert.match(rules.semantic_priority!, /storyboard image is downstream/i);
+  assert.match(rules.storyboard_reference_role!, /visual continuity only/i);
+});

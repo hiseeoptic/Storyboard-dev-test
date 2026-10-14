@@ -644,6 +644,87 @@ function computeTransformScore(
  * (setting, cast, wardrobe, lighting, style, negative) mirror the board builder
  * so the image stays faithful to the same primary video contract.
  */
+const clip240 = (text: string, max = 240) => (text.length > max ? `${text.slice(0, max).replace(/\s+\S*$/, "")}…` : text);
+
+/**
+ * ONE short, concrete description of the clip's first frame, written once and
+ * used VERBATIM at the top of both the keyframe prompt and the video prompt,
+ * so the image model and the video model read the same layout (who is where,
+ * sitting/standing, facing, framing, set, light, wardrobe). The long contracts
+ * stay below it; this is what both models must not miss.
+ */
+export function describeOpeningFrame(params: {
+  primaryVideoPrompt: Record<string, unknown> | string;
+  stateAuthority: NanoFlowShotStateAuthority;
+  fallbackSceneText: string;
+  beats: Array<{ beat?: string; camera?: string }>;
+  aspectRatio: string;
+  lockedSetting?: string;
+  lockedScenery?: string;
+  resolvedLighting?: string;
+  lockedTimeOfDay?: string;
+  anonymousNarration?: boolean;
+}): string {
+  const clip = params.primaryVideoPrompt && typeof params.primaryVideoPrompt === "object" ? params.primaryVideoPrompt : undefined;
+  const sceneAction = clipObj(clip?.scene_action);
+  const bg = clipObj(clip?.background_lock);
+  const action =
+    specificSceneState(sceneAction.start_state) ||
+    params.stateAuthority.script_contract.first_frame_prompt ||
+    params.fallbackSceneText;
+  const firstCam = clipStr((Array.isArray(params.beats) ? params.beats : []).find((b) => clipStr(b?.camera))?.camera);
+  const cam = clipObj(clip?.camera);
+  const camera = firstCam || [clipStr(cam.framing), clipStr(cam.angle)].filter(Boolean).join(", ");
+  const setting = params.lockedSetting || clipStr(bg.setting);
+  const scenery = params.lockedScenery || clipStr(bg.scenery);
+  const light = [params.lockedTimeOfDay, params.resolvedLighting || clipStr(bg.lighting)].filter(Boolean).join(": ");
+  const wardrobe = params.anonymousNarration
+    ? ""
+    : Object.values(clipObj(clip?.character_lock))
+        .map((raw) => clipObj(raw))
+        .map((c) => [clipStr(c.name), meaningful(clipStr(c.outfit_top))] as const)
+        .filter(([name, top]) => name && top)
+        .map(([name, top]) => `${name} — ${top.replace(/\.$/, "")}`)
+        .join("; ");
+  const sentence = (text: string) => (text ? `${text.trim().replace(/[\s.;,…]+$/u, "")}.` : "");
+  const bare = (text: string) => text.trim().replace(/[\s.;,…]+$/u, "");
+  return [
+    `OPENING FRAME (${params.aspectRatio}, frame 0 of this clip — the keyframe image shows exactly this and the video starts from it):`,
+    camera ? sentence(`Camera: ${clip240(camera, 260)}`) : "",
+    sentence(clip240(action, 420)),
+    setting ? sentence(`Set: ${bare(clip240(setting, 160))}${scenery && scenery !== setting ? ` — ${clip240(scenery, 200)}` : ""}`) : "",
+    light ? sentence(`Light: ${clip240(light, 160)}`) : "",
+    wardrobe ? sentence(`Wardrobe: ${clip240(wardrobe, 300)}`) : "",
+  ].filter(Boolean).join(" ");
+}
+
+/** Put the opening-frame description right after the format fields of a video prompt. */
+export function withOpeningFrame(
+  video: Record<string, unknown> | string,
+  openingFrame: string
+): Record<string, unknown> | string {
+  if (!openingFrame) return video;
+  if (typeof video === "string") {
+    // Legacy text prompt: keep the scripted prompt first, the opening frame right after it.
+    const cut = video.indexOf("\n");
+    return cut < 0 ? `${video}\n${openingFrame}` : `${video.slice(0, cut)}\n${openingFrame}${video.slice(cut)}`;
+  }
+  const { scene_id, duration_sec, aspect_ratio, ...rest } = video;
+  return {
+    ...(scene_id !== undefined ? { scene_id } : {}),
+    ...(duration_sec !== undefined ? { duration_sec } : {}),
+    ...(aspect_ratio !== undefined ? { aspect_ratio } : {}),
+    opening_frame: openingFrame,
+    ...rest,
+  };
+}
+
+/** Image-description fields first, long authority contracts after. */
+const KEYFRAME_KEY_ORDER = [
+  "opening_frame", "type", "aspect_ratio", "layout", "moment", "camera", "cast", "setting", "scenery",
+  "time_of_day", "lighting", "render", "visual_style", "wardrobe_note", "reference_fidelity_contract",
+];
+
 function buildKeyframePrompt(params: {
   moment: "start" | "end";
   primaryVideoPrompt: Record<string, unknown> | string;
@@ -910,8 +991,25 @@ function buildKeyframePrompt(params: {
         ? `Photorealistic only — NOT cartoon, NOT anime, NOT illustration, NOT 3D render, NOT painting, NOT drawing. This is ONE single film frame: no storyboard grid, no panels, no split frames, no collage, no captions, no numbers, no watermark, ${params.hasProductRefs ? "no added logo or text (the product's own printed label and logo stay exactly as on its reference)" : "no logo, NO text of any kind"}. No identity drift; never duplicate a character; ${params.handInsertAllowed ? "never render floating unattached hands or headless people" : "never render disembodied hands, arm-only crops or headless people"}; no extra, missing or fused fingers.`
         : "No visual-medium drift, no accidental photoreal conversion, no inconsistent character design. This is ONE single frame: no storyboard grid, no panels, no split frames, no collage, no captions, no numbers, NO text of any kind. Consistent location and style.",
   };
+  if (!isEnd) {
+    prompt.opening_frame = describeOpeningFrame({
+      primaryVideoPrompt,
+      stateAuthority,
+      fallbackSceneText,
+      beats,
+      aspectRatio,
+      lockedSetting,
+      lockedScenery,
+      resolvedLighting: lighting,
+      lockedTimeOfDay,
+      anonymousNarration,
+    });
+  }
+  const ordered: Record<string, unknown> = {};
+  for (const key of KEYFRAME_KEY_ORDER) if (key in prompt) ordered[key] = prompt[key];
+  for (const [key, value] of Object.entries(prompt)) if (!(key in ordered)) ordered[key] = value;
   // JSON.stringify drops undefined-valued keys, leaving a clean single-frame payload.
-  return JSON.stringify(prompt);
+  return JSON.stringify(ordered);
 }
 
 /**
@@ -1138,10 +1236,10 @@ export function withKeyframeAuthority(
       ? { ...(clip.output_rules as Record<string, unknown>) }
       : {};
   rules.reference_priority = characterStyleLock
-    ? "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT owns story action, timing, camera, state transition and ending. The selected STYLE LOCK owns the render medium for characters, the complete script-derived environment and props. Character sheets lock each design/identity; the location board locks the scripted terrain/architecture, landmarks, layout and light. Never replace the scripted location with a blank canvas, generic studio or unrelated template."
-    : "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT is the sole semantic authority for story action, timing, camera, state transition and ending. The generated STORYBOARD / LOCATION BOARD is only a visual continuity reference for the already-declared opening appearance and set geometry; it must never add, remove, replace or reinterpret video events. Each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop. Use the location board to keep the prompt-declared environment visually consistent (background, spatial layout, furniture, props, doors, windows, lighting and materials), but when any image detail conflicts with this structured prompt, FOLLOW THIS VIDEO PROMPT. Identity and clothing come from the sheets; semantics and motion come from the video prompt. Bind EVERY named character to their OWN same-named wardrobe sheet and keep the set on the location board: reproduce every attached identity AND the location faithfully across the WHOLE clip — never drop a reference, never map one character's face onto another, and never let a face, outfit or the set drift mid-shot.";
+    ? "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT owns story action, dialogue, timing, state transition and ending. The attached shot KEYFRAME owns the OPENING FRAME: start the clip from exactly that picture — same characters in the same screen positions, poses (sitting/standing), facing directions, framing, set and light — and perform the scripted action from there; where opening_frame or start_state text differs from the keyframe, the keyframe's layout wins. The selected STYLE LOCK owns the render medium for characters, the complete script-derived environment and props. Character sheets lock each design/identity; the location board locks the scripted terrain/architecture, landmarks, layout and light wherever the keyframe does not show them. Never replace the scripted location with a blank canvas, generic studio or unrelated template."
+    : "AUTHORITY ORDER (do NOT reverse it): the SCRIPT-DERIVED STRUCTURED VIDEO PROMPT is the sole semantic authority for story action, dialogue, timing, state transition and ending. The attached shot KEYFRAME is the OPENING FRAME of this clip and the visual authority for how it looks at the start: begin from exactly that picture — the same people in the same screen positions, the same poses (sitting/standing), facing directions and hands, the same framing and camera angle, the same room, furniture, decor, light and wardrobe — and perform the scripted actions from that layout. Where the opening_frame / start_state text or the location board differs from the keyframe, KEEP THE KEYFRAME'S LAYOUT AND SET; never re-stage, re-seat or relocate anyone, and never swap to another room. The keyframe never adds, removes or reorders video events. Each attached character WARDROBE SHEET locks ONLY that character's face, hair and full outfit — copy them exactly and IGNORE the sheet's plain studio backdrop. Use the location board to keep the environment visually consistent where the keyframe does not show it (background, spatial layout, furniture, props, doors, windows, lighting and materials). Identity and clothing come from the sheets; the opening look comes from the keyframe; semantics and motion come from the video prompt. Bind EVERY named character to their OWN same-named wardrobe sheet and keep the set on the location board: reproduce every attached identity AND the location faithfully across the WHOLE clip — never drop a reference, never map one character's face onto another, and never let a face, outfit or the set drift mid-shot.";
   rules.storyboard_reference_role =
-    "Visual continuity only. Do not infer new actions from the board and do not let the board override ordered actions, dialogue, camera intent, timing or end state in this video prompt.";
+    "Visual continuity only for events: do not infer new actions from the keyframe and do not let it override ordered actions, dialogue, timing or end state. For the LOOK of the opening frame (positions, poses, framing, set, light, wardrobe) the keyframe is the authority — start from it exactly.";
   // The current production path supplies one clean storyboard keyframe. Keep
   // this wording topology-neutral so an old "multi-panel board" instruction
   // cannot contradict the actual single full-frame image sent by the extension.
@@ -1158,7 +1256,7 @@ export function withKeyframeAuthority(
         }
       : {}),
     board_usage:
-      "OPENING VISUAL AUTHORITY: use the attached single full-frame storyboard keyframe directly to lock who, what and where. Animate forward from it as ONE continuous shot; do not invent another set, another camera setup, a montage, panels, captions or borders.",
+      "OPENING VISUAL AUTHORITY: the attached single full-frame keyframe IS the first frame — match its composition, people positions, poses, framing, set and light exactly, then animate forward from it as ONE continuous shot; do not re-stage it, invent another set or camera setup, a montage, panels, captions or borders.",
     output_rules: rules,
   };
 }
@@ -1211,7 +1309,7 @@ export function withProductionStateAuthority(
     output_rules: {
       ...rules,
       semantic_priority:
-        "Follow script_contract + ordered_atomic_actions + end_snapshot. The storyboard image is downstream visual reference only and cannot change the video narrative, motion, camera or ending.",
+        "Follow script_contract + ordered_atomic_actions + end_snapshot for WHAT HAPPENS. The storyboard image is downstream of that: it cannot change the narrative, motion or ending — but it IS the opening frame, so the clip begins from its exact layout, poses, framing and set and the actions play out from there.",
     },
   };
 }
@@ -1234,7 +1332,7 @@ function buildLegacyVideoPrompt(
         dialogue_turn_ids: dialogueState.turns.map((turn) => turn.turn_id),
       },
     }),
-    "AUTHORITY RULE: this video prompt controls semantics and motion; the generated storyboard is visual continuity only and must never override it.",
+    "AUTHORITY RULE: this video prompt controls semantics and motion; the generated keyframe is the opening frame — start from its exact layout, poses, framing and set — and is visual continuity only for events.",
   ].filter(Boolean).join("\n");
 }
 
@@ -1875,7 +1973,10 @@ export function buildNanoFlowManifest(
       // falls back to the flat prose prompt only when no structured clip exists.
       // The generated keyframe is a visual opening reference only. The primary
       // video prompt remains the semantic authority for action/camera/end state.
-      video_prompt: primaryVideoPrompt,
+      // Same words as the keyframe's opening_frame: both models stage one layout.
+      video_prompt: useCleanKeyframe
+        ? withOpeningFrame(primaryVideoPrompt, describeOpeningFrame(keyframeArgs))
+        : primaryVideoPrompt,
       characters_in_scene: inScene,
       video_refs: {
         // Keep the generated opening frame, character sheets and the canonical
