@@ -130,7 +130,9 @@ test("OpenAI: Sol writes the script, Luna builds context and storyboard JSON", (
   assert.match(modelsSource, /script: \{ model: GPT_SOL/);
   assert.match(modelsSource, /storyboard: \{ model: GPT_LUNA, effort: "low"/);
   assert.match(modelsSource, /context: \{ model: GPT_LUNA, effort: "low"/);
-  assert.match(engineSource, /effort: segmentsWanted <= 6 \? "medium" : "low"/);
+  // First storyboard attempt reasons a little and leaves time for a fast retry.
+  assert.match(engineSource, /effort: firstAttempt \? "low" : "none"/);
+  assert.match(engineSource, /FAST_STORYBOARD_RESERVE_MS = 115_000/);
 });
 
 test("the storyboard plan runs as two requests, each with its own time budget", () => {

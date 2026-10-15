@@ -50,6 +50,8 @@ const MAX_RETRIES = 3;
 // repair runs first; at most one fresh retry is allowed.
 const STORYBOARD_MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
+/** Time kept back in plan phase B for a fast storyboard retry without reasoning. */
+const FAST_STORYBOARD_RESERVE_MS = 115_000;
 const MIN_REMOTE_CALL_BUDGET_MS = 8_000;
 const STRING_SCHEMA = { type: "STRING" };
 const INTEGER_SCHEMA = { type: "INTEGER" };
@@ -1065,15 +1067,21 @@ export async function generateStoryboardBreakdown(
       } else {
         const storyboardSystemPrompt = buildActiveStoryboardSystemPrompt(input);
         const storyboardUserPrompt = buildActiveStoryboardUserPrompt(input);
-        // Long rule-bound JSON that keeps the approved script's lines and
-        // actions verbatim: GPT-6 Luna (~120 tok/s); gpt-4.1-mini is the
-        // automatic backup (openai-models.ts). Short videos get "medium"
-        // reasoning — it keeps positions, poses and object paths consistent
-        // from shot to shot; longer ones stay at "low" to fit the request.
-        const segmentsWanted = input.segment_count ?? input.scene_count ?? 5;
+        // Long rule-bound JSON (10-14k tokens) that keeps the approved
+        // script's lines and actions verbatim: GPT-6 Luna, gpt-4.1-mini as
+        // the automatic backup (openai-models.ts). Luna's latency varies, so
+        // the first attempt reasons a little ("low", keeps positions and
+        // object paths consistent) but stops early enough to leave ~115s of
+        // the phase budget; a slow or unusable first answer is retried at
+        // once without reasoning ("none", the fastest).
+        const firstAttempt = attempt === 0;
+        const remainingMs = timing?.deadlineMs ? timing.deadlineMs - Date.now() : 270_000;
+        const preferredMs = firstAttempt
+          ? Math.max(60_000, Math.min(150_000, remainingMs - FAST_STORYBOARD_RESERVE_MS))
+          : 200_000;
         const completion = await createOpenAiChat(getOpenAIClient(), {
           stage: "storyboard",
-          effort: segmentsWanted <= 6 ? "medium" : "low",
+          effort: firstAttempt ? "low" : "none",
           messages: [
             {
               role: "system",
@@ -1086,10 +1094,8 @@ export async function generateStoryboardBreakdown(
           // when this path runs as the rescue provider.
           maxTokens: 14000,
           responseFormat: { type: "json_object" },
-          // Plan phase B gives this call its own request: up to 200s, leaving
-          // ~70s of the 270s budget for the rescue provider.
           // boundedTimeoutMs clamps it to whatever budget actually remains.
-          timeoutMs: boundedTimeoutMs(timing, 200_000, "OpenAI storyboard generation"),
+          timeoutMs: boundedTimeoutMs(timing, preferredMs, "OpenAI storyboard generation"),
         });
         logOpenAiUsage({
           stage: "storyboard",

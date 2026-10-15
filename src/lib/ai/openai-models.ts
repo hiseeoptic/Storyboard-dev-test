@@ -10,10 +10,11 @@
 //     GPT-6 Luna when Sol does not answer in time.
 //   · context IR / storyboard JSON / rewrite / repair / critic — long,
 //     rule-bound JSON that keeps the approved script's lines verbatim:
-//     GPT-6 Luna (~120 tok/s). Storyboard and context reason ("low"; the
-//     storyboard caller asks for "medium" on short videos) because without
-//     reasoning Luna contradicts itself across shots (who stands/sits, where
-//     a chair goes); rewrite/repair stay at "none".
+//     GPT-6 Luna (~120 tok/s). Storyboard and context reason at "low"
+//     because without reasoning Luna contradicts itself across shots (who
+//     stands/sits, where a chair goes); the storyboard caller retries a slow
+//     first answer at "none" so the request never runs out of time.
+//     Rewrite/repair stay at "none".
 //
 // Reasoning models take `max_completion_tokens` (reasoning tokens count
 // against it) and refuse `temperature`/`max_tokens`; GPT-6.1 Sol / GPT-6
