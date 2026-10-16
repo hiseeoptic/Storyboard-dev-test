@@ -2108,7 +2108,7 @@
     //              crops invented an at-angle body and drifted the generated identity
     //              away from the uploaded face. Matching neck-up crops keep both face
     //              angles equally useful as identity anchors.
-    const sheetPromptFor = (name, outfit) => JSON.stringify({
+    const sheetPromptFor = (name, outfit, opts) => JSON.stringify(Object.assign({
       type: 'photoreal_character_board_sheet',
       canvas_contract: 'Exactly ONE 16:9 landscape image. Split it at x=50%. The LEFT region occupies x=0–50%, y=0–100%. Split only the RIGHT region horizontally: RIGHT-TOP occupies x=50–100%, y=0–50%; RIGHT-BOTTOM occupies x=50–100%, y=50–100%. Use thin clean dividers. Never swap, mirror, reorder or resize these three cells. No labels, text or numbers.',
       left_cell_x0_50_y0_100: 'ONE 3/4-to-front FULL-BODY view of the person, entire body visible continuously from top of head through both shoes, standing relaxed and wearing the complete locked outfit. This is the ONLY full-body or torso view on the sheet.',
@@ -2121,24 +2121,41 @@
       background: 'plain light-grey seamless studio background, soft even lighting, no props, no text',
       render: 'Photorealistic, true-to-life skin and fabric textures, sharp focus, ultra-detailed — a real photograph.',
       negative: 'swapped cells, frontal close-up in the LEFT cell, full-body or half-body person in either RIGHT cell, shoulders in either RIGHT cell, chest in either RIGHT cell, torso in either RIGHT cell, arms or hands in either RIGHT cell, three-quarter face in the RIGHT-BOTTOM cell, cut-off feet in the LEFT cell, different face between cells, beautified or altered face, mismatched outfit, cartoon, anime, illustration, 3D render, CGI, on-screen text, watermark',
-    });
+    }, (opts && opts.outfitRef) ? {
+      // Thời trang: đồ đang bán lấy từ ảnh sản phẩm — CHỈ quần áo, không lấy người mẫu.
+      reference_roles: (opts.hasFace
+        ? 'The FIRST attached image is the PERSON (face and identity only). The NEXT attached image(s) are the OUTFIT product photos.'
+        : 'All attached images are OUTFIT product photos — clothes only.')
+        + ' Outfit photos define the clothing exactly and NOTHING else: never copy the face, hair, skin, body or pose of any model or mannequin in them.',
+      wardrobe: (outfit || 'the attached outfit') + ' — garments shown in the OUTFIT photo(s) are copied EXACTLY (same pieces, colours, fabric, pattern, cut, buttons, prints and details) and fitted naturally on this person; pieces the photos do not show follow this text exactly.',
+      wardrobe_rule: 'ONLY the LEFT full-body cell shows the complete outfit. BOTH RIGHT cells terminate at the base of the neck. Do not add, remove or restyle any garment.',
+    } : {}, (opts && opts.hasFace === false) ? {
+      identity_authority: 'No face photo exists for this character: create ONE new, natural, believable real person — ' + (opts.appearance || 'matching the story') + ' — with a distinctive everyday face that is NOT the model from any outfit photo. The RIGHT-TOP frontal and RIGHT-BOTTOM 90° profile neck-up crops are the identity anchors; the LEFT full-body cell carries that identical face.',
+    } : {}));
     const ensureWardrobeSheet = async (r) => {
       const name = r.name || 'character';
       if (!outfitByChar.has(name)) outfitByChar.set(name, String(r.wardrobe || '').trim());
       const outfit = outfitByChar.get(name) || '';
       const key = name + '::' + outfit;
       if (sheetCache.has(key)) return sheetCache.get(key);
-      const photoId = await uploadRefOnce(r);
-      if (!photoId) return '';
+      const photoId = (r.data || r.image) ? await uploadRefOnce(r) : '';
+      // Thời trang: ảnh bộ đồ đang bán → tạo ảnh toàn thân "thử đồ".
+      const outfitIds = [];
+      const outfitImgs = Array.isArray(r.outfitImages) ? r.outfitImages.slice(0, 3) : [];
+      for (let k = 0; k < outfitImgs.length; k++) {
+        const mid = await uploadRefOnce({ name: name + ' — đồ đang bán ' + (k + 1), data: outfitImgs[k] });
+        if (mid) outfitIds.push(mid);
+      }
+      if (!photoId && !outfitIds.length) return '';
       try {
-        post({ via: 'log', kind: 'log', message: `🧍 Tạo ảnh TOÀN THÂN nhân vật "${name}"${outfit ? ` — trang phục: ${outfit.slice(0, 60)}` : ' — trang phục theo bối cảnh'}…` });
+        post({ via: 'log', kind: 'log', message: `🧍 Tạo ảnh TOÀN THÂN nhân vật "${name}"${outfitIds.length ? ` — mặc đồ đang bán (${outfitIds.length} ảnh)` : ''}${outfit ? ` — trang phục: ${outfit.slice(0, 60)}` : ' — trang phục theo bối cảnh'}…` });
         const g = await batchGenerateImages(pid, {
-          prompt: sheetPromptFor(name, outfit),
+          prompt: sheetPromptFor(name, outfit, { outfitRef: outfitIds.length > 0, hasFace: !!photoId, appearance: r.appearance || '' }),
           // 16:9 landscape: LEFT = full body; RIGHT-TOP and RIGHT-BOTTOM = matching
           // neck-up identity crops (frontal + exact 90° profile).
           aspect: 'IMAGE_ASPECT_RATIO_LANDSCAPE',
           model,
-          imageInputs: [{ imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: photoId }],
+          imageInputs: [photoId, ...outfitIds].filter(Boolean).map((mid) => ({ imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: mid })),
         });
         // Đặt tên RIÊNG BIỆT (bảng nhân vật) để KHÔNG lẫn với ảnh cảnh (keyframe)
         // hay ảnh tham chiếu ban đầu người dùng nạp ở ô nhân vật. Kèm trang phục
@@ -2223,7 +2240,7 @@
       const allCharRefs = [];
       for (const itm of items) {
         for (const r of (Array.isArray(itm.refs) ? itm.refs : [])) {
-          if (r && r.kind === 'characters' && (r.data || r.image)) {
+          if (r && r.kind === 'characters' && (r.data || r.image || (Array.isArray(r.outfitImages) && r.outfitImages.length))) {
             const nm = String(r.name || '').trim().toLowerCase();
             if (nm && !seenChar.has(nm)) { seenChar.add(nm); allCharRefs.push(r); }
           }
@@ -2371,7 +2388,7 @@
               if (plateIds.length) post({ via: 'log', kind: 'log', message: `  🏞️ đính ${plateIds.length} ảnh nền "${r.name || ''}" làm ref khóa bối cảnh.` });
               continue;
             }
-            const isChar = !!(r && r.kind === 'characters' && (r.data || r.image));
+            const isChar = !!(r && r.kind === 'characters' && (r.data || r.image || (Array.isArray(r.outfitImages) && r.outfitImages.length)));
             const mid = (sheetsOn && isChar)
               ? await ensureWardrobeSheet(r)
               : await uploadRefOnce(r);

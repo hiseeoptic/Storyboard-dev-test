@@ -3416,13 +3416,16 @@ async function runNanoImages(options = {}) {
     let sheetHasLoc = false;
     const refs = p.imageStep.refs
       .filter((r) => r.image || (r.kind === 'environments'
-        && Array.isArray(r.locationViews) && r.locationViews.length))
+        && Array.isArray(r.locationViews) && r.locationViews.length)
+        || (r.kind === 'characters' && Array.isArray(r.outfitImages) && r.outfitImages.length))
       .map((r) => {
         const isEnvSheet = r.kind === 'environments' && !r.image
           && Array.isArray(r.locationViews) && r.locationViews.length;
         if (isEnvSheet) sheetHasLoc = true;
         return {
           kind: r.kind, id: r.id, name: r.name, data: r.image, wardrobe: r.wardrobe || '',
+          outfitImages: r.kind === 'characters' && Array.isArray(r.outfitImages) ? r.outfitImages : [],
+          appearance: r.kind === 'characters' ? (r.appearance || '') : '',
           locationViews: isEnvSheet ? r.locationViews : null,
           // Ảnh NẠP làm NGUỒN để quét ra sheet bối cảnh 2 góc (giống ảnh nhân vật → sheet).
           locationSourceImage: isEnvSheet ? uploadedLoc : '',

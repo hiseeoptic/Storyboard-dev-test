@@ -40,7 +40,7 @@ import {
   isStylizedCharacterRepresentation,
 } from "@/lib/creative-routing";
 import { enforceProductShootContract, productShootSubject } from "@/lib/product-shoot/storyboard";
-import { enforceProductPlacements, placementItems } from "@/lib/product-placement";
+import { enforceProductPlacements, outfitCostume, placementItems } from "@/lib/product-placement";
 import {
   REFERENCE_CHARACTER_ANTI_PLASTIC,
   REFERENCE_CHARACTER_APPEARANCE_LOCK,
@@ -805,12 +805,26 @@ async function runAnalysis(
     backgroundDescription: "",
   };
 
+  // Fashion outfits were already read garment by garment when the user
+  // attached them; their locked costume text is the description. Describing
+  // the photos again would also describe the shop model wearing them.
+  const fashionByName = new Map(
+    placementItems(input.product_placements)
+      .filter((item) => item.fashion)
+      .map((item) => [item.name.trim().toLowerCase(), item] as const)
+  );
+  const productsToRead = (input.product_images ?? []).filter((p) => !fashionByName.has(p.name.trim().toLowerCase()));
+  for (const item of fashionByName.values()) {
+    analysis.productDescriptions[item.name] =
+      `Outfit worn by ${item.worn_by || "the main character"} — garments only, never the shop model: ${outfitCostume(item)}`;
+  }
+
   // Only real image BYTES trigger (paid) vision analysis. A Nano Flow declared
   // reference carries no bytes here (the photo is attached in the extension),
   // so it must never trigger analysis or a wasted vision call.
   const hasImages =
     (input.character_images ?? []).some((c) => (c.images?.length ?? 0) > 0) ||
-    (!input.product_ir && (input.product_images ?? []).some((p) => (p.images?.length ?? 0) > 0)) ||
+    (!input.product_ir && productsToRead.some((p) => (p.images?.length ?? 0) > 0)) ||
     (input.ingredient_images?.length ?? 0) > 0 ||
     (input.background_images ?? []).some((b) => (b.images?.length ?? 0) > 0);
 
@@ -820,14 +834,14 @@ async function runAnalysis(
         characters: input.character_images?.filter((c) => (c.images?.length ?? 0) > 0),
         // Affiliate Product IR was already produced by one explicit, reviewable
         // vision pass. Never charge for a second product-analysis call here.
-        products: input.product_ir ? undefined : input.product_images,
+        products: input.product_ir ? undefined : productsToRead,
         ingredients: input.ingredient_images,
         backgrounds: input.background_images,
         provider,
         contentMode: input.genre === "cooking" ? "cooking" : "general",
       });
       analysis.characterDescriptions = a.characterDescriptions;
-      analysis.productDescriptions = a.productDescriptions;
+      analysis.productDescriptions = { ...analysis.productDescriptions, ...a.productDescriptions };
       analysis.ingredientDescriptions = a.ingredientDescriptions;
       analysis.backgroundDescription = a.backgroundDescription;
     } catch (err) {

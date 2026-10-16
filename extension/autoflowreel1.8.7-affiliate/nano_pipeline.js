@@ -50,6 +50,9 @@
             // Trang phục khóa theo kịch bản (chỉ nhân vật) — dùng để tạo ảnh
             // toàn thân (wardrobe sheet) trước khi tạo keyframe.
             wardrobe: asset.wardrobe || '',
+            // Thời trang: ảnh bộ đồ đang bán + ngoại hình (khi không có ảnh mặt).
+            outfitImages: kind === 'characters' && Array.isArray(asset.outfit_images) ? asset.outfit_images : [],
+            appearance: kind === 'characters' ? String(asset.appearance || '') : '',
             // A2: bối cảnh khai 2 "ảnh nền" (toàn cảnh + góc khác) — extension tự
             // TẠO 1 lần rồi đính làm nền cho mọi scene ở địa điểm này (Veo hết bịa
             // cảnh). Chỉ mang theo khi KHÔNG có ảnh thật user nạp (ảnh thật ưu tiên).
@@ -80,7 +83,10 @@
   function refImageClauses(imageRefs) {
     const withImg = function (kind) {
       const seen = {};
-      return imageRefs.filter(function (r) { return r.kind === kind && r.image; })
+      // Nhân vật mặc đồ đang bán (không ảnh mặt) vẫn có ảnh toàn thân "thử đồ".
+      return imageRefs.filter(function (r) {
+        return r.kind === kind && (r.image || (kind === 'characters' && Array.isArray(r.outfitImages) && r.outfitImages.length));
+      })
         .map(function (r) { return String(r.name).replace(/ \(góc \d+\)$/, ''); })
         .filter(function (n) { if (seen[n]) return false; seen[n] = true; return true; });
     };

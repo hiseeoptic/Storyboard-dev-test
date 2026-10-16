@@ -43,9 +43,14 @@
       negative: 'swapped cells, frontal close-up in the LEFT cell, full-body or half-body person in either RIGHT cell, shoulders in either RIGHT cell, chest in either RIGHT cell, torso in either RIGHT cell, arms or hands in either RIGHT cell, three-quarter face in the RIGHT-BOTTOM cell, cut-off feet in the LEFT cell, different face between cells, beautified or altered face, mismatched outfit, cartoon, anime, illustration, 3D render, CGI, on-screen text, watermark',
     }, outfitRef ? {
       // Trang phục người dùng gắn (ảnh sản phẩm Shopee/Amazon…): ảnh 1 = khuôn mặt, ảnh 2+ = bộ đồ.
-      reference_roles: 'The FIRST attached image is the PERSON (face and identity only). The NEXT attached image(s) are the OUTFIT product photos — they define the clothing exactly.',
-      wardrobe: (outfit || 'the attached outfit') + ' — copy EXACTLY the garments shown in the attached OUTFIT reference image(s): same pieces, colours, fabric, pattern, cut, buttons and details; fit them naturally on this person.',
+      reference_roles: (opts.hasFace === false
+        ? 'All attached images are OUTFIT product photos — clothes only.'
+        : 'The FIRST attached image is the PERSON (face and identity only). The NEXT attached image(s) are the OUTFIT product photos.')
+        + ' Outfit photos define the clothing exactly and NOTHING else: never copy the face, hair, skin, body or pose of any model or mannequin in them.',
+      wardrobe: (outfit || 'the attached outfit') + ' — garments shown in the OUTFIT photo(s) are copied EXACTLY (same pieces, colours, fabric, pattern, cut, buttons, prints and details) and fitted naturally on this person; pieces the photos do not show follow this text exactly.',
       wardrobe_rule: 'ONLY the LEFT full-body cell shows the complete outfit, taken from the OUTFIT reference image(s), never from the clothes in the person photo. BOTH RIGHT cells terminate at the base of the neck. Do not add, remove or restyle any garment.',
+    } : {}, (opts && opts.hasFace === false) ? {
+      identity_authority: 'No face photo exists for this character: create ONE new, natural, believable real person — ' + (opts.appearance || 'matching the story') + ' — with a distinctive everyday face that is NOT the model from any outfit photo. The RIGHT-TOP frontal and RIGHT-BOTTOM 90° profile neck-up crops are the identity anchors; the LEFT full-body cell carries that identical face.',
     } : {}));
   }
 
@@ -124,13 +129,14 @@
     const sheetByCombo = {};
     const sheetFor = (asset, outfit) => {
       const ent = charById[asset.id] || null;
-      if (!ent || !ent.photoKey) return '';
+      // Nhân vật không ảnh mặt nhưng mặc đồ đang bán vẫn có sheet "thử đồ".
+      if (!ent || (!ent.photoKey && !outfitKeysFor(ent.asset).length)) return '';
       const combo = lc(asset.name) + '::' + lc(outfit);
       if (sheetByCombo[combo]) return sheetByCombo[combo];
       const key = 'SHEET ' + pad(sheets.length + 1);
       const name = String(asset.name || '').trim();
       const outfitKeys = outfitKeysFor(ent.asset);
-      sheets.push({ key, name, outfit, photoKey: ent.photoKey, outfitKeys, prompt: key + ' – ' + name + ' ' + sheetPrompt(name, outfit, sceneHint, { outfitRef: outfitKeys.length > 0 }) });
+      sheets.push({ key, name, outfit, photoKey: ent.photoKey, outfitKeys, prompt: key + ' – ' + name + ' ' + sheetPrompt(name, outfit, sceneHint, { outfitRef: outfitKeys.length > 0, hasFace: !!ent.photoKey, appearance: String(ent.asset.appearance || '') }) });
       sheetByCombo[combo] = key;
       return key;
     };
@@ -158,15 +164,18 @@
     (assets.characters || []).forEach((a) => { outfit[lc(a.name)] = String(a.wardrobe || '').trim(); });
     const sortedQueue = (queue || []).slice().sort((a, b) => (a.index || 0) - (b.index || 0));
     // Ưu tiên tạo sheet trang phục ĐẦU TIÊN của mọi nhân vật trước (như pipeline cũ).
-    (assets.characters || []).forEach((a) => { if (charById[a.id] && charById[a.id].photoKey) sheetFor(a, outfit[lc(a.name)]); });
+    (assets.characters || []).forEach((a) => { if (charById[a.id] && (charById[a.id].photoKey || outfitKeysFor(a).length)) sheetFor(a, outfit[lc(a.name)]); });
 
     const productKeys = [];
+    // Ảnh đồ thời trang có thể có người mẫu → chỉ dùng cho sheet "thử đồ", không đính thẳng vào bìa.
+    const garmentsOnlyKeys = [];
     const productAngles = {};   // 'products:<id>' → mọi góc ảnh đã nạp của sản phẩm đó
     (assets.products || []).forEach((a, i) => {
       const imgs = assetImages(a).slice(0, 4);
       if (!imgs.length) return;
       const k = 'products:' + (a.id || i);
       productKeys.push(k);
+      if (a.garments_only) garmentsOnlyKeys.push(k);
       productAngles[k] = imgs.map((_, j) => k + (j ? ':' + j : ''));
     });
     // Quay không có người (app storyboard: production_profile.product_shoot), hoặc dự án
@@ -219,7 +228,7 @@
       prompt: 'THUMBNAIL – ' + thumbBody,
       refKeys: peopleFree
         ? (productKeys.length ? productAngles[productKeys[0]].slice(0, 3) : [])
-        : [...productKeys.slice(0, 1), ...sheets.filter((s, i, arr) => arr.findIndex((x) => lc(x.name) === lc(s.name)) === i).map((s) => s.key)].slice(0, 4),
+        : [...productKeys.filter((k) => !garmentsOnlyKeys.includes(k)).slice(0, 1), ...sheets.filter((s, i, arr) => arr.findIndex((x) => lc(x.name) === lc(s.name)) === i).map((s) => s.key)].slice(0, 4),
     } : null;
 
     return {

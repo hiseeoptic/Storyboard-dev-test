@@ -87,6 +87,15 @@
         if (asset && asset.id) idx[kind][asset.id] = asset;
       });
     });
+    // Thời trang: nhân vật mặc đồ đang bán → mang theo ảnh bộ đồ để tạo ảnh
+    // toàn thân "thử đồ" (kể cả khi nhân vật không có ảnh mặt).
+    Object.keys(idx.characters).forEach(function (id) {
+      const ch = idx.characters[id];
+      const prod = ch && ch.outfit_product_id && idx.products[ch.outfit_product_id];
+      if (!prod) return;
+      const imgs = Array.isArray(prod.images) && prod.images.length ? prod.images : (prod.image ? [prod.image] : []);
+      ch.outfit_images = imgs.filter(Boolean).slice(0, 3);
+    });
     return idx;
   }
 

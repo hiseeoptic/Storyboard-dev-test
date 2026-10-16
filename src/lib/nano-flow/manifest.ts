@@ -15,7 +15,7 @@ import type {
 import { buildProductionState } from "../production-state/normalizer.ts";
 import { SET_QUALITY_NEGATIVE, SET_QUALITY_NOTE, stripBlandSetClauses } from "../production-design.ts";
 import { buildSetMap, cameraSideLock, setMapBrief, type SetMap } from "../environment/set-map.ts";
-import { placementItems, shotsForPlacement, type ProductPlacement } from "../product-placement.ts";
+import { outfitCostume, placementItems, shotsForPlacement, type ProductPlacement } from "../product-placement.ts";
 import {
   productShootKeyframeContract,
   productShootNegatives,
@@ -1595,6 +1595,8 @@ export function buildNanoFlowManifest(
     asset.placement_kind = item.kind;
     asset.placement = item.placement;
     if (item.worn_by) asset.worn_by = item.worn_by;
+    // Fashion outfits lend clothes only — never the face of a shop model.
+    if (item.fashion) asset.garments_only = true;
     placementByProductId.set(asset.id, item);
   }
   // Outfit → the wearer's character asset points at it (wardrobe authority).
@@ -1631,6 +1633,22 @@ export function buildNanoFlowManifest(
   for (const c of characters) {
     const outfit = baseCostumeByName.get(c.name.trim().toLowerCase());
     if (outfit) c.wardrobe = outfit;
+    // A sold fashion outfit is the wardrobe, even if the script was edited.
+    const sold = c.outfit_product_id ? placementByProductId.get(c.outfit_product_id) : undefined;
+    if (sold?.fashion) c.wardrobe = outfitCostume(sold);
+  }
+  // A character with no face photo who wears a sold outfit still gets a
+  // full-body sheet (built from the outfit photos); this is who to draw.
+  for (const c of characters) {
+    if (c.image || !c.outfit_product_id) continue;
+    const lock = (breakdown.character_locks ?? []).find((l) => l.name.trim().toLowerCase() === c.name.trim().toLowerCase());
+    const appearance = lock
+      ? [lock.gender_age || [lock.gender, lock.is_child ? "child" : ""].filter(Boolean).join(" "), lock.build, lock.skin_tone, lock.hair]
+          .map((v) => String(v ?? "").trim())
+          .filter((v) => v && !/^unspecified$/i.test(v))
+          .join(", ")
+      : "";
+    if (appearance) c.appearance = appearance.slice(0, 300);
   }
 
   // ── Shots ──
@@ -1835,6 +1853,11 @@ export function buildNanoFlowManifest(
       ...[...placementByProductId]
         .filter(([id, item]) =>
           products.find((p) => p.id === id)?.image &&
+          // A fashion photo rides on frames only when it shows the clothes
+          // alone (flat lay / mannequin-free); with a model, or unread, the
+          // wearer's try-on sheet carries the outfit so no stranger's face
+          // can reach the frame.
+          (!item.fashion || item.fashion.analysis?.has_model_in_photo === false) &&
           shotsForPlacement(item, segments, firstWearerName).includes(i)
         )
         .map(([id]) => id),

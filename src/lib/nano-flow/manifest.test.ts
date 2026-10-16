@@ -1522,6 +1522,47 @@ test("placement items (any genre) carry links, dress their wearer and ride only 
   assert.deepEqual(m.project.product_links?.map((l) => l.link), ["https://shopee.vn/blazer", "https://www.amazon.com/dp/B0X"]);
 });
 
+test("fashion outfits: clothes only — a model photo stays on the try-on sheet, a flat lay may ride on frames", () => {
+  const bd = {
+    ...fixture(),
+    character_locks: [
+      { name: "Lan", gender_age: "adult woman", build: "slim", hair: "long black hair", costume: "x" },
+      { name: "Minh", costume: "y" },
+    ],
+    segments: [
+      { segment_number: 1, duration_seconds: 10, marketing_role: "hook", first_frame_prompt: "Lan walks", motion_prompt: "Lan walks", characters_in_scene: ["Lan", "Minh"], environment_ref: "street", beats: [{ beat: "walks", camera: "[MEDIUM] track" }] },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const fashion = (wearer: string, hasModel: boolean) => ({
+    wearer,
+    group: "woman",
+    name: wearer,
+    imageCount: 1,
+    fills: { footwear: "white sneakers" },
+    analysis: { garments: [{ slot: "one_piece", description: "floral midi dress" }], has_model_in_photo: hasModel, has_back_view: false, audience: "woman", suggested_fills: {}, style_note: "" },
+  });
+  const m = buildNanoFlowManifest(bd, {
+    productReferences: [
+      { name: "Đầm hoa", images: ["BASE64_MODEL_PHOTO"] },
+      { name: "Áo sơ mi", images: ["BASE64_FLATLAY"] },
+    ],
+    productPlacements: [
+      { name: "Đầm hoa", kind: "outfit", worn_by: "Lan", placement: "featured", has_images: true, fashion: fashion("Lan", true) },
+      { name: "Áo sơ mi", kind: "outfit", worn_by: "Minh", placement: "featured", has_images: true, fashion: fashion("Minh", false) },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[1]);
+  const products = m.assets.products ?? [];
+  const dress = products.find((p) => p.name === "Đầm hoa")!;
+  const shirt = products.find((p) => p.name === "Áo sơ mi")!;
+  assert.equal(dress.garments_only, true);
+  const lan = (m.assets.characters ?? []).find((c) => c.name === "Lan")!;
+  assert.equal(lan.outfit_product_id, dress.id);
+  // No face photo: the sheet is drawn from this description.
+  assert.equal(lan.appearance, "adult woman, slim, long black hair");
+  assert.match(String(lan.wardrobe), /floral midi dress \(exactly as in the attached outfit photo\).*white sneakers/);
+  assert.deepEqual(m.shots[0]!.image_refs?.products, [shirt.id], "the photo with a model never reaches a frame");
+});
+
 test("keyframe and video prompt share one opening-frame description, and the keyframe owns the opening look", () => {
   const bd = {
     title: "Opening",

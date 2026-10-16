@@ -42,6 +42,7 @@ import {
   buildStoryboardPlan,
   type StoryboardPlanPrep,
   analyzeAffiliateProduct,
+  analyzeOutfitImages,
   analyzeCookingRecipe,
   generateBoardImage,
   finalizeScript,
@@ -56,6 +57,8 @@ import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { WritersRoom } from "./writers-room";
 import { SetDirectionPanel } from "./set-direction";
+import { OutfitEditor, outfitHasContent, type OutfitDraft } from "./outfit-editor";
+import { isChildGroup, outfitCostumeText, resolveFills, type CharacterOutfit, type WearerGroup } from "@/lib/fashion/outfit";
 import { composeSettingRequest } from "@/lib/environment/set-styles";
 import type { RoomFormPatch } from "@/lib/writers-room/export";
 import { loadHandoff } from "@/lib/handoff";
@@ -1263,6 +1266,45 @@ interface CharacterEntry {
   /** Nano Flow: user declared this person has a real reference photo that will
    * be attached in the extension (no in-app upload). Keep identity image-only. */
   hasRealPhoto?: boolean;
+  /** Fashion affiliate: the clothes this character wears to sell them. */
+  outfit?: OutfitDraft;
+}
+
+/** Who a text-only character is when the clothes they sell say so. */
+const GROUP_PERSON: Record<WearerGroup, string> = {
+  woman: "adult woman",
+  man: "adult man",
+  girl: "young girl (child)",
+  boy: "young boy (child)",
+};
+
+/** A character's attached clothes as an outfit product that character wears. */
+function outfitProductEntry(wearer: string, outfit: OutfitDraft, taken: Set<string>): ProductEntry {
+  const fills = outfit.analysis ? resolveFills(outfit.analysis, outfit.group, outfit.edits) : {};
+  const base = outfit.name.trim() || `Trang phục của ${wearer}`;
+  // Matching outfits (mẹ & bé) may share a name; each wearer needs its own item.
+  const name = taken.has(base.toLowerCase()) ? `${base} (${wearer})` : base;
+  taken.add(name.toLowerCase());
+  const link = normalizeShopLink(outfit.link);
+  const fashion: CharacterOutfit = {
+    wearer,
+    group: outfit.group,
+    name,
+    ...(link ? { link } : {}),
+    analysis: outfit.analysis,
+    fills,
+    imageCount: outfit.images.length,
+  };
+  return {
+    name,
+    description: outfitCostumeText(fashion).slice(0, 400),
+    images: outfit.images.slice(0, 4),
+    ...(link ? { link } : {}),
+    kind: "outfit",
+    wornBy: wearer,
+    placement: outfit.placement,
+    fashion,
+  };
 }
 
 const BODY_TYPE_TEXT: Record<CharacterEntry["bodyType"], string> = {
@@ -1286,6 +1328,8 @@ interface ProductEntry {
   kind?: PlacementKind;
   wornBy?: string;
   placement?: PlacementMode;
+  /** Fashion outfit details (garment slots + app-styled pieces). */
+  fashion?: CharacterOutfit;
 }
 
 interface BackgroundEntry {
@@ -1648,6 +1692,7 @@ function ProjectWorkspace() {
   const [charIsChild, setCharIsChild] = useState(false);
   const [charHeightCm, setCharHeightCm] = useState("");
   const [charBodyType, setCharBodyType] = useState<CharacterEntry["bodyType"]>("standard");
+  const [charOutfit, setCharOutfit] = useState<OutfitDraft | undefined>(undefined);
   const [charAppearance, setCharAppearance] = useState("");
   const [charApprSel, setCharApprSel] = useState("");
   const [charImages, setCharImages] = useState<UploadedImage[]>([]);
@@ -1874,8 +1919,10 @@ function ProjectWorkspace() {
         // One frontal identity photo is the complete character reference.
         images: charImages.slice(0, 1),
         hasRealPhoto: charHasRealPhoto,
+        ...(outfitHasContent(charOutfit) ? { outfit: charOutfit } : {}),
       },
     ]);
+    setCharOutfit(undefined);
     setCharName("");
     setCharRole("");
     setCharIsChild(false);
@@ -1906,7 +1953,8 @@ function ProjectWorkspace() {
   };
   const saveCastPreset = async () => {
     const draft = draftCharacterForPreset();
-    const castToSave = [...characters];
+    // Outfits are this project's products, not part of the reusable cast.
+    const castToSave: CharacterEntry[] = characters.map(({ outfit: _outfit, ...character }) => character);
     if (draft && !castToSave.some((character) =>
       character.name.trim().toLowerCase() === draft.name.trim().toLowerCase()
     )) castToSave.push(draft);
@@ -2034,6 +2082,31 @@ function ProjectWorkspace() {
     }
   };
 
+  // Fashion: read which garments a character's outfit photos show.
+  const analyzeOutfit = async (draft: OutfitDraft) => {
+    const compressed = await downscaleRefImages([{ name: draft.name || "outfit", images: draft.images.slice(0, 4).map((image) => image.base64) }]);
+    return analyzeOutfitImages({ images: compressed[0]?.images ?? [], name: draft.name, group: draft.group });
+  };
+  const updateCharacter = (index: number, patch: Partial<CharacterEntry>) =>
+    setCharacters((prev) => prev.map((c, j) => (j === index ? { ...c, ...patch } : c)));
+  /** "Số nhân vật": add named cards up to n, or drop the last ones (after asking). */
+  const setCastCount = (n: number) => {
+    if (characters.length > n &&
+      !window.confirm(lang === "vi" ? `Bỏ ${characters.length - n} nhân vật cuối trong danh sách?` : `Remove the last ${characters.length - n} character(s)?`)) return;
+    setCharacters((prev) => {
+      if (prev.length >= n) return prev.slice(0, n);
+      const used = new Set(prev.map((c) => c.name.trim().toLowerCase()));
+      const next = [...prev];
+      for (let k = 1; next.length < n; k++) {
+        const name = lang === "vi" ? `Nhân vật ${k}` : `Character ${k}`;
+        if (used.has(name.toLowerCase())) continue;
+        used.add(name.toLowerCase());
+        next.push({ name, role: "", appearance: "", bodyType: "standard", images: [] });
+      }
+      return next;
+    });
+  };
+
   const runProductAnalysis = async (): Promise<ProductIR | null> => {
     const candidate = products[0] ?? (prodImages.length > 0
       ? { name: prodName.trim() || productName.trim() || "Product", description: effectiveProdDesc, images: prodImages }
@@ -2115,7 +2188,7 @@ function ProjectWorkspace() {
     // them to the final clip only (the eating payoff, face visible).
     const effectiveCharacters = [
           ...characters,
-          ...(charImages.length > 0 || (charHasRealPhoto && charName.trim())
+          ...(charImages.length > 0 || (charName.trim() && (charHasRealPhoto || outfitHasContent(charOutfit)))
             ? [{
                 name: charName.trim() || "Main character",
                 role: charRole,
@@ -2125,11 +2198,18 @@ function ProjectWorkspace() {
                 isChild: charIsChild,
                 images: charImages,
                 hasRealPhoto: charHasRealPhoto,
+                ...(outfitHasContent(charOutfit) ? { outfit: charOutfit } : {}),
               }]
             : []),
         ];
+    // Clothes attached to a character become that character's outfit product.
+    const takenProductNames = new Set(products.map((p) => p.name.trim().toLowerCase()));
+    const outfitProducts: ProductEntry[] = effectiveCharacters.flatMap((c) =>
+      outfitHasContent(c.outfit) ? [outfitProductEntry(c.name.trim(), c.outfit, takenProductNames)] : []
+    );
     const effectiveProducts: ProductEntry[] = [
       ...products,
+      ...outfitProducts,
       // A filled-in but not yet "added" item still counts (photos or a link).
       ...(prodImages.length > 0 || (prodName.trim() && normalizeShopLink(prodLink))
         ? [{
@@ -2154,6 +2234,7 @@ function ProjectWorkspace() {
           worn_by: p.wornBy,
           placement: p.placement ?? "natural",
           has_images: p.images.length > 0,
+          ...(p.fashion ? { fashion: p.fashion } : {}),
         })));
     // Per-segment location sets are stored directly in `backgrounds` now.
     const effectiveBackgrounds: BackgroundEntry[] = backgrounds;
@@ -2439,10 +2520,10 @@ function ProjectWorkspace() {
               // pass appearance/height/body prose that can fight the pixels.
               appearance: hasCharacterReference
                 ? ""
-                : [c.appearance, physicalLock].filter(Boolean).join(". "),
+                : [outfitHasContent(c.outfit) ? GROUP_PERSON[c.outfit.group] : "", c.appearance, physicalLock].filter(Boolean).join(". "),
               personality: "",
               role: c.role,
-              is_child: c.isChild,
+              is_child: c.isChild || (outfitHasContent(c.outfit) && isChildGroup(c.outfit.group)),
               height_cm:
                 !hasCharacterReference && Number.isFinite(parsedHeight)
                   ? parsedHeight
@@ -5596,33 +5677,73 @@ function ProjectWorkspace() {
                 )}
               </div>
 
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border p-3">
+                <span className="text-sm font-medium">{lang === "vi" ? "👥 Số nhân vật:" : "👥 Characters:"}</span>
+                {[1, 2, 3, 4].map((n) => (
+                  <Button
+                    key={n}
+                    type="button"
+                    size="sm"
+                    variant={characters.length === n ? "default" : "outline"}
+                    onClick={() => setCastCount(n)}
+                    aria-pressed={characters.length === n}
+                  >
+                    {n}
+                  </Button>
+                ))}
+                <span className="basis-full text-xs text-muted-foreground">
+                  {lang === "vi"
+                    ? "Tạo sẵn thẻ cho từng người — đặt tên, gắn ảnh mặt và đồ đang bán (thời trang) ngay trong thẻ."
+                    : "Creates a card per person — name them and attach their face photo and the clothes they sell right in the card."}
+                </span>
+              </div>
+
               {characters.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">
                     {lang === "vi" ? `Dàn nhân vật đã thêm (${characters.length})` : `Cast added (${characters.length})`}
                   </p>
                   {characters.map((c, i) => (
-                    <div key={i} className="flex items-start justify-between rounded-lg border p-3">
-                      <div className="flex gap-3">
-                        {c.images.length > 0 && (
-                          <div className="flex gap-1">
-                            {c.images.map((img) => (
-                              <img key={img.id} src={img.preview} alt="" className="h-12 w-12 rounded object-cover" />
-                            ))}
-                          </div>
-                        )}
-                        <div>
-                          <p className="font-medium">{c.name}{c.isChild ? " 👶" : ""}</p>
-                          <p className="text-xs text-muted-foreground">{c.isChild ? (lang === "vi" ? "Trẻ em · " : "Child · ") : ""}{c.role}{c.appearance ? ` — ${c.appearance}` : ""}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {c.heightCm ? `${c.heightCm} cm · ` : ""}{BODY_TYPE_LABEL[c.bodyType][lang]}
-                          </p>
-                          <p className="text-xs text-muted-foreground">{c.images.length} {L("photos")}</p>
-                        </div>
+                    <div key={i} className="space-y-2 rounded-lg border p-3">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          className="h-8 flex-1"
+                          value={c.name}
+                          onChange={(e) => updateCharacter(i, { name: e.target.value })}
+                          aria-label={lang === "vi" ? `Tên nhân vật ${i + 1}` : `Character ${i + 1} name`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updateCharacter(i, { isChild: !c.isChild })}
+                          aria-pressed={!!c.isChild}
+                          title={lang === "vi" ? "Trẻ em" : "Child"}
+                          className={`rounded-full border px-2.5 py-1 text-xs ${c.isChild ? "border-primary bg-primary text-primary-foreground" : "border-input hover:border-primary/50"}`}
+                        >
+                          👶 {lang === "vi" ? "Trẻ em" : "Child"}
+                        </button>
+                        <Button variant="ghost" size="sm" onClick={() => setCharacters((p) => p.filter((_, j) => j !== i))}>
+                          {L("remove")}
+                        </Button>
                       </div>
-                      <Button variant="ghost" size="sm" onClick={() => setCharacters((p) => p.filter((_, j) => j !== i))}>
-                        {L("remove")}
-                      </Button>
+                      {(c.role || c.appearance || c.heightCm) && (
+                        <p className="text-xs text-muted-foreground">
+                          {c.role}{c.appearance ? ` — ${c.appearance}` : ""}{c.heightCm ? ` · ${c.heightCm} cm` : ""} · {BODY_TYPE_LABEL[c.bodyType][lang]}
+                        </p>
+                      )}
+                      <ImageUploader
+                        images={c.images}
+                        onChange={(images) => updateCharacter(i, { images: images.slice(0, 1), hasRealPhoto: images.length > 0 })}
+                        maxImages={1}
+                        label={lang === "vi" ? `Ảnh chính diện của ${c.name.trim() || "nhân vật"} (tuỳ chọn)` : `Frontal photo of ${c.name.trim() || "the character"} (optional)`}
+                      />
+                      <OutfitEditor
+                        lang={lang}
+                        wearerName={c.name}
+                        value={c.outfit}
+                        defaultChild={c.isChild}
+                        onChange={(outfit) => updateCharacter(i, { outfit })}
+                        analyze={analyzeOutfit}
+                      />
                     </div>
                   ))}
                 </div>
@@ -5768,6 +5889,15 @@ function ProjectWorkspace() {
                     />
                   </>
                 )}
+
+                <OutfitEditor
+                  lang={lang}
+                  wearerName={charName}
+                  value={charOutfit}
+                  defaultChild={charIsChild}
+                  onChange={setCharOutfit}
+                  analyze={analyzeOutfit}
+                />
 
                 <Button onClick={addCharacter} disabled={!charName.trim()} className="w-full gap-2">
                   ➕ {lang === "vi"

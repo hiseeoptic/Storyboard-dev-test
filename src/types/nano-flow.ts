@@ -94,6 +94,10 @@ export interface NanoFlowAsset {
   /** Characters only: product asset id of the outfit this character wears — its
    * images are the wardrobe authority for the character's wardrobe sheet. */
   outfit_product_id?: string;
+  /** Characters without a face photo who wear a sold outfit: who to draw on the sheet. */
+  appearance?: string;
+  /** Outfit products only: the photos lend clothes only (a shop model's face is never used). */
+  garments_only?: boolean;
 }
 
 /** Which declared assets to attach at a given step (STEP A — image gen). */

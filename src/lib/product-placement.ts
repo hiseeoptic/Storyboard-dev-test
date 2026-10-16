@@ -12,6 +12,17 @@
 // Pure data + functions (node-testable).
 // ============================================================
 
+import {
+  GARMENT_SLOTS,
+  WEARER_GROUPS,
+  fashionDirective,
+  normalizeGarmentAnalysis,
+  outfitCostumeText,
+  type CharacterOutfit,
+  type GarmentSlot,
+  type WearerGroup,
+} from "./fashion/outfit.ts";
+
 export type PlacementKind = "product" | "outfit" | "prop";
 export type PlacementMode = "natural" | "featured";
 
@@ -26,6 +37,8 @@ export interface ProductPlacement {
   placement: PlacementMode;
   /** True when reference photos were uploaded for this item. */
   has_images?: boolean;
+  /** Fashion outfit attached to a character: garment slots + app-styled pieces. Outfits only. */
+  fashion?: CharacterOutfit;
 }
 
 const clean = (s: unknown) => String(s ?? "").replace(/\s+/g, " ").trim();
@@ -65,8 +78,10 @@ export function placementItems(list: unknown): ProductPlacement[] {
     seen.add(name.toLowerCase());
     const kind: PlacementKind = r.kind === "outfit" || r.kind === "prop" ? r.kind : "product";
     const wornBy = kind === "outfit" ? clean(r.worn_by) : "";
+    const fashion = kind === "outfit" ? normalizeFashion(r.fashion, wornBy, name) : undefined;
     out.push({
       name,
+      ...(fashion ? { fashion } : {}),
       ...(clean(r.description) ? { description: clean(r.description).slice(0, 400) } : {}),
       ...(normalizeShopLink(r.link) ? { link: normalizeShopLink(r.link) } : {}),
       kind,
@@ -78,8 +93,34 @@ export function placementItems(list: unknown): ProductPlacement[] {
   return out;
 }
 
+function normalizeFashion(raw: unknown, wearer: string, name: string): CharacterOutfit | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  const group = (WEARER_GROUPS as string[]).includes(String(r.group)) ? (r.group as WearerGroup) : "woman";
+  const imageCount = Math.max(0, Math.min(8, Number(r.imageCount) || 0));
+  const analysis = r.analysis ? normalizeGarmentAnalysis(r.analysis, imageCount || 8) : null;
+  const fillsRaw = (r.fills && typeof r.fills === "object" ? r.fills : {}) as Record<string, unknown>;
+  const fills: Partial<Record<GarmentSlot, string>> = {};
+  for (const slot of GARMENT_SLOTS) if (clean(fillsRaw[slot])) fills[slot] = clean(fillsRaw[slot]).slice(0, 240);
+  return {
+    wearer: wearer || clean(r.wearer),
+    group,
+    name: clean(r.name) || name,
+    ...(normalizeShopLink(r.link) ? { link: normalizeShopLink(r.link) } : {}),
+    analysis,
+    fills,
+    imageCount,
+  };
+}
+
+/** Fashion outfits attached to characters, in request order. */
+export function fashionOutfits(list: unknown): CharacterOutfit[] {
+  return placementItems(list).flatMap((item) => (item.fashion ? [item.fashion] : []));
+}
+
 /** Text that becomes character_locks.costume for an outfit placement. */
 export function outfitCostume(item: ProductPlacement): string {
+  if (item.fashion) return outfitCostumeText(item.fashion);
   return `${item.name}${item.description ? ` — ${item.description}` : ""}${item.has_images ? " (exactly as in its attached outfit reference photo: same garments, colours, fabric, cut and details)" : ""}`;
 }
 
@@ -105,7 +146,8 @@ export function productPlacementDirective(list: unknown, opts: { adGenre?: boole
       : `- ${what} "${it.name}"${it.description ? ` (${it.description})` : ""}: NATURAL PLACEMENT — lives inside the story world and is used by a character as part of the real action in at least one segment; visible and recognisable but never a sales pitch, no direct-to-camera selling${opts.adGenre ? " unless the ad script calls for it" : ""}.${ref}`);
   }
   lines.push("- Shop links are NEVER shown or read on screen; never invent prices, discounts or claims about these items.");
-  return lines.join("\n");
+  const fashion = fashionDirective(items.flatMap((item) => (item.fashion ? [item.fashion] : [])));
+  return fashion ? `${lines.join("\n")}\n${fashion}` : lines.join("\n");
 }
 
 interface LockLike { name: string; costume?: string; wardrobe_materials?: string }
