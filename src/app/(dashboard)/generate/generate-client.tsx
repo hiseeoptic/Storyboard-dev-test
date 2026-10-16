@@ -59,6 +59,7 @@ import { WritersRoom } from "./writers-room";
 import { SetDirectionPanel } from "./set-direction";
 import { OutfitEditor, outfitHasContent, type OutfitDraft } from "./outfit-editor";
 import { isChildGroup, outfitCostumeText, resolveFills, type CharacterOutfit, type WearerGroup } from "@/lib/fashion/outfit";
+import { MAKEUP_LABEL, type MakeupMode } from "@/lib/character-makeup";
 import { composeSettingRequest } from "@/lib/environment/set-styles";
 import type { RoomFormPatch } from "@/lib/writers-room/export";
 import { loadHandoff } from "@/lib/handoff";
@@ -1268,6 +1269,32 @@ interface CharacterEntry {
   hasRealPhoto?: boolean;
   /** Fashion affiliate: the clothes this character wears to sell them. */
   outfit?: OutfitDraft;
+  /** Makeup: story decides (auto), bare face, or natural makeup. */
+  makeup?: MakeupMode;
+}
+
+/** 💄 Makeup choice for one character (children never wear makeup, so it is hidden for them). */
+function MakeupPicker(props: { lang: Lang; value: MakeupMode; onChange: (mode: MakeupMode) => void }) {
+  const { lang, value, onChange } = props;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={lang === "vi" ? "Trang điểm" : "Makeup"}>
+      <span className="text-xs font-medium text-muted-foreground">💄 {lang === "vi" ? "Trang điểm:" : "Makeup:"}</span>
+      {(["auto", "none", "natural"] as MakeupMode[]).map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          onClick={() => onChange(mode)}
+          aria-pressed={value === mode}
+          className={cn(
+            "rounded-full border px-2.5 py-1 text-xs",
+            value === mode ? "border-primary bg-primary text-primary-foreground" : "border-input hover:border-primary/50"
+          )}
+        >
+          {MAKEUP_LABEL[mode][lang]}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 /** Who a text-only character is when the clothes they sell say so. */
@@ -1693,6 +1720,7 @@ function ProjectWorkspace() {
   const [charHeightCm, setCharHeightCm] = useState("");
   const [charBodyType, setCharBodyType] = useState<CharacterEntry["bodyType"]>("standard");
   const [charOutfit, setCharOutfit] = useState<OutfitDraft | undefined>(undefined);
+  const [charMakeup, setCharMakeup] = useState<MakeupMode>("auto");
   const [charAppearance, setCharAppearance] = useState("");
   const [charApprSel, setCharApprSel] = useState("");
   const [charImages, setCharImages] = useState<UploadedImage[]>([]);
@@ -1920,9 +1948,11 @@ function ProjectWorkspace() {
         images: charImages.slice(0, 1),
         hasRealPhoto: charHasRealPhoto,
         ...(outfitHasContent(charOutfit) ? { outfit: charOutfit } : {}),
+        makeup: charMakeup,
       },
     ]);
     setCharOutfit(undefined);
+    setCharMakeup("auto");
     setCharName("");
     setCharRole("");
     setCharIsChild(false);
@@ -2199,6 +2229,7 @@ function ProjectWorkspace() {
                 images: charImages,
                 hasRealPhoto: charHasRealPhoto,
                 ...(outfitHasContent(charOutfit) ? { outfit: charOutfit } : {}),
+                makeup: charMakeup,
               }]
             : []),
         ];
@@ -2529,6 +2560,7 @@ function ProjectWorkspace() {
                   ? parsedHeight
                   : undefined,
               body_type: hasCharacterReference ? undefined : c.bodyType,
+              ...(c.makeup && c.makeup !== "auto" ? { makeup: c.makeup } : {}),
             };
           })
         : undefined,
@@ -3054,6 +3086,11 @@ function ProjectWorkspace() {
       // Embed each uploaded character frontal photo so the extension auto-loads
       // it (no manual per-image attach). No photo ⇒ a null slot as before.
       characterReferences: manifestCharacterRefs.length > 0 ? manifestCharacterRefs : undefined,
+      characterMakeup: Object.fromEntries(
+        (genInput?.character_descriptions ?? [])
+          .filter((c) => c.makeup && c.makeup !== "auto")
+          .map((c) => [c.name, c.makeup as MakeupMode])
+      ),
       affiliateProductIR: genInput?.product_ir,
       affiliateDisclosure: genInput?.affiliate_disclosure,
       // Frame-mode policy: genre + directing profile pick the default start vs
@@ -5725,6 +5762,9 @@ function ProjectWorkspace() {
                           {L("remove")}
                         </Button>
                       </div>
+                      {!c.isChild && (
+                        <MakeupPicker lang={lang} value={c.makeup ?? "auto"} onChange={(makeup) => updateCharacter(i, { makeup })} />
+                      )}
                       {(c.role || c.appearance || c.heightCm) && (
                         <p className="text-xs text-muted-foreground">
                           {c.role}{c.appearance ? ` — ${c.appearance}` : ""}{c.heightCm ? ` · ${c.heightCm} cm` : ""} · {BODY_TYPE_LABEL[c.bodyType][lang]}
@@ -5890,6 +5930,7 @@ function ProjectWorkspace() {
                   </>
                 )}
 
+                {!charIsChild && <MakeupPicker lang={lang} value={charMakeup} onChange={setCharMakeup} />}
                 <OutfitEditor
                   lang={lang}
                   wearerName={charName}

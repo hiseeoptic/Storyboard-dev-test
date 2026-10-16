@@ -2141,6 +2141,8 @@
       wardrobe: 'VIRTUAL TRY-ON: EXACTLY the garment(s) in the OUTFIT photo(s), transferred piece for piece — the same silhouette, neckline, straps or strapless top, gathers/ruching and frills at the same size, ties or sash in the same position with the same knot, the same number of layers and hem shape, length, colour, print and fabric texture. The photo decides every detail; there is deliberately no text description of it — never redesign, simplify or embellish it.' + (outfitPiecesNotInPhoto(outfit) ? ' Pieces the photo does not show: ' + outfitPiecesNotInPhoto(outfit) + '.' : ''),
       wardrobe_rule: 'ONLY the LEFT full-body cell shows the complete outfit. BOTH RIGHT cells terminate at the base of the neck. Do not add, remove or restyle any garment.',
       ...(opts.hasFace === false ? {} : { identity_authority: 'Copy the face, head, hair, skin and features of the PERSON photo (the LAST attached image) EXACTLY — do not reinterpret, age, slim or beautify, and never take a face from an outfit photo. The RIGHT-TOP frontal and RIGHT-BOTTOM 90° profile neck-up crops are equal identity anchors of the SAME head; the LEFT full-body cell carries that identical face.' }),
+    } : {}, (opts && opts.makeup) ? {
+      makeup: opts.makeup + ' Identical in all three cells.',
     } : {}, (opts && opts.hasFace === false) ? {
       identity_authority: 'No face photo exists for this character: create ONE new, natural, believable real person — ' + (opts.appearance || 'matching the story') + ' — with a distinctive everyday face that is NOT the model from any outfit photo. The RIGHT-TOP frontal and RIGHT-BOTTOM 90° profile neck-up crops are the identity anchors; the LEFT full-body cell carries that identical face.',
     } : {}));
@@ -2162,7 +2164,7 @@
       try {
         post({ via: 'log', kind: 'log', message: `🧍 Tạo ảnh TOÀN THÂN nhân vật "${name}"${outfitIds.length ? ` — mặc đồ đang bán (${outfitIds.length} ảnh)` : ''}${outfit ? ` — trang phục: ${outfit.slice(0, 60)}` : ' — trang phục theo bối cảnh'}…` });
         const g = await batchGenerateImages(pid, {
-          prompt: sheetPromptFor(name, outfit, { outfitRef: outfitIds.length > 0, hasFace: !!photoId, appearance: r.appearance || '' }),
+          prompt: sheetPromptFor(name, outfit, { outfitRef: outfitIds.length > 0, hasFace: !!photoId, appearance: r.appearance || '', makeup: r.makeup || '' }),
           // 16:9 landscape: LEFT = full body; RIGHT-TOP and RIGHT-BOTTOM = matching
           // neck-up identity crops (frontal + exact 90° profile).
           aspect: 'IMAGE_ASPECT_RATIO_LANDSCAPE',

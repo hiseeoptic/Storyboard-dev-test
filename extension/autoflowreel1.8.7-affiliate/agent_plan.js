@@ -61,6 +61,8 @@
       wardrobe: 'VIRTUAL TRY-ON: EXACTLY the garment(s) in the OUTFIT photo(s), transferred piece for piece — the same silhouette, neckline, straps or strapless top, gathers/ruching and frills at the same size, ties or sash in the same position with the same knot, the same number of layers and hem shape, length, colour, print and fabric texture. The photo decides every detail; there is deliberately no text description of it — never redesign, simplify or embellish it.' + (outfitPiecesNotInPhoto(outfit) ? ' Pieces the photo does not show: ' + outfitPiecesNotInPhoto(outfit) + '.' : ''),
       wardrobe_rule: 'ONLY the LEFT full-body cell shows the complete outfit. BOTH RIGHT cells terminate at the base of the neck. Do not add, remove or restyle any garment.',
       ...(opts.hasFace === false ? {} : { identity_authority: 'Copy the face, head, hair, skin and features of the PERSON photo (the LAST attached image) EXACTLY — do not reinterpret, age, slim or beautify, and never take a face from an outfit photo. The RIGHT-TOP frontal and RIGHT-BOTTOM 90° profile neck-up crops are equal identity anchors of the SAME head; the LEFT full-body cell carries that identical face.' }),
+    } : {}, (opts && opts.makeup) ? {
+      makeup: opts.makeup + ' Identical in all three cells.',
     } : {}, (opts && opts.hasFace === false) ? {
       identity_authority: 'No face photo exists for this character: create ONE new, natural, believable real person — ' + (opts.appearance || 'matching the story') + ' — with a distinctive everyday face that is NOT the model from any outfit photo. The RIGHT-TOP frontal and RIGHT-BOTTOM 90° profile neck-up crops are the identity anchors; the LEFT full-body cell carries that identical face.',
     } : {}));
@@ -148,7 +150,7 @@
       const key = 'SHEET ' + pad(sheets.length + 1);
       const name = String(asset.name || '').trim();
       const outfitKeys = outfitKeysFor(ent.asset);
-      sheets.push({ key, name, outfit, photoKey: ent.photoKey, outfitKeys, prompt: key + ' – ' + name + ' ' + sheetPrompt(name, outfit, sceneHint, { outfitRef: outfitKeys.length > 0, hasFace: !!ent.photoKey, appearance: String(ent.asset.appearance || '') }) });
+      sheets.push({ key, name, outfit, photoKey: ent.photoKey, outfitKeys, prompt: key + ' – ' + name + ' ' + sheetPrompt(name, outfit, sceneHint, { outfitRef: outfitKeys.length > 0, hasFace: !!ent.photoKey, appearance: String(ent.asset.appearance || ''), makeup: String(ent.asset.makeup || '') }) });
       sheetByCombo[combo] = key;
       return key;
     };
@@ -187,7 +189,8 @@
       if (!imgs.length) return;
       const k = 'products:' + (a.id || i);
       productKeys.push(k);
-      if (a.garments_only) garmentsOnlyKeys.push(k);
+      // Bìa chỉ dùng sản phẩm manifest đánh dấu thumbnail_hero (video bán hàng); truyện thì không.
+      if (a.garments_only || (typeof a.thumbnail_hero === 'boolean' && !a.thumbnail_hero)) garmentsOnlyKeys.push(k);
       productAngles[k] = imgs.map((_, j) => k + (j ? ':' + j : ''));
     });
     // Quay không có người (app storyboard: production_profile.product_shoot), hoặc dự án

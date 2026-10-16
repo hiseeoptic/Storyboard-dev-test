@@ -79,3 +79,14 @@ test("the try-on sheet leads with the task, drops the garment's text description
   assert.equal(plain.task, undefined);
   assert.match(plain.wardrobe, /navy shirt/);
 });
+
+test("the sheet carries the makeup lock; a non-hero product never reaches the agent cover", () => {
+  const sheet = JSON.parse(AgentPlan.sheetPrompt("Lan", "linen dress", "", { makeup: "NO MAKEUP — bare natural face." }));
+  assert.match(sheet.makeup, /^NO MAKEUP — bare natural face\. Identical in all three cells\.$/);
+  const m = manifest();
+  m.assets.products.push({ id: "prod_pan", name: "Chảo", image: "data:image/png;base64,PAN", placement_kind: "product", thumbnail_hero: false });
+  m.assets.products[0].thumbnail_hero = false;
+  const queue = NanoManifest.toQueue(m);
+  const ctx = AgentPlan.buildContext(m, queue, NanoPipeline.buildQueuePlan(queue).plans, {});
+  assert.ok(!ctx.thumb.refKeys.some((k) => k.startsWith("products:")), "story covers carry no product refs");
+});

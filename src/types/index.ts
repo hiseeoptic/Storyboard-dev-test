@@ -454,6 +454,8 @@ export interface CharacterDescription {
   height_cm?: number;
   /** User-selected silhouette; independent from face-image analysis. */
   body_type?: "slim" | "standard" | "stocky";
+  /** Makeup chosen in the cast: story decides (auto), bare face, or natural makeup. */
+  makeup?: "auto" | "none" | "natural";
 }
 
 export interface ImageReference {

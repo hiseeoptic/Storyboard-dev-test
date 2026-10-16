@@ -3426,6 +3426,7 @@ async function runNanoImages(options = {}) {
           kind: r.kind, id: r.id, name: r.name, data: r.image, wardrobe: r.wardrobe || '',
           outfitImages: r.kind === 'characters' && Array.isArray(r.outfitImages) ? r.outfitImages : [],
           appearance: r.kind === 'characters' ? (r.appearance || '') : '',
+          makeup: r.kind === 'characters' ? (r.makeup || '') : '',
           locationViews: isEnvSheet ? r.locationViews : null,
           // Ảnh NẠP làm NGUỒN để quét ra sheet bối cảnh 2 góc (giống ảnh nhân vật → sheet).
           locationSourceImage: isEnvSheet ? uploadedLoc : '',
@@ -3599,7 +3600,12 @@ async function runNanoThumbnail() {
     if (data) characterRefs.push({ name: c.name || 'char', data });
   });
   const productRefs = [];
-  ((nanoManifest.assets && nanoManifest.assets.products) || []).forEach((product) => {
+  // Manifest mới đánh dấu thumbnail_hero: chỉ video BÁN SẢN PHẨM mới đưa sản phẩm lên
+  // thumbnail; truyện thì thumbnail là chủ đề chính (trang phục/đồ vật không thành "món chính").
+  const allProducts = (nanoManifest.assets && nanoManifest.assets.products) || [];
+  const heroMarked = allProducts.some((product) => product && typeof product.thumbnail_hero === 'boolean');
+  allProducts.forEach((product) => {
+    if (heroMarked && !(product && product.thumbnail_hero)) return;
     const data = product && (product.image || (Array.isArray(product.images) && product.images[0]));
     if (data) productRefs.push({ name: product.name || 'product', data });
   });

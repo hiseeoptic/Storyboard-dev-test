@@ -94,6 +94,10 @@ export interface NanoFlowAsset {
   /** Characters only: product asset id of the outfit this character wears — its
    * images are the wardrobe authority for the character's wardrobe sheet. */
   outfit_product_id?: string;
+  /** Characters only: locked makeup (bare face / natural makeup), for the sheet and every frame. */
+  makeup?: string;
+  /** Products only: the one product the thumbnail shows as its hero (product-led videos only). */
+  thumbnail_hero?: boolean;
   /** Characters without a face photo who wear a sold outfit: who to draw on the sheet. */
   appearance?: string;
   /** Outfit products only: the photos lend clothes only (a shop model's face is never used). */

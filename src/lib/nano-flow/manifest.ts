@@ -16,6 +16,7 @@ import { buildProductionState } from "../production-state/normalizer.ts";
 import { SET_QUALITY_NEGATIVE, SET_QUALITY_NOTE, stripBlandSetClauses } from "../production-design.ts";
 import { buildSetMap, cameraSideLock, setMapBrief, type SetMap } from "../environment/set-map.ts";
 import { outfitReferenceContract } from "../fashion/outfit.ts";
+import { makeupContract, makeupText, type MakeupMode } from "../character-makeup.ts";
 import { outfitCostume, placementItems, shotsForPlacement, type ProductPlacement } from "../product-placement.ts";
 import {
   productShootKeyframeContract,
@@ -77,6 +78,8 @@ export interface BuildNanoFlowManifestOptions {
   productReferences?: ImageReference[];
   /** Products / outfits / props attached to any genre, with shop links. */
   productPlacements?: ProductPlacement[];
+  /** Per-character makeup choice from the cast (name → mode). */
+  characterMakeup?: Record<string, MakeupMode>;
   affiliateProductIR?: ProductIR;
   affiliateDisclosure?: string;
   /** Explicit character medium selected in the app (one of the ten locked video
@@ -154,15 +157,39 @@ function insertAfterKey(obj: Record<string, unknown>, after: string[], key: stri
   return out;
 }
 
-/** An image prompt (JSON) that binds each wearer to their attached OUTFIT photo. */
-function withOutfitContract(promptJson: string, contract: string): string {
+/** An image prompt (JSON) with a contract placed right after the cast. */
+function withPromptContract(promptJson: string, key: string, contract: string, after = ["cast", "camera", "opening_frame"]): string {
   if (!contract) return promptJson;
   try {
     const parsed = JSON.parse(promptJson) as Record<string, unknown>;
-    return JSON.stringify(insertAfterKey(parsed, ["cast", "camera", "opening_frame"], "outfit_reference_contract", contract));
+    return JSON.stringify(insertAfterKey(parsed, after, key, contract));
   } catch {
     return `${promptJson}\n${contract}`;
   }
+}
+
+/** An image prompt (JSON) that binds each wearer to their attached OUTFIT photo, plus the makeup lock. */
+function withOutfitContract(promptJson: string, contract: string, makeup = ""): string {
+  return withPromptContract(
+    withPromptContract(promptJson, "outfit_reference_contract", contract),
+    "makeup_contract",
+    makeup,
+    ["outfit_reference_contract", "cast", "camera", "opening_frame"]
+  );
+}
+
+/** Each character lock in the video prompt carries its makeup lock. */
+function withMakeupVideoLocks(video: Record<string, unknown> | string, makeupByName: Map<string, string>): Record<string, unknown> | string {
+  if (typeof video === "string" || makeupByName.size === 0) return video;
+  const locks = clipObj(video.character_lock);
+  if (!Object.keys(locks).length) return video;
+  const patched: Record<string, unknown> = {};
+  for (const [id, raw] of Object.entries(locks)) {
+    const lock = clipObj(raw);
+    const makeup = makeupByName.get(clipStr(lock.name).toLowerCase());
+    patched[id] = makeup ? { ...lock, makeup } : raw;
+  }
+  return { ...video, character_lock: patched };
 }
 
 /** The video prompt with the same outfit contract, also on each wearer's character lock. */
@@ -1199,10 +1226,30 @@ function buildThumbnailPrompt(params: {
   realityMode: string;
   characterStyleLock?: string;
   characterStyleId?: string;
+  /** Story projects: the thumbnail sells the story's hook, never a product or outfit. */
+  story?: { hook: string; setting: string; keyObject?: string };
 }): string {
   const cast = params.castNames.length ? params.castNames.join(" and ") : "the main character(s)";
   const styled = Boolean(params.characterStyleLock);
   const liveAction = !styled && ["documentary", "cinematic", "commercial"].includes(params.realityMode);
+  if (params.story && !styled) {
+    const { hook, setting, keyObject } = params.story;
+    return JSON.stringify({
+      type: liveAction ? "photoreal_story_thumbnail" : `${slugify(params.realityMode)}_story_thumbnail`,
+      aspect: params.aspect === "9:16" ? "9:16 vertical" : "16:9 horizontal",
+      goal: "A high-click-through YouTube/TikTok thumbnail that sells THIS story's hook — the main topic of the video — instantly readable at a glance.",
+      story_hook: hook,
+      subjects: `The cast (${cast}) as the stars of that hook: large, readable faces with the strong, specific emotion of the moment (surprise, embarrassment, tension, delight — whatever the hook is), eyelines and body language that tell the conflict at a glance. Each person's face, hair, build AND outfit come EXACTLY from that character's ATTACHED wardrobe sheet; they wear their story outfit naturally, never presented as a product.`,
+      ...(keyObject ? { key_object: `"${keyObject}" — the object at the centre of the story, in frame at truthful size and clearly readable as part of the moment; no glow-up, no product display.` } : {}),
+      headline: `Big bold 3D headline "${params.headline}" across the TOP third — thick multi-colour gradient letters, heavy dark outline + drop shadow + soft glow, plus one emoji that matches the hook's emotion. The text MUST be spelled EXACTLY as given, crisp and fully legible.`,
+      background: `The story's real location${setting ? ` — ${setting}` : ""} — the same set as the video, pushed for thumbnail punch with cinematic colour, soft bokeh and a light burst behind the faces; never an unrelated festive, party or studio template.`,
+      composition: "The hook moment staged clearly: faces large in the lower two-thirds with a cut-out glow outline, the key story object between or beside them, headline in the top third; strong depth and a punchy vignette.",
+      render: liveAction
+        ? "Photoreal characters composited with graphic overlays; saturated, high contrast, tack-sharp — a scroll-stopping thumbnail."
+        : `Reality E thumbnail in the project's locked ${params.realityMode} medium; keep the design language, just push saturation and energy.`,
+      negative: "no product shot, no garment on a hanger or mannequin, no merchandise display, no confetti party unless the story is a party; no extra, missing or fused fingers; no distorted or duplicated faces; NO gibberish or misspelled text (the headline must read exactly as given); no watermark, no logo.",
+    });
+  }
   const prompt: Record<string, unknown> = {
     type: styled
       ? `${slugify(params.characterStyleId || "styled")}_thumbnail`
@@ -1684,6 +1731,18 @@ export function buildNanoFlowManifest(
     const sold = c.outfit_product_id ? placementByProductId.get(c.outfit_product_id) : undefined;
     if (sold?.fashion) c.wardrobe = outfitCostume(sold);
   }
+  // Makeup chosen per character in the cast (children never wear makeup).
+  const makeupByName = new Map<string, string>();
+  for (const c of characters) {
+    const key = c.name.trim().toLowerCase();
+    const mode = Object.entries(opts.characterMakeup ?? {}).find(([name]) => name.trim().toLowerCase() === key)?.[1];
+    const lock = (breakdown.character_locks ?? []).find((l) => l.name.trim().toLowerCase() === key);
+    const text = makeupText(mode, lock?.is_child === true);
+    if (text) {
+      c.makeup = text;
+      makeupByName.set(key, text);
+    }
+  }
   // Wearers of an outfit attached with a photo: the photo is their clothes.
   const outfitPhotoByWearer = new Map<string, { wearer: string; productName: string }>();
   for (const [productId, item] of placementByProductId) {
@@ -1795,6 +1854,29 @@ export function buildNanoFlowManifest(
   // Compute thumbnail delivery independently from the always-landscape board.
   const thumbnailAspect = opts.thumbnailAspectRatio ??
     (opts.aspectRatio === "16:9" ? "16:9" : "9:16");
+  // The thumbnail shows a product as its hero only in a product-led video
+  // (approved affiliate product, product shoot). Outfits and story placements
+  // are worn or used in the story; the thumbnail then sells the story's hook.
+  const productLed =
+    opts.affiliateProductIR?.review_status === "approved" ||
+    Boolean(productShoot) ||
+    ["advertising", "product_demo", "brand_film", "luxury", "promo", "unboxing"].includes(opts.genre ?? "");
+  const thumbnailHero = productLed
+    ? products.find((p) => placementByProductId.get(p.id)?.kind !== "outfit" && p.image) ??
+      products.find((p) => placementByProductId.get(p.id)?.kind !== "outfit")
+    : undefined;
+  for (const p of products) p.thumbnail_hero = p.id === thumbnailHero?.id;
+  const placementNames = new Set(placements.map((p) => p.name.trim().toLowerCase()));
+  const storyKeyObject = persistentPropEntries
+    .map((entry) => entry.display_name.replace(/^prop_/, "").replace(/_/g, " ").trim())
+    .find((name) => name && !placementNames.has(name.toLowerCase()));
+  const hookSegment = segments[0];
+  const storyHook = [
+    hookSegment?.first_frame_prompt,
+    hookSegment?.dialogue ? `Hook line: "${hookSegment.dialogue}"` : "",
+  ].filter(Boolean).join(" ").replace(/\s+/g, " ").trim().slice(0, 420) || breakdown.thumbnail_title || title;
+  const firstLocation = (hookSegment?.location_id ?? hookSegment?.environment_ref ?? "").trim();
+  const storySetting = (lockedBgByLocation.get(firstLocation)?.setting || "").slice(0, 200);
 
   const shots: NanoFlowShot[] = segments.map((seg, i) => {
     const index = seg.segment_number || i + 1;
@@ -1820,6 +1902,9 @@ export function buildNanoFlowManifest(
       // A visible change of clothes replaces the sold outfit for that shot.
       .filter((r) => !wardrobeOverride.has(r.wearer.toLowerCase()));
     const outfitContract = outfitReferenceContract(outfitRefs);
+    const shotMakeup = makeupContract(
+      inScene.map((n) => ({ name: (n ?? "").trim(), makeup: makeupByName.get((n ?? "").trim().toLowerCase()) ?? "" }))
+    );
     const wardrobeClause =
       wardrobeParts.length > 0
         ? outfitRefs.length
@@ -2098,12 +2183,12 @@ export function buildNanoFlowManifest(
         continueFromPrevious,
         lockedTimeOfDay,
         placementContract
-      ), outfitContract),
+      ), outfitContract, shotMakeup),
       // STEP A2 (clean keyframe mode only): the END keyframe for a transform
       // shot. Its presence makes the extension run Veo start_end_frame
       // interpolation (start→end); omitted ⇒ a normal single-keyframe shot. §6.2.
       ...(useCleanKeyframe && frameMode === "start_end"
-        ? { end_storyboard_prompt: withOutfitContract(buildKeyframePrompt({ moment: "end", ...keyframeArgs }), outfitContract) }
+        ? { end_storyboard_prompt: withOutfitContract(buildKeyframePrompt({ moment: "end", ...keyframeArgs }), outfitContract, shotMakeup) }
         : {}),
       frame_mode: useCleanKeyframe ? frameMode : "start",
       continuity_mode: shotContinuity,
@@ -2121,12 +2206,15 @@ export function buildNanoFlowManifest(
       // The generated keyframe is a visual opening reference only. The primary
       // video prompt remains the semantic authority for action/camera/end state.
       // Same words as the keyframe's opening_frame: both models stage one layout.
-      video_prompt: withOutfitVideoContract(
-        useCleanKeyframe
-          ? withOpeningFrame(primaryVideoPrompt, describeOpeningFrame(keyframeArgs))
-          : primaryVideoPrompt,
-        outfitRefs,
-        outfitContract
+      video_prompt: withMakeupVideoLocks(
+        withOutfitVideoContract(
+          useCleanKeyframe
+            ? withOpeningFrame(primaryVideoPrompt, describeOpeningFrame(keyframeArgs))
+            : primaryVideoPrompt,
+          outfitRefs,
+          outfitContract
+        ),
+        makeupByName
       ),
       characters_in_scene: inScene,
       video_refs: {
@@ -2190,17 +2278,20 @@ export function buildNanoFlowManifest(
         : buildThumbnailPrompt({
         headline: breakdown.thumbnail_title || title,
         castNames: characters.map((c) => c.name).slice(0, 3),
-        hero:
-          opts.productNames?.[0] ||
+        hero: thumbnailHero?.name ||
           (breakdown.product_dna
             ? "the hero product featured in the video (match the attached product reference exactly)"
-            : persistentPropEntries[0]
-              ? `the story's hero object "${persistentPropEntries[0].display_name}" (keep its exact established shape, material and colour)`
+            : storyKeyObject
+              ? `the story's hero object "${storyKeyObject}" (keep its exact established shape, material and colour)`
               : "the single key story object established by the script"),
         aspect: thumbnailAspect,
         realityMode,
         characterStyleLock: visualMediumLock,
         characterStyleId: characterRepresentation,
+        // A story (not a product video): the thumbnail sells the hook.
+        ...(thumbnailHero || breakdown.product_dna
+          ? {}
+          : { story: { hook: storyHook, setting: storySetting, ...(storyKeyObject ? { keyObject: storyKeyObject } : {}) } }),
       }),
       social_posts: breakdown.social_posts,
       ...(placements.some((p) => p.link)

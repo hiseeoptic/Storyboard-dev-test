@@ -816,11 +816,13 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
       name: entry.name.trim(),
       role: entry.role.trim(),
       isChild: !!entry.is_child,
+      makeup: entry.is_child ? undefined : entry.makeup,
     })),
     ...(input.character_images ?? []).map((entry) => ({
       name: entry.name.trim(),
       role: "",
       isChild: false,
+      makeup: undefined as string | undefined,
     })),
   ].filter((entry, index, all) =>
     !!entry.name &&
@@ -829,7 +831,7 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   const closedCastRule = menuCharacters.length
     ? `\nCLOSED USER CAST — ABSOLUTE IDENTITY AUTHORITY:\n${menuCharacters
         .map((entry) =>
-          `- ${entry.name}${entry.isChild ? " [CHILD]" : ""}${entry.role ? ` — role: ${entry.role}` : ""}`
+          `- ${entry.name}${entry.isChild ? " [CHILD]" : ""}${entry.role ? ` — role: ${entry.role}` : ""}${entry.makeup === "none" ? " — no makeup (bare face) in every scene" : entry.makeup === "natural" ? " — natural makeup in every scene" : ""}`
         )
         .join("\n")}\nThese are the only identities permitted. Preserve each internal identity key for image/reference binding and never add another person. ${resolveSpeechMode(input).anonymous_characters ? "Personal names are INTERNAL KEYS ONLY: spoken lines, captions and audience-facing prose use the supplied role or a stable functional role label." : "Use the approved names consistently in character, action and speaker fields."} If a role is not represented in this closed cast, adapt the action without adding that person.`
     : "";

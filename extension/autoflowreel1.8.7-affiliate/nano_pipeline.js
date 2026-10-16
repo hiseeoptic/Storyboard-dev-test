@@ -53,6 +53,7 @@
             // Thời trang: ảnh bộ đồ đang bán + ngoại hình (khi không có ảnh mặt).
             outfitImages: kind === 'characters' && Array.isArray(asset.outfit_images) ? asset.outfit_images : [],
             appearance: kind === 'characters' ? String(asset.appearance || '') : '',
+            makeup: kind === 'characters' ? String(asset.makeup || '') : '',
             placementKind: kind === 'products' ? String(asset.placement_kind || '') : '',
             wornBy: kind === 'products' ? String(asset.worn_by || '') : '',
             // A2: bối cảnh khai 2 "ảnh nền" (toàn cảnh + góc khác) — extension tự

@@ -200,7 +200,7 @@ test("photoreal representation adds NO style lock (board stays photoreal)", () =
 });
 
 test("project carries a viral thumbnail prompt (clickbait, headline + cast + wardrobe sheets)", () => {
-  const m = buildNanoFlowManifest(fixture(), { productNames: ["Trà Bắc"] });
+  const m = buildNanoFlowManifest(fixture(), { productNames: ["Trà Bắc"], genre: "advertising" });
   const raw = m.project.thumbnail_prompt;
   assert.ok(typeof raw === "string" && raw.length > 0);
   const t = JSON.parse(raw as string);
@@ -213,6 +213,53 @@ test("project carries a viral thumbnail prompt (clickbait, headline + cast + war
   assert.match(t.subjects, /Lan and Minh/);
   assert.match(t.subjects, /wardrobe sheet/i);
   assert.match(t.hero_item, /Trà Bắc/);
+});
+
+test("a story's thumbnail sells its hook, never the outfit or a placed product", () => {
+  const bd = {
+    ...fixture(),
+    segments: [
+      { segment_number: 1, duration_seconds: 10, marketing_role: "hook", first_frame_prompt: "Lan stands beside the stuck chair while Minh reads the menu", dialogue: "Ơ, sao em chưa ngồi?", characters_in_scene: ["Lan", "Minh"], environment_ref: "restaurant", beats: [{ beat: "chair catches", camera: "[MEDIUM] hold" }] },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    genre: "romance",
+    productNames: ["Đầm beige"],
+    productReferences: [{ name: "Đầm beige", images: ["BASE64_DRESS"] }],
+    productPlacements: [{ name: "Đầm beige", kind: "outfit", worn_by: "Lan", placement: "featured", has_images: true }],
+    veoClips: [{ background_lock: { setting: "Small warm restaurant with a honey-oak table", scenery: "", lighting: "warm" } }],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[1]);
+  const t = JSON.parse(m.project.thumbnail_prompt!) as Record<string, string>;
+  assert.equal(t.type, "photoreal_story_thumbnail");
+  assert.match(t.story_hook, /stuck chair.*Hook line: "Ơ, sao em chưa ngồi\?"/);
+  assert.match(t.background, /Small warm restaurant with a honey-oak table/);
+  assert.equal(t.hero_item, undefined);
+  assert.doesNotMatch(JSON.stringify(t), /Đầm beige/);
+  assert.match(t.negative, /no garment on a hanger/);
+  assert.equal(m.assets.products?.find((p) => p.name === "Đầm beige")?.thumbnail_hero, false);
+});
+
+test("makeup chosen in the cast is locked on the character, every frame and the video; children stay bare-faced", () => {
+  const bd = {
+    ...fixture(),
+    character_locks: [{ name: "Lan" }, { name: "Minh" }, { name: "Bé Na", is_child: true }],
+    segments: [
+      { segment_number: 1, duration_seconds: 10, marketing_role: "hook", first_frame_prompt: "Lan, Minh and Bé Na at the table", characters_in_scene: ["Lan", "Minh", "Bé Na"], environment_ref: "home", beats: [{ beat: "smile", camera: "[MEDIUM] hold" }] },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    characterMakeup: { Lan: "natural", Minh: "none", "Bé Na": "natural" },
+    veoClips: [{ character_lock: { CHAR_1: { name: "Lan" }, CHAR_2: { name: "Minh" } }, background_lock: { setting: "home" } }],
+  });
+  const lan = m.assets.characters?.find((c) => c.name === "Lan")!;
+  const na = m.assets.characters?.find((c) => c.name === "Bé Na")!;
+  assert.match(String(lan.makeup), /^MAKEUP — polished, natural makeup/);
+  assert.match(String(na.makeup), /^NO MAKEUP/, "a child never wears makeup");
+  const keyframe = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  assert.match(String(keyframe.makeup_contract), /Lan — MAKEUP — polished.*\| Minh — NO MAKEUP.*\| Bé Na — NO MAKEUP/);
+  const video = m.shots[0]!.video_prompt as Record<string, Record<string, Record<string, string>>>;
+  assert.match(video.character_lock!.CHAR_1!.makeup!, /natural makeup/);
+  assert.match(video.character_lock!.CHAR_2!.makeup!, /NO MAKEUP/);
 });
 
 test("board model — one image per 10s shot; beats never explode into scenes[]", () => {
