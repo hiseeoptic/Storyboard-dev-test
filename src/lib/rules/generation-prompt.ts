@@ -30,10 +30,11 @@ export interface GenerationPromptOptions {
   environment_catalog?: string;
 }
 
-/** Typical V7 output stays below 16k; this fail-safe ceiling leaves room for
- * explicit user camera grammar and named universe exceptions without silently
- * truncating higher-authority input. */
-export const GENERATION_PROMPT_MAX_CHARS = 20_000;
+/** Typical V7 output stays below 17k. Above this target the optional archetype
+ * catalog is compacted to ids; the prompt never fails for being a little long. */
+export const GENERATION_PROMPT_TARGET_CHARS = 20_000;
+/** Hard fail-safe against runaway prompts (a bug, not a long user brief). */
+export const GENERATION_PROMPT_MAX_CHARS = 32_000;
 
 export const REQUIRED_GENERATION_RESPONSIBILITIES: readonly GenerationPromptResponsibility[] = [
   "authority_resolution",
@@ -102,11 +103,14 @@ function dialogueModule(packet: ActiveStoryboardRulePacket): GenerationPromptMod
     : packet.dialogue.mode === "editorial_polish"
       ? "The menu explicitly authorizes one creative polish pass. Improve only enabled speech channels and the opening when justified, while preserving cast, relationships, world, plot facts, props, causal reveals, meaning, and ending. Give speakers distinct voice and subtext; do not replace the premise."
       : "No approved dialogue wording is locked. Author speech only when enabled and justified by Scene Intent; intentional wordless storytelling remains valid.";
+  const spoken = preserve
+    ? ""
+    : "\n- SPOKEN-LANGUAGE TEST: every authored line must sound said, not written — short, concrete, with natural particles and half-sentences, reacting to what just happened. Rewrite literary, translated or preachy lines (nâng niu, trân trọng, stated morals, captions of the visible action).";
   return module(
     preserve ? "dialogue_preservation" : "dialogue_authoring",
     "dialogue_and_audio",
     `DIALOGUE AND AUDIO:
-- ${authority}
+- ${authority}${spoken}
 - The user prompt owns speech-channel selection, language, voice profiles, music, ambience, and foley. A disabled channel stays empty; never invent narration to fill silence or turn action directions/titles into spoken lines.
 - dialogue_lines is the only numeric clock. Turns are sequential and non-overlapping; one mouth moves at a time. Use at most three turns and normally two speakers per clip, with on-screen speakers bound to a beat that shows them. Off-screen and voice-over delivery retain their declared visibility rules.
 - Assign natural delivery windows and leave breathing/reaction room. Never speed up a voice, overlap speakers, duplicate a line in motion_prompt, or silently reassign a speaker to make text fit. Move only a whole authorized thought to an adjacent compatible clip when the selected dialogue authority permits redistribution.
@@ -175,6 +179,7 @@ ${packet.prompt_digest}`),
     module("environment_router", "environment_routing", `ENVIRONMENT ROUTING:
 - Project-local location_id always comes from locked Context IR. environment_ref is only a rendering archetype, never permission to replace the project's actual place, topology, culture, era, materials, weather, lighting, or sound.
 - Select an archetype only when it is semantically compatible with the resolved location; otherwise use "custom" and express the locked world's physical materials, motivated Kelvin/Lux light, imperfections, and ambient bed. Reuse the same compatible id across segments in the same place.
+- SET DESIGN (no location photo): décor, palette and practical lights are design choices, never "unspecified". Give each place a named, attractive, channel-quality look — skin-flattering palette, 3–5 set-dressing landmarks in depth, visible warm practical lights — tasteful and uncluttered, never bare or generic; write it into scene_bible.backdrop. Costumes are flattering and colour-coordinated with the set, one accent per lead.
 ${options.environment_catalog?.trim() ? `AVAILABLE ARCHETYPE IDS:\n${options.environment_catalog.trim()}` : "No archetype catalog was supplied for this call; use environment_ref=\"custom\" rather than inventing an id."}`),
     module("spatial_physics", "spatial_and_physical_continuity", `SPATIAL AND PHYSICAL CONTINUITY:
 - Physics mode=${JSON.stringify(packet.physical_interaction.physics_mode)}; intentional exceptions=${JSON.stringify(packet.physical_interaction.intentional_exceptions)}.
@@ -228,7 +233,21 @@ export function compileGenerationSystemPrompt(
   if (findings.length > 0) {
     throw new Error(`Invalid generation prompt modules: ${findings.join("; ")}`);
   }
-  const prompt = modules.map((entry) => `## ${entry.id}\n${entry.content}`).join("\n\n");
+  let prompt = modules.map((entry) => `## ${entry.id}\n${entry.content}`).join("\n\n");
+  if (prompt.length > GENERATION_PROMPT_TARGET_CHARS && options.environment_catalog?.trim()) {
+    // Over target: keep only the archetype ids (the optional catalog is the
+    // largest part that carries no user authority).
+    const ids = options.environment_catalog
+      .split("\n")
+      .map((line) => line.replace(/^\W*/, "").split(/\s+—\s+/)[0]!.trim())
+      .filter(Boolean)
+      .join(", ");
+    const compact = buildGenerationPromptModules(packet, { ...options, environment_catalog: ids });
+    prompt = compact.map((entry) => `## ${entry.id}\n${entry.content}`).join("\n\n");
+  }
+  if (prompt.length > GENERATION_PROMPT_TARGET_CHARS) {
+    console.warn(`[rules] generation system prompt is ${prompt.length} characters (target ${GENERATION_PROMPT_TARGET_CHARS}).`);
+  }
   if (prompt.length > GENERATION_PROMPT_MAX_CHARS) {
     throw new Error(`Generation system prompt exceeds ${GENERATION_PROMPT_MAX_CHARS} characters: ${prompt.length}`);
   }

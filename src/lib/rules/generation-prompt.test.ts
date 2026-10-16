@@ -34,7 +34,8 @@ test("V7 generation prompt has one module per required responsibility and a hard
   );
   assert.equal(compiled.module_ids.length, REQUIRED_GENERATION_RESPONSIBILITIES.length);
   assert.equal(compiled.character_count, compiled.prompt.length);
-  assert.ok(compiled.character_count < 16_000, `typical generation prompt grew to ${compiled.character_count} characters`);
+  // 17k leaves room for the set-design and spoken-language rules added in Oct 2026.
+  assert.ok(compiled.character_count < 17_000, `typical generation prompt grew to ${compiled.character_count} characters`);
   assert.ok(compiled.character_count < GENERATION_PROMPT_MAX_CHARS);
   assert.match(compiled.prompt, /ACTIVE GENERATION PROMPT V7/);
   assert.doesNotMatch(compiled.prompt, /world-class short-form video director and marketing strategist/i);
@@ -140,4 +141,25 @@ test("compact generation prompt keeps the filter-safe (bedroom / non-sexual) sta
   assert.match(prompt, /fully and modestly dressed/i);
   assert.match(prompt, /never lingerie/i);
   assert.match(prompt, /never dilutes non-intimate genres/i);
+});
+
+test("a prompt over the 20k target is compacted instead of failing the user's generation", () => {
+  const packet = buildActiveStoryboardRulePacket(
+    { source_script: "LAN: Câu đã duyệt", script_treatment: "polish" },
+    { stage: "generation" }
+  );
+  const hugeCatalog = Array.from(
+    { length: 120 },
+    (_, index) => `· archetype_${index + 1} — a very long descriptive archetype name number ${index + 1} with warm practical light and textured materials: evening, key 3200K / ~150 lux`
+  ).join("\n");
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const compiled = compileGenerationSystemPrompt(packet, { environment_catalog: hugeCatalog });
+    assert.ok(compiled.character_count <= GENERATION_PROMPT_MAX_CHARS);
+    assert.match(compiled.prompt, /archetype_1, archetype_2/);
+    assert.doesNotMatch(compiled.prompt, /very long descriptive archetype name/);
+  } finally {
+    console.warn = warn;
+  }
 });

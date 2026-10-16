@@ -19,7 +19,7 @@ export { resolveRuleConflicts } from "./conflict-resolver";
 export type { StoryboardRuleStage, DialogueAuthorityMode, VisibleTextMode, HookSelectionMode, ClipExecutionMode, CameraSelectionMode, ActionSelectionMode, StoryboardRulePacketInput, ActiveStoryboardRulePacket } from "./active-packet";
 export { buildActiveStoryboardRulePacket, isPromptRuleRouterEnabled, isPromptRuleRouterV2Enabled, isPromptRuleRouterV7Enabled } from "./active-packet";
 export type { GenerationPromptResponsibility, GenerationPromptModule, CompiledGenerationSystemPrompt, GenerationPromptOptions } from "./generation-prompt";
-export { GENERATION_PROMPT_MAX_CHARS, REQUIRED_GENERATION_RESPONSIBILITIES, buildRoutedStoryboardStructureDirective, buildGenerationPromptModules, auditGenerationPromptModules, compileGenerationSystemPrompt } from "./generation-prompt";
+export { GENERATION_PROMPT_MAX_CHARS, GENERATION_PROMPT_TARGET_CHARS, REQUIRED_GENERATION_RESPONSIBILITIES, buildRoutedStoryboardStructureDirective, buildGenerationPromptModules, auditGenerationPromptModules, compileGenerationSystemPrompt } from "./generation-prompt";
 export type { CompiledStoryboardSystemPrompt } from "./prompt-compiler";
 export { compileStoryboardSystemPrompt } from "./prompt-compiler";
 export type { StoryboardStageResponsibility, StoryboardStagePromptContract } from "./stage-prompt";
