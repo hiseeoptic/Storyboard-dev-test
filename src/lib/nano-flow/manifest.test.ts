@@ -1559,8 +1559,15 @@ test("fashion outfits: clothes only — a model photo stays on the try-on sheet,
   assert.equal(lan.outfit_product_id, dress.id);
   // No face photo: the sheet is drawn from this description.
   assert.equal(lan.appearance, "adult woman, slim, long black hair");
-  assert.match(String(lan.wardrobe), /floral midi dress \(exactly as in the attached outfit photo\).*white sneakers/);
+  assert.match(String(lan.wardrobe), /^floral midi dress — EXACTLY the garment in the attached OUTFIT photo "Đầm hoa".*white sneakers/);
   assert.deepEqual(m.shots[0]!.image_refs?.products, [shirt.id], "the photo with a model never reaches a frame");
+  // Both wearers are bound to their outfit photo in the keyframe and the video prompt.
+  const keyframe = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  assert.match(String(keyframe.outfit_reference_contract), /Lan wears EXACTLY the garment\(s\) in the attached OUTFIT photo "Đầm hoa"; Minh wears EXACTLY the garment\(s\) in the attached OUTFIT photo "Áo sơ mi"/);
+  assert.match(String(keyframe.wardrobe_note), /a sold outfit is copied from its attached OUTFIT photo/);
+  assert.doesNotMatch(String(keyframe.wardrobe_note), /never copied from a reference photo/);
+  const keys = Object.keys(keyframe);
+  assert.equal(keys.indexOf("outfit_reference_contract"), keys.indexOf("cast") + 1);
 });
 
 test("keyframe and video prompt share one opening-frame description, and the keyframe owns the opening look", () => {

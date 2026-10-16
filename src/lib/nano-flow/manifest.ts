@@ -15,6 +15,7 @@ import type {
 import { buildProductionState } from "../production-state/normalizer.ts";
 import { SET_QUALITY_NEGATIVE, SET_QUALITY_NOTE, stripBlandSetClauses } from "../production-design.ts";
 import { buildSetMap, cameraSideLock, setMapBrief, type SetMap } from "../environment/set-map.ts";
+import { outfitReferenceContract } from "../fashion/outfit.ts";
 import { outfitCostume, placementItems, shotsForPlacement, type ProductPlacement } from "../product-placement.ts";
 import {
   productShootKeyframeContract,
@@ -138,6 +139,51 @@ export interface BuildNanoFlowManifestOptions {
    * A per-shot frameModeOverride always wins over this default.
    */
   frameModeDefault?: "single" | "auto" | "double";
+}
+
+/** Copy `obj` with `key: value` placed right after the first of `after` that exists. */
+function insertAfterKey(obj: Record<string, unknown>, after: string[], key: string, value: unknown): Record<string, unknown> {
+  const anchor = after.find((k) => k in obj);
+  const out: Record<string, unknown> = {};
+  if (!anchor) out[key] = value;
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === key) continue;
+    out[k] = v;
+    if (k === anchor) out[key] = value;
+  }
+  return out;
+}
+
+/** An image prompt (JSON) that binds each wearer to their attached OUTFIT photo. */
+function withOutfitContract(promptJson: string, contract: string): string {
+  if (!contract) return promptJson;
+  try {
+    const parsed = JSON.parse(promptJson) as Record<string, unknown>;
+    return JSON.stringify(insertAfterKey(parsed, ["cast", "camera", "opening_frame"], "outfit_reference_contract", contract));
+  } catch {
+    return `${promptJson}\n${contract}`;
+  }
+}
+
+/** The video prompt with the same outfit contract, also on each wearer's character lock. */
+function withOutfitVideoContract(
+  video: Record<string, unknown> | string,
+  refs: Array<{ wearer: string; productName: string }>,
+  contract: string
+): Record<string, unknown> | string {
+  if (!contract) return video;
+  if (typeof video === "string") return `${video}\n${contract}`;
+  const locks = clipObj(video.character_lock);
+  const patched: Record<string, unknown> = {};
+  for (const [id, raw] of Object.entries(locks)) {
+    const lock = clipObj(raw);
+    const ref = refs.find((r) => r.wearer.toLowerCase() === clipStr(lock.name).toLowerCase());
+    patched[id] = ref
+      ? { ...lock, outfit_reference: `EXACTLY the garment(s) in the attached OUTFIT photo "${ref.productName}" — copied piece for piece, never redrawn from words` }
+      : raw;
+  }
+  const withLocks = Object.keys(locks).length ? { ...video, character_lock: patched } : video;
+  return insertAfterKey(withLocks, ["opening_frame", "aspect_ratio", "duration_sec", "scene_id"], "outfit_reference_contract", contract);
 }
 
 /** A clip whose set/light text no longer tells the image model to build an empty room. */
@@ -284,7 +330,8 @@ const KEYFRAME_REFERENCE_AUTHORITY =
   "reference. Never invent, age, slim, restyle, change ethnicity or blend two people. When that " +
   "reference is a multi-view sheet, the sharp FRONTAL CLOSE-UP panel is the definitive face — never " +
   "source a front-facing face from a side-profile panel. " +
-  "(2) WARDROBE comes from the STORY-LOCKED outfit in wardrobe_note — NOT from the reference image. " +
+  "(2) WARDROBE comes from the STORY-LOCKED outfit in wardrobe_note — NOT from the reference image " +
+  "(the one exception: a character bound to an attached OUTFIT photo by outfit_reference_contract wears exactly that garment). " +
   "The reference may show the person in unrelated everyday clothes and a plain studio backdrop; IGNORE " +
   "that clothing and that background and dress each character in the exact story-locked garments, colours " +
   "and footwear, identical across every shot. " +
@@ -912,7 +959,7 @@ function buildKeyframePrompt(params: {
     // for "some frames obey the character/location, some don't".
     reference_fidelity_contract: characterStyleLock
       ? "The attached character/design sheets and the location sheet are LAW: reproduce EVERY named identity's design and the attached location EXACTLY in the locked medium. Matching some sheets but not others, or inventing the place, is a rejection."
-      : "The attached character and location reference images are LAW and override any text here on conflict: copy EVERY named character's face/hair/build EXACTLY from their own same-named attached reference, and reproduce the attached location EXACTLY — while dressing each character in the story-locked wardrobe, never the clothes shown in the reference. Matching some characters but not others, drifting a face, or inventing the place is a rejection.",
+      : "The attached character and location reference images are LAW and override any text here on conflict: copy EVERY named character's face/hair/build EXACTLY from their own same-named attached reference, and reproduce the attached location EXACTLY — while dressing each character in the story-locked wardrobe, never the clothes shown in the person reference (a character bound to an attached OUTFIT photo wears exactly that garment). Matching some characters but not others, drifting a face, or inventing the place is a rejection.",
     production_state_authority: compactBoardAuthority(stateAuthority),
     video_prompt_projection: clip
       ? {
@@ -1637,6 +1684,14 @@ export function buildNanoFlowManifest(
     const sold = c.outfit_product_id ? placementByProductId.get(c.outfit_product_id) : undefined;
     if (sold?.fashion) c.wardrobe = outfitCostume(sold);
   }
+  // Wearers of an outfit attached with a photo: the photo is their clothes.
+  const outfitPhotoByWearer = new Map<string, { wearer: string; productName: string }>();
+  for (const [productId, item] of placementByProductId) {
+    if (item.kind !== "outfit") continue;
+    const asset = products.find((p) => p.id === productId);
+    const wearer = (item.worn_by || characters[0]?.name || "").trim();
+    if (asset?.image && wearer) outfitPhotoByWearer.set(wearer.toLowerCase(), { wearer, productName: asset.name });
+  }
   // A character with no face photo who wears a sold outfit still gets a
   // full-body sheet (built from the outfit photos); this is who to draw.
   for (const c of characters) {
@@ -1759,9 +1814,17 @@ export function buildNanoFlowManifest(
         return outfit ? `${(n ?? "").trim()} in ${outfit}` : "";
       })
       .filter(Boolean);
+    const outfitRefs = inScene
+      .map((n) => outfitPhotoByWearer.get((n ?? "").trim().toLowerCase()))
+      .filter((r): r is { wearer: string; productName: string } => Boolean(r))
+      // A visible change of clothes replaces the sold outfit for that shot.
+      .filter((r) => !wardrobeOverride.has(r.wearer.toLowerCase()));
+    const outfitContract = outfitReferenceContract(outfitRefs);
     const wardrobeClause =
       wardrobeParts.length > 0
-        ? ` Wardrobe (story-locked, identical across shots, never copied from a reference photo): ${wardrobeParts.join("; ")}.`
+        ? outfitRefs.length
+          ? ` Wardrobe (story-locked, identical across shots; a sold outfit is copied from its attached OUTFIT photo, never from a person photo): ${wardrobeParts.join("; ")}.`
+          : ` Wardrobe (story-locked, identical across shots, never copied from a reference photo): ${wardrobeParts.join("; ")}.`
         : "";
     // A wardrobe_state override that differs from the character's base outfit is
     // a real change of clothes → tell the extension to regenerate that
@@ -2005,7 +2068,7 @@ export function buildNanoFlowManifest(
       // FRAME. Default "clean" keyframe mode = ONE clean cinematic still (a real
       // Veo first frame, no multi-panel contact sheet). Legacy "board" mode keeps
       // the multi-panel storyboard board (unchanged) for backward-compat / A-B.
-      storyboard_prompt: useCleanKeyframe
+      storyboard_prompt: withOutfitContract(useCleanKeyframe
         ? buildKeyframePrompt({ moment: "start", ...keyframeArgs })
         : buildLocationBoardPrompt(
         primaryVideoPrompt,
@@ -2035,12 +2098,12 @@ export function buildNanoFlowManifest(
         continueFromPrevious,
         lockedTimeOfDay,
         placementContract
-      ),
+      ), outfitContract),
       // STEP A2 (clean keyframe mode only): the END keyframe for a transform
       // shot. Its presence makes the extension run Veo start_end_frame
       // interpolation (start→end); omitted ⇒ a normal single-keyframe shot. §6.2.
       ...(useCleanKeyframe && frameMode === "start_end"
-        ? { end_storyboard_prompt: buildKeyframePrompt({ moment: "end", ...keyframeArgs }) }
+        ? { end_storyboard_prompt: withOutfitContract(buildKeyframePrompt({ moment: "end", ...keyframeArgs }), outfitContract) }
         : {}),
       frame_mode: useCleanKeyframe ? frameMode : "start",
       continuity_mode: shotContinuity,
@@ -2058,9 +2121,13 @@ export function buildNanoFlowManifest(
       // The generated keyframe is a visual opening reference only. The primary
       // video prompt remains the semantic authority for action/camera/end state.
       // Same words as the keyframe's opening_frame: both models stage one layout.
-      video_prompt: useCleanKeyframe
-        ? withOpeningFrame(primaryVideoPrompt, describeOpeningFrame(keyframeArgs))
-        : primaryVideoPrompt,
+      video_prompt: withOutfitVideoContract(
+        useCleanKeyframe
+          ? withOpeningFrame(primaryVideoPrompt, describeOpeningFrame(keyframeArgs))
+          : primaryVideoPrompt,
+        outfitRefs,
+        outfitContract
+      ),
       characters_in_scene: inScene,
       video_refs: {
         // Keep the generated opening frame, character sheets and the canonical

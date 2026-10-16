@@ -10,6 +10,7 @@ import {
   GROUP_LABEL,
   SLOT_LABEL,
   WEARER_GROUPS,
+  garmentLabel,
   isChildGroup,
   resolveFills,
   type GarmentAnalysis,
@@ -162,22 +163,35 @@ export function OutfitEditor(props: {
         </button>
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}
+      {draft.images.length > 0 && (
+        <p className="rounded-md bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-800 dark:text-emerald-300">
+          📌 {vi
+            ? `Ảnh này được gắn thẳng làm MẪU TRANG PHỤC: ${who} mặc đúng chiếc trong ảnh (thử đồ ảo), không vẽ lại theo chữ.`
+            : `These photos are attached as the OUTFIT REFERENCE: ${who} wears exactly what they show (virtual try-on), never redrawn from words.`}
+        </p>
+      )}
       {draft.images.length > 0 && !draft.analysis && !busy && (
         <p className="text-xs text-muted-foreground">
           {vi
-            ? "Nên bấm nhận món: app biết món nào có trong ảnh và tự phối món còn thiếu. Bỏ qua thì app coi ảnh là cả bộ đồ."
-            : "Recommended: the app learns which pieces the photos show and styles the missing ones. If skipped, the photos count as the whole outfit."}
+            ? "Nên bấm nhận món: AI chỉ ghi nhãn món nào có trong ảnh để app phối món còn thiếu (quần, giày…). Bỏ qua thì app coi ảnh là cả bộ đồ."
+            : "Recommended: the AI only labels which pieces the photos show so the app can style the missing ones. If skipped, the photos count as the whole outfit."}
         </p>
       )}
 
       {draft.analysis && (
         <div className="space-y-2 rounded-md border bg-background p-2">
-          {draft.analysis.garments.map((g, i) => (
-            <div key={`${g.slot}-${i}`} className="text-xs">
-              <span className="font-medium">✅ {SLOT_LABEL[g.slot][lang]}</span>
-              <span className="text-muted-foreground"> — {vi ? "theo ảnh" : "from the photo"}: {g.description}</span>
-            </div>
-          ))}
+          {draft.analysis.garments.map((g, i) => {
+            const photo = draft.images[g.image_index ?? 0] ?? draft.images[0];
+            return (
+              <div key={`${g.slot}-${i}`} className="flex items-center gap-2 text-xs">
+                {photo && <img src={photo.preview} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />}
+                <span>
+                  <span className="font-medium">✅ {SLOT_LABEL[g.slot][lang]}</span>
+                  <span className="text-muted-foreground"> — {vi ? "dùng đúng ảnh" : "the photo itself"} ({garmentLabel(g.description)})</span>
+                </span>
+              </div>
+            );
+          })}
           {(Object.keys(fills) as GarmentSlot[]).map((slot) => (
             <div key={slot} className="space-y-1">
               <label className="text-xs font-medium">⚙️ {SLOT_LABEL[slot][lang]} — {vi ? "app phối (sửa được)" : "styled by the app (editable)"}</label>

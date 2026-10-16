@@ -56,6 +56,8 @@ test("agent mode builds a try-on sheet for a faceless wearer and keeps model pho
   assert.match(mai.prompt, /No face photo exists for this character/);
   assert.match(mai.prompt, /young girl \(child\)/);
   assert.match(mai.prompt, /never copy the face, hair, skin, body or pose of any model/);
+  assert.match(mai.prompt, /VIRTUAL TRY-ON: dress this person in the EXACT garment\(s\) from the OUTFIT photo/);
+  assert.match(mai.prompt, /never redesign, simplify or embellish it from words/);
   assert.ok(ctx.thumb);
   assert.ok(!ctx.thumb.refKeys.includes("products:prod_tee"), "the outfit photo may show a model: not on the cover");
 });

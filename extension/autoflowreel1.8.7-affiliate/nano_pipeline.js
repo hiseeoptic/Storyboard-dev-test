@@ -53,6 +53,8 @@
             // Thời trang: ảnh bộ đồ đang bán + ngoại hình (khi không có ảnh mặt).
             outfitImages: kind === 'characters' && Array.isArray(asset.outfit_images) ? asset.outfit_images : [],
             appearance: kind === 'characters' ? String(asset.appearance || '') : '',
+            placementKind: kind === 'products' ? String(asset.placement_kind || '') : '',
+            wornBy: kind === 'products' ? String(asset.worn_by || '') : '',
             // A2: bối cảnh khai 2 "ảnh nền" (toàn cảnh + góc khác) — extension tự
             // TẠO 1 lần rồi đính làm nền cho mọi scene ở địa điểm này (Veo hết bịa
             // cảnh). Chỉ mang theo khi KHÔNG có ảnh thật user nạp (ảnh thật ưu tiên).
@@ -92,7 +94,11 @@
     };
     const chars = withImg('characters');
     const envs = withImg('environments');
-    const prods = withImg('products');
+    // Trang phục đang bán: ảnh là MẪU ĐỒ cho người mặc, không phải "sản phẩm cầm tay".
+    const outfitRefs = imageRefs.filter(function (r) { return r.kind === 'products' && r.image && r.placementKind === 'outfit'; });
+    const outfitNames = {};
+    outfitRefs.forEach(function (r) { outfitNames[String(r.name).replace(/ \(góc \d+\)$/, '')] = r.wornBy || ''; });
+    const prods = withImg('products').filter(function (n) { return !(n in outfitNames); });
     const parts = [];
     if (chars.length) parts.push(
       'ATTACHED CHARACTER REFERENCE(S) — identity authority for ' + chars.join(', ')
@@ -106,6 +112,11 @@
       + 'materials, colours and lighting faithfully; do NOT invent a different room or relocate the scene.');
     if (prods.length) parts.push(
       'ATTACHED PRODUCT PHOTO(S) — keep the exact shape, colours, label and branding of: ' + prods.join(', ') + '.');
+    Object.keys(outfitNames).forEach(function (n) {
+      parts.push('ATTACHED OUTFIT PHOTO "' + n + '" — ' + (outfitNames[n] || 'the wearer') + ' wears EXACTLY this garment, transferred piece for piece like a virtual try-on '
+        + '(same silhouette, neckline, gathers and frills at the same size, ties/sash position and knot, layers, hem, length, colour and fabric texture); never redraw it from words. '
+        + 'Clothing only: never copy a person, mannequin or background from it.');
+    });
     return parts.length ? (' ' + parts.join(' ')) : '';
   }
 

@@ -105,7 +105,8 @@ function normalizeFashion(raw: unknown, wearer: string, name: string): Character
   return {
     wearer: wearer || clean(r.wearer),
     group,
-    name: clean(r.name) || name,
+    // The placement name is the product asset name the photo is attached under.
+    name,
     ...(normalizeShopLink(r.link) ? { link: normalizeShopLink(r.link) } : {}),
     analysis,
     fills,

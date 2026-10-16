@@ -205,17 +205,42 @@ export function normalizeGarmentAnalysis(raw: unknown, imageCount: number): Garm
   };
 }
 
-/** Outfit text that becomes the wearer's locked costume. */
+/**
+ * Short garment name from a vision description ("strapless mini dress in light
+ * beige, featuring …" → "strapless mini dress"). Used as a LABEL only: when a
+ * photo exists the photo, not the words, decides every detail.
+ */
+export function garmentLabel(description: string): string {
+  const head = clean(description).split(/[,;(]|\s+(?:with|featuring|in|made of|that|and a)\s+/i)[0] ?? "";
+  return head.split(/\s+/).slice(0, 7).join(" ").trim() || clean(description).split(/\s+/).slice(0, 4).join(" ");
+}
+
+/**
+ * Outfit text that becomes the wearer's locked costume. With a photo the text
+ * is a label pointing at the photo — a detailed description made image models
+ * redraw the garment from words (a small frill became a big flounce).
+ */
 export function outfitCostumeText(outfit: CharacterOutfit): string {
   const garments = outfit.analysis?.garments ?? [];
-  const selling = garments.length
-    ? garments.map((g) => `${g.description} (exactly as in the attached outfit photo)`).join("; ")
-    : `${outfit.name || "the attached outfit"} — every garment exactly as in the attached outfit photo(s)`;
+  const photo = outfit.imageCount > 0;
+  const labels = garments.map((g) => garmentLabel(g.description)).filter(Boolean).join(" + ");
+  const selling = photo
+    ? `${labels || "the outfit"} — EXACTLY the garment${garments.length > 1 ? "s" : ""} in the attached OUTFIT photo "${outfit.name}" (copied from the photo, never redrawn from words)`
+    : garments.length
+      ? garments.map((g) => g.description).join("; ")
+      : outfit.name || "the attached outfit";
   const fills = Object.entries(outfit.fills)
     .filter(([, text]) => clean(text))
     .map(([slot, text]) => `${slot.replace("_", "-")}: ${clean(text)}`)
     .join("; ");
-  return `${selling}${fills ? `; styled with (app-chosen, identical in every shot): ${fills}` : ""}`;
+  return `${selling}${fills ? `; plus pieces not in the photo (app-chosen, identical in every shot): ${fills}` : ""}`;
+}
+
+/** The keyframe / video contract that binds a wearer to their outfit photo. */
+export function outfitReferenceContract(refs: Array<{ wearer: string; productName: string }>): string {
+  if (!refs.length) return "";
+  const who = refs.map((r) => `${r.wearer} wears EXACTLY the garment(s) in the attached OUTFIT photo "${r.productName}"`).join("; ");
+  return `OUTFIT REFERENCE (sold product — overrides every outfit text for these characters): ${who}. Transfer it piece for piece like a virtual try-on: the same silhouette, neckline, gathers/ruching and frills at the same size, straps or strapless, ties/sash in the same position with the same knot, the same number of layers and hem shape, length, colour, print and fabric texture. Never redesign, simplify or embellish it from words. The photo is clothing only: never copy a person, mannequin, pose or background from it. Pieces the photo does not show follow the wardrobe text.`;
 }
 
 /** Short Vietnamese summary for the cast card: "Áo ✅ ảnh · Quần ⚙️ app phối · Giày ⚙️ app phối". */
@@ -236,7 +261,10 @@ export function fashionDirective(outfits: CharacterOutfit[]): string {
   ];
   for (const o of outfits) {
     const garments = o.analysis?.garments ?? [];
-    const selling = garments.length ? garments.map((g) => g.description).join("; ") : o.name;
+    const labels = garments.map((g) => garmentLabel(g.description)).join(" + ");
+    const selling = o.imageCount > 0
+      ? `${labels || "the outfit"} exactly as in its attached photo`
+      : garments.length ? garments.map((g) => g.description).join("; ") : o.name;
     const fills = Object.values(o.fills).filter(Boolean).join("; ");
     lines.push(`- ${o.wearer} (${GROUP_EN[o.group]}) wears "${o.name}": ${selling}.${fills ? ` Styled with plain, non-competing: ${fills}.` : ""}${o.analysis && !o.analysis.has_back_view ? " Only the front is known: avoid back views of the outfit." : ""}`);
   }

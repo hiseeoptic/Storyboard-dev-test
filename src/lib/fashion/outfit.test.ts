@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   fashionDirective,
+  garmentLabel,
+  outfitReferenceContract,
   missingSlots,
   normalizeGarmentAnalysis,
   outfitCostumeText,
@@ -61,9 +63,19 @@ const outfit: CharacterOutfit = {
   imageCount: 1,
 };
 
-test("the locked costume names the photographed garment and the app-styled pieces", () => {
+test("with a photo the costume is a label pointing at the photo, plus the app-styled pieces", () => {
   const text = outfitCostumeText(outfit);
-  assert.match(text, /^pink cotton T-shirt with a bunny print \(exactly as in the attached outfit photo\); styled with \(app-chosen, identical in every shot\): bottom: white cotton shorts; footwear: white sneakers$/);
+  assert.equal(
+    text,
+    'pink cotton T-shirt — EXACTLY the garment in the attached OUTFIT photo "Áo thun hồng thỏ" (copied from the photo, never redrawn from words); plus pieces not in the photo (app-chosen, identical in every shot): bottom: white cotton shorts; footwear: white sneakers'
+  );
+  // The detail words that misled the image model stay out of the costume.
+  assert.doesNotMatch(text, /bunny print/);
+  // Without a photo the description is all there is.
+  assert.match(outfitCostumeText({ ...outfit, imageCount: 0 }), /^pink cotton T-shirt with a bunny print; plus/);
+  assert.equal(garmentLabel("strapless mini dress in light beige with a subtle textured fabric, featuring a ruffled top edge"), "strapless mini dress");
+  assert.match(outfitReferenceContract([{ wearer: "Lan", productName: "Đầm beige" }]), /Lan wears EXACTLY the garment\(s\) in the attached OUTFIT photo "Đầm beige".*never copy a person/);
+  assert.equal(outfitReferenceContract([]), "");
   assert.equal(outfitSlotSummary(outfit), "Áo ✅ · Quần / chân váy ⚙️ · Giày dép ⚙️");
 });
 
@@ -84,7 +96,7 @@ test("an outfit placement carries its fashion data to the directive and the cost
   assert.match(productPlacementDirective(list), /FASHION AFFILIATE CONTRACT/);
   const breakdown = { character_locks: [{ name: "Mai", costume: "random dress" }] };
   enforceProductPlacements(list, breakdown);
-  assert.match(breakdown.character_locks[0]!.costume, /bunny print .*white cotton shorts/);
+  assert.match(breakdown.character_locks[0]!.costume, /pink cotton T-shirt — EXACTLY the garment in the attached OUTFIT photo.*white cotton shorts/);
   // A product without fashion data keeps the old directive.
   assert.doesNotMatch(productPlacementDirective([{ name: "Chảo", kind: "product" }]), /FASHION/);
 });
