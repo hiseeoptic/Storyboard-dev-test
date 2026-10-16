@@ -26,9 +26,20 @@
   const lc = (s) => String(s || '').trim().toLowerCase();
 
   // Cùng prompt sheet nhân vật của pipeline cũ (inject.js · sheetPromptFor).
+  // Thời trang: ảnh váy là mẫu, KHÔNG kèm mô tả chữ của món có ảnh (chữ làm mô hình
+  // vẽ lại sai — viền bèo nhỏ thành dải bèo to). Chỉ giữ các món ảnh không có.
+  const outfitPiecesNotInPhoto = (outfit) => {
+    const m = String(outfit || '').match(/;\s*(?:plus pieces not in the photo|styled with)[^:]*:\s*([\s\S]*)$/i);
+    return m ? m[1].trim() : '';
+  };
+  const tryOnHead = (opts) => (opts && opts.outfitRef) ? {
+    task: opts.hasFace === false
+      ? 'VIRTUAL TRY-ON CHARACTER SHEET: ONE new person wearing the EXACT garment(s) from the attached OUTFIT photo(s), copied piece for piece like the product photo put on a body; then lay the result out as the sheet described below.'
+      : 'VIRTUAL TRY-ON CHARACTER SHEET: the person from the PERSON photo (the LAST attached image) wearing the EXACT garment(s) from the OUTFIT photo(s) (the FIRST attached image(s)), copied piece for piece like the product photo put on a body; then lay the result out as the sheet described below.',
+  } : {};
   function sheetPrompt(name, outfit, sceneHint, opts) {
     const outfitRef = !!(opts && opts.outfitRef);
-    return JSON.stringify(Object.assign({
+    return JSON.stringify(Object.assign(tryOnHead(opts), {
       type: 'photoreal_character_board_sheet',
       canvas_contract: 'Exactly ONE 16:9 landscape image. Split it at x=50%. The LEFT region occupies x=0–50%, y=0–100%. Split only the RIGHT region horizontally: RIGHT-TOP occupies x=50–100%, y=0–50%; RIGHT-BOTTOM occupies x=50–100%, y=50–100%. Use thin clean dividers. Never swap, mirror, reorder or resize these three cells. No labels, text or numbers.',
       left_cell_x0_50_y0_100: 'ONE 3/4-to-front FULL-BODY view of the person, entire body visible continuously from top of head through both shoes, standing relaxed and wearing the complete locked outfit. This is the ONLY full-body or torso view on the sheet.',
@@ -42,13 +53,14 @@
       render: 'Photorealistic, true-to-life skin and fabric textures, sharp focus, ultra-detailed — a real photograph.',
       negative: 'swapped cells, frontal close-up in the LEFT cell, full-body or half-body person in either RIGHT cell, shoulders in either RIGHT cell, chest in either RIGHT cell, torso in either RIGHT cell, arms or hands in either RIGHT cell, three-quarter face in the RIGHT-BOTTOM cell, cut-off feet in the LEFT cell, different face between cells, beautified or altered face, mismatched outfit, cartoon, anime, illustration, 3D render, CGI, on-screen text, watermark',
     }, outfitRef ? {
-      // Trang phục người dùng gắn (ảnh sản phẩm Shopee/Amazon…): ảnh 1 = khuôn mặt, ảnh 2+ = bộ đồ.
+      // Trang phục người dùng gắn (ảnh sản phẩm): ảnh đồ TRƯỚC, ảnh mặt SAU; không mô tả chữ món có ảnh.
       reference_roles: (opts.hasFace === false
         ? 'All attached images are OUTFIT product photos — clothes only.'
-        : 'The FIRST attached image is the PERSON (face and identity only). The NEXT attached image(s) are the OUTFIT product photos.')
+        : 'The FIRST attached image(s) are the OUTFIT product photo(s); the LAST attached image is the PERSON photo (face, hair and identity only — ignore its clothes).')
         + ' Outfit photos define the clothing exactly and NOTHING else: never copy the face, hair, skin, body or pose of any model or mannequin in them.',
-      wardrobe: (outfit || 'the attached outfit') + ' — VIRTUAL TRY-ON: dress this person in the EXACT garment(s) from the OUTFIT photo(s), transferred piece for piece: the same silhouette, neckline, straps or strapless top, gathers/ruching and frills at the same size, ties or sash in the same position with the same knot, the same number of layers and hem shape, length, colour, print and fabric texture. The photo decides every detail — never redesign, simplify or embellish it from words. Pieces the photos do not show follow this text exactly.',
-      wardrobe_rule: 'ONLY the LEFT full-body cell shows the complete outfit, taken from the OUTFIT reference image(s), never from the clothes in the person photo. BOTH RIGHT cells terminate at the base of the neck. Do not add, remove or restyle any garment.',
+      wardrobe: 'VIRTUAL TRY-ON: EXACTLY the garment(s) in the OUTFIT photo(s), transferred piece for piece — the same silhouette, neckline, straps or strapless top, gathers/ruching and frills at the same size, ties or sash in the same position with the same knot, the same number of layers and hem shape, length, colour, print and fabric texture. The photo decides every detail; there is deliberately no text description of it — never redesign, simplify or embellish it.' + (outfitPiecesNotInPhoto(outfit) ? ' Pieces the photo does not show: ' + outfitPiecesNotInPhoto(outfit) + '.' : ''),
+      wardrobe_rule: 'ONLY the LEFT full-body cell shows the complete outfit. BOTH RIGHT cells terminate at the base of the neck. Do not add, remove or restyle any garment.',
+      ...(opts.hasFace === false ? {} : { identity_authority: 'Copy the face, head, hair, skin and features of the PERSON photo (the LAST attached image) EXACTLY — do not reinterpret, age, slim or beautify, and never take a face from an outfit photo. The RIGHT-TOP frontal and RIGHT-BOTTOM 90° profile neck-up crops are equal identity anchors of the SAME head; the LEFT full-body cell carries that identical face.' }),
     } : {}, (opts && opts.hasFace === false) ? {
       identity_authority: 'No face photo exists for this character: create ONE new, natural, believable real person — ' + (opts.appearance || 'matching the story') + ' — with a distinctive everyday face that is NOT the model from any outfit photo. The RIGHT-TOP frontal and RIGHT-BOTTOM 90° profile neck-up crops are the identity anchors; the LEFT full-body cell carries that identical face.',
     } : {}));
@@ -269,7 +281,8 @@
     keys.forEach((k) => {
       const s = ctx.sheets.find((x) => x.key === k);
       if (s) {
-        const ids = resolveIds(ctx, [s.photoKey, ...(s.outfitKeys || [])], state);
+        // Ảnh đồ đặt TRƯỚC, ảnh mặt đặt SAU (khớp reference_roles của sheet).
+        const ids = resolveIds(ctx, [...(s.outfitKeys || []), s.photoKey], state);
         parts.push(block(s.key + ' – character sheet: ' + s.name, ['Aspect ratio: 16:9 (landscape)', 'Reference image media id(s): ' + (ids.join(', ') || 'none')], s.prompt));
         return;
       }

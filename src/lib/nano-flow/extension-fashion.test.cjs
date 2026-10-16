@@ -56,8 +56,26 @@ test("agent mode builds a try-on sheet for a faceless wearer and keeps model pho
   assert.match(mai.prompt, /No face photo exists for this character/);
   assert.match(mai.prompt, /young girl \(child\)/);
   assert.match(mai.prompt, /never copy the face, hair, skin, body or pose of any model/);
-  assert.match(mai.prompt, /VIRTUAL TRY-ON: dress this person in the EXACT garment\(s\) from the OUTFIT photo/);
-  assert.match(mai.prompt, /never redesign, simplify or embellish it from words/);
+  assert.match(mai.prompt, /"task":"VIRTUAL TRY-ON CHARACTER SHEET: ONE new person wearing the EXACT garment\(s\)/);
+  assert.match(mai.prompt, /VIRTUAL TRY-ON: EXACTLY the garment\(s\) in the OUTFIT photo\(s\)/);
+  assert.match(mai.prompt, /never redesign, simplify or embellish it/);
   assert.ok(ctx.thumb);
   assert.ok(!ctx.thumb.refKeys.includes("products:prod_tee"), "the outfit photo may show a model: not on the cover");
+});
+
+test("the try-on sheet leads with the task, drops the garment's text description, keeps the missing pieces", () => {
+  const oldCostume = 'strapless mini dress in light beige with a subtle textured fabric, featuring a ruffled top edge, fitted bodice (exactly as in the attached outfit photo); styled with (app-chosen, identical in every shot): footwear: plain beige low-heeled shoes';
+  const newCostume = 'strapless mini dress — EXACTLY the garment in the attached OUTFIT photo "Đầm" (copied from the photo, never redrawn from words); plus pieces not in the photo (app-chosen, identical in every shot): footwear: plain beige low-heeled shoes';
+  for (const costume of [oldCostume, newCostume]) {
+    const sheet = JSON.parse(AgentPlan.sheetPrompt("Lan", costume, "", { outfitRef: true, hasFace: true }));
+    assert.equal(Object.keys(sheet)[0], "task");
+    assert.match(sheet.task, /PERSON photo \(the LAST attached image\).*OUTFIT photo\(s\) \(the FIRST attached image\(s\)\)/);
+    assert.doesNotMatch(sheet.wardrobe, /ruffled|textured|bodice/);
+    assert.match(sheet.wardrobe, /Pieces the photo does not show: footwear: plain beige low-heeled shoes\.$/);
+    assert.match(sheet.identity_authority, /PERSON photo \(the LAST attached image\)/);
+  }
+  // Without an outfit photo the sheet is unchanged: no try-on task.
+  const plain = JSON.parse(AgentPlan.sheetPrompt("Minh", "navy shirt, grey trousers", "", {}));
+  assert.equal(plain.task, undefined);
+  assert.match(plain.wardrobe, /navy shirt/);
 });
