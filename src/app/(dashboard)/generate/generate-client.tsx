@@ -55,6 +55,8 @@ import type { TopicCategory } from "@/services/topics";
 import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { WritersRoom } from "./writers-room";
+import { SetDirectionPanel } from "./set-direction";
+import { composeSettingRequest } from "@/lib/environment/set-styles";
 import type { RoomFormPatch } from "@/lib/writers-room/export";
 import { loadHandoff } from "@/lib/handoff";
 import {
@@ -1580,6 +1582,9 @@ function ProjectWorkspace() {
   // Setting & tone are now dropdown-driven (with a custom free-text option).
   const [settingSel, setSettingSel] = useState("");
   const [settingCustom, setSettingCustom] = useState("");
+  // Free-text set request ("phố Hàng Bông, Hà Nội…") + chosen set style.
+  const [setRequest, setSetRequest] = useState("");
+  const [setStyleId, setSetStyleId] = useState("");
   const [toneSel, setToneSel] = useState("");
   const [toneCustom, setToneCustom] = useState("");
   // Product / TVC brief
@@ -1608,12 +1613,16 @@ function ProjectWorkspace() {
   const peopleFreeShoot = isAdGenre && productPresence !== "with_characters";
 
   // Resolve dropdown selection (or custom text) into the value sent to the AI.
-  const effectiveSetting =
-    settingSel === CUSTOM
-      ? settingCustom.trim()
-      : settingSel
-        ? SETTING_PROMPT[settingSel] ?? ""
-        : "";
+  const effectiveSetting = composeSettingRequest({
+    place:
+      settingSel === CUSTOM
+        ? settingCustom.trim()
+        : settingSel
+          ? SETTING_PROMPT[settingSel] ?? ""
+          : "",
+    request: setRequest,
+    styleId: setStyleId,
+  });
   const effectiveTone =
     toneSel === CUSTOM
       ? toneCustom.trim()
@@ -6339,6 +6348,16 @@ function ProjectWorkspace() {
                 <MapPin className="h-4 w-4 shrink-0" />
                 <span>{L("bgHint")}</span>
               </div>
+
+              <SetDirectionPanel
+                lang={lang}
+                genre={genre}
+                request={setRequest}
+                onRequest={setSetRequest}
+                styleId={setStyleId}
+                onStyle={setSetStyleId}
+                uploadMode={locationMode === "upload"}
+              />
 
               {/* Cách 1 — location source: app auto vs upload & analyze per shot */}
               <div className="flex flex-wrap gap-2">

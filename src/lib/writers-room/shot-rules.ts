@@ -102,6 +102,25 @@ const MOVE_ACROSS = /(?<!\p{L})(sang|qua|về)\s+(phía\s+|chỗ\s+|bên\s+)?(b�
 const HANDLED_OBJECT = /(?<!\p{L})(ghế|bàn|túi|vali|thùng|hộp|ly|cốc|đĩa|bát|chair|bag|box|cup|plate)(?!\p{L})/iu;
 const PATH_WORDS = /(?<!\p{L})(vòng|nhấc|bê|khiêng|mang|đi quanh|kéo lùi|kéo ra|đặt xuống|around|lift|carry)(?!\p{L})/iu;
 
+// Body-position changes: one per 10-second clip is what a video model can
+// stage; three or more (stand → walk around → move a chair → sit) freeze the
+// clip or scramble the furniture.
+const BLOCKING_CHANGE = new RegExp(
+  [
+    "đứng (?:dậy|lên)|ngồi (?:xuống|vào|lại)|nằm xuống|quỳ xuống|cúi xuống nhặt",
+    "(?:đi|bước|chạy) (?:vòng|sang|tới|đến|lại|ra|vào|về|quanh|qua)",
+    "(?:kéo|đẩy|bê|khiêng|nhấc|xoay) (?:cái |chiếc )?(?:ghế|bàn|tủ|sofa)",
+    "stands? up|rises|gets? up|sits? (?:down|back)|takes? (?:a|her|his) seat|lies down|kneels",
+    "walks?|crosses|steps? (?:over|around|aside|back|to)|goes? around|runs? (?:to|over)",
+    "(?:pulls?|draws?|drags?|pushes?|lifts?|carries|moves?) (?:out |back )?(?:the |a |her |his )?(?:chair|table|sofa|cabinet)",
+  ].map((part) => `(?<!\\p{L})(?:${part})(?!\\p{L})`).join("|"),
+  "giu"
+);
+
+export function blockingChangeCount(action: string | undefined): number {
+  return (String(action ?? "").match(BLOCKING_CHANGE) ?? []).length;
+}
+
 /** Deterministic findings for the whole script. */
 export function checkScriptRules(script: RoomScript, opts: ScriptRuleOptions = {}): EvaluationIssue[] {
   const speech = opts.speech !== false;
@@ -150,6 +169,14 @@ export function checkScriptRules(script: RoomScript, opts: ScriptRuleOptions = {
         shot: shot.n, severity: "warning", source: "rules",
         message: `Shot ${shot.n}: ${actions} hành động nối nhau — một clip 10s không cắt cảnh, nên chỉ nên có 1 hành động chính.`,
         fix: `Shot ${shot.n}: keep ONE continuous primary action; move the other actions into neighbouring shots.`,
+      });
+    }
+    const blocking = blockingChangeCount(shot.action);
+    if (blocking >= 3) {
+      issues.push({
+        shot: shot.n, severity: "error", source: "rules", code: "blocking_overload",
+        message: `Shot ${shot.n}: ${blocking} lần đổi tư thế/vị trí (đứng dậy, đi, kéo ghế, ngồi…) trong một clip 10 giây — video sẽ bị đơ hoặc bàn ghế xô lệch.`,
+        fix: `Shot ${shot.n}: keep at most ONE body-position change (stand up, sit down, walk to another spot or move a piece of furniture) in this shot. Move the other moves into the previous or next shot, or open this shot with the earlier moves already done (e.g. the character already standing beside the chair) and update the neighbouring shot's end/start to match. Keep the lines.`,
       });
     }
     const onScreen = new Set((shot.characters ?? []).map((n) => n.trim().toLowerCase()));

@@ -321,6 +321,53 @@ test("uploaded references keep identity image-only while preserving contextual c
   assert.match(cleaned, /dark indigo jeans/i);
 });
 
+test("the appearance filter only removes whole appearance words — chairs, surfaces and framing stay", () => {
+  const names = ["Minh", "Lan"];
+  assert.equal(
+    stripUploadedCharacterAppearance("Minh grips Lan's chair back and lifts the caught leg.", names),
+    "Minh grips Lan's chair back and lifts the caught leg."
+  );
+  assert.equal(
+    stripUploadedCharacterAppearance("Lan sits with her hands on the table surface, napkin folded.", names),
+    "Lan sits with her hands on the table surface, napkin folded."
+  );
+  // Framing on a face is acting, not appearance: it keeps its target.
+  assert.equal(
+    stripUploadedCharacterAppearance("[CLOSE] Slow intimate reframe to Lan's face, preserving her eyeline.", names),
+    "[CLOSE] Slow intimate reframe to Lan's expression, preserving her eyeline."
+  );
+  assert.doesNotMatch(stripUploadedCharacterAppearance("Minh, with short hair and fair skin, sits.", names), /hair|skin/);
+});
+
+test("the clip's scale comes from the first beat's tag, modifiers included", () => {
+  const breakdown = {
+    character_locks: [{ name: "Minh", gender: "male", is_child: false, costume: "ivory shirt, olive trousers" }, { name: "Lan", gender: "female", is_child: false, costume: "olive dress" }],
+    scene_bible: { lens: "50mm", lighting: "warm pendants", backdrop: "small restaurant", color_grade: "warm", film_grain: "fine" },
+    style_guide: { art_direction: "live action", color_palette: [] },
+    segments: [
+      {
+        segment_number: 1,
+        duration_seconds: 10,
+        title: "Ghế",
+        marketing_role: "hook",
+        beats: [
+          { beat: "Lan pulls the chair", camera: "[MEDIUM TWO-SHOT] Stable eye-level camera from the open aisle" },
+          { beat: "The chair catches", camera: "[CLOSE] Gentle reframe to the caught leg" },
+        ],
+        first_frame_prompt: "Lan stands at the right side of the table; Minh sits opposite.",
+        motion_prompt: "Lan pulls the chair; its leg catches.",
+        characters_in_scene: ["Minh", "Lan"],
+        environment_ref: "custom",
+      },
+    ],
+  };
+  const clip = buildVeoJson(breakdown, { aspectRatio: "9:16", dialogueLanguage: "Vietnamese" }).clips[0];
+  assert.equal(clip.camera.framing, "MS");
+  assert.match(clip.camera.movement, /same medium camera axis established by Stable eye-level camera/);
+  assert.doesNotMatch(clip.camera.movement, /\[MEDIUM TWO-SHOT\]|simply HOLD/);
+  assert.match(clip.camera.movement, /never freeze the frame or the people/);
+});
+
 test("Veo JSON never treats a known character action as the static setting", () => {
   const result = buildVeoJson({
     character_locks: [

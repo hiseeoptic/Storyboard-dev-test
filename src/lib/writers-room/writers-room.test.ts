@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actionCount, checkScriptRules, fillLineClock, rulesScore, shotCapacity, wordCount } from "./shot-rules.ts";
+import { actionCount, blockingChangeCount, checkScriptRules, fillLineClock, rulesScore, shotCapacity, wordCount } from "./shot-rules.ts";
 import { roomToFormPatch, scriptToScreenplay } from "./export.ts";
 import { analyzePrompt, normalizeScript, speechModeLine, writeScriptPrompt } from "./prompts.ts";
 import { approvedScriptFromStoryIdea } from "../storyboard/source-script.ts";
@@ -172,6 +172,21 @@ test("shots name their opening state and give moved furniture a real path", () =
   assert.deepEqual(codes("unclear_path"), [2]);
   s.shots[1] = { ...s.shots[1]!, action: "Bà kéo chiếc ghế ra, nhấc lên, bê vòng qua đầu bàn rồi đặt xuống phía bên kia" };
   assert.deepEqual(checkScriptRules(s).filter((i) => i.code === "unclear_path").map((i) => i.shot), []);
+});
+
+test("a shot that stands, walks round the table, moves a chair and sits is flagged for a split", () => {
+  const s = script();
+  s.shots[1] = {
+    ...s.shots[1]!,
+    action: "Minh đặt thực đơn xuống và đứng dậy, đi vòng qua đầu bàn tới chỗ Lan, nhấc chiếc ghế khỏi khe gạch rồi kéo ghế ra; Lan ngồi xuống.",
+  };
+  const overload = checkScriptRules(s).filter((i) => i.code === "blocking_overload");
+  assert.deepEqual(overload.map((i) => i.shot), [2]);
+  assert.match(overload[0]!.fix!, /at most ONE body-position change/);
+  assert.equal(blockingChangeCount("Lan đứng dậy, đi ra phía cửa sổ."), 2);
+  assert.equal(blockingChangeCount("Lan xoay ly trà, nhìn Minh rồi mỉm cười."), 0);
+  // "bên" is not "bê": letters around the verb must not count.
+  assert.equal(blockingChangeCount("Lan ngồi bên bàn"), 0);
 });
 
 test("the opening state reaches the storyboard screenplay", () => {

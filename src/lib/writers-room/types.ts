@@ -105,7 +105,7 @@ export interface EvaluationIssue {
   fix?: string;
   source: "rules" | "ai";
   /** Rule identifier for findings the room can repair automatically. */
-  code?: "no_speech" | "thin_speech" | "no_hook_line" | "no_start" | "unclear_path";
+  code?: "no_speech" | "thin_speech" | "no_hook_line" | "no_start" | "unclear_path" | "blocking_overload";
 }
 
 export interface ScriptEvaluation {

@@ -14,6 +14,7 @@ import type {
 } from "@/types/nano-flow";
 import { buildProductionState } from "../production-state/normalizer.ts";
 import { SET_QUALITY_NEGATIVE, SET_QUALITY_NOTE, stripBlandSetClauses } from "../production-design.ts";
+import { buildSetMap, cameraSideLock, setMapBrief, type SetMap } from "../environment/set-map.ts";
 import { placementItems, shotsForPlacement, type ProductPlacement } from "../product-placement.ts";
 import {
   productShootKeyframeContract,
@@ -178,7 +179,8 @@ function buildLocationContinuitySheetPrompt(params: {
     layout:
       "ONE single clean 16:9 WIDE establishing frame filling the entire canvas. Show the complete script-defined place: terrain and route for an exterior, or architecture and circulation for an interior, plus every fixed landmark, support surface and main spatial anchor required by the story. No panels, divider, grid, collage, inset, caption or label.",
     continuity:
-      "This image becomes the canonical spatial authority for every storyboard keyframe and video shot assigned to this location. Preserve its exact terrain/architecture, boundaries, landmark positions, support surfaces, circulation paths, materials, colours, time of day and light direction. Later prompts may change camera position only; they may not move, mirror, replace or redesign the place.",
+      "This image becomes the canonical spatial authority for every storyboard keyframe and video shot assigned to this location. Preserve its exact terrain/architecture, boundaries, landmark positions, support surfaces, circulation paths, materials, colours, time of day and light direction. Later shots stay on this same master side and only move closer or reframe; they may not move, mirror, replace or redesign the place.",
+    set_map: buildSetMap({ setting: params.setting, scenery: params.scenery })?.text,
     production_design: SET_QUALITY_NOTE,
     render: params.visualMediumLock || KEYFRAME_RENDER_NOTE,
     negative:
@@ -541,6 +543,8 @@ function buildLocationBoardPrompt(
     visual_style: characterStyleLock || visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
+    set_map: hasLocationPhoto ? undefined : clipStr(bg.set_map) || buildSetMap({ setting, scenery })?.text,
+    camera_side_lock: clipStr(bg.camera_side_lock) || (hasLocationPhoto ? PHOTO_CAMERA_SIDE_LOCK : cameraSideLock(buildSetMap({ setting, scenery }))),
     production_design: hasLocationPhoto ? undefined : SET_QUALITY_NOTE,
     time_of_day: lockedTimeOfDay || undefined,
     time_of_day_lock: lockedTimeOfDay
@@ -661,6 +665,13 @@ function computeTransformScore(
  * so the image stays faithful to the same primary video contract.
  */
 const clip240 = (text: string, max = 240) => (text.length > max ? `${text.slice(0, max).replace(/\s+\S*$/, "")}…` : text);
+/** Shorten a list at its last complete item instead of mid-word. */
+const clipAtClause = (text: string, max: number) => {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const at = Math.max(cut.lastIndexOf(","), cut.lastIndexOf(";"), cut.lastIndexOf("."));
+  return at > max / 2 ? cut.slice(0, at) : clip240(text, max);
+};
 
 /**
  * ONE short, concrete description of the clip's first frame, written once and
@@ -680,6 +691,7 @@ export function describeOpeningFrame(params: {
   resolvedLighting?: string;
   lockedTimeOfDay?: string;
   anonymousNarration?: boolean;
+  hasLocationPhoto?: boolean;
 }): string {
   const clip = params.primaryVideoPrompt && typeof params.primaryVideoPrompt === "object" ? params.primaryVideoPrompt : undefined;
   const sceneAction = clipObj(clip?.scene_action);
@@ -693,6 +705,9 @@ export function describeOpeningFrame(params: {
   const camera = firstCam || [clipStr(cam.framing), clipStr(cam.angle)].filter(Boolean).join(", ");
   const setting = params.lockedSetting || clipStr(bg.setting);
   const scenery = params.lockedScenery || clipStr(bg.scenery);
+  // Where each landmark stands, in full — a scenery list cut mid-way used to
+  // drop the plant/artwork the keyframe then placed anywhere.
+  const map = params.hasLocationPhoto ? "" : setMapBrief(buildSetMap({ setting, scenery }), 420);
   const light = [params.lockedTimeOfDay, params.resolvedLighting || clipStr(bg.lighting)].filter(Boolean).join(": ");
   const wardrobe = params.anonymousNarration
     ? ""
@@ -708,7 +723,10 @@ export function describeOpeningFrame(params: {
     `OPENING FRAME (${params.aspectRatio}, frame 0 of this clip — the keyframe image shows exactly this and the video starts from it):`,
     camera ? sentence(`Camera: ${clip240(camera, 260)}`) : "",
     sentence(clip240(action, 420)),
-    setting ? sentence(`Set: ${bare(clip240(setting, 160))}${scenery && scenery !== setting ? ` — ${clip240(scenery, 200)}` : ""}`) : "",
+    setting
+      ? sentence(`Set: ${bare(clip240(setting, 160))}${map ? `. ${map}` : scenery && scenery !== setting ? ` — ${clipAtClause(scenery, 260)}` : ""}`)
+      : "",
+    params.hasLocationPhoto || map ? sentence("Camera stays on the establishing image's side of the set; landmarks keep their places") : "",
     light ? sentence(`Light: ${clip240(light, 160)}`) : "",
     wardrobe ? sentence(`Wardrobe: ${clip240(wardrobe, 300)}`) : "",
   ].filter(Boolean).join(" ");
@@ -736,8 +754,11 @@ export function withOpeningFrame(
 }
 
 /** Image-description fields first, long authority contracts after. */
+const PHOTO_CAMERA_SIDE_LOCK =
+  "CAMERA SIDE LOCK: film every shot from the side the attached location photo was taken from, looking toward the same background, so its landmarks keep the photo's left-to-right order. A closer or vertical framing only crops that view; never turn the room around, invent an unseen reverse wall, mirror the place or rearrange landmarks.";
+
 const KEYFRAME_KEY_ORDER = [
-  "opening_frame", "type", "aspect_ratio", "layout", "moment", "camera", "cast", "setting", "scenery", "production_design",
+  "opening_frame", "type", "aspect_ratio", "layout", "moment", "camera", "camera_side_lock", "cast", "setting", "scenery", "set_map", "production_design",
   "time_of_day", "lighting", "render", "visual_style", "wardrobe_note", "reference_fidelity_contract",
 ];
 
@@ -971,6 +992,8 @@ function buildKeyframePrompt(params: {
     visual_style: characterStyleLock || visualStyle || undefined,
     setting,
     scenery: scenery && scenery !== setting ? scenery : undefined,
+    set_map: hasLocationPhoto ? undefined : clipStr(bg.set_map) || buildSetMap({ setting, scenery })?.text,
+    camera_side_lock: clipStr(bg.camera_side_lock) || (hasLocationPhoto ? PHOTO_CAMERA_SIDE_LOCK : cameraSideLock(buildSetMap({ setting, scenery }))),
     production_design: hasLocationPhoto ? undefined : SET_QUALITY_NOTE,
     time_of_day: lockedTimeOfDay || undefined,
     lighting: ((lockedTimeOfDay ? `${lockedTimeOfDay}: ` : "") + (lighting || "")) || undefined,
@@ -1020,6 +1043,7 @@ function buildKeyframePrompt(params: {
       resolvedLighting: lighting,
       lockedTimeOfDay,
       anonymousNarration,
+      hasLocationPhoto,
     });
   }
   const ordered: Record<string, unknown> = {};
@@ -1187,8 +1211,9 @@ function buildLocationSheetViews(params: {
   visualStyle: string;
   realityMode: string;
   characterStyleLock: string;
+  setMap?: SetMap | null;
 }): Array<{ angle: string; prompt: string }> {
-  const { setting, scenery, lighting, visualStyle, realityMode, characterStyleLock } = params;
+  const { setting, scenery, lighting, visualStyle, realityMode, characterStyleLock, setMap } = params;
   const liveAction =
     !characterStyleLock && ["documentary", "cinematic", "commercial"].includes(realityMode);
   const render =
@@ -1216,10 +1241,13 @@ function buildLocationSheetViews(params: {
     setting: setting || "the scripted location",
     scenery: scenery && scenery !== setting ? scenery : undefined,
     lighting: lighting || undefined,
+    set_map: setMap?.text,
     visual_style: characterStyleLock || visualStyle || undefined,
     production_design: SET_QUALITY_NOTE,
+    camera_position:
+      "Shoot from the MASTER side: a wide, slightly elevated eye-level view that shows every landmark of the set map in its stated place, with the main furniture fully visible in the middle ground — this is the side every later shot is filmed from.",
     consistency:
-      "This exact image is the immutable spatial source of truth: terrain/architecture, boundaries, route, landmark positions, anchor geometry, materials, colours, time-of-day and light direction must remain unchanged. Later shot cameras may view the place from another valid position but may not move, mirror, add, remove or redesign fixed elements.",
+      "This exact image is the immutable spatial source of truth: terrain/architecture, boundaries, route, landmark positions, anchor geometry, materials, colours, time-of-day and light direction must remain unchanged. Later shots stay on this master side and only move closer or reframe; they may not move, mirror, add, remove or redesign fixed elements.",
     render,
     negative: `${negative} Avoid: ${SET_QUALITY_NEGATIVE}.`,
   });
@@ -1672,11 +1700,16 @@ export function buildNanoFlowManifest(
   // extension prefers a user-uploaded location photo over these when one exists;
   // with no photo the app generates the sheet first, then feeds it into the board
   // together with the character sheets. General rule for every project.
+  // One fixed floor plan per location, shared by its establishing image and
+  // every keyframe/video there, so a new camera angle cannot move a landmark.
+  const setMapByLocation = new Map<string, SetMap | null>();
+  for (const [loc, bg] of lockedBgByLocation) setMapByLocation.set(loc, buildSetMap(bg));
   for (const env of environments) {
     const locked = lockedBgByLocation.get(env.id);
     const setting = (locked?.setting || "").trim() || env.name;
     const scenery = (locked?.scenery || "").trim();
     env.location_views = buildLocationSheetViews({
+      setMap: setMapByLocation.get(env.id) ?? buildSetMap({ setting, scenery }),
       setting,
       scenery,
       lighting: projectLighting,
@@ -1745,6 +1778,12 @@ export function buildNanoFlowManifest(
             ...sourceBackground,
             setting: lockedBg.setting || clipStr(sourceBackground.setting),
             scenery: lockedBg.scenery || clipStr(sourceBackground.scenery),
+            ...(boardLocationImage
+              ? { camera_side_lock: PHOTO_CAMERA_SIDE_LOCK }
+              : {
+                  set_map: setMapByLocation.get(envRef)?.text,
+                  camera_side_lock: cameraSideLock(setMapByLocation.get(envRef) ?? null),
+                }),
           },
           location_authority: {
             location_id: envRef || "custom",

@@ -121,7 +121,7 @@ function pushScript(state: RoomState, script: RoomScript): RoomState {
 }
 
 /** Rule findings the writer can repair without changing the story. */
-const AUTO_FIX_CODES = new Set(["no_speech", "thin_speech", "no_hook_line", "no_start", "unclear_path"]);
+const AUTO_FIX_CODES = new Set(["no_speech", "thin_speech", "no_hook_line", "no_start", "unclear_path", "blocking_overload"]);
 
 /**
  * Silent shots, a late first line, a missing opening state and furniture moved

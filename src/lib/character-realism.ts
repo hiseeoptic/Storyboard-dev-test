@@ -36,12 +36,16 @@ export function stripUploadedCharacterAppearance(
   // Keep ordinary acting language intact ("eyes widen", "brows lift",
   // "mouth stays closed"). Match eyes/brows/lashes only when the clause is
   // describing their static visual design, not when it is an expression.
+  // Whole words only: "chair", "surface", "image" or "slip" are props and
+  // actions, not appearance — matching inside them cut sentences such as
+  // "Minh grips Lan's chair back" down to "Minh grips".
   const appearance =
-    "face|facial|skin|hair|nose|lip|age|height|body\\s+(?:type|shape|build|size|proportion)|" +
+    "\\b(?:faces?|facial|skin|hair(?:line|style|cut)?s?|noses?|lips?|age|height|" +
+    "body\\s+(?:type|shape|build|size|proportion)|" +
     "(?:eye|eyes)\\s+(?:colour|color|shape|details?|iris|pupil|sclera|eyelid|catchlight|tear[- ]line)|" +
     "(?:eyebrow|brows?)\\s+(?:details?|shape|colour|color|thickness|density|arch|tail|hair)|" +
     "(?:eyelash|lashes?)\\s+(?:details?|length|spacing|curvature|direction)|" +
-    "facial\\s+hair|beard|moustache";
+    "beards?|moustaches?|mustaches?)\\b";
   const escaped = characterNames
     .map((name) => name.trim())
     .filter(Boolean)
@@ -79,6 +83,12 @@ export function stripUploadedCharacterAppearance(
     // Only strip these clauses in text that actually names a referenced
     // character. This prevents unrelated prop descriptions from being edited.
     if (nameRe.test(out)) {
+      // "reframe to Lan's face" / "Lan's face softens" are framing and acting,
+      // not appearance: keep them as the character's expression.
+      out = out.replace(
+        new RegExp(`\\b(${name})(['’]s)\\s+face\\b(?!\\s*(?:shape|structure|features|is\\s+(?:oval|round|square|long|narrow|heart))\\b)`, "gi"),
+        (_m, who: string, s: string) => `${who}${s} expression`
+      );
       out = out.replace(clause, "").replace(clothing, "");
       out = out.replace(
         new RegExp(

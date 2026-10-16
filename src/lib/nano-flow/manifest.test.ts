@@ -431,6 +431,52 @@ test("image and video prompts share the same canonical location authority", () =
   assert.match(String(locationAuthority.reference_policy), /canonical 16:9 establishing image/i);
 });
 
+test("one set map per location: establishing image, keyframe and video put every landmark in the same place", () => {
+  const scenery =
+    "Designed small contemporary restaurant. Landmarks: honey-oak dining table, cream wall with abstract artwork, leafy potted plant, woven pendant shades and a small table-side practical.";
+  const m = buildNanoFlowManifest(fixture(), {
+    veoClips: [
+      {
+        background_lock: { setting: "Small warm evening restaurant with honey-oak table", scenery, lighting: "warm pendants" },
+        scene_action: { start_state: "Lan sits at the table", end_state: "Lan looks up" },
+      },
+    ],
+  });
+  const env = (m.assets.environments ?? []).find((e) => e.id === "living_room_1")!;
+  const establishing = JSON.parse(env.location_views![0]!.prompt) as Record<string, unknown>;
+  const keyframe = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  const video = m.shots[0]!.video_prompt as Record<string, unknown>;
+  const bg = video.background_lock as Record<string, unknown>;
+  // The plant gets ONE place, written identically everywhere.
+  assert.match(String(establishing.set_map), /leafy potted plant — back-left corner/);
+  assert.equal(keyframe.set_map, establishing.set_map);
+  assert.equal(bg.set_map, establishing.set_map);
+  assert.match(String(establishing.camera_position), /MASTER side/);
+  assert.match(String(keyframe.camera_side_lock), /master side/i);
+  assert.match(String(keyframe.camera_side_lock), /left part of the view behind them \(leafy potted plant\)/);
+  assert.match(String(bg.camera_side_lock), /CAMERA SIDE LOCK/);
+  // The opening frame both models read lists the whole map instead of a list cut mid-way.
+  assert.match(String(keyframe.opening_frame), /Set map: .*leafy potted plant back-left corner/);
+  assert.match(String(video.opening_frame), /landmarks keep their places/);
+  // Salient keys come before the long contracts.
+  const keys = Object.keys(keyframe);
+  assert.ok(keys.indexOf("set_map") < keys.indexOf("reference_fidelity_contract"));
+});
+
+test("an uploaded location photo keeps its own layout: no invented set map, camera stays on the photo's side", () => {
+  const m = buildNanoFlowManifest(fixture(), {
+    locationSets: [{ name: "Phòng khách", images: ["data:image/png;base64,AAAA"], scene_indices: [1] }],
+    veoClips: [
+      {
+        background_lock: { setting: "Living room with sofa, bookshelf, floor lamp and window", scenery: "", lighting: "day" },
+      },
+    ],
+  });
+  const keyframe = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  assert.equal(keyframe.set_map, undefined);
+  assert.match(String(keyframe.camera_side_lock), /attached location photo was taken from/);
+});
+
 test("video_refs keep keyframe, character and location authorities together", () => {
   const m = buildNanoFlowManifest(fixture());
   for (const shot of m.shots) {

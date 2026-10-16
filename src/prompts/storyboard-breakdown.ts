@@ -727,6 +727,7 @@ DIALOGUE QUALITY DOCTRINE — MANDATORY (make every line worth quoting; this is 
 - SET & WARDROBE LOOK: when the brief does not fix them, choose a beautiful, channel-quality look for each place (named style, palette, a few concrete décor landmarks, warm practical lights) and flattering, colour-coordinated outfits — mention them once in the first ACTION of that place; never write a bare or generic room.
 - STAGING CONTINUITY: open each segment's ACTION by stating where every visible person and key object is (who sits or stands on which side of which furniture, facing whom, holding what in which hand). That opening must equal the previous segment's ending — nobody stands up, sits down, walks over or picks something up between segments unless it is shown inside a segment or the segment is a declared time skip / new place.
 - PHYSICAL PATHS: say where a handled object is relative to the furniture, which way it moves in room terms and where it ends. Moving something to the other side of a table or room is ordered steps on a real path (pull clear → lift → carry around the end → set down → sit), never through or across the tabletop; if the steps do not fit one clip, finish them in the next.
+- ONE BLOCKING CHANGE PER CLIP: a 10-second clip holds at most ONE body-position change — stand up, sit down, walk to another spot, or move a piece of furniture — plus small hand/face actions and its lines. "He stands, walks around the table, frees her chair and she sits" is three or four clips (or open the next clip with him already beside her). Video models freeze or scramble the furniture when one clip carries more.
 - LINES REACT TO THE ACTION: every spoken line answers what just happened on screen or the previous line, in the spoken register of these people (particles, half-sentences, everyday words) — never a written, quote-like or moralising sentence, never a line that ignores what the speaker is physically struggling with.
 - MOOD→ATMOSPHERE HINT: let each ACTION carry one short atmosphere cue matching its mood — tense/dark: low-key light, controlled shadows; hopeful/calm: soft diffused light; release/payoff: a gentle warm lift — one phrase only, the storyboard stage translates it into exact Kelvin/Lux.
 
@@ -844,6 +845,9 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   const speechDirective = speechModeDirective(input, lang);
   const stickFigureNarrationDirective = stickFigureWisdomNarrationDirective(input);
   const genreScriptDirective = compactGenreScriptDirective(input);
+  const setDirection = input.setting?.trim()
+    ? `\nSET DIRECTION (the user's choice): ${input.setting.trim()}\nStage the story in this place and give every location this look unless the idea itself needs another place; name each location concretely (place + its look) so the image model can build it.`
+    : "";
 
   return `Write a ${segmentCount}-segment short-video script.${affiliateDurations ? ` The exact clip durations are ${affiliateDurations.join("s + ")}s (total ${affiliateDurations.reduce((sum, value) => sum + value, 0)}s); the shorter final clip uses proportionally fewer spoken words.` : ""}
 
@@ -856,7 +860,7 @@ Dialogue language: ${
     isCooking && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")
       ? "NONE — every segment is wordless diegetic ASMR"
       : `${lang} (when dialogue is justified, write it naturally in ${lang})`
-  }.${briefBlock}${framework ? `\n${framework}` : ""}${actionDramaBlock}\n${speechDirective}${stickFigureNarrationDirective ? `\n\n${stickFigureNarrationDirective}` : ""}
+  }.${briefBlock}${setDirection}${framework ? `\n${framework}` : ""}${actionDramaBlock}\n${speechDirective}${stickFigureNarrationDirective ? `\n\n${stickFigureNarrationDirective}` : ""}
 
 ${input.script_treatment === "polish" ? `EDITORIAL-POLISH MODE FOR A PASTED SCREENPLAY: preserve every character, relationship, location, prop identity, plot fact, causal reveal, emotional meaning and ending message from the supplied screenplay. You MAY and SHOULD restructure the first 30 seconds, merge or redistribute turns across the requested 10s segments, sharpen weak dialogue, add subtext and specify performance/action. Do not introduce a different story, product, setting, relationship or moral. The result must feel like the strongest filmed version of the same screenplay, not a summary and not a replacement premise.` : ""}
 
@@ -3001,23 +3005,31 @@ export function buildVeoJson(
   };
   const cameraParts = (cameraText: string) => {
     const lower = cameraText.toLowerCase();
-    const firstShot = cameraText.match(/\[(MEDIUM|CLOSE|EXTREME_CLOSE|WIDE|OTS)\]/i)?.[1]
-      ?.toLowerCase();
-    const framing = firstShot === "extreme_close"
+    // The FIRST beat's tag sets the clip's scale (the keyframe shows it).
+    // Tags carry modifiers ("[MEDIUM TWO-SHOT]", "[OVER-THE-SHOULDER]"); the
+    // old exact-tag match skipped them and took a later "[CLOSE]" instead, so
+    // a clip opening on a medium two-shot was exported as a close-up.
+    const firstTag = (cameraText.match(/\[([A-Za-z][A-Za-z _-]*)\]/)?.[1] ?? "")
+      .toUpperCase()
+      .replace(/[_-]+/g, " ");
+    const firstClauseLower = (cameraText.split(/\s*;\s*/)[0] ?? "").toLowerCase();
+    const framing = /^EXTREME/.test(firstTag)
       ? "ECU"
-      : firstShot === "close" || firstShot === "ots"
-        ? "CU"
-        : firstShot === "medium"
-          ? "MS"
-          : firstShot === "wide"
+      : /^(?:MEDIUM|MID|COWBOY|TWO SHOT)/.test(firstTag)
+        ? "MS"
+        : /^(?:CLOSE|OTS|OVER THE SHOULDER|INSERT)/.test(firstTag)
+          ? "CU"
+          : /^(?:WIDE|ESTABLISH|FULL|LONG)/.test(firstTag)
             ? "WS"
-            : /extreme close|ecu/.test(lower)
+            : /extreme close|ecu/.test(firstClauseLower || lower)
               ? "ECU"
-              : /close|\bcu\b/.test(lower)
-                ? "CU"
-                : /wide|\bws\b|establish/.test(lower)
-                  ? "WS"
-                  : "MS";
+              : /medium|two-shot/.test(firstClauseLower)
+                ? "MS"
+                : /close|\bcu\b/.test(firstClauseLower || lower)
+                  ? "CU"
+                  : /wide|\bws\b|establish/.test(firstClauseLower || lower)
+                    ? "WS"
+                    : "MS";
     const angle = /low angle|\blow\b/.test(lower)
       ? "low angle"
       : /high angle|overhead|top-down/.test(lower)
@@ -3027,7 +3039,7 @@ export function buildVeoJson(
       .split(/\s*;\s*/)
       .map((clause) =>
         clause
-          .replace(/\[(?:MEDIUM|CLOSE|EXTREME_CLOSE|WIDE|OTS)\]\s*/gi, "")
+          .replace(/\[[A-Za-z][A-Za-z _-]*\]\s*/g, "")
           .replace(/\s*\(thats where the camera is\)/gi, "")
           .trim()
       )
@@ -3607,7 +3619,7 @@ export function buildVeoJson(
         angle: camera.angle,
         movement: actionDrama
           ? `${scrub(cameraMovement)}. ACTION CAMERA: preserve screen direction and readable body geography at real-time speed; hold a supported wide or medium-wide view through attack, defence and contact, absorb force with a controlled operator reaction, then tighten only on the visible consequence. No cuts, frantic orbit, glamour pose, hidden impact or calm slow drift that weakens danger.`
-          : `${scrub(cameraMovement)}. One smooth move or hold; no cuts or separate camera clock. PACING SAFETY VALVE: pace everything calmly across the FULL clip at real human speed — NEVER rush, whip, jerk or fast-forward a move or an action to catch up with the plan; if a move or beat cannot happen calmly within its time window, make it SMALLER or simply HOLD the current framing (a still, well-composed frame beats a hurried one). Hold the explicitly declared visual subject: speaker, silent listener reaction or both. Never pan to the speaker merely because they talk; when the named speaker is off-screen, the visible listener keeps their mouth naturally closed.`,
+          : `${scrub(cameraMovement)}. One smooth move or hold; no cuts or separate camera clock. PACING SAFETY VALVE: pace everything calmly across the FULL clip at real human speed — NEVER rush, whip, jerk or fast-forward a move or an action to catch up with the plan; if a move or beat cannot happen calmly within its time window, make it SMALLER. People stay alive — breathing, blinking, small weight shifts; never freeze the frame or the people. Furniture stays put unless a hand moves it. Hold the explicitly declared visual subject: speaker, silent listener reaction or both. Never pan to the speaker merely because they talk; when the named speaker is off-screen, the visible listener keeps their mouth naturally closed.`,
         focus: VEO_CAMERA_FOCUS_RULE,
       },
       scene_action: {
@@ -3616,7 +3628,7 @@ export function buildVeoJson(
         end_state: exitState,
         execution_contract:
           dialogue.length > 0
-            ? "ONE primary causal action unit. Perform at most three production-changing atomic transitions in strict order; finish each transition before the next. Spoken turns keep their declared order. During speech, continue only the already-started simple motion or a small reaction; never begin another prop transfer, furniture move, sit/stand or relocation."
+            ? "ONE primary causal action unit. Perform at most three production-changing atomic transitions in strict order, at most ONE of them a body-position change (stand, sit, walk elsewhere, move furniture); finish each transition before the next. Spoken turns keep their declared order. During speech, continue only the already-started simple motion or a small reaction; never begin another prop transfer, furniture move, sit/stand or relocation."
             : "ONE primary causal action unit. Perform at most five production-changing atomic transitions in strict order; finish each transition before the next. Never run unrelated character tasks in parallel or rush them to fill the clip.",
         ...(actionDrama
           ? {
