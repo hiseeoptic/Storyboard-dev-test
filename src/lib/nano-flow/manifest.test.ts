@@ -215,6 +215,42 @@ test("project carries a viral thumbnail prompt (clickbait, headline + cast + war
   assert.match(t.hero_item, /Trà Bắc/);
 });
 
+test("set dressing: a table item named in shot 2 is on the table from shot 1, in the establishing image, keyframe and video", () => {
+  const seg = (n: number, start: unknown[], end: unknown[]) => ({
+    segment_number: n,
+    duration_seconds: 10,
+    characters_in_scene: ["Lan", "Minh"],
+    location_id: "restaurant",
+    environment_ref: "restaurant",
+    first_frame_prompt: "Lan and Minh at the table.",
+    motion_prompt: "Lan looks at Minh.",
+    beats: [{ beat: "look", camera: "[MEDIUM] hold" }],
+    state_ledger: { start, changes: [], end },
+  });
+  const bd = {
+    ...fixture(),
+    segments: [
+      seg(1, [{ entity_id: "menu", state: "open", position: "on the table in front of Minh" }], [{ entity_id: "menu", state: "open", position: "on the table in front of Minh" }]),
+      seg(2, [{ entity_id: "napkin", state: "folded", position: "on the table at Lan's place" }], [{ entity_id: "napkin", state: "open", position: "on the table at Lan's place" }]),
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    veoClips: [
+      { background_lock: { setting: "Restaurant with a walnut table", scenery: "", props: "Only props explicitly named in setting and action" }, negative_prompt: "blurry" },
+      { background_lock: { setting: "Restaurant with a walnut table", scenery: "" }, negative_prompt: "blurry" },
+    ],
+  });
+  const keyframe = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
+  assert.match(String(keyframe.set_dressing_lock), /on the table — .*menu.*napkin/);
+  assert.match(String(keyframe.set_dressing_lock), /Nothing else stands on the table/);
+  const video = m.shots[0]!.video_prompt as Record<string, Record<string, string> | string>;
+  assert.equal((video.background_lock as Record<string, string>).props, keyframe.set_dressing_lock);
+  assert.match(String(video.negative_prompt), /^blurry, objects appearing, vanishing/);
+  const env = (m.assets.environments ?? []).find((e) => e.id === "restaurant")!;
+  const establishing = JSON.parse(env.location_views![0]!.prompt) as Record<string, string>;
+  assert.match(establishing.table_dressing!, /^On the table, exactly: .*menu.*napkin.*Nothing else on the table/);
+});
+
 test("a story's thumbnail sells its hook, never the outfit or a placed product", () => {
   const bd = {
     ...fixture(),
@@ -231,11 +267,11 @@ test("a story's thumbnail sells its hook, never the outfit or a placed product",
   } as unknown as Parameters<typeof buildNanoFlowManifest>[1]);
   const t = JSON.parse(m.project.thumbnail_prompt!) as Record<string, string>;
   assert.equal(t.type, "photoreal_story_thumbnail");
-  assert.match(t.story_hook, /stuck chair.*Hook line: "Ơ, sao em chưa ngồi\?"/);
-  assert.match(t.background, /Small warm restaurant with a honey-oak table/);
+  assert.match(String(t.story_hook), /stuck chair.*Hook line: "Ơ, sao em chưa ngồi\?"/);
+  assert.match(String(t.background), /Small warm restaurant with a honey-oak table/);
   assert.equal(t.hero_item, undefined);
   assert.doesNotMatch(JSON.stringify(t), /Đầm beige/);
-  assert.match(t.negative, /no garment on a hanger/);
+  assert.match(String(t.negative), /no garment on a hanger/);
   assert.equal(m.assets.products?.find((p) => p.name === "Đầm beige")?.thumbnail_hero, false);
 });
 
@@ -258,8 +294,8 @@ test("makeup chosen in the cast is locked on the character, every frame and the 
   const keyframe = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
   assert.match(String(keyframe.makeup_contract), /Lan — MAKEUP — polished.*\| Minh — NO MAKEUP.*\| Bé Na — NO MAKEUP/);
   const video = m.shots[0]!.video_prompt as Record<string, Record<string, Record<string, string>>>;
-  assert.match(video.character_lock!.CHAR_1!.makeup!, /natural makeup/);
-  assert.match(video.character_lock!.CHAR_2!.makeup!, /NO MAKEUP/);
+  assert.match(String(video.character_lock?.CHAR_1?.makeup), /natural makeup/);
+  assert.match(String(video.character_lock?.CHAR_2?.makeup), /NO MAKEUP/);
 });
 
 test("board model — one image per 10s shot; beats never explode into scenes[]", () => {

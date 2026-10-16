@@ -2243,6 +2243,26 @@
     // CHAINING (liên tục hoá): keyframe của shot TRƯỚC được nạp làm ref cho shot
     // SAU → cùng bộ quần áo, đầu tóc, địa điểm, đạo cụ xuyên suốt cả loạt.
     let prevKeyframeId = '';
+    let prevLocationId = '';
+    // Keyframe shot trước (cùng địa điểm, nối tiếp) = mẫu bàn ghế + đồ trên bàn
+    // cho shot này; người, tư thế và góc máy vẫn theo prompt của shot.
+    const PREV_FRAME_NOTE = 'The LAST attached image is the PREVIOUS shot at this same place. Copy from it the room, the table (shape, size, position), every chair (count, position, facing) and every item on the table with its exact place, count and colour; nothing on the table appears or disappears. Take the people, their poses and the camera only from this prompt.';
+    const withPrevFrameNote = (p) => {
+      try {
+        const o = JSON.parse(p);
+        if (o && typeof o === 'object' && !Array.isArray(o)) {
+          const out = {};
+          let placed = false;
+          Object.keys(o).forEach((k) => {
+            out[k] = o[k];
+            if (!placed && (k === 'opening_frame' || k === 'camera')) { out.previous_shot_frame_reference = PREV_FRAME_NOTE; placed = true; }
+          });
+          if (!placed) out.previous_shot_frame_reference = PREV_FRAME_NOTE;
+          return JSON.stringify(out);
+        }
+      } catch (e) {}
+      return p + '\n' + PREV_FRAME_NOTE;
+    };
 
     // TẠO TRƯỚC TOÀN BỘ SHEET NHÂN VẬT (theo yêu cầu): gom mọi nhân vật (có ảnh)
     // từ TẤT CẢ shot rồi tạo sheet cho từng người NGAY TỪ ĐẦU, trước khi dựng bất
@@ -2423,6 +2443,16 @@
         if (quotaExhausted || gAuthRejected) break;
         // 1b) Boundary continuity is exact media reuse, not loose image guidance.
         let prompt = String(it.prompt || '');
+        // 1c) Cùng địa điểm + nối tiếp (không cắt cảnh, không đổi đồ) → đính keyframe
+        //     shot trước làm mẫu bối cảnh: bàn ghế, đồ trên bàn giữ y nguyên.
+        const sameSetAsPrev = !!(prevKeyframeId && it.locationId && it.locationId === prevLocationId
+          && !wardrobeChangedThisShot
+          && !/cut|montage|dream|symbolic|parallel|time/i.test(String(it.continuityMode || '')));
+        if (sameSetAsPrev) {
+          imageInputs.push({ imageInputType: 'IMAGE_INPUT_TYPE_REFERENCE', name: prevKeyframeId });
+          prompt = withPrevFrameNote(prompt);
+          post({ via: 'log', kind: 'log', message: `  🪑 đính keyframe shot trước (${String(prevKeyframeId).slice(0, 10)}) làm mẫu bàn ghế + đồ trên bàn (cùng địa điểm).` });
+        }
         // Nối tiếp keyframe trước để giữ liên tục bối cảnh/đạo cụ — TRỪ shot đổi
         // A wardrobe change intentionally breaks boundary reuse so the new
         // character sheet remains the clothing authority.
@@ -2469,6 +2499,7 @@
           ? `  ✅ "${label}" dùng lại boundary → ${String(g.mediaId).slice(0, 12)}`
           : `  ✅ "${label}" → ${String(g.mediaId).slice(0, 12)} ${renamed ? '(đã đặt tên)' : (useBatchTransport() ? '' : '(⚠️ chưa đặt tên được — workflowId có thể trống)')}` });
         if (g.mediaId) prevKeyframeId = g.mediaId; // shot sau nối tiếp từ ảnh này
+        prevLocationId = String(it.locationId || '');
 
         // Preserve the optional legacy CLEAN frame artifact when the manifest
         // supplies one, but BOARD remains the authoritative video start frame in

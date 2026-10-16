@@ -17,6 +17,7 @@ import { SET_QUALITY_NEGATIVE, SET_QUALITY_NOTE, stripBlandSetClauses } from "..
 import { buildSetMap, cameraSideLock, setMapBrief, type SetMap } from "../environment/set-map.ts";
 import { outfitReferenceContract } from "../fashion/outfit.ts";
 import { makeupContract, makeupText, type MakeupMode } from "../character-makeup.ts";
+import { setDressingFor, setDressingLock } from "../environment/set-dressing.ts";
 import { outfitCostume, placementItems, shotsForPlacement, type ProductPlacement } from "../product-placement.ts";
 import {
   productShootKeyframeContract,
@@ -168,15 +169,21 @@ function withPromptContract(promptJson: string, key: string, contract: string, a
   }
 }
 
-/** An image prompt (JSON) that binds each wearer to their attached OUTFIT photo, plus the makeup lock. */
-function withOutfitContract(promptJson: string, contract: string, makeup = ""): string {
+/** An image prompt (JSON) that binds each wearer to their attached OUTFIT photo, plus the makeup and set-dressing locks. */
+function withOutfitContract(promptJson: string, contract: string, makeup = "", dressing = ""): string {
   return withPromptContract(
-    withPromptContract(promptJson, "outfit_reference_contract", contract),
-    "makeup_contract",
-    makeup,
-    ["outfit_reference_contract", "cast", "camera", "opening_frame"]
+    withPromptContract(
+      withPromptContract(promptJson, "outfit_reference_contract", contract),
+      "makeup_contract",
+      makeup,
+      ["outfit_reference_contract", "cast", "camera", "opening_frame"]
+    ),
+    "set_dressing_lock",
+    dressing,
+    ["set_map", "scenery", "setting", "camera_side_lock", "camera"]
   );
 }
+
 
 /** Each character lock in the video prompt carries its makeup lock. */
 function withMakeupVideoLocks(video: Record<string, unknown> | string, makeupByName: Map<string, string>): Record<string, unknown> | string {
@@ -1306,8 +1313,10 @@ function buildLocationSheetViews(params: {
   realityMode: string;
   characterStyleLock: string;
   setMap?: SetMap | null;
+  /** What stands on the table when the story starts here (nothing else may). */
+  tableDressing?: string;
 }): Array<{ angle: string; prompt: string }> {
-  const { setting, scenery, lighting, visualStyle, realityMode, characterStyleLock, setMap } = params;
+  const { setting, scenery, lighting, visualStyle, realityMode, characterStyleLock, setMap, tableDressing } = params;
   const liveAction =
     !characterStyleLock && ["documentary", "cinematic", "commercial"].includes(realityMode);
   const render =
@@ -1336,6 +1345,7 @@ function buildLocationSheetViews(params: {
     scenery: scenery && scenery !== setting ? scenery : undefined,
     lighting: lighting || undefined,
     set_map: setMap?.text,
+    table_dressing: tableDressing || undefined,
     visual_style: characterStyleLock || visualStyle || undefined,
     production_design: SET_QUALITY_NOTE,
     camera_position:
@@ -1840,7 +1850,14 @@ export function buildNanoFlowManifest(
     const locked = lockedBgByLocation.get(env.id);
     const setting = (locked?.setting || "").trim() || env.name;
     const scenery = (locked?.scenery || "").trim();
+    const firstHere = segments.findIndex((seg) => (seg.location_id ?? seg.environment_ref ?? "").trim() === env.id);
+    const onTable = firstHere >= 0
+      ? setDressingFor(productionState.shots, firstHere, productionState.registry).filter((item) => item.zone === "table")
+      : [];
     env.location_views = buildLocationSheetViews({
+      tableDressing: onTable.length
+        ? `On the table, exactly: ${onTable.map((item) => `${item.label}${item.state ? ` (${item.state.toLowerCase()})` : ""}${item.position ? ` — ${item.position}` : ""}`).join("; ")}. Nothing else on the table — no plates, glasses, cutlery, candles, vases, bottles or food.`
+        : undefined,
       setMap: setMapByLocation.get(env.id) ?? buildSetMap({ setting, scenery }),
       setting,
       scenery,
@@ -1934,16 +1951,26 @@ export function buildNanoFlowManifest(
     const lockedBg = lockedBgByLocation.get(envRef) ?? { setting: "", scenery: "" };
     const sourceClip = opts.veoClips?.[i];
     const sourceBackground = clipObj(sourceClip?.background_lock);
+    // Exactly what stands on and around the table in this shot (one list for
+    // the keyframe and the video, so nothing pops in or out).
+    const shotDressing = setDressingLock(
+      setDressingFor(productionState.shots, i, productionState.registry),
+      { interior: !setMapByLocation.get(envRef)?.exterior }
+    );
     // The video prompt and both keyframe prompts consume the SAME canonical
     // location contract. This prevents the video compiler from quietly changing
     // furniture/landmarks after the background reference has already been made.
     const rawClip = sourceClip
       ? {
           ...sourceClip,
+          ...(shotDressing && typeof sourceClip.negative_prompt === "string"
+            ? { negative_prompt: `${sourceClip.negative_prompt.replace(/[\s.,;]+$/, "")}, objects appearing, vanishing, duplicating or sliding on the table, a chair or the table shifting without a hand moving it` }
+            : {}),
           background_lock: {
             ...sourceBackground,
             setting: lockedBg.setting || clipStr(sourceBackground.setting),
             scenery: lockedBg.scenery || clipStr(sourceBackground.scenery),
+            ...(shotDressing ? { props: shotDressing } : {}),
             ...(boardLocationImage
               ? { camera_side_lock: PHOTO_CAMERA_SIDE_LOCK }
               : {
@@ -2183,12 +2210,12 @@ export function buildNanoFlowManifest(
         continueFromPrevious,
         lockedTimeOfDay,
         placementContract
-      ), outfitContract, shotMakeup),
+      ), outfitContract, shotMakeup, shotDressing),
       // STEP A2 (clean keyframe mode only): the END keyframe for a transform
       // shot. Its presence makes the extension run Veo start_end_frame
       // interpolation (start→end); omitted ⇒ a normal single-keyframe shot. §6.2.
       ...(useCleanKeyframe && frameMode === "start_end"
-        ? { end_storyboard_prompt: withOutfitContract(buildKeyframePrompt({ moment: "end", ...keyframeArgs }), outfitContract, shotMakeup) }
+        ? { end_storyboard_prompt: withOutfitContract(buildKeyframePrompt({ moment: "end", ...keyframeArgs }), outfitContract, shotMakeup, shotDressing) }
         : {}),
       frame_mode: useCleanKeyframe ? frameMode : "start",
       continuity_mode: shotContinuity,

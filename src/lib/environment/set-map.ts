@@ -43,15 +43,34 @@ const ROUTE = new RegExp(`\\b(?:${ROUTE_WORDS})\\b`, "i");
 const ROUTE_ITEM = new RegExp(`^(?:[\\p{L}'’-]+\\s+){0,3}(?:${ROUTE_WORDS})$`, "iu");
 const ROUTE_IN_SETTING = new RegExp(`((?:[\\p{L}'’-]+\\s+){0,2})(${ROUTE_WORDS})\\b`, "iu");
 
-/** "Landmarks: a, b and c." → ["a", "b", "c"]; falls back to the "with a, b, c" list of the setting line. */
+/** Clauses that describe the look, not a thing in the room. */
+const NOT_A_THING = /^(?:palette|colou?rs?|light(?:ing)?|mood|atmosphere|style|tone|grade|texture|materials?)\b/i;
+
+/**
+ * "Landmarks: a, b and c." → ["a", "b", "c"]; else the "with a, b, c" list of
+ * the setting line; else the scenery's own clauses ("…interior: walnut dining
+ * table with visible grain; deep red lacquered wall; pendant lamps; a plant in
+ * the background" → table, wall, lamps, plant). Without the last fallback a
+ * scenery written without a "Landmarks:" label got no set map at all.
+ */
 export function landmarkList(scenery: string, setting = ""): string[] {
+  const clean = (parts: string[]) =>
+    parts
+      .map((part) => part.replace(/^(?:a|an|the)\s+/i, "").replace(/[.\s]+$/, "").trim())
+      .filter((part) => part.length > 2 && /\p{L}/u.test(part) && part.split(/\s+/).length <= 12 && !NOT_A_THING.test(part));
   const fromLabel = /landmarks?\s*:\s*([^.]+)/i.exec(scenery)?.[1];
   const fromWith = /\bwith\s+([^.]+)/i.exec(setting)?.[1];
-  const raw = fromLabel || fromWith || "";
-  return raw
-    .split(/\s*(?:,|;|\band\b)\s*/i)
-    .map((part) => part.replace(/^(?:a|an|the)\s+/i, "").trim())
-    .filter((part) => part.length > 2 && part.split(/\s+/).length <= 12);
+  const raw = fromLabel || fromWith;
+  if (raw) return clean(raw.split(/\s*(?:,|;|\band\b)\s*/i));
+  const body = scenery.includes(":") ? scenery.slice(scenery.indexOf(":") + 1) : scenery;
+  const clauses = body.split(body.includes(";") ? /\s*;\s*/ : /\s*,\s*/);
+  return clean(
+    clauses
+      // Keep the thing, drop its finish/position details.
+      .map((c) => c.replace(/\s+(?:with|featuring|in|on|made of|that|showing|under|against)\s+.*$/i, ""))
+      // The place itself ("contemporary restaurant interior") is not a landmark.
+      .filter((c) => !(INTERIOR.test(c) || EXTERIOR.test(c)) || ANCHOR.test(c) || WALL.test(c) || FLOOR_PIECE.test(c) || OVERHEAD.test(c))
+  );
 }
 
 const stripArticle = (s: string) => s.replace(/^(?:a|an|the)\s+/i, "");

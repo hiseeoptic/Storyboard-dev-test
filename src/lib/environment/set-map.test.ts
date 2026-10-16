@@ -73,3 +73,17 @@ test("the set request and style travel as labelled authority in the project sett
   assert.equal(composeSettingRequest({}), "");
   assert.equal(findSetStyle("nope"), undefined);
 });
+
+test("a scenery without a Landmarks label still yields a set map", () => {
+  const scenery = "Contemporary upscale Vietnamese restaurant interior: walnut dining table with visible grain, plank logic, and restrained satin finish; deep red-brown lacquered wall with real reflections; warm silk-shaded pendant lamps; a restrained Vietnamese-inspired artwork; small leafy plant in the background. Palette,,,,.";
+  assert.deepEqual(landmarkList(scenery), [
+    "walnut dining table",
+    "deep red-brown lacquered wall",
+    "warm silk-shaded pendant lamps",
+    "restrained Vietnamese-inspired artwork",
+    "small leafy plant",
+  ]);
+  const map = buildSetMap({ setting: "At the same upscale Vietnamese restaurant table in the evening", scenery })!;
+  assert.equal(map.anchor, "the walnut dining table");
+  assert.match(map.text, /small leafy plant — back-left corner/);
+});

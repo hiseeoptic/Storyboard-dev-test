@@ -3452,6 +3452,10 @@ async function runNanoImages(options = {}) {
       endPrompt: '',
       // Đổi trang phục từ shot này (nếu manifest khai) → tạo lại wardrobe sheet.
       wardrobeChange: p.wardrobeChange || null,
+      // Liên tục bối cảnh: shot cùng địa điểm, không cắt cảnh → dùng keyframe shot
+      // trước làm ảnh mẫu bàn ghế + đồ trên bàn.
+      locationId: (qItem && qItem.locationId) || '',
+      continuityMode: (qItem && qItem.continuityMode) || '',
       refs: refs,
     };
   });

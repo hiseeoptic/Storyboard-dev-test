@@ -40,6 +40,10 @@ export function stripBlandSetClauses(text: string): string {
   let out = String(text ?? "");
   for (const re of BLAND_CLAUSES) out = out.replace(re, "");
   return out
+    // Colour codes removed upstream can leave "Palette,,,,." behind.
+    .replace(/\b(?:colou?r\s+)?palette\s*[:,;]?(?:\s*[,;])*\s*(?=[.;]|$)/giu, "")
+    .replace(/(?:\s*,){2,}/g, ",")
+    .replace(/\.(?:\s*\.)+/g, ".")
     .replace(/\s{2,}/g, " ")
     .replace(/\s+([,.;:])/g, "$1")
     .replace(/([,;:])\s*([.;])/g, "$2")
