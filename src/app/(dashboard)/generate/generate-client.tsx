@@ -2605,7 +2605,8 @@ function ProjectWorkspace() {
                   ? parsedHeight
                   : undefined,
               body_type: hasCharacterReference ? undefined : c.bodyType,
-              ...(c.makeup && c.makeup !== "auto" ? { makeup: c.makeup } : {}),
+              // Children never carry a makeup choice (cosmetics next to a child get prompts refused).
+              ...(c.makeup && c.makeup !== "auto" && !c.isChild ? { makeup: c.makeup } : {}),
             };
           })
         : undefined,
@@ -3143,7 +3144,7 @@ function ProjectWorkspace() {
       characterReferences: manifestCharacterRefs.length > 0 ? manifestCharacterRefs : undefined,
       characterMakeup: Object.fromEntries(
         (genInput?.character_descriptions ?? [])
-          .filter((c) => c.makeup && c.makeup !== "auto")
+          .filter((c) => c.makeup && c.makeup !== "auto" && !c.is_child)
           .map((c) => [c.name, c.makeup as MakeupMode])
       ),
       affiliateProductIR: genInput?.product_ir,
@@ -4749,7 +4750,6 @@ function ProjectWorkspace() {
           isChild: c.isChild || member?.isChild === true,
           images: kidPhoto,
           ...(kidPhoto.length ? { hasRealPhoto: true } : {}),
-          ...(c.isChild || member?.isChild ? { makeup: "none" as const } : {}),
         };
       }));
     }
@@ -4776,10 +4776,15 @@ function ProjectWorkspace() {
         isChild: member.isChild,
         images: photo,
         ...(photo.length ? { hasRealPhoto: true } : {}),
-        makeup: member.isChild ? ("none" as const) : ("auto" as const),
+        makeup: "auto" as const,
       };
     }));
     setSegmentCount(config.shots);
+    // An explicit camera grammar keeps the full camera block in every clip
+    // (selected grammar + timed camera path per beat + directing laws).
+    const kidsCamera: DirectingProfileId[] = config.filming === "phone" ? ["handheld_vlog", "reaction_comedy"] : ["reaction_comedy", "everyday_naturalism"];
+    setDirectingProfiles(kidsCamera);
+    setDirectingProfile(kidsCamera[0]!);
     setCharacterDialogueEnabled(true);
     setVoiceOverEnabled(false);
     setAspectRatio("9:16");

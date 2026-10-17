@@ -8,6 +8,8 @@
 // Pure data + functions (node-testable).
 // ============================================================
 
+import { CHILD_SAFE_WORDING_RULE } from "./child-safe-wording.ts";
+
 export type KidAge = "toddler" | "young" | "school";
 export type KidGender = "girl" | "boy";
 export type FamilyMember = "dad" | "mom" | "grandpa" | "grandma" | "baby" | "dog" | "cat";
@@ -58,11 +60,11 @@ export const AGE_PROFILES: Record<KidAge, AgeProfile> = {
     years: "about 2–3 years old",
     maxWords: 3,
     speech:
-      "a toddler: 1–3 word lines only, said with a tiny voice and cute mispronunciation (\"Của con!\", \"Không chịu!\", \"Bế con!\", \"Mẹ ơiii!\"), plus babble, giggles, squeals and a dramatic \"hừ!\". The parents carry the dialogue; the toddler carries the moment with faces and body.",
+      "a toddler: 1–3 word lines only, said with a tiny voice and cute mispronunciation (\"Của con!\", \"Không chịu!\", \"Bế con!\", \"Mẹ ơiii!\"), plus babble, giggles, squeals and a dramatic \"hừ!\". The parents carry the dialogue; the toddler carries the moment with faces and gestures.",
     motor:
       "toddles with a wobbly wide-legged walk, hugs a parent's leg, plops down to sit, lifts both arms to be picked up, stamps a tiny foot; never runs fast, climbs high or handles anything heavy or sharp",
     body:
-      "toddler proportions — big head (about a quarter of the height), round chubby cheeks, short soft limbs, small baby teeth, fine short hair or two tiny ponytails",
+      "a real 2–3-year-old toddler — round face, chubby cheeks, small baby teeth, fine short hair or two tiny ponytails",
   },
   young: {
     years: "about 4–5 years old",
@@ -70,15 +72,15 @@ export const AGE_PROFILES: Record<KidAge, AgeProfile> = {
     speech:
       "a preschooler: short simple sentences of up to 6 words, cute literal logic, big sighs and \"nhưng mà…\" protests; parents answer warmly.",
     motor: "runs and hops at home, climbs onto the sofa, drags a parent by the hand, flops on the bed for drama",
-    body: "preschool proportions — head about one fifth of the height, round cheeks, small baby teeth",
+    body: "a real 4–5-year-old — round cheeks, small baby teeth",
   },
   school: {
     years: "about 6–7 years old",
     maxWords: 10,
     speech:
       "a 6-year-old \"bà cụ non\": clear sentences of up to 10 words, sassy grown-up logic, negotiation and one punchline that lands the video; still a child's vocabulary and voice.",
-    motor: "walks briskly, crosses arms, puts hands on hips, squeezes in between people, mimics adult gestures",
-    body: "6-year-old proportions — head about one sixth of the height, slim child limbs, baby teeth with a gap where a front tooth is missing",
+    motor: "walks briskly, crosses arms, stands like a little boss with fists at the sides, squeezes in between people, mimics adult gestures",
+    body: "a real 6–7-year-old — baby teeth with a gap where a front tooth is missing",
   },
 };
 
@@ -94,7 +96,7 @@ const kw = (alternatives: string) => new RegExp(`(?<!\\p{L})(?:${alternatives})(
 
 export const VIRAL_FORMATS: ViralFormat[] = [
   { id: "jealous", label_vi: "Ghen tị khi bố mẹ tình cảm", keywords: kw("ghen|ôm|hôn|tình cảm|âu yếm|nắm tay"),
-    beats: "the parents share a small sweet moment (a hug, a kiss on the cheek) → the kid notices and freezes with a priceless face → escalating attempts to break in (clears throat, squeezes between them, drags one parent away) → punchline line or the family pulls the kid into a group hug" },
+    beats: "the parents share a small sweet moment (a side hug or holding hands) → the kid notices and freezes with a priceless face → escalating attempts to break in (clears throat, squeezes between them, drags one parent away) → punchline line or the family pulls the kid into a group hug" },
   { id: "bargain", label_vi: "Mặc cả đòi kẹo / đồ chơi", keywords: kw("kẹo|bánh|đồ chơi|kem|mặc cả|đòi|xin"),
     beats: "the kid spots the treat → asks sweetly, gets a no → negotiates with surprising logic (promises, deals, flattery) → wins a tiny compromise or a hilarious counter-offer" },
   { id: "dozing", label_vi: "Ngủ gật khi ăn", keywords: kw("ngủ gật|buồn ngủ|ăn cơm|bữa ăn"),
@@ -121,10 +123,14 @@ export function detectFormat(request: string): ViralFormat | undefined {
 }
 
 export const EXPRESSION_BANK =
-  "pout with trembling lower lip, puffed-up cheeks, arms crossed and turning away with a \"hmph\", slow side-eye, gasp with both hands over the mouth, shy smile hiding behind little hands, proud chin-up grin, sleepy slow blinks, tiny stamp of the foot, eyes going wide in disbelief";
+  "a sulky frown with puffed-up cheeks, arms crossed and turning away with a \"hmph\", slow side-eye, gasp with both hands over the mouth, shy smile hiding behind little hands, proud chin-up grin, sleepy slow blinks, tiny stamp of the foot, eyes going wide in disbelief";
 
 export const CHILD_SAFETY_RULES =
-  "CHILD SAFETY (always): wholesome family content only. Parents show affection only with hugs, holding hands or a kiss on the cheek. The child is always fully and modestly dressed (no bath, swimwear or undressing scenes) and is never in danger (no stove, knives, hot liquids, open water, heights or traffic without an adult right there). No scaring, humiliating, real crying for laughs or pranks on the child; a short cute sulk is fine and always resolves warmly. The child behaves and poses like a child of that age — never adult, flirtatious or suggestive poses, never make-up.";
+  "CHILD SAFETY (always): wholesome everyday family moments only (meals, play, chores, bedtime stories, hugs). Parents show affection only with a side hug or holding hands. The child wears ordinary everyday clothes that cover like normal home clothes and is never in danger (no stove, knives, hot liquids, open water, heights or traffic without an adult right there). No scaring, humiliating, real crying for laughs or pranks on the child; a short cute sulk is fine and always resolves warmly. The child behaves like a child of that age — playful and natural, never posed like an adult.";
+
+/** A baby in the family is cared for on screen, never left alone or ignored. */
+export const BABY_CARE_RULE =
+  "BABY ON SCREEN: the baby is always in an adult's arms or lap (or a grandparent's), or right beside an adult who visibly attends to it — holding its hand, rocking it, smiling and talking to it. The baby reacts to the moment (watches the star, giggles, reaches out, claps) and is part of the ending. Never leave the baby alone in a seat or on the floor, and never let the family forget it.";
 
 const PHONE_CAPTURE =
   "FILMING: like a parent's smartphone video — handheld with a gentle natural sway, often lowered to the child's eye level, natural home light from windows and lamps, casual framing that follows the child, real room sound; no cinematic rigs, dramatic lighting or slow dolly moves.";
@@ -203,10 +209,12 @@ export function cuteKidsDirective(raw: CuteKidsConfig | null | undefined): strin
     `- ${kid.name} SPEAKS LIKE ${age.speech} Every line of ${kid.name} has at most ${age.maxWords} words.`,
     `- ${kid.name} MOVES LIKE THE AGE: ${age.motor}. Body: ${age.body}.`,
     `- EXPRESSIONS carry the reel: ${EXPRESSION_BANK}. Every clip has at least one clear close reaction on ${kid.name}.`,
-    `- Parents and family talk naturally and warmly, short everyday lines; the comedy comes from ${kid.name}.`,
+    `- Parents and family talk naturally and warmly in full everyday sentences that carry the scene; the comedy comes from ${kid.name}.`,
+    ...(config.family.includes("baby") ? [`- ${BABY_CARE_RULE}`] : []),
     `- ${config.filming === "phone" ? PHONE_CAPTURE : CINEMATIC_CAPTURE} Real lived-in Vietnamese home or everyday place that fits the request.`,
     `- ${DIALECT_NOTE[config.dialect]}`,
     `- ${CHILD_SAFETY_RULES}`,
+    `- ${CHILD_SAFE_WORDING_RULE}`,
   ].join("\n");
 }
 
@@ -217,7 +225,8 @@ export function cuteKidsRoomSeed(config: CuteKidsConfig): string {
     cuteKidsStoryIdea(config),
     `Yêu cầu: video ngắn ${config.shots} shot × 10 giây, 2 giây đầu là gương mặt/biểu cảm của bé hoặc khoảnh khắc gây chuyện; kết bằng câu chốt hoặc cú quay xe ấm áp.`,
     `Bé nói đúng tuổi: mỗi câu tối đa ${age.maxWords} từ; bố mẹ nói tự nhiên. Quay kiểu ${config.filming === "phone" ? "điện thoại gia đình" : "điện ảnh"}, giọng ${config.dialect === "north" ? "miền Bắc" : "miền Nam"}.`,
-    "Nội dung gia đình lành mạnh, an toàn cho trẻ: không nguy hiểm, không dọa hay làm bé khóc thật, bé luôn mặc đồ kín đáo, không trang điểm.",
+    "Nội dung gia đình lành mạnh, an toàn cho trẻ: không nguy hiểm, không dọa hay làm bé khóc thật, bé mặc đồ ở nhà bình thường. Bố mẹ thể hiện tình cảm bằng ôm vai, nắm tay.",
+    config.family.includes("baby") ? "Em bé luôn được bế hoặc ở ngay cạnh người lớn đang chăm (nắm tay, ru, cười nói với em), em có phản ứng trong cảnh và có mặt ở kết — không để em ngồi một mình hay bị bỏ quên." : "",
   ].join("\n");
 }
 
@@ -245,7 +254,7 @@ export function normalizeCuteKids(raw: unknown): CuteKidsConfig | undefined {
     ? (r.family.filter((m) => ["dad", "mom", "grandpa", "grandma", "baby", "dog", "cat"].includes(String(m))) as FamilyMember[])
     : DEFAULT_CUTE_KIDS.family;
   return {
-    request: String(r.request ?? "").slice(0, 1200),
+    request: String(r.request ?? "").slice(0, 4000),
     kidName: String(r.kidName ?? "").trim().slice(0, 40) || DEFAULT_CUTE_KIDS.kidName,
     kidGender: pick(r.kidGender, ["girl", "boy"] as const, "girl"),
     kidAge: pick(r.kidAge, ["toddler", "young", "school"] as const, "school"),

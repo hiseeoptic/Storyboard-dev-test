@@ -275,7 +275,7 @@ test("a story's thumbnail sells its hook, never the outfit or a placed product",
   assert.equal(m.assets.products?.find((p) => p.name === "Đầm beige")?.thumbnail_hero, false);
 });
 
-test("makeup chosen in the cast is locked on the character, every frame and the video; children stay bare-faced", () => {
+test("makeup chosen in the cast is locked on the character, every frame and the video; children carry no makeup text", () => {
   const bd = {
     ...fixture(),
     character_locks: [{ name: "Lan" }, { name: "Minh" }, { name: "Bé Na", is_child: true }],
@@ -290,9 +290,11 @@ test("makeup chosen in the cast is locked on the character, every frame and the 
   const lan = m.assets.characters?.find((c) => c.name === "Lan")!;
   const na = m.assets.characters?.find((c) => c.name === "Bé Na")!;
   assert.match(String(lan.makeup), /^MAKEUP — polished, natural makeup/);
-  assert.match(String(na.makeup), /^NO MAKEUP/, "a child never wears makeup");
+  assert.equal(na.makeup, undefined, "cosmetics are never listed next to a child");
   const keyframe = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, unknown>;
-  assert.match(String(keyframe.makeup_contract), /Lan — MAKEUP — polished.*\| Minh — NO MAKEUP.*\| Bé Na — NO MAKEUP/);
+  assert.match(String(keyframe.makeup_contract), /Lan — MAKEUP — polished.*\| Minh — NO MAKEUP/);
+  assert.doesNotMatch(String(keyframe.makeup_contract), /Bé Na/);
+  assert.doesNotMatch(JSON.stringify(m), /\bnude\b/i);
   const video = m.shots[0]!.video_prompt as Record<string, Record<string, Record<string, string>>>;
   assert.match(String(video.character_lock?.CHAR_1?.makeup), /natural makeup/);
   assert.match(String(video.character_lock?.CHAR_2?.makeup), /NO MAKEUP/);
@@ -1127,6 +1129,40 @@ test("family reel: photo-less family members get a text-built sheet; phone filmi
   // Ordinary projects are unchanged.
   const plain = buildNanoFlowManifest(bd, { veoClips });
   assert.equal(plain.assets.characters?.find((c) => c.name === "Bé Na")?.sheet_from_text, undefined);
+});
+
+test("a cast with a child: every prompt drops the wording video models refuse; photos stay byte-exact", () => {
+  const photo = "data:image/jpeg;base64," + "AAAA+hip/nude+kiss/".repeat(20);
+  const bd = {
+    ...fixture(),
+    character_locks: [{ name: "Na", is_child: true }, { name: "Bố" }, { name: "Mẹ" }],
+    segments: [
+      {
+        segment_number: 1,
+        duration_seconds: 10,
+        marketing_role: "hook",
+        first_frame_prompt: "Na stands with eyes wide and lips pouting while Bố stands with both arms around Mẹ's waist",
+        motion_prompt: "Bố lifts Na with his forearm under her thighs and holds her at his left hip, then kisses Mẹ on the cheek",
+        characters_in_scene: ["Na", "Bố", "Mẹ"],
+        environment_ref: "home",
+        beats: [{ beat: "Na pouts", camera: "[CLOSE] on Na" }],
+      },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const m = buildNanoFlowManifest(bd, {
+    characterReferences: [{ name: "Na", images: [photo] }],
+    characterMakeup: { Mẹ: "natural" },
+    veoClips: [{ scene_action: { start_state: "Na, lips pouting; Bố holds Mẹ's waist" }, background_lock: { setting: "home" } }],
+  });
+  const text = JSON.stringify({ shots: m.shots, state: m.production_state, thumb: m.project.thumbnail_prompt });
+  assert.doesNotMatch(text, /\b(?:lips? pouting|pout\w*|waist|thighs?|kiss\w*|nude)\b/i);
+  assert.doesNotMatch(text, /at his left hip/);
+  assert.equal(m.assets.characters?.find((c) => c.name === "Na")?.image, photo, "reference photo untouched");
+  // Adults-only projects keep their wording.
+  const adults = buildNanoFlowManifest({ ...bd, character_locks: [{ name: "Bố" }, { name: "Mẹ" }] } as typeof bd, {
+    veoClips: [{ scene_action: { start_state: "Bố holds Mẹ's waist" }, background_lock: { setting: "home" } }],
+  });
+  assert.match(JSON.stringify(adults.shots), /Mẹ's waist/);
 });
 
 test("keyframes follow the chosen video frame; references stay 16:9", () => {

@@ -39,6 +39,7 @@ import { compileCookingRecipeDigest } from "@/lib/cooking";
 import { compileProductIRDigest } from "@/lib/product-ir";
 import { productPlacementDirective } from "@/lib/product-placement";
 import { cuteKidsDirective } from "@/lib/kids/cute-kids";
+import { CHILD_SAFE_WORDING_RULE } from "@/lib/kids/child-safe-wording";
 import { applyCameraAuthorityToClip } from "@/lib/product-shoot/clip-authority";
 import { resolveSpeechMode } from "@/lib/storyboard/anonymous-narration";
 import {
@@ -837,13 +838,14 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
         )
         .join("\n")}\nThese are the only identities permitted. Preserve each internal identity key for image/reference binding and never add another person. ${resolveSpeechMode(input).anonymous_characters ? "Personal names are INTERNAL KEYS ONLY: spoken lines, captions and audience-facing prose use the supplied role or a stable functional role label." : "Use the approved names consistently in character, action and speaker fields."} If a role is not represented in this closed cast, adapt the action without adding that person.`
     : "";
+  const childWordingRule = menuCharacters.some((entry) => entry.isChild) ? `\n${CHILD_SAFE_WORDING_RULE}` : "";
   const uploadedRule = uploadedNames.length
     ? `\nREFERENCE-IDENTITY CHARACTERS (${uploadedNames.join(", ")}): use the attached image only for each exact named identity, face, body proportions and hair. Do not restate those traits in prose. Generate one practical context-appropriate initial outfit from the approved story/location/weather/activity, store it only in character_locks.costume, and never copy clothing from the reference image. Avoid only: ${REFERENCE_CHARACTER_ANTI_PLASTIC}.`
     : "";
   const placementDirective = productPlacementDirective(input.product_placements, { adGenre: PLACEMENT_AD_GENRES.has(input.genre) });
   const briefBlock = (brief.length
-    ? `\nBrief:\n${brief.join("\n")}${closedCastRule}${uploadedRule}`
-    : `${closedCastRule}${uploadedRule}`) + (placementDirective ? `\n\n${placementDirective}` : "");
+    ? `\nBrief:\n${brief.join("\n")}${closedCastRule}${childWordingRule}${uploadedRule}`
+    : `${closedCastRule}${childWordingRule}${uploadedRule}`) + (placementDirective ? `\n\n${placementDirective}` : "");
   const kidsDirective = cuteKidsDirective(input.cute_kids);
 
   const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
@@ -909,7 +911,7 @@ FORENSIC DNA + SCENE BIBLE (absolute consistency — #1 priority, the user's vid
 
 MULTI-CHARACTER CASTING & DIALOGUE ASSIGNMENT (mandatory whenever the story/script has 2+ people — this is what keeps a family/dialogue video coherent):
 - FULL CAST LOCK: create ONE character_lock for EVERY distinct person who appears anywhere in the story/script — no exceptions. If the script names people by ROLE (Chồng/Vợ/Con, Bố/Mẹ, husband/wife/child…), assign each role ONE ordinary given name and state the mapping in the synopsis, EXCEPT in ANONYMOUS NARRATION MODE: use the role labels themselves, never personal names. Use those exact identity tokens consistently in every segment, beat caption and first_frame_prompt. NEVER invent an extra unnamed person or silently choose a name from a rule example.
-- CHILDREN: keep "is_child": true when the menu/script marks a child. For a text-only child, use an age-locked description. For an uploaded-reference child, never state or infer age/body appearance; the image alone supplies it.
+- CHILDREN: keep "is_child": true when the menu/script marks a child. For a text-only child, use an age-locked description. For an uploaded-reference child, never state or infer age/body appearance; the image alone supplies it. ${CHILD_SAFE_WORDING_RULE}
 - ROLE-LABELLED DIALOGUE RECOGNITION: when the idea/script contains dialogue labelled by role or an exact character name, each labelled line belongs to THAT character — keep that SPEAKER mapping and the line's core intent/information, but you SHOULD ELEVATE its craft into sharp, witty, subtext-rich, in-character dialogue (apply the DIALOGUE QUALITY DOCTRINE below); do NOT slavishly copy a flat line, and NEVER reassign a line to a different character. A short back-and-forth (e.g. a question + a reply, ~2-3 short lines) SHOULD share ONE 10s clip as sequential turns in "dialogue_lines" (fill the time instead of wasting a clip per line) — following the DIALOGUE turn-taking rules below. Only spill to the NEXT segment when the exchange no longer fits in ~9 seconds.
 - "characters_in_scene" (REQUIRED per segment): list the EXACT lock names of everyone VISIBLE in that segment — nobody else may appear. A turn with delivery="on_screen" MUST name one of them. A named delivery="off_screen" speaker keeps their own locked voice but remains outside the camera beat. delivery="voiceover" requires speaker="". Non-speaking listed characters react silently, mouths closed.
 - CAST CONTINUITY: keep every character consistent across segments. For text-only characters, character_locks is the only appearance/initial-wardrobe/voice authority; all scene fields use the exact name plus current position, pose, action, expression and prop state only. For uploaded-reference characters, use only their exact name plus the attached image binding; never repeat or paraphrase their appearance in first_frame_prompt, motion_prompt, beats or camera text.

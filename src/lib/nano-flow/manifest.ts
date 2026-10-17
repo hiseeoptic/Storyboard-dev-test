@@ -18,6 +18,7 @@ import { buildSetMap, cameraSideLock, setMapBrief, type SetMap } from "../enviro
 import { outfitReferenceContract } from "../fashion/outfit.ts";
 import { makeupContract, makeupText, type MakeupMode } from "../character-makeup.ts";
 import { PHONE_PLATE_NOTE, PHONE_RENDER_NOTE, PHONE_VIDEO_NOTE } from "../kids/cute-kids.ts";
+import { castHasChild, childSafeDeep } from "../kids/child-safe-wording.ts";
 import { setDressingFor, setDressingLock } from "../environment/set-dressing.ts";
 import { outfitCostume, placementItems, shotsForPlacement, type ProductPlacement } from "../product-placement.ts";
 import {
@@ -2353,7 +2354,7 @@ export function buildNanoFlowManifest(
     };
   });
 
-  return {
+  const manifest: NanoFlowManifest = {
     manifest_version: "1.0",
     generator: "storyboard-ai",
     generated_at: opts.generatedAt ?? new Date().toISOString(),
@@ -2428,4 +2429,7 @@ export function buildNanoFlowManifest(
     shots,
     production_state: productionState,
   };
+  // A cast with a child: the last net for wording video models refuse next to
+  // a child (kisses, waists, thighs, "nude"…), over every prompt and state text.
+  return castHasChild(breakdown.character_locks, opts.cuteKids) ? childSafeDeep(manifest) : manifest;
 }

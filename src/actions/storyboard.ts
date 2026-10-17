@@ -42,6 +42,7 @@ import {
 import { enforceProductShootContract, productShootSubject } from "@/lib/product-shoot/storyboard";
 import { enforceProductPlacements, outfitCostume, placementItems } from "@/lib/product-placement";
 import { labelAiSocialPosts, normalizeCuteKids } from "@/lib/kids/cute-kids";
+import { castHasChild, childSafeDeep } from "@/lib/kids/child-safe-wording";
 import {
   REFERENCE_CHARACTER_ANTI_PLASTIC,
   REFERENCE_CHARACTER_APPEARANCE_LOCK,
@@ -173,6 +174,17 @@ function stripHexCodes(text: string): string {
  * (deepfake vector). The attached reference image still carries the likeness;
  * we just stop the TEXT from demanding "keep the exact same real face/identity".
  */
+/**
+ * A cast with a child: rewrite the body / kiss / nudity wording that video
+ * models refuse next to a child ("lips pouting", "arms around her waist",
+ * "forearm under her thighs", "nude lip"), across the whole breakdown so the
+ * editor, the Veo prompts and the keyframes all carry the same safe text.
+ */
+function enforceChildSafeWording(input: StoryboardGenerationInput, breakdown: StoryboardGenerationOutput): void {
+  if (!castHasChild(breakdown.character_locks, input.cute_kids)) return;
+  Object.assign(breakdown, childSafeDeep(breakdown));
+}
+
 function makeVeoSafe(text: string): string {
   return text
     .replace(
@@ -1942,6 +1954,7 @@ function normalizeRepairCandidate(
   synchronizeContinuityContracts(breakdown);
   normalizeSegmentAudioAuthority(breakdown);
   normalizeProductionContracts(breakdown);
+  enforceChildSafeWording(input, breakdown);
 
   for (const segment of breakdown.segments) {
     if (segment.motion_prompt) {
@@ -2768,6 +2781,8 @@ async function runPlanBuild(
   // locks JSON/PUSH/ZIP until explicit targeted repair confirms a clean state.
   if (!preRenderReport.ok) flagUnresolvedScenes(preRenderReport, warnings);
 
+  enforceChildSafeWording(input, breakdown);
+
   // Prompt assembly is best-effort: if it fails, still return the script so
   // the user can review/edit it (the prompts get rebuilt on finalize anyway).
   let videoPrompt = "";
@@ -3053,6 +3068,8 @@ export async function finalizeScript(params: {
       });
       breakdown = repairResult.breakdown;
     }
+    // The user's edits pass the same child-safe wording as the generated script.
+    enforceChildSafeWording(params.input, breakdown);
 
     const videoPrompt = assemblePlanPrompts(
       params.input,
@@ -3322,6 +3339,7 @@ export async function rewriteSegment(params: {
       );
     }
 
+    if (castHasChild(params.breakdown.character_locks, params.input.cute_kids)) Object.assign(segment, childSafeDeep(segment));
     return { success: true, data: { segment, warnings } };
   } catch (err) {
     console.error("[Storyboard] segment rewrite failed:", err);

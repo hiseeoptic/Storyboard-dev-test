@@ -17,11 +17,13 @@ export const MAKEUP_LABEL: Record<MakeupMode, { vi: string; en: string }> = {
 const NO_MAKEUP =
   "NO MAKEUP — bare natural face: no foundation, concealer, contour, blush, eyeshadow, eyeliner, mascara, false lashes, lipstick or lip tint; natural brows, natural lip colour and real skin texture with its small imperfections.";
 const NATURAL_MAKEUP =
-  "MAKEUP — polished, natural makeup that suits the occasion: even skin that still shows real texture, soft blush, groomed brows, subtle eye definition and a natural rosy or nude lip; never heavy, glossy, doll-like or plastic.";
+  "MAKEUP — polished, natural makeup that suits the occasion: even skin that still shows real texture, soft blush, groomed brows, subtle eye definition and a soft natural rosy lip colour; never heavy, glossy, doll-like or plastic.";
 
 /** The locked makeup text for a character, or "" when the story decides. */
 export function makeupText(mode: MakeupMode | undefined, isChild = false): string {
-  if (isChild) return mode && mode !== "auto" ? NO_MAKEUP : "";
+  // Children never wear makeup, and a list of cosmetics next to a child gets a
+  // video prompt refused — so a child carries no makeup text at all.
+  if (isChild) return "";
   if (mode === "none") return NO_MAKEUP;
   if (mode === "natural") return NATURAL_MAKEUP;
   return "";

@@ -50,7 +50,12 @@ test("a toddler speaks in three words at most; a 6-year-old gets a punchline", (
 test("child safety and the capture look are always in the directive", () => {
   const phone = cuteKidsDirective(config());
   assert.match(phone, /CHILD SAFETY/);
-  assert.match(phone, /never make-up/);
+  assert.match(phone, /CHILD-SAFE WORDING/);
+  assert.doesNotMatch(phone, /\b(kiss|lips?|pout|undress|swimwear|bath|limbs|suggestive)\b/i, "no words that get a child prompt refused");
+  assert.doesNotMatch(cuteKidsDirective(config()), /BABY ON SCREEN/);
+  assert.match(cuteKidsDirective(config({ family: ["mom", "baby"] })), /BABY ON SCREEN: the baby is always in an adult's arms/);
+  assert.match(cuteKidsRoomSeed(config({ family: ["mom", "baby"] })), /Em bé luôn được bế/);
+  assert.match(phone, /full everyday sentences/);
   assert.match(phone, /parent's smartphone/);
   assert.match(cuteKidsDirective(config({ filming: "cinematic" })), /cinematic family look/);
   assert.match(cuteKidsDirective(config({ dialect: "south" })), /"hông"/);

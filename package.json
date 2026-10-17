@@ -20,7 +20,7 @@
     "test:product-shoot": "node --experimental-strip-types --test src/lib/product-shoot/product-shoot.test.ts src/lib/product-placement.test.ts src/lib/fashion/outfit.test.ts",
     "test:writers-room": "node --experimental-strip-types --test src/lib/writers-room/writers-room.test.ts \"src/app/(dashboard)/generate/hooks-order.test.ts\"",
     "test:rules": "node --experimental-strip-types --test src/lib/rules/audit.test.ts src/lib/rules/active-packet.test.ts src/lib/rules/prompt-compiler.test.ts src/lib/rules/generation-prompt.test.ts",
-    "test:cute-kids": "node --experimental-strip-types --test src/lib/kids/cute-kids.test.ts"
+    "test:cute-kids": "node --experimental-strip-types --test src/lib/kids/cute-kids.test.ts src/lib/kids/child-safe-wording.test.ts"
   },
   "dependencies": {
     "next": "^15.1.0",
