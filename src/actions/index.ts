@@ -22,3 +22,4 @@ export { generateSceneKeyframe, type KeyframeResult } from "./generate-keyframe"
 export { getTopicLibrary } from "./topics";
 export { analyzeCookingRecipe } from "./cooking";
 export { analyzeAffiliateProduct, analyzeOutfitImages } from "./product";
+export { suggestCuteKidsEpisodes } from "./cute-kids";

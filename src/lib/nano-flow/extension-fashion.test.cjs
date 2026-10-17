@@ -106,3 +106,24 @@ test("agent messages state the frame of every item: keyframes and videos follow 
   assert.match(all, /Every video in this message is 9:16 \(portrait \/ vertical\)/);
   assert.match(all, /SHOT 01 – video ===\n[^\n]*\nAspect ratio: 9:16 \(portrait \/ vertical\)/);
 });
+
+test("family reel: a photo-less kid gets a sheet built from text in batch and agent mode", () => {
+  const m = manifest();
+  m.assets.characters.push({ id: "char_na", name: "Bé Na", image: null, required: true, wardrobe: "yellow cotton dress", appearance: "Vietnamese girl about 6 years old, two short pigtails", sheet_from_text: true });
+  m.assets.characters.push({ id: "char_bo", name: "Bố", image: null, required: true, appearance: "father in his 30s" });
+  m.shots[0].image_refs.characters.push("char_na", "char_bo");
+  const queue = NanoManifest.toQueue(m);
+  const refs = NanoPipeline.buildQueuePlan(queue).plans[0].imageStep.refs;
+  assert.equal(refs.find((r) => r.id === "char_na").sheetFromText, true);
+  assert.equal(refs.find((r) => r.id === "char_bo").sheetFromText, false, "no flag → no text sheet");
+  const ctx = AgentPlan.buildContext(m, queue, NanoPipeline.buildQueuePlan(queue).plans, {});
+  const na = ctx.sheets.find((s) => s.name === "Bé Na");
+  assert.ok(na, "Bé Na gets a sheet");
+  assert.equal(na.photoKey, "");
+  assert.deepEqual(na.outfitKeys, []);
+  assert.match(na.prompt, /No image is attached: build this person from the description alone/);
+  assert.match(na.prompt, /two short pigtails/);
+  assert.doesNotMatch(na.prompt, /NOT the model from any outfit photo/);
+  assert.equal(ctx.sheets.find((s) => s.name === "Bố"), undefined);
+  assert.ok(ctx.shots[0].charKeys.includes(na.key), "the shot keyframe uses the text-built sheet");
+});

@@ -1095,6 +1095,40 @@ test("board prompt enforces numbered panels, one border system and a separate th
 // (9:16 or 16:9; a 1:1 video renders landscape, so its keyframe is 16:9).
 // Location plates and character sheets stay 16:9 references; the legacy
 // multi-panel board stays a 16:9 sheet.
+test("family reel: photo-less family members get a text-built sheet; phone filming swaps the cinema look", () => {
+  const bd = {
+    ...fixture(),
+    character_locks: [
+      { name: "Bé Na", is_child: true, gender_age: "Vietnamese girl about 6 years old", build: "slim child build", skin_tone: "warm light-tan", hair: "two short pigtails", signature_features: "a gap where a front tooth is missing" },
+      { name: "Bố", gender_age: "Vietnamese father in his early 30s", hair: "short black hair" },
+    ],
+    segments: [
+      { segment_number: 1, duration_seconds: 10, marketing_role: "hook", first_frame_prompt: "Bé Na pouts while Bố hugs Mẹ", characters_in_scene: ["Bé Na", "Bố"], environment_ref: "home", beats: [{ beat: "pout", camera: "[CLOSE] on Bé Na" }] },
+    ],
+  } as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const veoClips = [{ visual_style: "warm natural", character_lock: { CHAR_1: { name: "Bé Na" } }, background_lock: { setting: "Small Hà Nội apartment living room with a sofa and a low table" } }];
+  const phone = buildNanoFlowManifest(bd, { cuteKids: { filming: "phone" }, veoClips });
+  const na = phone.assets.characters?.find((c) => c.name === "Bé Na")!;
+  assert.equal(na.sheet_from_text, true);
+  assert.match(String(na.appearance), /girl about 6 years old.*two short pigtails.*front tooth/);
+  assert.equal(phone.assets.characters?.find((c) => c.name === "Bố")?.sheet_from_text, true);
+  const kf = JSON.parse(phone.shots[0]!.storyboard_prompt) as Record<string, string>;
+  assert.match(kf.render!, /smartphone home-video frame/);
+  assert.doesNotMatch(phone.shots[0]!.storyboard_prompt, /professional cinema camera/);
+  const video = phone.shots[0]!.video_prompt as Record<string, unknown>;
+  assert.match(String(video.capture_style), /handheld smartphone video/);
+  const plate = JSON.parse(phone.assets.environments![0]!.location_sheet_prompt!) as Record<string, string>;
+  assert.match(JSON.stringify(plate), /smartphone photo of the real place/);
+  // Cinematic filming keeps the cinema look but still locks the faces from text.
+  const cine = buildNanoFlowManifest(bd, { cuteKids: { filming: "cinematic" }, veoClips });
+  assert.match(cine.shots[0]!.storyboard_prompt, /professional cinema camera/);
+  assert.equal((cine.shots[0]!.video_prompt as Record<string, unknown>).capture_style, undefined);
+  assert.equal(cine.assets.characters?.find((c) => c.name === "Bé Na")?.sheet_from_text, true);
+  // Ordinary projects are unchanged.
+  const plain = buildNanoFlowManifest(bd, { veoClips });
+  assert.equal(plain.assets.characters?.find((c) => c.name === "Bé Na")?.sheet_from_text, undefined);
+});
+
 test("keyframes follow the chosen video frame; references stay 16:9", () => {
   for (const [aspect, keyframe] of [["16:9", "16:9"], ["9:16", "9:16"], ["1:1", "16:9"]] as const) {
     const m = buildNanoFlowManifest(fixture(), {

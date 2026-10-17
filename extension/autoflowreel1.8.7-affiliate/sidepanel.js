@@ -3417,7 +3417,7 @@ async function runNanoImages(options = {}) {
     const refs = p.imageStep.refs
       .filter((r) => r.image || (r.kind === 'environments'
         && Array.isArray(r.locationViews) && r.locationViews.length)
-        || (r.kind === 'characters' && Array.isArray(r.outfitImages) && r.outfitImages.length))
+        || (r.kind === 'characters' && ((Array.isArray(r.outfitImages) && r.outfitImages.length) || r.sheetFromText)))
       .map((r) => {
         const isEnvSheet = r.kind === 'environments' && !r.image
           && Array.isArray(r.locationViews) && r.locationViews.length;
@@ -3427,6 +3427,7 @@ async function runNanoImages(options = {}) {
           outfitImages: r.kind === 'characters' && Array.isArray(r.outfitImages) ? r.outfitImages : [],
           appearance: r.kind === 'characters' ? (r.appearance || '') : '',
           makeup: r.kind === 'characters' ? (r.makeup || '') : '',
+          sheetFromText: r.kind === 'characters' && r.sheetFromText === true,
           locationViews: isEnvSheet ? r.locationViews : null,
           // Ảnh NẠP làm NGUỒN để quét ra sheet bối cảnh 2 góc (giống ảnh nhân vật → sheet).
           locationSourceImage: isEnvSheet ? uploadedLoc : '',

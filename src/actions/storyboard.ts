@@ -41,6 +41,7 @@ import {
 } from "@/lib/creative-routing";
 import { enforceProductShootContract, productShootSubject } from "@/lib/product-shoot/storyboard";
 import { enforceProductPlacements, outfitCostume, placementItems } from "@/lib/product-placement";
+import { labelAiSocialPosts, normalizeCuteKids } from "@/lib/kids/cute-kids";
 import {
   REFERENCE_CHARACTER_ANTI_PLASTIC,
   REFERENCE_CHARACTER_APPEARANCE_LOCK,
@@ -1931,6 +1932,7 @@ function normalizeRepairCandidate(
   enforceAnonymousNarrationContract(input, breakdown);
   enforceProductShootContract(resolveInputProductShoot(input), breakdown);
   enforceProductPlacements(input.product_placements, breakdown);
+  if (input.cute_kids) labelAiSocialPosts(breakdown.social_posts);
   bindOnScreenSpeakersToCameraBeats(breakdown);
   enforceSingleDialogueClock(breakdown);
   enforceSceneCastContract(breakdown);
@@ -2360,6 +2362,9 @@ function normalizePlanInput(input: StoryboardGenerationInput): StoryboardGenerat
   // identities, never write on-camera dialogue — what the user meant as spoken
   // words becomes an off-screen narrator voice-over (or stays wordless when
   // both speech channels are off).
+  // "Bé cưng viral": the client config is clamped to known values; anything
+  // unknown is dropped.
+  if (input.cute_kids) input = { ...input, cute_kids: normalizeCuteKids(input.cute_kids) };
   const shootPresence = resolveInputProductShoot(input)?.presence;
   if (shootPresence === "product_only" || shootPresence === "hands_only") {
     const narrate = input.voice_over_enabled === true || input.character_dialogue_enabled !== false;
@@ -2651,6 +2656,8 @@ async function runPlanBuild(
   softStep("Gắn sản phẩm / trang phục", warnings, () => {
     for (const note of enforceProductPlacements(input.product_placements, breakdown)) warnings.push(note);
   });
+  // Realistic AI video of a child: platforms require the AI-content label.
+  if (input.cute_kids) labelAiSocialPosts(breakdown.social_posts);
   softStep("Chế độ quay sản phẩm", warnings, () => {
     for (const note of enforceProductShootContract(resolveInputProductShoot(input), breakdown)) warnings.push(note);
   });

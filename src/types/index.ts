@@ -298,6 +298,9 @@ export interface StoryboardGenerationInput {
    * each with an optional shop link and reference photos (photos travel in
    * product_images under the same name). Outfits are worn by a named character. */
   product_placements?: import("@/lib/product-placement").ProductPlacement[];
+  /** "Bé cưng viral" family reel: the kid's age, family, filming look and
+   * dialect. Adds an age-true script contract and always-on child safety. */
+  cute_kids?: import("@/lib/kids/cute-kids").CuteKidsConfig;
   affiliate_video_style?: import("@/lib/product-ir").AffiliateVideoStyle;
   affiliate_duration_seconds?: 15 | 20 | 30;
   affiliate_disclosure?: string;

@@ -38,6 +38,7 @@ import { isStylizedCharacterRepresentation, resolveInputProductShoot } from "@/l
 import { compileCookingRecipeDigest } from "@/lib/cooking";
 import { compileProductIRDigest } from "@/lib/product-ir";
 import { productPlacementDirective } from "@/lib/product-placement";
+import { cuteKidsDirective } from "@/lib/kids/cute-kids";
 import { applyCameraAuthorityToClip } from "@/lib/product-shoot/clip-authority";
 import { resolveSpeechMode } from "@/lib/storyboard/anonymous-narration";
 import {
@@ -843,6 +844,7 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   const briefBlock = (brief.length
     ? `\nBrief:\n${brief.join("\n")}${closedCastRule}${uploadedRule}`
     : `${closedCastRule}${uploadedRule}`) + (placementDirective ? `\n\n${placementDirective}` : "");
+  const kidsDirective = cuteKidsDirective(input.cute_kids);
 
   const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
   const speechDirective = speechModeDirective(input, lang);
@@ -863,7 +865,7 @@ Dialogue language: ${
     isCooking && ["nature_asmr", "kitchen_asmr", "pov_hands"].includes(input.cooking_style ?? "")
       ? "NONE — every segment is wordless diegetic ASMR"
       : `${lang} (when dialogue is justified, write it naturally in ${lang})`
-  }.${briefBlock}${setDirection}${framework ? `\n${framework}` : ""}${actionDramaBlock}\n${speechDirective}${stickFigureNarrationDirective ? `\n\n${stickFigureNarrationDirective}` : ""}
+  }.${briefBlock}${kidsDirective ? `\n\n${kidsDirective}` : ""}${setDirection}${framework ? `\n${framework}` : ""}${actionDramaBlock}\n${speechDirective}${stickFigureNarrationDirective ? `\n\n${stickFigureNarrationDirective}` : ""}
 
 ${input.script_treatment === "polish" ? `EDITORIAL-POLISH MODE FOR A PASTED SCREENPLAY: preserve every character, relationship, location, prop identity, plot fact, causal reveal, emotional meaning and ending message from the supplied screenplay. You MAY and SHOULD restructure the first 30 seconds, merge or redistribute turns across the requested 10s segments, sharpen weak dialogue, add subtext and specify performance/action. Do not introduce a different story, product, setting, relationship or moral. The result must feel like the strongest filmed version of the same screenplay, not a summary and not a replacement premise.` : ""}
 
@@ -1051,7 +1053,8 @@ export function buildStoryboardUserPrompt(
           : "Feature the product clearly, dramatize the selling points for the target audience, land the key message, and close on the exact CTA above."}`
       : "";
   const storyboardPlacement = productPlacementDirective(input.product_placements, { adGenre: PLACEMENT_AD_GENRES.has(input.genre) });
-  const productBriefBlock = `${productBriefBlockBase}${storyboardPlacement ? `\n\n${storyboardPlacement}` : ""}`;
+  const storyboardKids = cuteKidsDirective(input.cute_kids);
+  const productBriefBlock = `${productBriefBlockBase}${storyboardPlacement ? `\n\n${storyboardPlacement}` : ""}${storyboardKids ? `\n\n${storyboardKids}` : ""}`;
 
   // Story / film brief — for narrative (non-ad) genres.
   const storyLines: string[] = [];

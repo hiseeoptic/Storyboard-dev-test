@@ -53,6 +53,8 @@
             // Thời trang: ảnh bộ đồ đang bán + ngoại hình (khi không có ảnh mặt).
             outfitImages: kind === 'characters' && Array.isArray(asset.outfit_images) ? asset.outfit_images : [],
             appearance: kind === 'characters' ? String(asset.appearance || '') : '',
+            // Bé cưng / gia đình không ảnh: tạo sheet nhân vật TỪ MÔ TẢ để khóa mặt mọi shot.
+            sheetFromText: kind === 'characters' && asset.sheet_from_text === true && !!String(asset.appearance || '').trim(),
             makeup: kind === 'characters' ? String(asset.makeup || '') : '',
             placementKind: kind === 'products' ? String(asset.placement_kind || '') : '',
             wornBy: kind === 'products' ? String(asset.worn_by || '') : '',
@@ -88,7 +90,7 @@
       const seen = {};
       // Nhân vật mặc đồ đang bán (không ảnh mặt) vẫn có ảnh toàn thân "thử đồ".
       return imageRefs.filter(function (r) {
-        return r.kind === kind && (r.image || (kind === 'characters' && Array.isArray(r.outfitImages) && r.outfitImages.length));
+        return r.kind === kind && (r.image || (kind === 'characters' && ((Array.isArray(r.outfitImages) && r.outfitImages.length) || r.sheetFromText)));
       })
         .map(function (r) { return String(r.name).replace(/ \(góc \d+\)$/, ''); })
         .filter(function (n) { if (seen[n]) return false; seen[n] = true; return true; });

@@ -2144,7 +2144,10 @@
     } : {}, (opts && opts.makeup) ? {
       makeup: opts.makeup + ' Identical in all three cells.',
     } : {}, (opts && opts.hasFace === false) ? {
-      identity_authority: 'No face photo exists for this character: create ONE new, natural, believable real person — ' + (opts.appearance || 'matching the story') + ' — with a distinctive everyday face that is NOT the model from any outfit photo. The RIGHT-TOP frontal and RIGHT-BOTTOM 90° profile neck-up crops are the identity anchors; the LEFT full-body cell carries that identical face.',
+      identity_authority: 'No face photo exists for this character: create ONE new, natural, believable real person — ' + (opts.appearance || 'matching the story') + (opts.outfitRef ? ' — with a distinctive everyday face that is NOT the model from any outfit photo.' : ' — with a distinctive, natural everyday face; this sheet becomes the ONLY identity reference for every later frame.') + ' The RIGHT-TOP frontal and RIGHT-BOTTOM 90° profile neck-up crops are the identity anchors; the LEFT full-body cell carries that identical face.',
+    } : {}, (opts && opts.hasFace === false && !opts.outfitRef) ? {
+      reference_roles: 'No image is attached: build this person from the description alone.',
+      wardrobe_rule: 'ONLY the LEFT full-body cell shows the complete locked outfit (top, bottom, footwear). BOTH RIGHT cells terminate at the base of the neck; at most a very narrow collar edge may appear.',
     } : {}));
     const ensureWardrobeSheet = async (r) => {
       const name = r.name || 'character';
@@ -2160,9 +2163,10 @@
         const mid = await uploadRefOnce({ name: name + ' — đồ đang bán ' + (k + 1), data: outfitImgs[k] });
         if (mid) outfitIds.push(mid);
       }
-      if (!photoId && !outfitIds.length) return '';
+      const fromText = !photoId && !outfitIds.length && r.sheetFromText === true && !!String(r.appearance || '').trim();
+      if (!photoId && !outfitIds.length && !fromText) return '';
       try {
-        post({ via: 'log', kind: 'log', message: `🧍 Tạo ảnh TOÀN THÂN nhân vật "${name}"${outfitIds.length ? ` — mặc đồ đang bán (${outfitIds.length} ảnh)` : ''}${outfit ? ` — trang phục: ${outfit.slice(0, 60)}` : ' — trang phục theo bối cảnh'}…` });
+        post({ via: 'log', kind: 'log', message: `🧍 Tạo ảnh TOÀN THÂN nhân vật "${name}"${outfitIds.length ? ` — mặc đồ đang bán (${outfitIds.length} ảnh)` : ''}${fromText ? ' — dựng TỪ MÔ TẢ (không có ảnh mặt), sheet này khóa mặt cho mọi shot' : ''}${outfit ? ` — trang phục: ${outfit.slice(0, 60)}` : ' — trang phục theo bối cảnh'}…` });
         const g = await batchGenerateImages(pid, {
           prompt: sheetPromptFor(name, outfit, { outfitRef: outfitIds.length > 0, hasFace: !!photoId, appearance: r.appearance || '', makeup: r.makeup || '' }),
           // 16:9 landscape: LEFT = full body; RIGHT-TOP and RIGHT-BOTTOM = matching
@@ -2275,7 +2279,7 @@
       const allCharRefs = [];
       for (const itm of items) {
         for (const r of (Array.isArray(itm.refs) ? itm.refs : [])) {
-          if (r && r.kind === 'characters' && (r.data || r.image || (Array.isArray(r.outfitImages) && r.outfitImages.length))) {
+          if (r && r.kind === 'characters' && (r.data || r.image || (Array.isArray(r.outfitImages) && r.outfitImages.length) || r.sheetFromText)) {
             const nm = String(r.name || '').trim().toLowerCase();
             if (nm && !seenChar.has(nm)) { seenChar.add(nm); allCharRefs.push(r); }
           }
@@ -2423,7 +2427,7 @@
               if (plateIds.length) post({ via: 'log', kind: 'log', message: `  🏞️ đính ${plateIds.length} ảnh nền "${r.name || ''}" làm ref khóa bối cảnh.` });
               continue;
             }
-            const isChar = !!(r && r.kind === 'characters' && (r.data || r.image || (Array.isArray(r.outfitImages) && r.outfitImages.length)));
+            const isChar = !!(r && r.kind === 'characters' && (r.data || r.image || (Array.isArray(r.outfitImages) && r.outfitImages.length) || r.sheetFromText));
             const mid = (sheetsOn && isChar)
               ? await ensureWardrobeSheet(r)
               : await uploadRefOnce(r);

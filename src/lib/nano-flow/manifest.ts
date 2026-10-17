@@ -17,6 +17,7 @@ import { SET_QUALITY_NEGATIVE, SET_QUALITY_NOTE, stripBlandSetClauses } from "..
 import { buildSetMap, cameraSideLock, setMapBrief, type SetMap } from "../environment/set-map.ts";
 import { outfitReferenceContract } from "../fashion/outfit.ts";
 import { makeupContract, makeupText, type MakeupMode } from "../character-makeup.ts";
+import { PHONE_PLATE_NOTE, PHONE_RENDER_NOTE, PHONE_VIDEO_NOTE } from "../kids/cute-kids.ts";
 import { setDressingFor, setDressingLock } from "../environment/set-dressing.ts";
 import { outfitCostume, placementItems, shotsForPlacement, type ProductPlacement } from "../product-placement.ts";
 import {
@@ -81,6 +82,10 @@ export interface BuildNanoFlowManifestOptions {
   productPlacements?: ProductPlacement[];
   /** Per-character makeup choice from the cast (name → mode). */
   characterMakeup?: Record<string, MakeupMode>;
+  /** "Bé cưng viral" family reel: every character without a photo gets a
+   * sheet built from the locked description (one face in every shot), and
+   * "phone" swaps the cinema look for a parent's smartphone video. */
+  cuteKids?: { filming: "phone" | "cinematic" };
   affiliateProductIR?: ProductIR;
   affiliateDisclosure?: string;
   /** Explicit character medium selected in the app (one of the ten locked video
@@ -197,6 +202,13 @@ function withMakeupVideoLocks(video: Record<string, unknown> | string, makeupByN
     patched[id] = makeup ? { ...lock, makeup } : raw;
   }
   return { ...video, character_lock: patched };
+}
+
+/** The video prompt with a capture-style lock (a parent's phone video) next to its visual style. */
+function withCaptureStyle(video: Record<string, unknown> | string, note: string): Record<string, unknown> | string {
+  if (!note) return video;
+  if (typeof video === "string") return `${video}\n${note}`;
+  return insertAfterKey(video, ["visual_style", "aspect_ratio", "duration_sec", "scene_id"], "capture_style", note);
 }
 
 /** The video prompt with the same outfit contract, also on each wearer's character lock. */
@@ -1786,6 +1798,31 @@ export function buildNanoFlowManifest(
       : "";
     if (appearance) c.appearance = appearance.slice(0, 300);
   }
+  // Family reel: a character with no photo (the AI kid, the parents) is drawn
+  // once on a sheet from the locked description; that sheet is the face of
+  // every later frame, so the kid never changes between shots.
+  if (opts.cuteKids) {
+    for (const c of characters) {
+      if (c.image || c.outfit_product_id) continue;
+      const lock = (breakdown.character_locks ?? []).find((l) => l.name.trim().toLowerCase() === c.name.trim().toLowerCase());
+      if (!lock) continue;
+      const appearance = [
+        lock.gender_age || [lock.gender, lock.is_child ? "child" : ""].filter(Boolean).join(" "),
+        lock.build,
+        lock.skin_tone,
+        lock.face_structure,
+        lock.hair,
+        lock.eyes,
+        lock.signature_features,
+      ]
+        .map((v) => String(v ?? "").trim())
+        .filter((v) => v && !/^unspecified$/i.test(v))
+        .join(", ");
+      if (!appearance) continue;
+      c.appearance = appearance.slice(0, 600);
+      c.sheet_from_text = true;
+    }
+  }
 
   // ── Shots ──
   // Cách 1 — resolve which uploaded location photo (if any) each 1-based shot
@@ -1861,6 +1898,11 @@ export function buildNanoFlowManifest(
   // sheets stay 16:9 reference images.
   const cleanKeyframes = (opts.keyframeMode ?? "clean") !== "board";
   const keyframeAspect: "9:16" | "16:9" = cleanKeyframes && (opts.aspectRatio ?? "9:16") === "9:16" ? "9:16" : "16:9";
+  // Family reel filmed on a parent's phone: the phone look replaces the cinema
+  // look on keyframes, plates and videos (live action only).
+  const phoneLook = opts.cuteKids?.filming === "phone" && !visualMediumLock;
+  const phoneLookPrompt = (prompt: string, note = PHONE_RENDER_NOTE) =>
+    phoneLook ? prompt.split(KEYFRAME_RENDER_NOTE).join(note) : prompt;
   // One fixed floor plan per location, shared by its establishing image and
   // every keyframe/video there, so a new camera angle cannot move a landmark.
   const setMapByLocation = new Map<string, SetMap | null>();
@@ -1904,6 +1946,10 @@ export function buildNanoFlowManifest(
       realityMode,
       characterStyleLock: visualMediumLock,
     });
+    if (phoneLook) {
+      if (env.location_sheet_prompt) env.location_sheet_prompt = phoneLookPrompt(env.location_sheet_prompt, PHONE_PLATE_NOTE);
+      env.location_views = env.location_views?.map((v) => ({ ...v, prompt: phoneLookPrompt(v.prompt, PHONE_PLATE_NOTE) }));
+    }
   }
 
   // Compute thumbnail delivery independently from the always-landscape board.
@@ -2218,7 +2264,7 @@ export function buildNanoFlowManifest(
       // FRAME. Default "clean" keyframe mode = ONE clean cinematic still (a real
       // Veo first frame, no multi-panel contact sheet). Legacy "board" mode keeps
       // the multi-panel storyboard board (unchanged) for backward-compat / A-B.
-      storyboard_prompt: withOutfitContract(useCleanKeyframe
+      storyboard_prompt: phoneLookPrompt(withOutfitContract(useCleanKeyframe
         ? buildKeyframePrompt({ moment: "start", ...keyframeArgs })
         : buildLocationBoardPrompt(
         primaryVideoPrompt,
@@ -2248,12 +2294,12 @@ export function buildNanoFlowManifest(
         continueFromPrevious,
         lockedTimeOfDay,
         placementContract
-      ), outfitContract, shotMakeup, shotDressing),
+      ), outfitContract, shotMakeup, shotDressing)),
       // STEP A2 (clean keyframe mode only): the END keyframe for a transform
       // shot. Its presence makes the extension run Veo start_end_frame
       // interpolation (start→end); omitted ⇒ a normal single-keyframe shot. §6.2.
       ...(useCleanKeyframe && frameMode === "start_end"
-        ? { end_storyboard_prompt: withOutfitContract(buildKeyframePrompt({ moment: "end", ...keyframeArgs }), outfitContract, shotMakeup, shotDressing) }
+        ? { end_storyboard_prompt: phoneLookPrompt(withOutfitContract(buildKeyframePrompt({ moment: "end", ...keyframeArgs }), outfitContract, shotMakeup, shotDressing)) }
         : {}),
       frame_mode: useCleanKeyframe ? frameMode : "start",
       continuity_mode: shotContinuity,
@@ -2271,15 +2317,18 @@ export function buildNanoFlowManifest(
       // The generated keyframe is a visual opening reference only. The primary
       // video prompt remains the semantic authority for action/camera/end state.
       // Same words as the keyframe's opening_frame: both models stage one layout.
-      video_prompt: withMakeupVideoLocks(
-        withOutfitVideoContract(
-          useCleanKeyframe
-            ? withOpeningFrame(primaryVideoPrompt, describeOpeningFrame(keyframeArgs))
-            : primaryVideoPrompt,
-          outfitRefs,
-          outfitContract
+      video_prompt: withCaptureStyle(
+        withMakeupVideoLocks(
+          withOutfitVideoContract(
+            useCleanKeyframe
+              ? withOpeningFrame(primaryVideoPrompt, describeOpeningFrame(keyframeArgs))
+              : primaryVideoPrompt,
+            outfitRefs,
+            outfitContract
+          ),
+          makeupByName
         ),
-        makeupByName
+        phoneLook ? PHONE_VIDEO_NOTE : ""
       ),
       characters_in_scene: inScene,
       video_refs: {

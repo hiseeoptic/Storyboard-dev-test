@@ -100,6 +100,8 @@ export interface NanoFlowAsset {
   thumbnail_hero?: boolean;
   /** Characters without a face photo who wear a sold outfit: who to draw on the sheet. */
   appearance?: string;
+  /** Characters only: no photo — the extension builds the character sheet from `appearance`. */
+  sheet_from_text?: boolean;
   /** Outfit products only: the photos lend clothes only (a shop model's face is never used). */
   garments_only?: boolean;
 }

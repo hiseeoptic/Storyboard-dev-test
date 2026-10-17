@@ -64,7 +64,10 @@
     } : {}, (opts && opts.makeup) ? {
       makeup: opts.makeup + ' Identical in all three cells.',
     } : {}, (opts && opts.hasFace === false) ? {
-      identity_authority: 'No face photo exists for this character: create ONE new, natural, believable real person — ' + (opts.appearance || 'matching the story') + ' — with a distinctive everyday face that is NOT the model from any outfit photo. The RIGHT-TOP frontal and RIGHT-BOTTOM 90° profile neck-up crops are the identity anchors; the LEFT full-body cell carries that identical face.',
+      identity_authority: 'No face photo exists for this character: create ONE new, natural, believable real person — ' + (opts.appearance || 'matching the story') + (opts.outfitRef ? ' — with a distinctive everyday face that is NOT the model from any outfit photo.' : ' — with a distinctive, natural everyday face; this sheet becomes the ONLY identity reference for every later frame.') + ' The RIGHT-TOP frontal and RIGHT-BOTTOM 90° profile neck-up crops are the identity anchors; the LEFT full-body cell carries that identical face.',
+    } : {}, (opts && opts.hasFace === false && !opts.outfitRef) ? {
+      reference_roles: 'No image is attached: build this person from the description alone.',
+      wardrobe_rule: 'ONLY the LEFT full-body cell shows the complete locked outfit (top, bottom, footwear). BOTH RIGHT cells terminate at the base of the neck; at most a very narrow collar edge may appear.',
     } : {}));
   }
 
@@ -148,7 +151,9 @@
     const sheetFor = (asset, outfit) => {
       const ent = charById[asset.id] || null;
       // Nhân vật không ảnh mặt nhưng mặc đồ đang bán vẫn có sheet "thử đồ".
-      if (!ent || (!ent.photoKey && !outfitKeysFor(ent.asset).length)) return '';
+      // Bé cưng / gia đình không ảnh: sheet dựng TỪ MÔ TẢ, khóa mặt cho mọi keyframe.
+      const fromText = !!(ent && ent.asset.sheet_from_text === true && String(ent.asset.appearance || '').trim());
+      if (!ent || (!ent.photoKey && !outfitKeysFor(ent.asset).length && !fromText)) return '';
       const combo = lc(asset.name) + '::' + lc(outfit);
       if (sheetByCombo[combo]) return sheetByCombo[combo];
       const key = 'SHEET ' + pad(sheets.length + 1);
@@ -182,7 +187,7 @@
     (assets.characters || []).forEach((a) => { outfit[lc(a.name)] = String(a.wardrobe || '').trim(); });
     const sortedQueue = (queue || []).slice().sort((a, b) => (a.index || 0) - (b.index || 0));
     // Ưu tiên tạo sheet trang phục ĐẦU TIÊN của mọi nhân vật trước (như pipeline cũ).
-    (assets.characters || []).forEach((a) => { if (charById[a.id] && (charById[a.id].photoKey || outfitKeysFor(a).length)) sheetFor(a, outfit[lc(a.name)]); });
+    (assets.characters || []).forEach((a) => { if (charById[a.id] && (charById[a.id].photoKey || outfitKeysFor(a).length || (a.sheet_from_text === true && String(a.appearance || '').trim()))) sheetFor(a, outfit[lc(a.name)]); });
 
     const productKeys = [];
     // Ảnh đồ thời trang có thể có người mẫu → chỉ dùng cho sheet "thử đồ", không đính thẳng vào bìa.

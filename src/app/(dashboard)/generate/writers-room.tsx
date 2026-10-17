@@ -92,14 +92,19 @@ export function WritersRoom({
   provider,
   onApply,
   onClose,
+  seedIdea,
 }: {
   lang: Lang;
   provider: AIProvider;
   onApply: (patch: RoomFormPatch) => void;
   onClose: () => void;
+  /** Start a fresh room with this idea (e.g. from the "Bé cưng viral" card). */
+  seedIdea?: string;
 }) {
   const vi = lang === "vi";
-  const [room, setRoom] = useState<RoomState>(() => (typeof window === "undefined" ? emptyRoom() : loadRoom()));
+  const [room, setRoom] = useState<RoomState>(() =>
+    seedIdea?.trim() ? { ...emptyRoom(), idea: seedIdea.trim() } : typeof window === "undefined" ? emptyRoom() : loadRoom()
+  );
   const [busy, setBusy] = useState<string>("");
   const [error, setError] = useState("");
   const [input, setInput] = useState("");

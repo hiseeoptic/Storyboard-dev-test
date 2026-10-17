@@ -57,6 +57,8 @@ import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { WritersRoom } from "./writers-room";
 import { SetDirectionPanel } from "./set-direction";
+import { CuteKidsCard } from "./cute-kids-card";
+import { AGE_LABEL, cuteKidsRoomSeed, cuteKidsStoryIdea, familyCast, type CuteKidsConfig } from "@/lib/kids/cute-kids";
 import { OutfitEditor, outfitHasContent, type OutfitDraft } from "./outfit-editor";
 import { isChildGroup, outfitCostumeText, resolveFills, type CharacterOutfit, type WearerGroup } from "@/lib/fashion/outfit";
 import { MAKEUP_LABEL, type MakeupMode } from "@/lib/character-makeup";
@@ -1600,6 +1602,12 @@ function ProjectWorkspace() {
   const [storyIdea, setStoryIdea] = useState("");
   const [scriptTreatment, setScriptTreatment] = useState<"preserve" | "polish">("polish");
   const [showWritersRoom, setShowWritersRoom] = useState(false);
+  // "Bé cưng viral": the active family-reel config (null = off), the kid's
+  // optional photo, a fresh writers' room seed and the one-click build flag.
+  const [cuteKids, setCuteKids] = useState<CuteKidsConfig | null>(null);
+  const [cuteKidsPhoto, setCuteKidsPhoto] = useState<UploadedImage[]>([]);
+  const [roomSeed, setRoomSeed] = useState<{ key: number; idea: string } | null>(null);
+  const [autoGenerate, setAutoGenerate] = useState(false);
   const [voiceOverEnabled, setVoiceOverEnabled] = useState(false);
   const [characterDialogueEnabled, setCharacterDialogueEnabled] = useState(true);
   // Legacy state name retained so existing code/data remains compatible. In
@@ -2490,6 +2498,7 @@ function ProjectWorkspace() {
       affiliate_disclosure: isAffiliateMode ? affiliateDisclosure.trim() || undefined : undefined,
       camera_profile_custom: cameraProfileCustom.trim() || undefined,
       product_placements: productPlacementsForInput.length > 0 ? productPlacementsForInput : undefined,
+      cute_kids: cuteKids ?? undefined,
       product_shoot: productShootActive
         ? {
             presence: productPresence,
@@ -3083,6 +3092,7 @@ function ProjectWorkspace() {
           ? genInput?.product_images
           : undefined,
       productPlacements: genInput?.product_placements,
+      ...(genInput?.cute_kids ? { cuteKids: { filming: genInput.cute_kids.filming } } : {}),
       // Embed each uploaded character frontal photo so the extension auto-loads
       // it (no manual per-image attach). No photo ⇒ a null slot as before.
       characterReferences: manifestCharacterRefs.length > 0 ? manifestCharacterRefs : undefined,
@@ -4681,17 +4691,72 @@ function ProjectWorkspace() {
     setVoiceOverEnabled(patch.voiceOver);
     setCharacterDialogueEnabled(patch.dialogue);
     if (patch.characters.length) {
-      setCharacters(patch.characters.map((c) => ({
-        name: c.name,
-        role: c.role,
-        appearance: c.appearance,
-        bodyType: "standard" as const,
-        isChild: c.isChild,
-        images: [],
-      })));
+      // Family reel: the room's cast keeps the card's family looks and the kid's photo.
+      const family = cuteKids ? familyCast(cuteKids) : [];
+      setCharacters(patch.characters.map((c) => {
+        const member = family.find((m) => m.name.trim().toLowerCase() === c.name.trim().toLowerCase());
+        const kidPhoto = member && member === family[0] ? cuteKidsPhoto.slice(0, 1) : [];
+        return {
+          name: c.name,
+          role: c.role,
+          appearance: c.appearance || member?.appearance || "",
+          bodyType: "standard" as const,
+          isChild: c.isChild || member?.isChild === true,
+          images: kidPhoto,
+          ...(kidPhoto.length ? { hasRealPhoto: true } : {}),
+          ...(c.isChild || member?.isChild ? { makeup: "none" as const } : {}),
+        };
+      }));
     }
+    if (cuteKids) setAspectRatio("9:16");
+    setRoomSeed(null);
     setShowWritersRoom(false);
   };
+
+  // "Bé cưng viral" card → the form: family sitcom, the kid first in a locked
+  // family cast (no photo = one AI kid built from text and reused every shot),
+  // age-true dialogue on, voice-over off, vertical 9:16.
+  const applyCuteKids = (config: CuteKidsConfig, kidPhoto: UploadedImage[]) => {
+    changeGenre("sitcom");
+    if (isStylizedCharacterRepresentation(characterRepresentation)) setCharacterRepresentation("auto");
+    setStoryIdea(cuteKidsStoryIdea(config));
+    setScriptTreatment("polish");
+    setCharacters(familyCast(config).map((member, i) => {
+      const photo = i === 0 ? kidPhoto.slice(0, 1) : [];
+      return {
+        name: member.name,
+        role: member.role,
+        appearance: member.appearance,
+        bodyType: "standard" as const,
+        isChild: member.isChild,
+        images: photo,
+        ...(photo.length ? { hasRealPhoto: true } : {}),
+        makeup: member.isChild ? ("none" as const) : ("auto" as const),
+      };
+    }));
+    setSegmentCount(config.shots);
+    setCharacterDialogueEnabled(true);
+    setVoiceOverEnabled(false);
+    setAspectRatio("9:16");
+    setCuteKids(config);
+    setCuteKidsPhoto(kidPhoto.slice(0, 1));
+  };
+  const buildCuteKids = (config: CuteKidsConfig, kidPhoto: UploadedImage[]) => {
+    applyCuteKids(config, kidPhoto);
+    setAutoGenerate(true);
+  };
+  const openCuteKidsRoom = (config: CuteKidsConfig, kidPhoto: UploadedImage[]) => {
+    applyCuteKids(config, kidPhoto);
+    setRoomSeed((prev) => ({ key: (prev?.key ?? 0) + 1, idea: cuteKidsRoomSeed(config) }));
+    setShowWritersRoom(true);
+  };
+  // One-click build: start once the form state above has been applied.
+  useEffect(() => {
+    if (!autoGenerate) return;
+    setAutoGenerate(false);
+    void handleGenerate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoGenerate]);
 
   const canNext = step === 0 ? storyIdea.trim().length > 0 : true;
 
@@ -4912,12 +4977,15 @@ function ProjectWorkspace() {
               </div>
               {showWritersRoom && (
                 <WritersRoom
+                  key={roomSeed ? `seed-${roomSeed.key}` : "room"}
                   lang={lang}
                   provider={scriptProvider}
                   onApply={applyWritersRoom}
                   onClose={() => setShowWritersRoom(false)}
+                  seedIdea={roomSeed?.idea}
                 />
               )}
+              <CuteKidsCard lang={lang} provider={scriptProvider} onBuild={buildCuteKids} onOpenRoom={openCuteKidsRoom} />
               <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-primary">
                   <BookOpen className="h-4 w-4" />
@@ -4980,6 +5048,18 @@ function ProjectWorkspace() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("storyIdea")}</label>
+                {cuteKids && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-pink-400/50 bg-pink-500/[0.06] px-3 py-1.5 text-xs">
+                    <span>
+                      🧒 {lang === "vi"
+                        ? `Chế độ Bé cưng viral: ${familyCast(cuteKids)[0]?.name} (${AGE_LABEL[cuteKids.kidAge].vi}), quay ${cuteKids.filming === "phone" ? "điện thoại gia đình" : "điện ảnh"}, giọng ${cuteKids.dialect === "north" ? "Bắc" : "Nam"} — lời thoại đúng tuổi, an toàn trẻ em, nhãn AI khi đăng.`
+                        : `Cute kids mode: ${familyCast(cuteKids)[0]?.name} (${AGE_LABEL[cuteKids.kidAge].en}), ${cuteKids.filming} filming.`}
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={() => setCuteKids(null)}>
+                      {lang === "vi" ? "Tắt" : "Off"}
+                    </Button>
+                  </div>
+                )}
                 <Textarea
                   value={storyIdea}
                   onChange={(e) => setStoryIdea(e.target.value)}
