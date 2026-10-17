@@ -17,7 +17,7 @@ import { SET_QUALITY_NEGATIVE, SET_QUALITY_NOTE, stripBlandSetClauses } from "..
 import { buildSetMap, cameraSideLock, setMapBrief, type SetMap } from "../environment/set-map.ts";
 import { outfitReferenceContract } from "../fashion/outfit.ts";
 import { makeupContract, makeupText, type MakeupMode } from "../character-makeup.ts";
-import { PHONE_PLATE_NOTE, PHONE_RENDER_NOTE, PHONE_VIDEO_NOTE } from "../kids/cute-kids.ts";
+import { PHONE_PLATE_NOTE, PHONE_RENDER_NOTE, PHONE_VIDEO_NOTE, cuteKidsPerformanceNote, type KidTrait } from "../kids/cute-kids.ts";
 import { castHasChild, childSafeDeep } from "../kids/child-safe-wording.ts";
 import { setDressingFor, setDressingLock } from "../environment/set-dressing.ts";
 import { outfitCostume, placementItems, shotsForPlacement, type ProductPlacement } from "../product-placement.ts";
@@ -86,7 +86,7 @@ export interface BuildNanoFlowManifestOptions {
   /** "Bé cưng viral" family reel: every character without a photo gets a
    * sheet built from the locked description (one face in every shot), and
    * "phone" swaps the cinema look for a parent's smartphone video. */
-  cuteKids?: { filming: "phone" | "cinematic" };
+  cuteKids?: { filming: "phone" | "cinematic"; kidName?: string; traits?: KidTrait[] };
   affiliateProductIR?: ProductIR;
   affiliateDisclosure?: string;
   /** Explicit character medium selected in the app (one of the ten locked video
@@ -206,10 +206,11 @@ function withMakeupVideoLocks(video: Record<string, unknown> | string, makeupByN
 }
 
 /** The video prompt with a capture-style lock (a parent's phone video) next to its visual style. */
-function withCaptureStyle(video: Record<string, unknown> | string, note: string): Record<string, unknown> | string {
-  if (!note) return video;
-  if (typeof video === "string") return `${video}\n${note}`;
-  return insertAfterKey(video, ["visual_style", "aspect_ratio", "duration_sec", "scene_id"], "capture_style", note);
+function withCaptureStyle(video: Record<string, unknown> | string, note: string, performance = ""): Record<string, unknown> | string {
+  let out = video;
+  if (note) out = typeof out === "string" ? `${out}\n${note}` : insertAfterKey(out, ["visual_style", "aspect_ratio", "duration_sec", "scene_id"], "capture_style", note);
+  if (performance) out = typeof out === "string" ? `${out}\n${performance}` : insertAfterKey(out, ["capture_style", "visual_style", "aspect_ratio", "duration_sec", "scene_id"], "child_performance", performance);
+  return out;
 }
 
 /** The video prompt with the same outfit contract, also on each wearer's character lock. */
@@ -1904,6 +1905,11 @@ export function buildNanoFlowManifest(
   const phoneLook = opts.cuteKids?.filming === "phone" && !visualMediumLock;
   const phoneLookPrompt = (prompt: string, note = PHONE_RENDER_NOTE) =>
     phoneLook ? prompt.split(KEYFRAME_RENDER_NOTE).join(note) : prompt;
+  // Cute-kids reel: the kid's big, cute performance is explicitly wanted (the
+  // general audio/acting laws say "restrained, never theatrical").
+  const kidPerformance = opts.cuteKids?.kidName?.trim() ? cuteKidsPerformanceNote(opts.cuteKids.kidName.trim(), opts.cuteKids.traits) : "";
+  const withKidPerformance = (prompt: string) =>
+    kidPerformance ? withPromptContract(prompt, "child_performance", kidPerformance, ["makeup_contract", "outfit_reference_contract", "cast", "camera", "opening_frame"]) : prompt;
   // One fixed floor plan per location, shared by its establishing image and
   // every keyframe/video there, so a new camera angle cannot move a landmark.
   const setMapByLocation = new Map<string, SetMap | null>();
@@ -2265,7 +2271,7 @@ export function buildNanoFlowManifest(
       // FRAME. Default "clean" keyframe mode = ONE clean cinematic still (a real
       // Veo first frame, no multi-panel contact sheet). Legacy "board" mode keeps
       // the multi-panel storyboard board (unchanged) for backward-compat / A-B.
-      storyboard_prompt: phoneLookPrompt(withOutfitContract(useCleanKeyframe
+      storyboard_prompt: withKidPerformance(phoneLookPrompt(withOutfitContract(useCleanKeyframe
         ? buildKeyframePrompt({ moment: "start", ...keyframeArgs })
         : buildLocationBoardPrompt(
         primaryVideoPrompt,
@@ -2295,12 +2301,12 @@ export function buildNanoFlowManifest(
         continueFromPrevious,
         lockedTimeOfDay,
         placementContract
-      ), outfitContract, shotMakeup, shotDressing)),
+      ), outfitContract, shotMakeup, shotDressing))),
       // STEP A2 (clean keyframe mode only): the END keyframe for a transform
       // shot. Its presence makes the extension run Veo start_end_frame
       // interpolation (start→end); omitted ⇒ a normal single-keyframe shot. §6.2.
       ...(useCleanKeyframe && frameMode === "start_end"
-        ? { end_storyboard_prompt: phoneLookPrompt(withOutfitContract(buildKeyframePrompt({ moment: "end", ...keyframeArgs }), outfitContract, shotMakeup, shotDressing)) }
+        ? { end_storyboard_prompt: withKidPerformance(phoneLookPrompt(withOutfitContract(buildKeyframePrompt({ moment: "end", ...keyframeArgs }), outfitContract, shotMakeup, shotDressing))) }
         : {}),
       frame_mode: useCleanKeyframe ? frameMode : "start",
       continuity_mode: shotContinuity,
@@ -2329,7 +2335,8 @@ export function buildNanoFlowManifest(
           ),
           makeupByName
         ),
-        phoneLook ? PHONE_VIDEO_NOTE : ""
+        phoneLook ? PHONE_VIDEO_NOTE : "",
+        kidPerformance
       ),
       characters_in_scene: inScene,
       video_refs: {

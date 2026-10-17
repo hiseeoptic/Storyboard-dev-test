@@ -1126,6 +1126,13 @@ test("family reel: photo-less family members get a text-built sheet; phone filmi
   assert.match(cine.shots[0]!.storyboard_prompt, /professional cinema camera/);
   assert.equal((cine.shots[0]!.video_prompt as Record<string, unknown>).capture_style, undefined);
   assert.equal(cine.assets.characters?.find((c) => c.name === "Bé Na")?.sheet_from_text, true);
+  // The kid's cute performance is explicitly allowed on the video and the keyframe.
+  const acted = buildNanoFlowManifest(bd, { cuteKids: { filming: "phone", kidName: "Bé Na", traits: ["sweet_whiny", "fake_cry", "clever"] }, veoClips });
+  const actedVideo = acted.shots[0]!.video_prompt as Record<string, unknown>;
+  assert.match(String(actedVideo.child_performance), /^CHILD PERFORMANCE \(explicitly required by this project — overrides any "restrained \/ never theatrical" rule for Bé Na only\)/);
+  assert.match(String(actedVideo.child_performance), /nũng nịu coaxing.*pretend crying.*cheeky clever looks/);
+  assert.match(String((JSON.parse(acted.shots[0]!.storyboard_prompt) as Record<string, unknown>).child_performance), /Bé Na performs big, clear, adorable child expressions/);
+  assert.equal((phone.shots[0]!.video_prompt as Record<string, unknown>).child_performance, undefined, "no kid name → no note");
   // Ordinary projects are unchanged.
   const plain = buildNanoFlowManifest(bd, { veoClips });
   assert.equal(plain.assets.characters?.find((c) => c.name === "Bé Na")?.sheet_from_text, undefined);

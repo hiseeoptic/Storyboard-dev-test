@@ -18,12 +18,14 @@ import type { AIProvider } from "@/types";
 import {
   AGE_LABEL,
   DEFAULT_CUTE_KIDS,
+  KID_TRAITS,
   VIRAL_FORMATS,
   normalizeCuteKids,
   type CuteKidsConfig,
   type EpisodeIdea,
   type FamilyMember,
   type KidAge,
+  type KidTrait,
 } from "@/lib/kids/cute-kids";
 
 type Lang = "vi" | "en";
@@ -106,6 +108,8 @@ export function CuteKidsCard(props: {
     });
   const toggleFamily = (id: FamilyMember) =>
     update({ family: config.family.includes(id) ? config.family.filter((m) => m !== id) : [...config.family, id] });
+  const traits = config.traits ?? [];
+  const toggleTrait = (id: KidTrait) => update({ traits: traits.includes(id) ? traits.filter((t) => t !== id) : [...traits, id] });
 
   const ready = config.request.trim().length > 0;
   const askIdeas = async () => {
@@ -176,9 +180,25 @@ export function CuteKidsCard(props: {
                   ? vi ? "Bé nói 1–3 từ, bập bẹ; bố mẹ dẫn lời, bé “diễn” bằng biểu cảm." : "1–3 word lines; parents carry the dialogue."
                   : config.kidAge === "young"
                     ? vi ? "Câu ngắn ≤ 6 từ, logic ngây ngô." : "Short lines up to 6 words."
-                    : vi ? "Câu ≤ 10 từ, kiểu “bà cụ non”, có câu chốt." : "Up to 10 words, a sassy punchline."}
+                    : vi ? "Câu ≤ 10 từ, ngọt ngào lém lỉnh, có câu chốt." : "Up to 10 words, a sassy punchline."}
               </p>
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">{vi ? "Tính cách bé (diễn trong mọi shot)" : "Kid's personality (in every shot)"}</label>
+            <div className="flex flex-wrap gap-1.5">
+              {KID_TRAITS.map((t) => (
+                <Chip key={t.id} active={traits.includes(t.id)} onClick={() => toggleTrait(t.id)} title={t.room_vi}>
+                  {vi ? t.label_vi : t.label_en}
+                </Chip>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {vi
+                ? "Bé dễ thương từ cử chỉ, điệu bộ đến giọng nói; bố mẹ luôn hưởng ứng (tan chảy, bật cười, trêu lại, chiều bé)."
+                : "Cute in gestures, body language and voice; the parents always play along."}
+            </p>
           </div>
 
           <div className="space-y-1.5">

@@ -41,7 +41,7 @@ import {
 } from "@/lib/creative-routing";
 import { enforceProductShootContract, productShootSubject } from "@/lib/product-shoot/storyboard";
 import { enforceProductPlacements, outfitCostume, placementItems } from "@/lib/product-placement";
-import { labelAiSocialPosts, normalizeCuteKids } from "@/lib/kids/cute-kids";
+import { cuteKidsVoice, labelAiSocialPosts, normalizeCuteKids } from "@/lib/kids/cute-kids";
 import { castHasChild, childSafeDeep } from "@/lib/kids/child-safe-wording";
 import {
   REFERENCE_CHARACTER_ANTI_PLASTIC,
@@ -183,6 +183,24 @@ function stripHexCodes(text: string): string {
 function enforceChildSafeWording(input: StoryboardGenerationInput, breakdown: StoryboardGenerationOutput): void {
   if (!castHasChild(breakdown.character_locks, input.cute_kids)) return;
   Object.assign(breakdown, childSafeDeep(breakdown));
+}
+
+/**
+ * Cute-kids reel: the writer locks every voice with "restrained prosody"; the
+ * star kid gets a lively nũng nịu delivery and the adults warm, expressive
+ * voices instead (a baby keeps its babbling voice).
+ */
+function enforceCuteKidsVoices(input: StoryboardGenerationInput, breakdown: StoryboardGenerationOutput): void {
+  const kids = normalizeCuteKids(input.cute_kids);
+  if (!kids) return;
+  const locks = breakdown.character_locks ?? [];
+  const kidName = kids.kidName.trim().toLowerCase();
+  const star = locks.find((l) => l.name.trim().toLowerCase() === kidName) ?? locks.find((l) => l.is_child === true);
+  for (const lock of locks) {
+    if (!lock.voice) continue;
+    if (lock === star) lock.voice = cuteKidsVoice(lock.voice, { isKid: true, traits: kids.traits });
+    else if (lock.is_child !== true) lock.voice = cuteKidsVoice(lock.voice, { isKid: false });
+  }
 }
 
 function makeVeoSafe(text: string): string {
@@ -1945,6 +1963,7 @@ function normalizeRepairCandidate(
   enforceProductShootContract(resolveInputProductShoot(input), breakdown);
   enforceProductPlacements(input.product_placements, breakdown);
   if (input.cute_kids) labelAiSocialPosts(breakdown.social_posts);
+  enforceCuteKidsVoices(input, breakdown);
   bindOnScreenSpeakersToCameraBeats(breakdown);
   enforceSingleDialogueClock(breakdown);
   enforceSceneCastContract(breakdown);
@@ -2671,6 +2690,7 @@ async function runPlanBuild(
   });
   // Realistic AI video of a child: platforms require the AI-content label.
   if (input.cute_kids) labelAiSocialPosts(breakdown.social_posts);
+  softStep("Giọng bé cưng", warnings, () => enforceCuteKidsVoices(input, breakdown));
   softStep("Chế độ quay sản phẩm", warnings, () => {
     for (const note of enforceProductShootContract(resolveInputProductShoot(input), breakdown)) warnings.push(note);
   });

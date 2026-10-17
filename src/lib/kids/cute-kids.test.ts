@@ -6,6 +6,8 @@ import {
   normalizeEpisodeIdeas,
   DEFAULT_CUTE_KIDS,
   cuteKidsDirective,
+  cuteKidsPerformanceNote,
+  cuteKidsVoice,
   cuteKidsRoomSeed,
   cuteKidsStoryIdea,
   detectFormat,
@@ -91,4 +93,36 @@ test("episode ideas: the prompt carries the kid, the family and safety; replies 
   const ideas = normalizeEpisodeIdeas({ ideas: [{ title: "A", request: "x" }, { title: "a", request: "y" }, { title: "", request: "z" }, { title: "B", request: "w" }] });
   assert.deepEqual(ideas.map((i) => i.title), ["A", "B"]);
   assert.deepEqual(normalizeEpisodeIdeas("nope"), []);
+});
+
+test("personality: nũng nịu, khóc nhè, khôn lanh and parents playing along are in the contract", () => {
+  const d = cuteKidsDirective(config({ kidName: "Na" }));
+  assert.match(d, /NŨNG NỊU \(whiny-sweet, coaxing\): Na sways side to side/);
+  assert.match(d, /KHÓC NHÈ \/ ĂN VẠ/);
+  assert.match(d, /peeks through her fingers/);
+  assert.match(d, /KHÔN LANH/);
+  assert.match(d, /PARENTS PLAY ALONG/);
+  assert.match(d, /Default arc: nũng nịu ask/);
+  assert.match(d, /"Bố ơiii~"/);
+  assert.match(cuteKidsDirective(config({ dialect: "south" })), /"Ba ơiii~"/);
+  assert.match(cuteKidsDirective(config({ kidGender: "boy", kidName: "Bin" })), /Bin scrunches his whole face/);
+  const onlyClever = cuteKidsDirective(config({ traits: ["clever"] }));
+  assert.doesNotMatch(onlyClever, /KHÓC NHÈ/);
+  assert.doesNotMatch(onlyClever, /Default arc/);
+  assert.match(cuteKidsStoryIdea(config()), /Tính cách bé: nũng nịu, khóc nhè \/ ăn vạ, khôn lanh; bố mẹ luôn hưởng ứng/);
+  assert.match(cuteKidsRoomSeed(config()), /Bố mẹ luôn hưởng ứng/);
+  assert.equal(detectFormat("bé ăn vạ đòi đi công viên")?.id, "whiny_ask");
+  assert.deepEqual(normalizeCuteKids({ traits: ["clever", "nope", "clever"] })!.traits, ["clever"]);
+  assert.deepEqual(normalizeCuteKids({})!.traits, ["sweet_whiny", "fake_cry", "clever"]);
+});
+
+test("voices: the kid gets a lively nũng nịu delivery, parents warm expressive voices", () => {
+  const kid = cuteKidsVoice("Vietnamese, Northern dialect; bright child timbre, 290–360 Hz, playful and clear with restrained pitch variation.", { isKid: true, traits: ["sweet_whiny", "fake_cry"] });
+  assert.doesNotMatch(kid, /restrained/);
+  assert.match(kid, /with lively sing-song pitch rises/);
+  assert.match(kid, /nũng nịu sing-song with drawn-out vowels, theatrical "huhu" sniffles/);
+  assert.equal(cuteKidsVoice(kid, { isKid: true, traits: ["sweet_whiny", "fake_cry"] }), kid, "applied once");
+  const dad = cuteKidsVoice("warm adult male timbre, relaxed with restrained pitch variation.", { isKid: false });
+  assert.match(dad, /with warm, expressive natural pitch variation/);
+  assert.match(cuteKidsPerformanceNote("Na"), /overrides any "restrained \/ never theatrical" rule for Na only/);
 });
