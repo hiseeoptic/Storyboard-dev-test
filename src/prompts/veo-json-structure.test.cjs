@@ -604,9 +604,17 @@ test("Veo JSON keeps the stable structure with contextual outfits and local voic
   assert.match(clip.negative_prompt, /disembodied hand/i);
   assert.match(clip.negative_prompt, /technical readout or HUD/i);
   assert.ok(clip.negative_prompt.length > 1400);
+  // Real-people performance: the clip carries the acting law, keeps people
+  // alive while they speak and blacklists the "AI look".
+  assert.match(clip.performance_direction.realism, /^REAL-PEOPLE PERFORMANCE/);
+  assert.match(clip.scene_action.execution_contract, /every speaker and listener stays physically alive/);
+  assert.doesNotMatch(clip.scene_action.execution_contract, /continue only the already-started simple motion/);
+  assert.match(clip.negative_prompt, /mannequin-still body/);
+  assert.match(clip.character_lock.CHAR_1.expression, /^Changes with the moment as written in performance_direction/);
   // Full historical failure blacklist is intentionally retained; this cap
-  // still catches the old duplicated flat prompt without deleting safeguards.
-  assert.ok(JSON.stringify(clip).length < 12000);
+  // still catches the old duplicated flat prompt without deleting safeguards
+  // (raised once for the performance block).
+  assert.ok(JSON.stringify(clip).length < 14500);
 });
 
 test("scene_action keeps ordinary words that also appear inside character-lock fields", () => {

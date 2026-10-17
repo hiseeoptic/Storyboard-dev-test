@@ -707,6 +707,9 @@ export interface VideoSegment {
   /** Untimed ordered image-to-video action; dialogue_lines owns all timecodes. */
   motion_prompt: string;
   dialogue: string | null;
+  /** The acting of this clip per visible character (reaction, eyes, changing
+   * expression, hand business, listener response). */
+  performance?: string;
   /** Exact character_locks name of who speaks this segment's line (used for the
    * single-line case, and as the first turn of a multi-turn clip). Empty/
    * undefined = voiceover or no on-screen speaker. */

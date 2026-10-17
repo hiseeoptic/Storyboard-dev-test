@@ -40,6 +40,7 @@ import { compileProductIRDigest } from "@/lib/product-ir";
 import { productPlacementDirective } from "@/lib/product-placement";
 import { cuteKidsDirective } from "@/lib/kids/cute-kids";
 import { CHILD_SAFE_WORDING_RULE } from "@/lib/kids/child-safe-wording";
+import { AI_LOOK_NEGATIVE, HUMAN_PERFORMANCE_DOCTRINE, performanceDirection } from "@/lib/performance/human-performance";
 import { applyCameraAuthorityToClip } from "@/lib/product-shoot/clip-authority";
 import { resolveSpeechMode } from "@/lib/storyboard/anonymous-narration";
 import {
@@ -720,6 +721,9 @@ DIALOGUE QUALITY DOCTRINE — MANDATORY (make every line worth quoting; this is 
 - PAYOFF LINE: aim each scene at ONE "đắt giá" line the viewer will screenshot — specific, rhythmic, emotionally true, often funny. End the whole video on a line that quietly reframes everything before it.
 - PERFORMANCE SCORECARD — SILENTLY REWRITE UNTIL ALL PASS: hook specificity ≥ 8/10; visual action specificity ≥ 8/10; subtext ≥ 8/10; character-voice separation ≥ 8/10; emotional turn per segment ≥ 8/10. Reject generic reactions such as merely "smiles", "looks sad", "is surprised"; replace them with a readable micro-behaviour, changed breath, interrupted gesture, avoided gaze, grip/release or posture shift caused by the exact preceding line.
 
+${HUMAN_PERFORMANCE_DOCTRINE}
+In every ACTION line, write each visible person's behaviour this way: what they react to, where their eyes go, how their face changes, what their hands are doing and how the listener responds.
+
 🎬 DIRECTOR'S ENGINE (the user's proven multi-layer directing system — apply to EVERY script):
 - BLUEPRINT FIRST, ONE IDEA PER CLIP: before writing a segment's lines, silently fix its blueprint — ONE core idea, ONE primary emotion, ONE narrative role (hook / reflection / escalation / transition / synthesis / payoff). Everything in that segment serves that single idea; a 10s clip carrying two ideas is a broken clip.
 - 3-ACT NARRATIVE STATE: map segments onto ENGAGEMENT (opening ~20% — seize and orient), EXPLORATION (middle — deepen, complicate, escalate), RESOLUTION (final ~20% — land the payoff and the promise). Each segment must know which act it lives in and behave like it.
@@ -969,6 +973,8 @@ NEGATIVE CONTRACT: scene-level exclusions may cover text overlays, impossible ph
 
 DIALOGUE (spoken audio in Veo 3 — TURN-TAKING within a 10s clip, never overlapping):
 - DIALOGUE QUALITY DOCTRINE (MANDATORY — the user's #1 priority): you are the WRITER, not a transcriber. Every spoken line must be sharp, human, in-character and worth quoting. (1) SUBTEXT over statement — say it sideways, bury the real feeling under a concrete surface line; cut on-the-nose lines like a bare "Em giận anh à?" unless the reply subverts it. (2) HUMOR WITH HEART where the tone allows — one dry, wry or warmly funny beat per scene, and the funniest line may also be the most moving; never cheapen the payoff. (3) VOICE SEPARATION — each character has their own rhythm and vocabulary; never write two people who could swap lines. (4) TURN THE SCREW — every turn shifts something (reveal / needle / concession / reversal); delete filler pleasantries. (5) PAYOFF LINE — aim each scene at one "đắt giá" screenshot-worthy line; end the video on a line that reframes what came before. Flat lines from the input MUST be re-authored to this bar (keep speaker + intent). ${SPOKEN_LANGUAGE_TEST}
+${HUMAN_PERFORMANCE_DOCTRINE}
+- PERFORMANCE FIELD: every segment with people carries "performance" — the acting of that clip per visible character (reaction, eyes, how the face changes, hand business, the listener's response), specific to this moment and never a generic "smiles".
 - NEVER FAKE A LINE: a talking scene's dialogue must be REAL spoken words. NEVER output the scene TITLE, a stage-direction, or a description of the action as a spoken line (e.g. a voiceover that literally reads "Lan pulls the chair, her smile fading" is FORBIDDEN). If a conversational scene has no line in the input, WRITE a strong in-character one. If a beat is genuinely wordless by intent (a held look, a pure visual reveal), leave dialogue empty ("") and let the ACTION carry it — do NOT invent a narrating voiceover to fill silence.
 - Veo 3 generates real spoken audio. Write dialogue in the language requested. Keep each spoken line SHORT and natural.
 - Put spoken lines ONLY in the dialogue fields. Do NOT quote them inside "motion_prompt" (the system appends them once; repeating makes the character say it twice). In motion_prompt, describe only the ordered physical gestures: who turns toward whom, who speaks, and how the listener reacts. Use NO seconds or time ranges in motion_prompt or camera notes; dialogue_lines owns all speech timing.
@@ -1311,7 +1317,7 @@ Return a JSON object with this EXACT structure (the "beats" array must contain $
       "default_expression": "string",
       "render_style": "${input.style}",
       "dna": "string — ONE verbatim forensic-DNA line with RGB HEX codes for skin/hair/eyes/wardrobe/brand colours, e.g. 'navy polo #1F2A44, light-blue tee #A9C7E8, matte steel watch #8A8D91, short black side-part hair #14110F, warm tan skin #C8956A, rectangular tortoise glasses'",
-      "voice": "string — TẦNG 9 audio law: the character's FULL locked voice profile, identical in every clip. Language, regional accent and dialect come only from the resolved project context or explicit script; never assume a default region. Lock timbre + natural F0 range Hz + rate wpm + emotion band + restrained context-appropriate prosody. Male ≈ 85-140 Hz, female ≈ 180-260 Hz, child ≈ 250-400 Hz; use small human pitch variation, never monotone/Auto-Tuned."
+      "voice": "string — TẦNG 9 audio law: the character's FULL locked voice profile, identical in every clip. Language, regional accent and dialect come only from the resolved project context or explicit script; never assume a default region. Lock timbre + natural F0 range Hz + rate wpm + emotion band + natural, emotionally alive context-appropriate prosody (real conversational colour: a laugh in the voice, a sigh, a small hesitation where the line calls for it). Male ≈ 85-140 Hz, female ≈ 180-260 Hz, child ≈ 250-400 Hz; use natural human pitch movement, never monotone, read-aloud or Auto-Tuned."
     }
   ],
   "scene_bible": {
@@ -1332,7 +1338,8 @@ Return a JSON object with this EXACT structure (the "beats" array must contain $
 ${beatExample}
       ],
       "first_frame_prompt": "string — the segment's compact START STATE: describe the shared setting once, then use each visible character's exact name plus position, pose, expression and held/placed props. NEVER repeat gender, age, build, face, skin, hair, brows, lashes, initial outfit, voice or style from character_locks/scene_bible. For a multi-zone scene, obey spatial_layout without rewriting its five clauses.",
-      "motion_prompt": "string — a focused ACTION description for ONE continuous take as an UNTIMED chronological sequence. Use exact character names plus observable movement only. Do not repeat identity, appearance, wardrobe, voice, style, topology, physics boilerplate, dialogue text or negatives. A dialogue-heavy 10s clip may contain at most THREE production-changing atomic transitions; a clip with little/no speech may contain at most FIVE. Finish each reach/contact/transfer/release or pose transition before starting the next; never stack a second prop/furniture/pose task under a spoken line. Show the necessary daily-movement mechanics, object-contact/cause chain and final physical result without extra business. NO seconds/time ranges here; dialogue_lines is the only clock.",
+      "motion_prompt": "string — a focused ACTION description for ONE continuous take as an UNTIMED chronological sequence. Use exact character names plus observable movement only. Do not repeat identity, appearance, wardrobe, voice, style, topology, physics boilerplate, dialogue text or negatives. A dialogue-heavy 10s clip may contain at most THREE production-changing atomic transitions; a clip with little/no speech may contain at most FIVE. Finish each reach/contact/transfer/release or pose transition before starting the next; never stack a second prop/furniture/pose task under a spoken line. Show the necessary daily-movement mechanics, object-contact/cause chain and final physical result without extra blocking (small natural gestures, glances and expressions belong in \"performance\"). NO seconds/time ranges here; dialogue_lines is the only clock.",
+      "performance": "string — the ACTING of this clip, ≤ 80 words, one clause per visible character: what they react to, where their eyes go, how their expression changes during the clip (a reaction before speaking, a micro-expression such as a brow flick, a held-back smile, a glance away and back), one or two pieces of natural hand business (turning a cup, fixing a sleeve, a gesture landing on the stressed word, a weight shift) and how the listener responds. Specific to this moment, alive and human — never a bare 'smiles', never posed, never a frozen listener. Exact character names; no seconds; no dialogue text.",
       "dialogue": "string — the FIRST turn's spoken line in ${dialogueLanguage} (short, natural). Mirror of dialogue_lines[0].text.",
       "speaker": "string — the EXACT character_locks name of the FIRST turn's speaker (mirror of dialogue_lines[0].speaker). Empty string \\"\\" if voiceover.",
       "dialogue_lines": [
@@ -2618,6 +2625,12 @@ export const VEO_NEGATIVE_LIST =
 export const CAMERA_SPEECH_INDEPENDENCE_RULE =
   "Camera subject and dialogue owner are independent: framing a listener never transfers the line to that listener. During each dialogue window only the named speaker's voice, lips and jaw move; every other visible mouth stays naturally closed, and an off-screen or out-of-focus speaker continues from their own physical position in their own voice.";
 
+/** A character's face follows this clip's acting; the lock's default is only the resting face. */
+function clipExpression(defaultExpression: string | undefined): string {
+  const resting = String(defaultExpression ?? "").replace(/#[0-9A-Fa-f]{6}\b/g, "").replace(/\s+/g, " ").trim();
+  return `Changes with the moment as written in performance_direction and scene_action${resting ? `; resting face: ${resting}` : ""}`;
+}
+
 const VEO_CAMERA_FOCUS_RULE =
   "Natural cinematic depth of field; focus follows the explicitly assigned visual subject, NOT the active speaker. A speaker may remain off-camera or softly out of focus while the listener's silent reaction is sharp; framing never transfers dialogue or lip-sync to the visible subject.";
 
@@ -3302,7 +3315,7 @@ export function buildVeoJson(
         };
         const actionFlow = {
           pre_action: "Begin exactly in scene_action.start_state",
-          main_action: `Perform only ${lock.name}'s actions in scene_action.motion`,
+          main_action: `Perform only ${lock.name}'s actions in scene_action.motion, acted as written in performance_direction`,
           post_action: "Finish exactly in scene_action.end_state",
         };
         if (stylizedRepresentation) {
@@ -3332,7 +3345,7 @@ export function buildVeoJson(
               props,
               body_metrics: "cons=no-auto-rescale,lock-proportions,keep-relative-height",
               ...sceneStateFields,
-              expression: noHex(lock.default_expression) || "Use scene_action.start_state",
+              expression: clipExpression(lock.default_expression),
               action_flow: actionFlow,
             },
           ];
@@ -3378,7 +3391,7 @@ export function buildVeoJson(
               props,
               body_metrics: "REFERENCE_IMAGE; cons=no-auto-rescale,lock-proportions",
               ...sceneStateFields,
-              expression: "Use scene_action.start_state",
+              expression: clipExpression(""),
               action_flow: actionFlow,
             },
           ];
@@ -3420,7 +3433,7 @@ export function buildVeoJson(
             props,
             body_metrics: "cons=no-auto-rescale,lock-proportions,keep-relative-height",
             ...sceneStateFields,
-            expression: noHex(lock.default_expression) || "Use scene_action.start_state",
+            expression: clipExpression(lock.default_expression),
             action_flow: actionFlow,
           },
         ];
@@ -3636,7 +3649,7 @@ export function buildVeoJson(
         end_state: exitState,
         execution_contract:
           dialogue.length > 0
-            ? "ONE primary causal action unit. Perform at most three production-changing atomic transitions in strict order, at most ONE of them a body-position change (stand, sit, walk elsewhere, move furniture); finish each transition before the next. Spoken turns keep their declared order. During speech, continue only the already-started simple motion or a small reaction; never begin another prop transfer, furniture move, sit/stand or relocation."
+            ? "ONE primary causal action unit. Perform at most three production-changing atomic transitions in strict order, at most ONE of them a body-position change (stand, sit, walk elsewhere, move furniture); finish each transition before the next. Spoken turns keep their declared order. During speech the big blocking holds (no new prop transfer, furniture move, sit/stand or relocation), but every speaker and listener stays physically alive: conversational gestures on the stressed words, head tilts, glances, changing expressions and small hand business."
             : "ONE primary causal action unit. Perform at most five production-changing atomic transitions in strict order; finish each transition before the next. Never run unrelated character tasks in parallel or rush them to fill the clip.",
         ...(actionDrama
           ? {
@@ -3663,6 +3676,7 @@ export function buildVeoJson(
             : "Follow spatial_topology; change zones or positions only through visible scripted movement."
           : "Keep blocking and eye-lines physically possible; change positions only through visible scripted movement.",
       },
+      ...(onScreen.length > 0 ? { performance_direction: performanceDirection(seg.performance) } : {}),
       foley_and_ambience: {
         environment_sound_bed: environmentSoundBed,
         environment_reverb: environmentReverb,
@@ -3716,6 +3730,7 @@ export function buildVeoJson(
         stylizedRepresentation
           ? "live-action hand, photoreal human hand, realistic skin hand, palm, fingernails, knuckles, realistic wrist, detached human hand, mixed-media anatomy, photographic material or sensor texture"
           : "",
+        onScreen.length > 0 ? AI_LOOK_NEGATIVE : "",
       ].filter(Boolean).join(", "),
     };
   });

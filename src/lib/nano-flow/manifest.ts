@@ -19,6 +19,7 @@ import { outfitReferenceContract } from "../fashion/outfit.ts";
 import { makeupContract, makeupText, type MakeupMode } from "../character-makeup.ts";
 import { PHONE_PLATE_NOTE, PHONE_RENDER_NOTE, PHONE_VIDEO_NOTE, cuteKidsPerformanceNote, type KidTrait } from "../kids/cute-kids.ts";
 import { castHasChild, childSafeDeep } from "../kids/child-safe-wording.ts";
+import { KEYFRAME_CANDID_NOTE } from "../performance/human-performance.ts";
 import { setDressingFor, setDressingLock } from "../environment/set-dressing.ts";
 import { outfitCostume, placementItems, shotsForPlacement, type ProductPlacement } from "../product-placement.ts";
 import {
@@ -1910,6 +1911,9 @@ export function buildNanoFlowManifest(
   const kidPerformance = opts.cuteKids?.kidName?.trim() ? cuteKidsPerformanceNote(opts.cuteKids.kidName.trim(), opts.cuteKids.traits) : "";
   const withKidPerformance = (prompt: string) =>
     kidPerformance ? withPromptContract(prompt, "child_performance", kidPerformance, ["makeup_contract", "outfit_reference_contract", "cast", "camera", "opening_frame"]) : prompt;
+  // Every keyframe with people is a candid moment of real footage, not a pose.
+  const withCandidMoment = (prompt: string, hasPeople: boolean) =>
+    hasPeople ? withPromptContract(prompt, "candid_moment", KEYFRAME_CANDID_NOTE, ["child_performance", "makeup_contract", "outfit_reference_contract", "cast", "camera", "opening_frame"]) : prompt;
   // One fixed floor plan per location, shared by its establishing image and
   // every keyframe/video there, so a new camera angle cannot move a landmark.
   const setMapByLocation = new Map<string, SetMap | null>();
@@ -2271,7 +2275,7 @@ export function buildNanoFlowManifest(
       // FRAME. Default "clean" keyframe mode = ONE clean cinematic still (a real
       // Veo first frame, no multi-panel contact sheet). Legacy "board" mode keeps
       // the multi-panel storyboard board (unchanged) for backward-compat / A-B.
-      storyboard_prompt: withKidPerformance(phoneLookPrompt(withOutfitContract(useCleanKeyframe
+      storyboard_prompt: withCandidMoment(withKidPerformance(phoneLookPrompt(withOutfitContract(useCleanKeyframe
         ? buildKeyframePrompt({ moment: "start", ...keyframeArgs })
         : buildLocationBoardPrompt(
         primaryVideoPrompt,
@@ -2301,12 +2305,12 @@ export function buildNanoFlowManifest(
         continueFromPrevious,
         lockedTimeOfDay,
         placementContract
-      ), outfitContract, shotMakeup, shotDressing))),
+      ), outfitContract, shotMakeup, shotDressing))), inScene.length > 0),
       // STEP A2 (clean keyframe mode only): the END keyframe for a transform
       // shot. Its presence makes the extension run Veo start_end_frame
       // interpolation (start→end); omitted ⇒ a normal single-keyframe shot. §6.2.
       ...(useCleanKeyframe && frameMode === "start_end"
-        ? { end_storyboard_prompt: withKidPerformance(phoneLookPrompt(withOutfitContract(buildKeyframePrompt({ moment: "end", ...keyframeArgs }), outfitContract, shotMakeup, shotDressing))) }
+        ? { end_storyboard_prompt: withCandidMoment(withKidPerformance(phoneLookPrompt(withOutfitContract(buildKeyframePrompt({ moment: "end", ...keyframeArgs }), outfitContract, shotMakeup, shotDressing))), inScene.length > 0) }
         : {}),
       frame_mode: useCleanKeyframe ? frameMode : "start",
       continuity_mode: shotContinuity,

@@ -15,7 +15,7 @@
     "test:ai-cost": "node --experimental-strip-types --test src/lib/ai/retry-policy.test.ts src/lib/ai/openai-models.test.ts src/lib/storyboard/source-script.test.ts src/lib/storyboard/anonymous-narration.test.ts",
     "test:plan-cache": "node --experimental-strip-types --test src/lib/storyboard/plan-cache.test.ts",
     "test:spatial": "node --experimental-strip-types --test src/lib/spatial-topology/index.test.ts src/lib/environment/set-map.test.ts src/lib/environment/set-dressing.test.ts src/lib/location-preset.test.ts",
-    "test:storyboard-prompts": "node --experimental-strip-types --test src/lib/storyboard/prompt-package.test.ts",
+    "test:storyboard-prompts": "node --experimental-strip-types --test src/lib/storyboard/prompt-package.test.ts src/lib/performance/human-performance.test.ts",
     "test:production-state": "node --experimental-strip-types --test src/lib/production-state/normalizer.test.ts src/lib/production-state/physical-validator.test.ts src/lib/production-state/spatial-action.test.ts src/lib/production-state/cinematography.test.ts src/lib/production-state/dialogue-audio.test.ts",
     "test:product-shoot": "node --experimental-strip-types --test src/lib/product-shoot/product-shoot.test.ts src/lib/product-placement.test.ts src/lib/fashion/outfit.test.ts",
     "test:writers-room": "node --experimental-strip-types --test src/lib/writers-room/writers-room.test.ts \"src/app/(dashboard)/generate/hooks-order.test.ts\"",

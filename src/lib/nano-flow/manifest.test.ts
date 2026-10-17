@@ -1133,6 +1133,8 @@ test("family reel: photo-less family members get a text-built sheet; phone filmi
   assert.match(String(actedVideo.child_performance), /nũng nịu coaxing.*pretend crying.*cheeky clever looks/);
   assert.match(String((JSON.parse(acted.shots[0]!.storyboard_prompt) as Record<string, unknown>).child_performance), /Bé Na performs big, clear, adorable child expressions/);
   assert.equal((phone.shots[0]!.video_prompt as Record<string, unknown>).child_performance, undefined, "no kid name → no note");
+  // Every keyframe with people is a candid moment, not a pose.
+  assert.match(String((JSON.parse(phone.shots[0]!.storyboard_prompt) as Record<string, unknown>).candid_moment), /^CANDID MOMENT: every visible person is caught mid-moment/);
   // Ordinary projects are unchanged.
   const plain = buildNanoFlowManifest(bd, { veoClips });
   assert.equal(plain.assets.characters?.find((c) => c.name === "Bé Na")?.sheet_from_text, undefined);
