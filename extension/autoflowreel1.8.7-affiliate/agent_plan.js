@@ -277,6 +277,9 @@
   }
 
   const VERBATIM = 'Copy each PROMPT exactly as written, character for character, into the prompt of that generation — do NOT shorten, summarize, rewrite, translate or merge prompts, and keep the title at the start. Use exactly the aspect ratio and reference media ids listed for each item.';
+  // Khi Flow từ chối 1 mục, Agent hay tự viết lại prompt thành vài câu ngắn rồi tạo
+  // lại → mất cả cấu trúc (camera, thoại, khóa nhân vật). Cấm hẳn: báo lỗi, không tự sửa.
+  const NO_REWRITE = 'A PROMPT that is a JSON object is pasted WHOLE — from its title through the final closing brace — never turned into prose, never reduced to its action text, never trimmed. If a generation is refused or fails, do NOT rewrite, soften, shorten or re-word its prompt and do NOT retry it with your own wording: skip that item and tell me its title and the exact error message.';
   const NO_QUESTIONS = 'Do NOT ask me any questions and do not suggest alternatives — just generate.';
   const ALL_AT_ONCE = 'Generate ALL of them in this one turn (they are independent of each other) — do not stop after the first ones and do not wait for me between items.';
 
@@ -293,7 +296,7 @@
   function prepMessage(ctx, keys, state, head) {
     const parts = [];
     parts.push((head || 'MESSAGE 1 — character sheets, location plates and thumbnail') + '. ' + NO_QUESTIONS);
-    parts.push('Generate exactly ' + keys.length + ' image(s) with Nano Banana, one per block below, nothing else. Character sheets and location plates are ' + aspectLabel('16:9') + ' reference images (the video itself is ' + aspectLabel(ctx.keyframeAspect || ctx.aspect) + '). ' + ALL_AT_ONCE + ' ' + VERBATIM);
+    parts.push('Generate exactly ' + keys.length + ' image(s) with Nano Banana, one per block below, nothing else. Character sheets and location plates are ' + aspectLabel('16:9') + ' reference images (the video itself is ' + aspectLabel(ctx.keyframeAspect || ctx.aspect) + '). ' + ALL_AT_ONCE + ' ' + VERBATIM + ' ' + NO_REWRITE);
     parts.push('');
     keys.forEach((k) => {
       const s = ctx.sheets.find((x) => x.key === k);
@@ -319,7 +322,7 @@
   function framesMessage(ctx, keys, state, head) {
     const parts = [];
     parts.push((head || 'MESSAGE 2 — shot keyframes') + '. ' + NO_QUESTIONS);
-    parts.push('Generate exactly ' + keys.length + ' image(s) with Nano Banana, one per block below, nothing else. Each keyframe is ONE single full-frame still (the first frame of a video) in ' + aspectLabel(ctx.keyframeAspect || ctx.aspect) + ' — the same frame as the videos — no grid, collage, split screen or text. ' + ALL_AT_ONCE + ' ' + VERBATIM);
+    parts.push('Generate exactly ' + keys.length + ' image(s) with Nano Banana, one per block below, nothing else. Each keyframe is ONE single full-frame still (the first frame of a video) in ' + aspectLabel(ctx.keyframeAspect || ctx.aspect) + ' — the same frame as the videos — no grid, collage, split screen or text. ' + ALL_AT_ONCE + ' ' + VERBATIM + ' ' + NO_REWRITE);
     parts.push('');
     keys.forEach((k) => {
       if (k === 'THUMBNAIL' && ctx.thumb) {
@@ -365,8 +368,8 @@
     parts.push('I approve the credit cost of every video in this message in advance — generate them all without asking for permission (if you must ask, ask only once for all of them).');
     const model = ctx.videoModel ? ', with the ' + ctx.videoModel + ' video model (if it is unavailable, use your default video model)' : '';
     parts.push(refsMode
-      ? 'Generate exactly ' + keys.length + ' video(s), one per block below, each as a video WITH REFERENCE IMAGES: pass ALL the reference image media ids listed for that video. The first id is that shot\'s keyframe = its OPENING FRAME: the video must start from exactly that picture — same ' + (ctx.peopleFree ? 'product position, light and set' : 'people in the same places and poses (sitting/standing, facing), same framing, room, light and wardrobe') + ' — and play the prompt\'s action from there; never re-stage it or move to another room. ' + (ctx.peopleFree ? 'The others are the product photos (exact shape, colour, label and logo) and the set plate' : 'The others are the character sheet(s) and location plate that lock identity and place') + '. Use each block\'s own prompt with its own SHOT number — never mix prompts between shots' + model + ', no on-screen text or subtitles. ' + ALL_AT_ONCE + ' ' + VERBATIM
-      : 'Generate exactly ' + keys.length + ' video(s), one per block below. For each, use the image with the given media id as the FIRST FRAME (start image)' + model + ', no on-screen text or subtitles. ' + ALL_AT_ONCE + ' ' + VERBATIM);
+      ? 'Generate exactly ' + keys.length + ' video(s), one per block below, each as a video WITH REFERENCE IMAGES: pass ALL the reference image media ids listed for that video. The first id is that shot\'s keyframe = its OPENING FRAME: the video must start from exactly that picture — same ' + (ctx.peopleFree ? 'product position, light and set' : 'people in the same places and poses (sitting/standing, facing), same framing, room, light and wardrobe') + ' — and play the prompt\'s action from there; never re-stage it or move to another room. ' + (ctx.peopleFree ? 'The others are the product photos (exact shape, colour, label and logo) and the set plate' : 'The others are the character sheet(s) and location plate that lock identity and place') + '. Use each block\'s own prompt with its own SHOT number — never mix prompts between shots' + model + ', no on-screen text or subtitles. ' + ALL_AT_ONCE + ' ' + VERBATIM + ' ' + NO_REWRITE
+      : 'Generate exactly ' + keys.length + ' video(s), one per block below. For each, use the image with the given media id as the FIRST FRAME (start image)' + model + ', no on-screen text or subtitles. ' + ALL_AT_ONCE + ' ' + VERBATIM + ' ' + NO_REWRITE);
     parts.push('');
     const vAspect = aspectLabel(ctx.aspect === '1:1' ? '16:9' : ctx.aspect);
     parts.push('Every video in this message is ' + vAspect + ', the same frame as its keyframe.');

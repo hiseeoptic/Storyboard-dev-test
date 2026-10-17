@@ -127,3 +127,19 @@ test("family reel: a photo-less kid gets a sheet built from text in batch and ag
   assert.equal(ctx.sheets.find((s) => s.name === "Bố"), undefined);
   assert.ok(ctx.shots[0].charKeys.includes(na.key), "the shot keyframe uses the text-built sheet");
 });
+
+test("agent messages forbid rewriting a refused prompt into a short one", () => {
+  const m = manifest();
+  m.shots[0].video_prompt = { scene_id: "1", scene_action: { motion: "Na reaches for Mẹ's hand" }, camera: { movement: "USER-SELECTED CAMERA: path 0–3.3s → 3.3–6.7s" } };
+  const queue = NanoManifest.toQueue(m);
+  const ctx = AgentPlan.buildContext(m, queue, NanoPipeline.buildQueuePlan(queue).plans, {});
+  const messages = AgentPlan.stages(ctx, {}, {}).map((stage) => AgentPlan.messageFor(ctx, stage, {}));
+  const videos = messages[messages.length - 1];
+  assert.match(videos, /pasted WHOLE — from its title through the final closing brace — never turned into prose, never reduced to its action text/);
+  assert.match(videos, /If a generation is refused or fails, do NOT rewrite, soften, shorten or re-word its prompt/);
+  assert.ok(videos.includes(JSON.stringify(queue[0].videoPrompt ? JSON.parse(queue[0].videoPrompt) : {})), "the full JSON prompt is in the message");
+  // A prompt cut down to its action text is detected.
+  const full = ctx.shots[0].videoPrompt;
+  assert.ok(AgentPlan.fidelity(full, "Na reaches for Mẹ's hand") < 0.5);
+  assert.equal(AgentPlan.fidelity(full, full), 1);
+});

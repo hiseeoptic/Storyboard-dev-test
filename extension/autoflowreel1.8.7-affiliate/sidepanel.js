@@ -5364,7 +5364,7 @@ function agentOnResult(m) {
     agentPersistState(run);
   }
   addLog(fid >= 0.95 ? `✅ ${key}${m.mediaKind === 'video' ? ' (video)' : ''} → ${String(m.mediaId).slice(0, 8)}… · prompt giữ nguyên`
-    : `⚠️ ${key}${m.mediaKind === 'video' ? ' (video)' : ''} → ${String(m.mediaId).slice(0, 8)}… · Agent đã RÚT GỌN prompt (còn ~${Math.round(fid * 100)}%).`, fid >= 0.95 ? 'success' : 'warning');
+    : `⚠️ ${key}${m.mediaKind === 'video' ? ' (video)' : ''} → ${String(m.mediaId).slice(0, 8)}… · Agent đã TỰ VIẾT LẠI / RÚT GỌN prompt (còn ~${Math.round(fid * 100)}%) — thường do Flow từ chối prompt gốc. Kết quả này không theo đủ kịch bản (camera, thoại, khóa nhân vật): xoá nó và tạo lại mục này, hoặc dùng chế độ thường để gửi nguyên prompt.`, fid >= 0.95 ? 'success' : 'warning');
   agentCheckAdvance();
 }
 function agentOnVideoDone(mediaId, ok) {
