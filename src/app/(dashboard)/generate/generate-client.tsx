@@ -565,8 +565,8 @@ const t = {
   },
   aspectRatio: { vi: "Tạo video theo khung hình", en: "Generate video in aspect ratio" },
   aspectRatioHint: {
-    vi: "Ảnh board luôn là 16:9 để tả đúng nhân vật; đây là tỉ lệ VIDEO — app đưa thẳng vào prompt để Veo dựng đúng khung.",
-    en: "The board image is always 16:9 for faithful characters; this is the VIDEO ratio — passed straight into the prompt so Veo renders the exact frame.",
+    vi: "Khung của toàn bộ phần dựng: keyframe và video đều theo tỉ lệ này (1:1 dựng ngang 16:9 vì Veo không có 1:1). Ảnh bảng nhân vật và ảnh bối cảnh gốc vẫn ngang 16:9 vì là ảnh tham chiếu.",
+    en: "The frame of the whole build: keyframes and videos both use this ratio (1:1 renders 16:9 since Veo has no 1:1). Character sheets and location plates stay 16:9 reference images.",
   },
   aspectLandscape: { vi: "Ngang 16:9 (YouTube)", en: "Landscape 16:9 (YouTube)" },
   aspectPortrait: { vi: "Dọc 9:16 (TikTok/Reels)", en: "Portrait 9:16 (TikTok/Reels)" },
@@ -6780,7 +6780,7 @@ function ProjectWorkspace() {
                 </label>
               </div>
 
-              {/* Aspect ratio — VIDEO frame only (board is always 16:9). v2: 16:9/9:16/1:1 */}
+              {/* Aspect ratio — keyframes + videos (reference sheets/plates stay 16:9). v2: 16:9/9:16/1:1 */}
               <div className="space-y-2" data-aspect-menu="v2">
                 <label className="text-sm font-medium">{L("aspectRatio")}</label>
                 <div className="grid grid-cols-3 gap-2">

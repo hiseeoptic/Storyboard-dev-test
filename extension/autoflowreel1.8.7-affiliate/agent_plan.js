@@ -126,6 +126,10 @@
     const assets = (manifest && manifest.assets) || {};
     const aspect = /9:16/.test(proj.aspect_ratio || '') ? '9:16' : (/1:1/.test(proj.aspect_ratio || '') ? '1:1' : (proj.aspect_ratio ? '16:9' : (opts.aspect || '9:16')));
     const thumbAspect = proj.thumbnail_aspect_ratio === '16:9' ? '16:9' : '9:16';
+    // Keyframe = khung mở đầu video → cùng khung với video (1:1 dựng ngang 16:9).
+    const keyframeAspect = proj.keyframe_aspect_ratio === '9:16' || proj.keyframe_aspect_ratio === '16:9'
+      ? proj.keyframe_aspect_ratio
+      : (aspect === '1:1' ? '16:9' : aspect);
     const sceneHint = String((plans && plans[0] && plans[0].imageStep && plans[0].imageStep.prompt) || '').slice(0, 300);
     const charById = {};
     (assets.characters || []).forEach((a, i) => { charById[a.id || i] = { asset: a, photoKey: assetImages(a).length ? 'characters:' + (a.id || i) : '' }; });
@@ -247,7 +251,7 @@
     } : null;
 
     return {
-      title: String(proj.title || '').trim(), aspect, thumbAspect, sheets, locs, shots, thumb,
+      title: String(proj.title || '').trim(), aspect, keyframeAspect, thumbAspect, sheets, locs, shots, thumb,
       videoModel: VIDEO_MODEL_NAMES[opts.videoModel] || '',
       videoMode: opts.videoMode === 'first' ? 'first' : 'refs',
       peopleFree,
@@ -271,6 +275,11 @@
   const NO_QUESTIONS = 'Do NOT ask me any questions and do not suggest alternatives — just generate.';
   const ALL_AT_ONCE = 'Generate ALL of them in this one turn (they are independent of each other) — do not stop after the first ones and do not wait for me between items.';
 
+  /** "9:16" → "9:16 (portrait / vertical)" — the agent must not guess the orientation. */
+  function aspectLabel(a) {
+    return a === '9:16' ? '9:16 (portrait / vertical)' : a === '1:1' ? '1:1 (square)' : '16:9 (landscape / horizontal)';
+  }
+
   function block(title, lines, prompt) {
     return ['=== ' + title + ' ===', ...lines, 'PROMPT:', prompt, ''].join('\n');
   }
@@ -279,22 +288,22 @@
   function prepMessage(ctx, keys, state, head) {
     const parts = [];
     parts.push((head || 'MESSAGE 1 — character sheets, location plates and thumbnail') + '. ' + NO_QUESTIONS);
-    parts.push('Generate exactly ' + keys.length + ' image(s) with Nano Banana, one per block below, nothing else. ' + ALL_AT_ONCE + ' ' + VERBATIM);
+    parts.push('Generate exactly ' + keys.length + ' image(s) with Nano Banana, one per block below, nothing else. Character sheets and location plates are ' + aspectLabel('16:9') + ' reference images (the video itself is ' + aspectLabel(ctx.keyframeAspect || ctx.aspect) + '). ' + ALL_AT_ONCE + ' ' + VERBATIM);
     parts.push('');
     keys.forEach((k) => {
       const s = ctx.sheets.find((x) => x.key === k);
       if (s) {
         // Ảnh đồ đặt TRƯỚC, ảnh mặt đặt SAU (khớp reference_roles của sheet).
         const ids = resolveIds(ctx, [...(s.outfitKeys || []), s.photoKey], state);
-        parts.push(block(s.key + ' – character sheet: ' + s.name, ['Aspect ratio: 16:9 (landscape)', 'Reference image media id(s): ' + (ids.join(', ') || 'none')], s.prompt));
+        parts.push(block(s.key + ' – character sheet: ' + s.name, ['Aspect ratio: ' + aspectLabel('16:9'), 'Reference image media id(s): ' + (ids.join(', ') || 'none')], s.prompt));
         return;
       }
       const l = ctx.locs.find((x) => x.key === k);
-      if (l) { parts.push(block(l.key + ' – location plate: ' + l.name, ['Aspect ratio: 16:9 (landscape)', 'Reference image media id(s): none (no people in this image)'], l.prompt)); return; }
+      if (l) { parts.push(block(l.key + ' – location plate: ' + l.name, ['Aspect ratio: ' + aspectLabel('16:9'), 'Reference image media id(s): none (no people in this image)'], l.prompt)); return; }
       if (k === 'THUMBNAIL' && ctx.thumb) {
         // Sheet chưa có ở tin 1 → resolveIds tự lùi về ảnh nhân vật đã nạp (cùng khuôn mặt).
         const ids = resolveIds(ctx, ctx.thumb.refKeys, state);
-        parts.push(block('THUMBNAIL', ['Aspect ratio: ' + ctx.thumbAspect, 'Reference image media id(s): ' + (ids.join(', ') || 'none')], ctx.thumb.prompt));
+        parts.push(block('THUMBNAIL', ['Aspect ratio: ' + aspectLabel(ctx.thumbAspect), 'Reference image media id(s): ' + (ids.join(', ') || 'none')], ctx.thumb.prompt));
       }
     });
     parts.push('When finished, list the titles you produced.');
@@ -305,18 +314,18 @@
   function framesMessage(ctx, keys, state, head) {
     const parts = [];
     parts.push((head || 'MESSAGE 2 — shot keyframes') + '. ' + NO_QUESTIONS);
-    parts.push('Generate exactly ' + keys.length + ' image(s) with Nano Banana, one per block below, nothing else. Each keyframe is ONE single full-frame still (the first frame of a video) — no grid, collage, split screen or text. ' + ALL_AT_ONCE + ' ' + VERBATIM);
+    parts.push('Generate exactly ' + keys.length + ' image(s) with Nano Banana, one per block below, nothing else. Each keyframe is ONE single full-frame still (the first frame of a video) in ' + aspectLabel(ctx.keyframeAspect || ctx.aspect) + ' — the same frame as the videos — no grid, collage, split screen or text. ' + ALL_AT_ONCE + ' ' + VERBATIM);
     parts.push('');
     keys.forEach((k) => {
       if (k === 'THUMBNAIL' && ctx.thumb) {
         const ids = resolveIds(ctx, ctx.thumb.refKeys, state);
-        parts.push(block('THUMBNAIL', ['Aspect ratio: ' + ctx.thumbAspect, 'Reference image media id(s): ' + (ids.join(', ') || 'none')], ctx.thumb.prompt));
+        parts.push(block('THUMBNAIL', ['Aspect ratio: ' + aspectLabel(ctx.thumbAspect), 'Reference image media id(s): ' + (ids.join(', ') || 'none')], ctx.thumb.prompt));
         return;
       }
       const s = ctx.shots.find((x) => x.key === k);
       if (!s) return;
       const ids = resolveIds(ctx, s.refKeys, state);
-      parts.push(block(s.key + ' – keyframe', ['Aspect ratio: ' + ctx.aspect, 'Reference image media id(s): ' + (ids.join(', ') || 'none')], s.keyframePrompt));
+      parts.push(block(s.key + ' – keyframe', ['Aspect ratio: ' + aspectLabel(ctx.keyframeAspect || ctx.aspect), 'Reference image media id(s): ' + (ids.join(', ') || 'none')], s.keyframePrompt));
     });
     parts.push('When finished, list the titles you produced.');
     return parts.join('\n');
@@ -354,7 +363,8 @@
       ? 'Generate exactly ' + keys.length + ' video(s), one per block below, each as a video WITH REFERENCE IMAGES: pass ALL the reference image media ids listed for that video. The first id is that shot\'s keyframe = its OPENING FRAME: the video must start from exactly that picture — same ' + (ctx.peopleFree ? 'product position, light and set' : 'people in the same places and poses (sitting/standing, facing), same framing, room, light and wardrobe') + ' — and play the prompt\'s action from there; never re-stage it or move to another room. ' + (ctx.peopleFree ? 'The others are the product photos (exact shape, colour, label and logo) and the set plate' : 'The others are the character sheet(s) and location plate that lock identity and place') + '. Use each block\'s own prompt with its own SHOT number — never mix prompts between shots' + model + ', no on-screen text or subtitles. ' + ALL_AT_ONCE + ' ' + VERBATIM
       : 'Generate exactly ' + keys.length + ' video(s), one per block below. For each, use the image with the given media id as the FIRST FRAME (start image)' + model + ', no on-screen text or subtitles. ' + ALL_AT_ONCE + ' ' + VERBATIM);
     parts.push('');
-    const vAspect = ctx.aspect === '1:1' ? '16:9' : ctx.aspect;
+    const vAspect = aspectLabel(ctx.aspect === '1:1' ? '16:9' : ctx.aspect);
+    parts.push('Every video in this message is ' + vAspect + ', the same frame as its keyframe.');
     keys.forEach((k) => {
       const s = ctx.shots.find((x) => x.key === k);
       if (!s) return;

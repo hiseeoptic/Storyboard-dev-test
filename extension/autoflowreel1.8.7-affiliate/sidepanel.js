@@ -3462,10 +3462,12 @@ async function runNanoImages(options = {}) {
   const items = rawItems.map((item) => window.NanoSession.stampItem(item, runContext));
   // Gợi ý bối cảnh cho sheet trang phục khi manifest không khai costume cụ thể.
   const sceneHint = String((plan.plans[0] && plan.plans[0].imageStep.prompt) || '').slice(0, 300);
-  // Ảnh BOARD LUÔN 16:9 (landscape) — app cố định project.board_aspect_ratio="16:9".
-  // Sheet rộng mô tả đúng nhân vật + bố cục nhiều panel → video chất lượng hơn.
-  // KHÔNG theo tỉ lệ VIDEO (9:16/1:1) và bỏ qua dropdown để board không bị bóp dọc.
-  const boardAspect = (nanoManifest && nanoManifest.project && nanoManifest.project.board_aspect_ratio) || '16:9';
+  // Ảnh KEYFRAME mỗi shot = khung mở đầu của video → cùng khung với VIDEO mà app đã
+  // chọn (9:16 dọc / 16:9 ngang). Manifest mới khai keyframe_aspect_ratio; manifest cũ
+  // chỉ có board_aspect_ratio (16:9). Sheet nhân vật + ảnh bối cảnh vẫn 16:9 (ảnh tham chiếu).
+  const boardAspect = (nanoManifest && nanoManifest.project
+    && (nanoManifest.project.keyframe_aspect_ratio || nanoManifest.project.board_aspect_ratio)) || '16:9';
+  addLog(`📐 Khung keyframe: ${boardAspect === '9:16' ? '9:16 (dọc)' : boardAspect === '1:1' ? '1:1 (vuông)' : '16:9 (ngang)'} · video: ${(nanoManifest && nanoManifest.project && nanoManifest.project.aspect_ratio) || '?'} · sheet nhân vật + ảnh bối cảnh: 16:9 (ảnh tham chiếu).`, 'info');
   const aspect = boardAspect === '9:16' ? 'IMAGE_ASPECT_RATIO_PORTRAIT'
     : boardAspect === '1:1' ? 'IMAGE_ASPECT_RATIO_SQUARE'
     : 'IMAGE_ASPECT_RATIO_LANDSCAPE';

@@ -2464,7 +2464,7 @@
         // 2) Generate the storyboard/keyframe image. If the reference-image
         //    shape (imageInputs) is rejected, retry text-only so the shot still
         //    produces an image instead of failing the whole batch.
-        post({ via: 'log', kind: 'log', message: `🖼️ [${i + 1}/${items.length}] "${label}" — đang tạo ảnh…` });
+        post({ via: 'log', kind: 'log', message: `🖼️ [${i + 1}/${items.length}] "${label}" — đang tạo ảnh ${/PORTRAIT/.test(aspect) ? '9:16 (dọc)' : /SQUARE/.test(aspect) ? '1:1 (vuông)' : '16:9 (ngang)'}…` });
         let g;
         try {
           g = willChain

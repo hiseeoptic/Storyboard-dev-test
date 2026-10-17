@@ -90,3 +90,19 @@ test("the sheet carries the makeup lock; a non-hero product never reaches the ag
   const ctx = AgentPlan.buildContext(m, queue, NanoPipeline.buildQueuePlan(queue).plans, {});
   assert.ok(!ctx.thumb.refKeys.some((k) => k.startsWith("products:")), "story covers carry no product refs");
 });
+
+test("agent messages state the frame of every item: keyframes and videos follow the video, references are 16:9", () => {
+  const m = manifest();
+  m.project.aspect_ratio = "9:16";
+  m.project.keyframe_aspect_ratio = "9:16";
+  m.shots[0].storyboard_prompt = '{"type":"photoreal_keyframe","aspect_ratio":"9:16"}';
+  const queue = NanoManifest.toQueue(m);
+  const ctx = AgentPlan.buildContext(m, queue, NanoPipeline.buildQueuePlan(queue).plans, {});
+  assert.equal(ctx.keyframeAspect, "9:16");
+  const all = AgentPlan.stages(ctx, {}, {}).map((stage) => AgentPlan.messageFor(ctx, stage, {})).join("\n");
+  assert.match(all, /character sheet: Lan ===\nAspect ratio: 16:9 \(landscape \/ horizontal\)/);
+  assert.match(all, /SHOT 01 – keyframe ===\nAspect ratio: 9:16 \(portrait \/ vertical\)/);
+  assert.match(all, /Each keyframe is ONE single full-frame still \(the first frame of a video\) in 9:16 \(portrait \/ vertical\)/);
+  assert.match(all, /Every video in this message is 9:16 \(portrait \/ vertical\)/);
+  assert.match(all, /SHOT 01 – video ===\n[^\n]*\nAspect ratio: 9:16 \(portrait \/ vertical\)/);
+});

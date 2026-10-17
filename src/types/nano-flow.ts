@@ -267,7 +267,11 @@ export interface NanoFlowProject {
   /** BOARD image aspect ratio — ALWAYS "16:9"; a wide sheet describes the cast
    * and layout best, which produces the most faithful video. The extension
    * generates every board at this ratio regardless of the video aspect. */
-  board_aspect_ratio?: "16:9";
+  board_aspect_ratio?: "16:9" | "9:16";
+  /** The per-shot keyframe image: the video's own frame (9:16 or 16:9). */
+  keyframe_aspect_ratio?: "16:9" | "9:16";
+  /** Character sheets and location plates (wide reference images). */
+  reference_aspect_ratio?: "16:9";
   dialogue_language?: string;
   /** Language used by camera/action/environment instructions. Independent from
    * dialogue_language and UI locale; English is the production default. */

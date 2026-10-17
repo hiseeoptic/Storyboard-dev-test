@@ -1091,15 +1091,32 @@ test("board prompt enforces numbered panels, one border system and a separate th
   assert.deepEqual(panels[0]!.expected_character_instances, { Lan: 1, Minh: 0 });
 });
 
-// Regression: the BOARD image is always 16:9 (a wide sheet describes the cast
-// best → best video), while the VIDEO aspect follows the app's selection —
-// including 1:1. The two are independent so the board never comes out portrait.
-test("manifest fixes the board to 16:9 while the video aspect follows the selection", () => {
-  for (const aspect of ["16:9", "9:16", "1:1"] as const) {
-    const m = buildNanoFlowManifest(fixture(), { aspectRatio: aspect, generatedAt: "2026-01-01T00:00:00Z" });
-    assert.equal(m.project.board_aspect_ratio, "16:9", `board stays 16:9 for video ${aspect}`);
+// The keyframe is the video's opening frame, so it uses the video's frame
+// (9:16 or 16:9; a 1:1 video renders landscape, so its keyframe is 16:9).
+// Location plates and character sheets stay 16:9 references; the legacy
+// multi-panel board stays a 16:9 sheet.
+test("keyframes follow the chosen video frame; references stay 16:9", () => {
+  for (const [aspect, keyframe] of [["16:9", "16:9"], ["9:16", "9:16"], ["1:1", "16:9"]] as const) {
+    const m = buildNanoFlowManifest(fixture(), {
+      aspectRatio: aspect,
+      generatedAt: "2026-01-01T00:00:00Z",
+      veoClips: [{ background_lock: { setting: "Living room with a sofa, a bookshelf and a floor lamp", scenery: "" } }],
+    });
     assert.equal(m.project.aspect_ratio, aspect, `video aspect is ${aspect}`);
+    assert.equal(m.project.keyframe_aspect_ratio, keyframe);
+    assert.equal(m.project.board_aspect_ratio, keyframe, "the extension generates each shot image in the video's frame");
+    assert.equal(m.project.reference_aspect_ratio, "16:9");
+    const kf = JSON.parse(m.shots[0]!.storyboard_prompt) as Record<string, string>;
+    assert.equal(kf.aspect_ratio, keyframe);
+    assert.match(kf.layout!, new RegExp(`^ONE single ${keyframe} ${keyframe === "9:16" ? "VERTICAL \\(portrait\\)" : "HORIZONTAL \\(landscape\\)"}`));
+    const env = (m.assets.environments ?? [])[0]!;
+    const plate = JSON.parse(env.location_sheet_prompt!) as Record<string, string>;
+    assert.equal(plate.aspect_ratio, "16:9");
+    assert.match(plate.frame!, keyframe === "9:16" ? /every shot of the video is a 9:16 VERTICAL/i : /every shot of the video is a 16:9 frame/);
+    assert.match(plate.camera_position!, /MASTER side/);
   }
+  // The legacy multi-panel board keeps its 16:9 sheet.
+  assert.equal(buildNanoFlowManifest(fixture(), { aspectRatio: "9:16", keyframeMode: "board" }).project.board_aspect_ratio, "16:9");
 });
 
 test("manifest preserves the independent speech contract without duplicating prompt prose", () => {

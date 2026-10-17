@@ -1011,7 +1011,7 @@ function buildKeyframePrompt(params: {
     output_count: 1,
     interpolation_role: isEnd ? "end" : "start",
     layout:
-      `ONE single ${aspectRatio} cinematic film still — a single continuous photographic frame that FILLS the whole image. This is NOT a storyboard, NOT a grid, NOT a contact sheet: no panels, no dividers, no split frames, no collage, no caption strips, no numbers and NO text of any kind anywhere on the image.`,
+      `ONE single ${aspectRatio}${aspectRatio === "9:16" ? " VERTICAL (portrait)" : aspectRatio === "16:9" ? " HORIZONTAL (landscape)" : ""} cinematic film still — a single continuous photographic frame that FILLS the whole image. This is NOT a storyboard, NOT a grid, NOT a contact sheet: no panels, no dividers, no split frames, no collage, no caption strips, no numbers and NO text of any kind anywhere on the image.`,
     moment: isEnd
       ? `THE LAST FRAME of this ~10s shot: ${momentAction}`
       : `THE FIRST FRAME of this ~10s shot: ${momentAction}`,
@@ -1176,7 +1176,7 @@ function buildProductKeyframePrompt(params: {
     output_count: 1,
     interpolation_role: moment,
     layout:
-      `ONE single ${aspectRatio} product film still that FILLS the whole image — not a grid, collage, split frame or contact sheet; no captions, numbers or added text. The ONLY text allowed is the product's own printed label/logo exactly as on the reference.`,
+      `ONE single ${aspectRatio}${aspectRatio === "9:16" ? " VERTICAL (portrait)" : aspectRatio === "16:9" ? " HORIZONTAL (landscape)" : ""} product film still that FILLS the whole image — not a grid, collage, split frame or contact sheet; no captions, numbers or added text. The ONLY text allowed is the product's own printed label/logo exactly as on the reference.`,
     moment: `${moment === "end" ? "THE LAST FRAME" : "THE FIRST FRAME"} of this shot: ${contract.first_frame}`,
     camera: beat?.camera || contract.first_frame,
     product_shoot: contract,
@@ -1315,8 +1315,10 @@ function buildLocationSheetViews(params: {
   setMap?: SetMap | null;
   /** What stands on the table when the story starts here (nothing else may). */
   tableDressing?: string;
+  /** The frame the shot keyframes use inside this set. */
+  keyframeAspect?: "9:16" | "16:9";
 }): Array<{ angle: string; prompt: string }> {
-  const { setting, scenery, lighting, visualStyle, realityMode, characterStyleLock, setMap, tableDressing } = params;
+  const { setting, scenery, lighting, visualStyle, realityMode, characterStyleLock, setMap, tableDressing, keyframeAspect } = params;
   const liveAction =
     !characterStyleLock && ["documentary", "cinematic", "commercial"].includes(realityMode);
   const render =
@@ -1348,14 +1350,24 @@ function buildLocationSheetViews(params: {
     table_dressing: tableDressing || undefined,
     visual_style: characterStyleLock || visualStyle || undefined,
     production_design: SET_QUALITY_NOTE,
-    camera_position:
-      "Shoot from the MASTER side: a wide, slightly elevated eye-level view that shows every landmark of the set map in its stated place, with the main furniture fully visible in the middle ground — this is the side every later shot is filmed from.",
+    camera_position: LOCATION_MASTER_SIDE,
+    frame: locationFrameNote(keyframeAspect ?? "16:9"),
     consistency:
       "This exact image is the immutable spatial source of truth: terrain/architecture, boundaries, route, landmark positions, anchor geometry, materials, colours, time-of-day and light direction must remain unchanged. Later shots stay on this master side and only move closer or reframe; they may not move, mirror, add, remove or redesign fixed elements.",
     render,
     negative: `${negative} Avoid: ${SET_QUALITY_NEGATIVE}.`,
   });
   return [{ angle: "establishing", prompt }];
+}
+
+const LOCATION_MASTER_SIDE =
+  "Shoot from the MASTER side: a wide, slightly elevated eye-level view that shows every landmark of the set map in its stated place, with the main furniture fully visible in the middle ground — this is the side every later shot is filmed from.";
+
+/** The plate is a wide reference; say which frame the shots will cut from it. */
+function locationFrameNote(keyframeAspect: "9:16" | "16:9"): string {
+  return keyframeAspect === "9:16"
+    ? "This plate is a 16:9 HORIZONTAL (landscape) reference of the whole set. Every shot of the video is a 9:16 VERTICAL (portrait) frame filmed inside this same set, so keep the main furniture and landmarks compact around the centre where a vertical frame can hold them."
+    : "This plate is a 16:9 HORIZONTAL (landscape) reference of the whole set; every shot of the video is a 16:9 frame filmed inside this same set.";
 }
 
 /** Turn a display name into a stable ascii slug id (Vietnamese-aware). */
@@ -1842,6 +1854,13 @@ export function buildNanoFlowManifest(
   // extension prefers a user-uploaded location photo over these when one exists;
   // with no photo the app generates the sheet first, then feeds it into the board
   // together with the character sheets. General rule for every project.
+  // Keyframes are the videos' opening frames, so they use the video's own
+  // frame: 9:16 or 16:9 as chosen in the app (Veo has no 1:1, those videos are
+  // rendered landscape, so their keyframes are 16:9 too). The legacy
+  // multi-panel board stays a 16:9 sheet; location plates and character
+  // sheets stay 16:9 reference images.
+  const cleanKeyframes = (opts.keyframeMode ?? "clean") !== "board";
+  const keyframeAspect: "9:16" | "16:9" = cleanKeyframes && (opts.aspectRatio ?? "9:16") === "9:16" ? "9:16" : "16:9";
   // One fixed floor plan per location, shared by its establishing image and
   // every keyframe/video there, so a new camera angle cannot move a landmark.
   const setMapByLocation = new Map<string, SetMap | null>();
@@ -1854,10 +1873,29 @@ export function buildNanoFlowManifest(
     const onTable = firstHere >= 0
       ? setDressingFor(productionState.shots, firstHere, productionState.registry).filter((item) => item.zone === "table")
       : [];
+    const tableDressing = onTable.length
+      ? `On the table, exactly: ${onTable.map((item) => `${item.label}${item.state ? ` (${item.state.toLowerCase()})` : ""}${item.position ? ` — ${item.position}` : ""}`).join("; ")}. Nothing else on the table — no plates, glasses, cutlery, candles, vases, bottles or food.`
+      : "";
+    // The extension builds the plate from location_sheet_prompt when present:
+    // it carries the same map, table dressing, master side and frame note.
+    if (env.location_sheet_prompt) {
+      try {
+        const sheet = JSON.parse(env.location_sheet_prompt) as Record<string, unknown>;
+        const map = setMapByLocation.get(env.id) ?? buildSetMap({ setting, scenery });
+        env.location_sheet_prompt = JSON.stringify({
+          ...sheet,
+          ...(map ? { set_map: map.text } : {}),
+          ...(tableDressing ? { table_dressing: tableDressing } : {}),
+          camera_position: LOCATION_MASTER_SIDE,
+          frame: locationFrameNote(keyframeAspect),
+        });
+      } catch {
+        /* keep the original prompt */
+      }
+    }
     env.location_views = buildLocationSheetViews({
-      tableDressing: onTable.length
-        ? `On the table, exactly: ${onTable.map((item) => `${item.label}${item.state ? ` (${item.state.toLowerCase()})` : ""}${item.position ? ` — ${item.position}` : ""}`).join("; ")}. Nothing else on the table — no plates, glasses, cutlery, candles, vases, bottles or food.`
-        : undefined,
+      keyframeAspect,
+      tableDressing: tableDressing || undefined,
       setMap: setMapByLocation.get(env.id) ?? buildSetMap({ setting, scenery }),
       setting,
       scenery,
@@ -2138,7 +2176,7 @@ export function buildNanoFlowManifest(
       primaryVideoPrompt,
       stateAuthority,
       fallbackSceneText: seg.first_frame_prompt || seg.motion_prompt || "",
-      aspectRatio: opts.aspectRatio ?? "9:16",
+      aspectRatio: keyframeAspect,
       envName: humanizeEnvId((seg.location_id ?? seg.environment_ref ?? "").trim()),
       wardrobeClause,
       realityMode,
@@ -2277,7 +2315,11 @@ export function buildNanoFlowManifest(
       // image is ALWAYS 16:9 (board_aspect_ratio) because a wide sheet describes
       // the cast and layout most faithfully, which yields the best video.
       aspect_ratio: opts.aspectRatio ?? "9:16",
-      board_aspect_ratio: "16:9",
+      // The image the extension generates per shot: the keyframe, in the video's frame.
+      board_aspect_ratio: keyframeAspect,
+      keyframe_aspect_ratio: keyframeAspect,
+      // Character sheets and location plates are wide reference images.
+      reference_aspect_ratio: "16:9",
       dialogue_language: opts.dialogueLanguage ?? "Vietnamese",
       production_prompt_language: opts.productionPromptLanguage?.trim() || "English",
       ...(breakdown.context_ir?.production_profile
