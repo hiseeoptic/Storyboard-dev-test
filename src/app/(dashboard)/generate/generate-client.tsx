@@ -58,6 +58,21 @@ import { CharacterStudio } from "./character-studio";
 import { WritersRoom } from "./writers-room";
 import { SetDirectionPanel } from "./set-direction";
 import { CuteKidsCard } from "./cute-kids-card";
+import { LocationPresetPanel, roomImages } from "./location-presets";
+import {
+  emptyLibrary,
+  findRoom,
+  loadLocationLibrary,
+  placeForSegment,
+  placeName,
+  roomCount,
+  saveLocationLibrary,
+  setSegmentPhotos,
+  shareWithEmptySegments,
+  syncPresetPlaces,
+  toggleRoomOnSegment,
+  type LocationLibrary,
+} from "@/lib/location-preset";
 import { AGE_LABEL, cuteKidsRoomSeed, cuteKidsStoryIdea, familyCast, type CuteKidsConfig } from "@/lib/kids/cute-kids";
 import { OutfitEditor, outfitHasContent, type OutfitDraft } from "./outfit-editor";
 import { isChildGroup, outfitCostumeText, resolveFills, type CharacterOutfit, type WearerGroup } from "@/lib/fashion/outfit";
@@ -1367,6 +1382,8 @@ interface BackgroundEntry {
   images: UploadedImage[];
   /** Cách 1 (upload mode) — 1-based 10s shot numbers this place is assigned to. */
   sceneIndices?: number[];
+  /** Set when this place is a saved room from the location library. */
+  presetRoomId?: string;
 }
 
 type Phase = "input" | "generating" | "script" | "result";
@@ -1769,28 +1786,47 @@ function ProjectWorkspace() {
   const [backgrounds, setBackgrounds] = useState<BackgroundEntry[]>([]);
   // Location source: "auto" (app tự chọn) | "upload" (nạp ảnh bối cảnh theo từng đoạn).
   const [locationMode, setLocationMode] = useState<"auto" | "upload">("auto");
-  // Upsert/clear ảnh bối cảnh cho MỘT đoạn 10s (theo sceneIndices=[n]).
+  // Upsert/clear ảnh bối cảnh cho MỘT đoạn 10s: ảnh tải thẳng vào đoạn → đoạn
+  // đó có bối cảnh riêng (tách khỏi phòng đã lưu nếu đang dùng chung).
   const setSegmentLocation = (n: number, imgs: UploadedImage[]) => {
-    setBackgrounds((prev) => {
-      const rest = prev.filter((b) => !(b.sceneIndices?.length === 1 && b.sceneIndices[0] === n));
-      return imgs.length > 0
-        ? [...rest, { name: `Đoạn ${n}`, description: "", images: imgs, sceneIndices: [n] }]
-        : rest;
-    });
+    setBackgrounds((prev) => setSegmentPhotos(prev, n, imgs));
   };
-  const segmentLocationImages = (n: number): UploadedImage[] =>
-    backgrounds.find((b) => b.sceneIndices?.length === 1 && b.sceneIndices[0] === n)?.images ?? [];
-  // Nhân bản ảnh bối cảnh của đoạn `from` sang MỌI đoạn khác (các cảnh cùng 1 bối
-  // cảnh → khỏi tải nhiều lần). Chỉ ghi đè đoạn đang trống để không mất ảnh đã nạp.
+  const segmentLocationImages = (n: number): UploadedImage[] => placeForSegment(backgrounds, n)?.images ?? [];
+  // Bối cảnh của đoạn `from` dùng luôn cho MỌI đoạn đang trống (một bộ ảnh, gửi
+  // một lần). Đoạn đã có ảnh giữ nguyên.
   const applyLocationToOtherSegments = (from: number) => {
-    const imgs = segmentLocationImages(from);
-    if (!imgs.length) return;
-    for (let n = 1; n <= segmentCount; n++) {
-      if (n !== from && segmentLocationImages(n).length === 0) {
-        setSegmentLocation(n, imgs.map((im) => ({ ...im })));
-      }
-    }
+    setBackgrounds((prev) => shareWithEmptySegments(prev, from, segmentCount));
   };
+  // 🏠 Bối cảnh đã lưu (preset): thư viện các bộ (Nhà tôi…) gồm nhiều phòng có ảnh,
+  // lưu trong trình duyệt và dùng lại cho mọi dự án.
+  const [locationLibrary, setLocationLibrary] = useState<LocationLibrary>(emptyLibrary);
+  const [locationSeed, setLocationSeed] = useState<{ key: number; images: UploadedImage[] } | null>(null);
+  // The latest library, so two quick changes (uploads into two rooms) build on each other.
+  const locationLibraryRef = useRef<LocationLibrary>(locationLibrary);
+  useEffect(() => {
+    loadLocationLibrary()
+      .then((lib) => { locationLibraryRef.current = lib; setLocationLibrary(lib); })
+      .catch(() => undefined);
+  }, []);
+  const updateLocationLibrary = (update: (library: LocationLibrary) => LocationLibrary) => {
+    const next = update(locationLibraryRef.current);
+    locationLibraryRef.current = next;
+    setLocationLibrary(next);
+    // Rooms already pushed into segments follow their new photos / name.
+    setBackgrounds((prev) => syncPresetPlaces(prev, next, roomImages));
+    saveLocationLibrary(next).catch(() =>
+      alert(lang === "vi" ? "Không lưu được bối cảnh (bộ nhớ trình duyệt có thể đã đầy)." : "Could not save the location (browser storage may be full).")
+    );
+  };
+  const toggleSavedRoom = (roomId: string, n: number) => {
+    const found = findRoom(locationLibraryRef.current, roomId);
+    if (!found) return;
+    setLocationMode("upload");
+    setBackgrounds((prev) =>
+      toggleRoomOnSegment(prev, n, { id: roomId, name: placeName(found.group, found.room), images: roomImages(found.room) })
+    );
+  };
+  const savedRoomOnSegment = (n: number) => placeForSegment(backgrounds, n)?.presetRoomId;
 
   // Resolved description text (dropdown selection or custom free-text).
   const effectiveCharAppearance = resolveDesc(charApprSel, charAppearance, CHAR_APPR_PROMPT, FORCE_TEXT.character);
@@ -6635,8 +6671,22 @@ function ProjectWorkspace() {
                 <p className="text-xs text-muted-foreground">{L("segmentCountHint")}</p>
               </div>
 
+              {locationMode === "auto" && roomCount(locationLibrary) > 0 && (
+                <Button variant="outline" size="sm" onClick={() => setLocationMode("upload")}>
+                  🏠 {lang === "vi" ? `Dùng bối cảnh đã lưu (${roomCount(locationLibrary)} phòng)` : `Use saved locations (${roomCount(locationLibrary)})`}
+                </Button>
+              )}
               {locationMode === "upload" && (
                 <div className="space-y-2">
+                  <LocationPresetPanel
+                    lang={lang}
+                    library={locationLibrary}
+                    onChange={updateLocationLibrary}
+                    segmentCount={segmentCount}
+                    roomOnSegment={savedRoomOnSegment}
+                    onToggleSegment={toggleSavedRoom}
+                    seed={locationSeed}
+                  />
                   <p className="text-xs text-muted-foreground">
                     {lang === "vi"
                       ? "Mỗi đoạn 10s tuỳ chọn nạp 1 bộ ảnh bối cảnh (3-5 ảnh CÙNG một nơi, nhiều góc). App phân tích để kịch bản + board bám ĐÚNG nơi. Bỏ trống đoạn nào = app tự chọn cho đoạn đó."
@@ -6644,18 +6694,51 @@ function ProjectWorkspace() {
                   </p>
                   {Array.from({ length: segmentCount }, (_, k) => k + 1).map((n) => (
                     <div key={n} className="space-y-2 rounded-lg border p-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">{lang === "vi" ? `Đoạn ${n}` : `Segment ${n}`}</p>
-                        {segmentLocationImages(n).length > 0 && segmentCount > 1 && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => applyLocationToOtherSegments(n)}
-                            title={lang === "vi" ? "Áp ảnh này cho các đoạn đang trống" : "Apply to empty segments"}
-                          >
-                            {lang === "vi" ? "⧉ Dùng cho các đoạn khác" : "⧉ Use for other segments"}
-                          </Button>
-                        )}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium">
+                          {lang === "vi" ? `Đoạn ${n}` : `Segment ${n}`}
+                          {savedRoomOnSegment(n) && (
+                            <span className="ml-2 text-xs font-normal text-emerald-700">🏠 {placeForSegment(backgrounds, n)?.name}</span>
+                          )}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {roomCount(locationLibrary) > 0 && (
+                            <Select
+                              value={savedRoomOnSegment(n) ?? ""}
+                              onChange={(e) => {
+                                const id = e.target.value;
+                                if (!id) setSegmentLocation(n, []);
+                                else if (id !== savedRoomOnSegment(n)) toggleSavedRoom(id, n);
+                              }}
+                              options={[
+                                { value: "", label: lang === "vi" ? "🏠 Lấy từ bối cảnh đã lưu…" : "🏠 From saved locations…" },
+                                ...locationLibrary.groups.flatMap((g) =>
+                                  g.rooms.filter((r) => r.images.length).map((r) => ({ value: r.id, label: `${g.name} · ${r.name}` }))
+                                ),
+                              ]}
+                            />
+                          )}
+                          {segmentLocationImages(n).length > 0 && !savedRoomOnSegment(n) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setLocationSeed((prev) => ({ key: (prev?.key ?? 0) + 1, images: segmentLocationImages(n) }))}
+                              title={lang === "vi" ? "Lưu ảnh của đoạn này thành một phòng trong bối cảnh đã lưu" : "Save these photos as a saved room"}
+                            >
+                              💾 {lang === "vi" ? "Lưu vào preset" : "Save to preset"}
+                            </Button>
+                          )}
+                          {segmentLocationImages(n).length > 0 && segmentCount > 1 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => applyLocationToOtherSegments(n)}
+                              title={lang === "vi" ? "Dùng bối cảnh này cho các đoạn đang trống" : "Use for empty segments"}
+                            >
+                              {lang === "vi" ? "⧉ Dùng cho các đoạn khác" : "⧉ Use for other segments"}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                       <ImageUploader
                         images={segmentLocationImages(n)}
