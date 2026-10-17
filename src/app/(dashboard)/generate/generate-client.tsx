@@ -74,6 +74,7 @@ import {
   type LocationLibrary,
 } from "@/lib/location-preset";
 import { AGE_LABEL, cuteKidsRoomSeed, cuteKidsStoryIdea, familyCast, type CuteKidsConfig } from "@/lib/kids/cute-kids";
+import { findLesson } from "@/lib/kids/parenting-lessons";
 import { OutfitEditor, outfitHasContent, type OutfitDraft } from "./outfit-editor";
 import { isChildGroup, outfitCostumeText, resolveFills, type CharacterOutfit, type WearerGroup } from "@/lib/fashion/outfit";
 import { MAKEUP_LABEL, type MakeupMode } from "@/lib/character-makeup";
@@ -4788,7 +4789,8 @@ function ProjectWorkspace() {
     setDirectingProfiles(kidsCamera);
     setDirectingProfile(kidsCamera[0]!);
     setCharacterDialogueEnabled(true);
-    setVoiceOverEnabled(false);
+    // Teach mode with a narrator takeaway: dialogue + one short voice-over at the end.
+    setVoiceOverEnabled(config.goal === "teach" && config.takeaway !== "parent");
     setAspectRatio("9:16");
     setCuteKids(config);
     setCuteKidsPhoto(kidPhoto.slice(0, 1));
@@ -5097,7 +5099,7 @@ function ProjectWorkspace() {
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-pink-400/50 bg-pink-500/[0.06] px-3 py-1.5 text-xs">
                     <span>
                       🧒 {lang === "vi"
-                        ? `Chế độ Bé cưng viral: ${familyCast(cuteKids)[0]?.name} (${AGE_LABEL[cuteKids.kidAge].vi}), quay ${cuteKids.filming === "phone" ? "điện thoại gia đình" : "điện ảnh"}, giọng ${cuteKids.dialect === "north" ? "Bắc" : "Nam"} — lời thoại đúng tuổi, an toàn trẻ em, nhãn AI khi đăng.`
+                        ? `Chế độ Bé cưng viral: ${familyCast(cuteKids)[0]?.name} (${AGE_LABEL[cuteKids.kidAge].vi}), quay ${cuteKids.filming === "phone" ? "điện thoại gia đình" : "điện ảnh"}, giọng ${cuteKids.dialect === "north" ? "Bắc" : "Nam"}${cuteKids.goal === "teach" ? ` · 🎓 Dạy con${findLesson(cuteKids.lessonId) ? `: ${findLesson(cuteKids.lessonId)!.title}` : ""}${cuteKids.abFormat ? " (2 cách xử lý)" : ""}` : ""} — lời thoại đúng tuổi, an toàn trẻ em, nhãn AI khi đăng.`
                         : `Cute kids mode: ${familyCast(cuteKids)[0]?.name} (${AGE_LABEL[cuteKids.kidAge].en}), ${cuteKids.filming} filming.`}
                     </span>
                     <Button size="sm" variant="ghost" onClick={() => setCuteKids(null)}>

@@ -27,10 +27,23 @@ import {
   type KidAge,
   type KidTrait,
 } from "@/lib/kids/cute-kids";
+import { LESSON_PILLARS, findLesson, lessonsFor, type LessonPillar, type ParentingLesson } from "@/lib/kids/parenting-lessons";
 
 type Lang = "vi" | "en";
 
 const STORAGE_KEY = "storyboard.cuteKids.v1";
+/** Lessons already turned into videos (series memory, this browser only). */
+const USED_LESSONS_KEY = "storyboard.cuteKids.usedLessons";
+
+function loadUsedLessons(): string[] {
+  try {
+    const raw = window.localStorage.getItem(USED_LESSONS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 const FAMILY_CHIPS: Array<{ id: FamilyMember; vi: (south: boolean) => string; en: string }> = [
   { id: "dad", vi: (south) => (south ? "👨 Ba" : "👨 Bố"), en: "👨 Dad" },
@@ -99,7 +112,8 @@ export function CuteKidsCard(props: {
   const [loadingIdeas, setLoadingIdeas] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => { setConfig(loadConfig()); }, []);
+  const [usedLessons, setUsedLessons] = useState<string[]>([]);
+  useEffect(() => { setConfig(loadConfig()); setUsedLessons(loadUsedLessons()); }, []);
   const update = (patch: Partial<CuteKidsConfig>) =>
     setConfig((prev) => {
       const next = { ...prev, ...patch };
@@ -111,6 +125,19 @@ export function CuteKidsCard(props: {
   const traits = config.traits ?? [];
   const toggleTrait = (id: KidTrait) => update({ traits: traits.includes(id) ? traits.filter((t) => t !== id) : [...traits, id] });
 
+  const teach = config.goal === "teach";
+  const pillar: LessonPillar = config.pillar ?? "money";
+  const lessons = lessonsFor(pillar, config.kidAge);
+  const pickLesson = (lesson: ParentingLesson) =>
+    update(config.lessonId === lesson.id ? { lessonId: undefined } : { lessonId: lesson.id, request: lesson.situation, format: "auto" });
+  // Remember which lessons became videos, so the library shows what is still new.
+  const markUsed = () => {
+    const id = teach ? config.lessonId : undefined;
+    if (!id || usedLessons.includes(id)) return;
+    const next = [...usedLessons, id];
+    setUsedLessons(next);
+    try { window.localStorage.setItem(USED_LESSONS_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  };
   const ready = config.request.trim().length > 0;
   const askIdeas = async () => {
     setLoadingIdeas(true);
@@ -139,6 +166,64 @@ export function CuteKidsCard(props: {
 
       {open && (
         <div className="space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            <Chip active={!teach} onClick={() => update({ goal: "fun" })}>😂 {vi ? "Giải trí" : "Fun"}</Chip>
+            <Chip active={teach} onClick={() => update({ goal: "teach" })}>🎓 {vi ? "Dạy con" : "Parenting lesson"}</Chip>
+          </div>
+
+          {teach && (
+            <div className="space-y-2 rounded-md border border-amber-400/50 bg-amber-500/[0.06] p-2.5">
+              <p className="text-xs text-muted-foreground">
+                {vi
+                  ? "Bài học được thể hiện qua câu chuyện (không giảng): bé gặp tình huống → bố mẹ xử lý khéo, tôn trọng bé → kết ấm áp + câu chốt. Caption tự có \"💡 Mẹo cho bố mẹ\" và câu hỏi gợi bình luận."
+                  : "The lesson is shown through the story: the kid's moment → the parent's respectful technique → a warm ending + takeaway."}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {LESSON_PILLARS.map((p) => (
+                  <Chip key={p.id} active={pillar === p.id} onClick={() => update({ pillar: p.id, lessonId: undefined })}>{p.label}</Chip>
+                ))}
+              </div>
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                {lessons.map((lesson) => (
+                  <button
+                    key={lesson.id}
+                    type="button"
+                    onClick={() => pickLesson(lesson)}
+                    aria-pressed={config.lessonId === lesson.id}
+                    className={cn(
+                      "rounded-md border bg-background p-2 text-left text-xs transition-colors hover:border-amber-500/60",
+                      config.lessonId === lesson.id && "border-amber-600 bg-amber-500/10"
+                    )}
+                  >
+                    <span className="font-medium">{lesson.title}</span>
+                    {usedLessons.includes(lesson.id) && <span className="ml-1.5 text-[10px] text-emerald-700">✓ {vi ? "đã làm" : "done"}</span>}
+                    <span className="mt-0.5 block text-muted-foreground">💡 {lesson.takeaway}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-medium">{vi ? "Câu chốt:" : "Takeaway:"}</span>
+                <Chip active={config.takeaway !== "parent"} onClick={() => update({ takeaway: "narrator" })}>🎙️ {vi ? "Giọng dẫn cuối video" : "Narrator at the end"}</Chip>
+                <Chip active={config.takeaway === "parent"} onClick={() => update({ takeaway: "parent" })}>👨‍👩‍👧 {vi ? "Bố mẹ nói trong phim" : "Parent says it"}</Chip>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Chip
+                  active={config.abFormat === true}
+                  onClick={() => update(config.abFormat ? { abFormat: false } : { abFormat: true, shots: Math.max(config.shots, 4) })}
+                  title={vi ? "Cách 1 chưa khéo (bé càng ăn vạ) → Cách 2 khéo (bé dịu lại). Không đánh, không quát." : "Way 1 backfires gently, way 2 works."}
+                >
+                  🔀 {vi ? "2 cách xử lý (A/B)" : "Two ways (A/B)"}
+                </Chip>
+                {config.abFormat && <span className="text-[11px] text-muted-foreground">{vi ? "Nên dùng 4 shot (40s)." : "Best with 4 shots."}</span>}
+              </div>
+              {config.lessonId && findLesson(config.lessonId) && (
+                <p className="text-[11px] text-muted-foreground">
+                  {vi ? "Cách xử lý: " : "Technique: "}{findLesson(config.lessonId)!.technique}
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <label className="text-xs font-medium">{vi ? "Yêu cầu của bạn" : "Your request"}</label>
             <Textarea
@@ -254,11 +339,11 @@ export function CuteKidsCard(props: {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" disabled={!ready} onClick={() => onBuild(config, kidPhoto)}>
+            <Button size="sm" disabled={!ready} onClick={() => { markUsed(); onBuild(config, kidPhoto); }}>
               <Zap className="h-4 w-4" />
               {vi ? "Tạo video ngay" : "Build video"}
             </Button>
-            <Button size="sm" variant="outline" disabled={!ready} onClick={() => onOpenRoom(config, kidPhoto)} title={vi ? "Mở phòng biên kịch mới với yêu cầu này (thay phiên đang mở)" : "Open a fresh writers' room with this request"}>
+            <Button size="sm" variant="outline" disabled={!ready} onClick={() => { markUsed(); onOpenRoom(config, kidPhoto); }} title={vi ? "Mở phòng biên kịch mới với yêu cầu này (thay phiên đang mở)" : "Open a fresh writers' room with this request"}>
               <PenLine className="h-4 w-4" />
               {vi ? "Mở phòng biên kịch" : "Writers' room"}
             </Button>

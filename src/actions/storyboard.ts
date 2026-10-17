@@ -41,7 +41,7 @@ import {
 } from "@/lib/creative-routing";
 import { enforceProductShootContract, productShootSubject } from "@/lib/product-shoot/storyboard";
 import { enforceProductPlacements, outfitCostume, placementItems } from "@/lib/product-placement";
-import { cuteKidsVoice, labelAiSocialPosts, normalizeCuteKids } from "@/lib/kids/cute-kids";
+import { cuteKidsVoice, labelCuteKidsPosts, normalizeCuteKids } from "@/lib/kids/cute-kids";
 import { castHasChild, childSafeDeep } from "@/lib/kids/child-safe-wording";
 import {
   REFERENCE_CHARACTER_ANTI_PLASTIC,
@@ -1962,7 +1962,7 @@ function normalizeRepairCandidate(
   enforceAnonymousNarrationContract(input, breakdown);
   enforceProductShootContract(resolveInputProductShoot(input), breakdown);
   enforceProductPlacements(input.product_placements, breakdown);
-  if (input.cute_kids) labelAiSocialPosts(breakdown.social_posts);
+  if (input.cute_kids) labelCuteKidsPosts(breakdown.social_posts, input.cute_kids);
   enforceCuteKidsVoices(input, breakdown);
   bindOnScreenSpeakersToCameraBeats(breakdown);
   enforceSingleDialogueClock(breakdown);
@@ -2689,7 +2689,7 @@ async function runPlanBuild(
     for (const note of enforceProductPlacements(input.product_placements, breakdown)) warnings.push(note);
   });
   // Realistic AI video of a child: platforms require the AI-content label.
-  if (input.cute_kids) labelAiSocialPosts(breakdown.social_posts);
+  if (input.cute_kids) labelCuteKidsPosts(breakdown.social_posts, input.cute_kids);
   softStep("Giọng bé cưng", warnings, () => enforceCuteKidsVoices(input, breakdown));
   softStep("Chế độ quay sản phẩm", warnings, () => {
     for (const note of enforceProductShootContract(resolveInputProductShoot(input), breakdown)) warnings.push(note);

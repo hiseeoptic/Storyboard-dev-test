@@ -9,6 +9,7 @@
 // ============================================================
 
 import { CHILD_SAFE_WORDING_RULE } from "./child-safe-wording.ts";
+import { LESSON_PILLARS, findLesson, pillarLabel, type LessonPillar, type ParentingLesson } from "./parenting-lessons.ts";
 
 export type KidAge = "toddler" | "young" | "school";
 export type KidGender = "girl" | "boy";
@@ -31,6 +32,15 @@ export interface CuteKidsConfig {
   format?: string;
   /** The kid's performance traits (default: nũng nịu + khóc nhè + khôn lanh). */
   traits?: KidTrait[];
+  /** "fun" = pure entertainment; "teach" = a parenting lesson told through the story. */
+  goal?: "fun" | "teach";
+  /** Teach mode: lesson pillar and the chosen lesson from the parenting library. */
+  pillar?: LessonPillar;
+  lessonId?: string;
+  /** Teach mode: who says the takeaway — a short narrator voice-over at the end, or the parent. */
+  takeaway?: "narrator" | "parent";
+  /** Teach mode: show an ineffective way first, then the good way (A/B). */
+  abFormat?: boolean;
 }
 
 export const DEFAULT_CUTE_KIDS: CuteKidsConfig = {
@@ -44,6 +54,10 @@ export const DEFAULT_CUTE_KIDS: CuteKidsConfig = {
   shots: 3,
   format: "auto",
   traits: ["sweet_whiny", "fake_cry", "clever"],
+  goal: "fun",
+  pillar: "money",
+  takeaway: "narrator",
+  abFormat: false,
 };
 
 export const AGE_LABEL: Record<KidAge, { vi: string; en: string }> = {
@@ -228,7 +242,43 @@ export function cuteKidsStoryIdea(config: CuteKidsConfig): string {
     `Nhân vật: ${cast[0]!.name} (${config.kidGender === "girl" ? "bé gái" : "bé trai"} ${AGE_LABEL[config.kidAge].vi})${cast.length > 1 ? `, ${cast.slice(1).map((c) => c.name).join(", ")}` : ""}${pets.length ? `; thú cưng: ${pets.join(", ")}` : ""}.`,
     format ? `Kiểu video: ${format.label_vi}.` : "",
     (config.traits ?? []).length ? `Tính cách bé: ${(config.traits ?? []).map((t) => KID_TRAITS.find((k) => k.id === t)!.label_vi.replace(/^\S+\s/, "").toLowerCase()).join(", ")}; bố mẹ luôn hưởng ứng.` : "",
+    ...lessonLinesVi(config),
   ].filter(Boolean).join("\n");
+}
+
+/** Teach mode, Vietnamese: the lesson, the parent's way, the takeaway and the A/B format. */
+function lessonLinesVi(config: CuteKidsConfig): string[] {
+  if (config.goal !== "teach") return [];
+  const lesson = findLesson(config.lessonId);
+  const who = config.takeaway === "parent" ? "bố mẹ nói với bé ở cuối video" : "giọng dẫn ngắn ở cuối video";
+  return [
+    lesson ? `🎓 Bài học dạy con (${pillarLabel(lesson.pillar)}): ${lesson.title}.` : "🎓 Video dạy con: bố mẹ xử lý tình huống bằng một cách cụ thể, tôn trọng bé.",
+    lesson ? `Cách bố mẹ xử lý: ${lesson.technique}.` : "",
+    lesson ? `Câu chốt (${who}): ${lesson.takeaway}` : `Câu chốt: ${who}.`,
+    config.abFormat ? `Kiểu "2 cách xử lý": cách 1 — ${lesson ? lesson.wrongWay : "phản ứng chưa khéo"} (bé càng ăn vạ); cách 2 — cách xử lý khéo ở trên, bé dịu lại.` : "",
+  ].filter(Boolean);
+}
+
+/** Teach mode: the parenting lesson, its structure, the takeaway and the A/B format. */
+function parentingDirective(config: CuteKidsConfig, kidName: string): string[] {
+  if (config.goal !== "teach") return [];
+  const lesson = findLesson(config.lessonId);
+  const n = config.shots;
+  const narrator = config.takeaway !== "parent";
+  const structure = config.abFormat
+    ? `"2 CÁCH XỬ LÝ" (A/B): Cách 1 fills clip 1${n >= 4 ? "–2" : ""} — the same relatable moment handled the ineffective way (${lesson ? lesson.wrongWay : "a flat no, or giving in at once"}), and ${kidName} escalates (comic and brief, never cruel). Then a clear rewind beat — ${narrator ? "the narrator says \"Cách 1…\" at the start and \"Còn cách 2…\" at the rewind" : "the scene visibly restarts from the same moment: the parent pauses, takes a breath and begins again"} — and Cách 2 fills the remaining clips: the parent uses the technique, ${kidName} calms step by step, and the ending is warm.`
+    : `clip 1 = the relatable moment every parent knows (hook in 0–2 s); the middle clip${n > 3 ? "s" : ""} = ${kidName} escalates with the personality beats while the parent stays calm and applies the technique step by step; the last clip = the warm result and the takeaway.`;
+  const takeaway = narrator
+    ? `TAKEAWAY BY NARRATOR: the last clip ends with a short, warm narrator voice-over (≤ 18 words, same regional accent) that speaks to parents — "Mẹo nhỏ: …" or "Bố mẹ ơi, …"${lesson ? ` — carrying the idea: "${lesson.takeaway}"` : ""}. ${config.abFormat ? "Besides the two labels, it is the only voice-over." : "It is the only voice-over in the video."}`
+    : `TAKEAWAY BY THE PARENT: in the last clip the parent says the lesson to ${kidName} in one warm, natural line — never a lecture${lesson ? ` — carrying the idea: "${lesson.takeaway}"` : ""}. No narrator.`;
+  return [
+    `- PARENTING LESSON (the reel teaches parents through the story — show it, never preach)${lesson
+      ? `: "${lesson.title}" — ${kidName} ${lesson.behavior}; the parent's technique: ${lesson.technique}.`
+      : ": take the lesson from the request; the parent answers the kid's behaviour with one concrete, respectful technique (name the feeling, keep the limit, offer a choice or a plan, a natural consequence)."}`,
+    `- LESSON STRUCTURE (${n} clips): ${structure}`,
+    `- ${takeaway}`,
+    "- PARENTS MODEL RESPECTFUL PARENTING: calm, warm and firm when needed; never hitting, yelling, threats, shaming or comparing the kid with others. The advice is general and gentle (positive-discipline principles), with no medical or psychological claims.",
+  ];
 }
 
 /** Hard contract for the script writer and the storyboard. */
@@ -255,6 +305,7 @@ export function cuteKidsDirective(raw: CuteKidsConfig | null | undefined): strin
       : []),
     `- VOICE of ${kid.name} (character_locks.voice): a high, sweet, real child's voice${traits.includes("sweet_whiny") ? " with a sing-song nũng nịu delivery — drawn-out vowels, playful pitch rises" : ""}${traits.includes("fake_cry") ? ", theatrical \"huhu\" sniffles that snap into giggles" : ""}; never adult-sounding.`,
     `- ${parentsPlayAlong(config.dialect)}`,
+    ...parentingDirective(config, kid.name),
     `- Parents and family talk naturally and warmly in full everyday sentences that carry the scene; the comedy comes from ${kid.name}.`,
     ...(config.family.includes("baby") ? [`- ${BABY_CARE_RULE}`] : []),
     `- ${config.filming === "phone" ? PHONE_CAPTURE : CINEMATIC_CAPTURE} Real lived-in Vietnamese home or everyday place that fits the request.`,
@@ -272,6 +323,7 @@ export function cuteKidsRoomSeed(config: CuteKidsConfig): string {
     `Yêu cầu: video ngắn ${config.shots} shot × 10 giây, 2 giây đầu là gương mặt/biểu cảm của bé hoặc khoảnh khắc gây chuyện; kết bằng câu chốt hoặc cú quay xe ấm áp.`,
     ...((config.traits ?? []).length ? [`Bé phải thật dễ thương từ cử chỉ, điệu bộ đến lời nói, mỗi shot có ít nhất một khoảnh khắc: ${(config.traits ?? []).map((t) => KID_TRAITS.find((k) => k.id === t)!.room_vi).join("; ")}.`] : []),
     "Bố mẹ luôn hưởng ứng: tan chảy, bật cười, trêu lại nhẹ nhàng, giả vờ nghiêm rồi chiều, gọi bé bằng tên âu yếm; không bao giờ phớt lờ hay mắng gắt.",
+    ...(config.goal === "teach" ? ["Video dạy con: thể hiện bài học qua câu chuyện, không giảng; bố mẹ làm mẫu cách xử lý bình tĩnh, tôn trọng — không đánh, không quát, không dọa, không so sánh."] : []),
     `Bé nói đúng tuổi: mỗi câu tối đa ${age.maxWords} từ; bố mẹ nói tự nhiên. Quay kiểu ${config.filming === "phone" ? "điện thoại gia đình" : "điện ảnh"}, giọng ${config.dialect === "north" ? "miền Bắc" : "miền Nam"}.`,
     "Nội dung gia đình lành mạnh, an toàn cho trẻ: không nguy hiểm, không dọa hay làm bé khóc thật, bé mặc đồ ở nhà bình thường. Bố mẹ thể hiện tình cảm bằng ôm vai, nắm tay.",
     config.family.includes("baby") ? "Em bé luôn được bế hoặc ở ngay cạnh người lớn đang chăm (nắm tay, ru, cười nói với em), em có phản ứng trong cảnh và có mặt ở kết — không để em ngồi một mình hay bị bỏ quên." : "",
@@ -279,6 +331,32 @@ export function cuteKidsRoomSeed(config: CuteKidsConfig): string {
 }
 
 export const AI_LABEL_VI = "🤖 Video tạo bằng AI · #AIGenerated";
+
+type SocialPostsLike = {
+  tiktok?: { caption?: string; hashtags?: string[] };
+  youtube_shorts?: { description?: string; hashtags?: string[] };
+  facebook_reel?: { caption?: string; hashtags?: string[] };
+};
+
+/** Teach mode: the parent tip, a comment question and a gentle disclaimer, then the AI label. */
+export function labelCuteKidsPosts(posts: SocialPostsLike | undefined | null, raw: CuteKidsConfig | null | undefined): void {
+  if (!posts) return;
+  const config = normalizeCuteKids(raw);
+  if (config?.goal === "teach") {
+    const lesson: ParentingLesson | undefined = findLesson(config.lessonId);
+    const tip = [
+      lesson ? `💡 Mẹo cho bố mẹ: ${lesson.takeaway}` : "",
+      "👇 Nhà mình xử lý tình huống này thế nào?",
+      "(Mỗi bé mỗi khác — bố mẹ linh hoạt nhé.)",
+    ].filter(Boolean).join("\n");
+    const add = (s: string | undefined) => (s && s.includes("Nhà mình xử lý tình huống này") ? s : [s?.trim(), tip].filter(Boolean).join("\n\n"));
+    const tags = (list: string[] | undefined) => [...new Set([...(list ?? []), "#dạycon", "#nuôidạycon"])];
+    if (posts.tiktok) posts.tiktok = { ...posts.tiktok, caption: add(posts.tiktok.caption), hashtags: tags(posts.tiktok.hashtags) };
+    if (posts.youtube_shorts) posts.youtube_shorts = { ...posts.youtube_shorts, description: add(posts.youtube_shorts.description), hashtags: tags(posts.youtube_shorts.hashtags) };
+    if (posts.facebook_reel) posts.facebook_reel = { ...posts.facebook_reel, caption: add(posts.facebook_reel.caption), hashtags: tags(posts.facebook_reel.hashtags) };
+  }
+  labelAiSocialPosts(posts);
+}
 
 /** Append the AI-content label to every social caption (platform rules for realistic AI video). */
 export function labelAiSocialPosts(posts: {
@@ -314,6 +392,11 @@ export function normalizeCuteKids(raw: unknown): CuteKidsConfig | undefined {
     traits: Array.isArray(r.traits)
       ? [...new Set(r.traits.filter((t): t is KidTrait => KID_TRAITS.some((k) => k.id === t)))]
       : DEFAULT_CUTE_KIDS.traits,
+    goal: pick(r.goal, ["fun", "teach"] as const, "fun"),
+    pillar: pick(r.pillar, LESSON_PILLARS.map((p) => p.id), "money"),
+    ...(typeof r.lessonId === "string" && findLesson(r.lessonId) ? { lessonId: r.lessonId } : {}),
+    takeaway: pick(r.takeaway, ["narrator", "parent"] as const, "narrator"),
+    abFormat: r.abFormat === true,
   };
 }
 
@@ -345,6 +428,9 @@ export function buildEpisodeIdeasPrompt(raw: CuteKidsConfig, avoid: string[] = [
     `Viral formats that work (mix them, do not copy): ${VIRAL_FORMATS.map((f) => f.label_vi).join("; ")}.`,
     avoid.length ? `Do not repeat these: ${avoid.join("; ")}.` : "",
     (config.traits ?? []).length ? `The kid's personality, shown in every idea: ${(config.traits ?? []).map((t) => KID_TRAITS.find((k) => k.id === t)!.label_en.replace(/^\S+\s/, "")).join(", ")}; the parents always play along warmly.` : "",
+    config.goal === "teach"
+      ? `PARENTING CHANNEL: every idea teaches parents one everyday lesson in the area "${pillarLabel(config.pillar ?? "money").replace(/^\S+\s/, "")}" through the story (the kid's behaviour → the parent's calm, respectful technique → a warm result); end each "request" with "Bài học: …" in one short line.`
+      : "",
     `Give 10 different episode ideas for ${config.shots} clips of 10 seconds, all at home or everyday places, each with a clear hook, escalation and a punchline that fits the kid's age. ${CHILD_SAFETY_RULES}`,
     'Return {"ideas":[{"title":"short Vietnamese title (max 8 words)","request":"one or two Vietnamese sentences: the situation, what the kid does and the ending"}]}',
   ].filter(Boolean).join("\n");
