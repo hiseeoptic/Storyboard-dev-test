@@ -2716,6 +2716,15 @@ function ProjectWorkspace() {
     }
   };
 
+  // "Bé cưng viral" one-click build: start once the card's form state has been
+  // applied. Hooks must stay above the phase early-returns below.
+  useEffect(() => {
+    if (!autoGenerate) return;
+    setAutoGenerate(false);
+    void handleGenerate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoGenerate]);
+
   // ─── Build the boards from the (edited) script ───────────────────
   const runBoards = async (
     breakdown: StoryboardGenerationOutput,
@@ -4786,13 +4795,6 @@ function ProjectWorkspace() {
     setRoomSeed((prev) => ({ key: (prev?.key ?? 0) + 1, idea: cuteKidsRoomSeed(config) }));
     setShowWritersRoom(true);
   };
-  // One-click build: start once the form state above has been applied.
-  useEffect(() => {
-    if (!autoGenerate) return;
-    setAutoGenerate(false);
-    void handleGenerate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoGenerate]);
 
   const canNext = step === 0 ? storyIdea.trim().length > 0 : true;
 
