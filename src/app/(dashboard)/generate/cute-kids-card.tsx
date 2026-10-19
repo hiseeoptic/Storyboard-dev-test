@@ -27,7 +27,10 @@ import {
   type KidAge,
   type KidTrait,
 } from "@/lib/kids/cute-kids";
-import { LESSON_PILLARS, PARENTING_LESSONS, findLesson, lessonsFor, type LessonPillar, type ParentingLesson } from "@/lib/kids/parenting-lessons";
+import { LESSON_PILLARS, PILLAR_GROUPS, type LessonPillar, type ParentingLesson } from "@/lib/kids/lesson-pillars";
+
+/** The lesson library is big: it loads only when the "Dạy con" panel opens. */
+type LessonLibrary = typeof import("@/lib/kids/parenting-lessons");
 
 type Lang = "vi" | "en";
 
@@ -73,7 +76,12 @@ const FORMAT_EXAMPLE: Record<string, string> = {
 function loadConfig(): CuteKidsConfig {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) return normalizeCuteKids(JSON.parse(raw)) ?? DEFAULT_CUTE_KIDS;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const config = normalizeCuteKids(parsed) ?? DEFAULT_CUTE_KIDS;
+      // A lesson picked before snapshots existed is looked up once the library loads.
+      return !config.lessonId && typeof parsed?.lessonId === "string" ? { ...config, lessonId: parsed.lessonId } : config;
+    }
   } catch {
     /* private mode — defaults */
   }
@@ -129,12 +137,32 @@ export function CuteKidsCard(props: {
 
   const teach = config.goal === "teach";
   const pillar: LessonPillar = config.pillar ?? "money";
-  const lessons = lessonsFor(pillar, config.kidAge);
+  const [library, setLibrary] = useState<LessonLibrary | null>(null);
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    if (!teach || library) return;
+    let alive = true;
+    import("@/lib/kids/parenting-lessons").then((mod) => { if (alive) setLibrary(mod); }).catch(() => { /* offline — retried on the next open */ });
+    return () => { alive = false; };
+  }, [teach, library]);
+  // A saved pick without its snapshot gets it from the library (or is dropped when the lesson is gone).
+  useEffect(() => {
+    if (!library || !config.lessonId || config.lesson?.id === config.lessonId) return;
+    const found = library.findLesson(config.lessonId);
+    setConfig((prev) => (prev.lessonId === config.lessonId ? { ...prev, lessonId: found?.id, lesson: found } : prev));
+  }, [library, config.lessonId, config.lesson?.id]);
+  const searching = query.trim().length > 1;
+  const lessons = library ? (searching ? library.searchLessons(query, config.kidAge).slice(0, 40) : library.lessonsFor(pillar, config.kidAge)) : [];
+  const picked = config.lesson?.id === config.lessonId ? config.lesson : undefined;
   // Picking a lesson also brings the family members its story needs (a sibling, a friend, grandma…).
   const pickLesson = (lesson: ParentingLesson) =>
     update(config.lessonId === lesson.id
-      ? { lessonId: undefined }
-      : { lessonId: lesson.id, request: lesson.situation, format: "auto", family: [...new Set([...config.family, ...(lesson.needs ?? [])])] });
+      ? { lessonId: undefined, lesson: undefined }
+      : { lessonId: lesson.id, lesson, pillar: lesson.pillar, request: lesson.situation, format: "auto", family: [...new Set([...config.family, ...(lesson.needs ?? [])])] });
+  const pickFresh = (anyPillar: boolean) => {
+    const lesson = library?.pickFreshLesson(config.kidAge, usedLessons, anyPillar ? undefined : pillar);
+    if (lesson) { setQuery(""); pickLesson(lesson); }
+  };
   // Remember which lessons became videos, so the library shows what is still new.
   const markUsed = () => {
     const id = teach ? config.lessonId : undefined;
@@ -180,35 +208,64 @@ export function CuteKidsCard(props: {
             <div className="space-y-2 rounded-md border border-amber-400/50 bg-amber-500/[0.06] p-2.5">
               <p className="text-xs text-muted-foreground">
                 {vi
-                  ? `Kho ${PARENTING_LESSONS.length} bài · ${LESSON_PILLARS.length} chủ đề, cách xử lý theo Kỷ luật tích cực, Gottman, Faber & Mazlish, Montessori, serve & return (Harvard), CASEL. Bài học thể hiện qua câu chuyện (không giảng): bé gặp tình huống → bố mẹ xử lý khéo, tôn trọng bé → kết ấm áp + câu chốt. Caption tự có "💡 Mẹo cho bố mẹ" và câu hỏi gợi bình luận.`
-                  : `${PARENTING_LESSONS.length} lessons in ${LESSON_PILLARS.length} areas (Positive Discipline, Gottman, Faber & Mazlish, Montessori, serve and return, CASEL). The lesson is shown through the story: the kid's moment → the parent's respectful technique → a warm ending + takeaway.`}
+                  ? `Kho ${library ? library.PARENTING_LESSONS.length : "…"} bài · ${LESSON_PILLARS.length} chủ đề, từ tình huống thật của các gia đình Việt; cách xử lý theo Kỷ luật tích cực, Gottman, Faber & Mazlish, Montessori, No-Drama Discipline, Good Inside, RIE, serve & return (Harvard), CASEL… Bài học thể hiện qua câu chuyện (không giảng): bé gặp tình huống → bố mẹ xử lý khéo, tôn trọng bé → kết ấm áp + câu chốt. Caption tự có "💡 Mẹo cho bố mẹ" và câu hỏi gợi bình luận.`
+                  : `${library ? library.PARENTING_LESSONS.length : "…"} lessons in ${LESSON_PILLARS.length} areas from real Vietnamese family situations (Positive Discipline, Gottman, Faber & Mazlish, Montessori, No-Drama Discipline, Good Inside, RIE, serve and return, CASEL…). The lesson is shown through the story: the kid's moment → the parent's respectful technique → a warm ending + takeaway.`}
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {LESSON_PILLARS.map((p) => (
-                  <Chip key={p.id} active={pillar === p.id} onClick={() => update({ pillar: p.id, lessonId: undefined })}>
-                    {p.label} <span className="opacity-60">{lessonsFor(p.id, config.kidAge).length}</span>
-                  </Chip>
-                ))}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={vi ? "🔎 Tìm bài: ăn vạ, lì xì, đi nhà trẻ, nói bậy…" : "🔎 Search lessons…"}
+                  className="h-8 max-w-xs text-xs"
+                />
+                <Chip active={false} onClick={() => pickFresh(false)} title={vi ? "Một bài chưa làm trong chủ đề đang chọn" : "An unused lesson in this area"}>🎲 {vi ? "Bài chưa làm" : "Unused lesson"}</Chip>
+                <Chip active={false} onClick={() => pickFresh(true)} title={vi ? "Một bài chưa làm bất kỳ, hợp tuổi bé" : "Any unused lesson for this age"}>🎲 {vi ? "Bất kỳ chủ đề" : "Any area"}</Chip>
+                {library && (
+                  <span className="text-[11px] text-muted-foreground">
+                    {vi ? "Đã làm" : "Done"} {usedLessons.filter((id) => library.findLesson(id)).length}/{library.PARENTING_LESSONS.length}
+                  </span>
+                )}
               </div>
-              <div className="grid gap-1.5 sm:grid-cols-2">
-                {lessons.map((lesson) => (
-                  <button
-                    key={lesson.id}
-                    type="button"
-                    onClick={() => pickLesson(lesson)}
-                    aria-pressed={config.lessonId === lesson.id}
-                    className={cn(
-                      "rounded-md border bg-background p-2 text-left text-xs transition-colors hover:border-amber-500/60",
-                      config.lessonId === lesson.id && "border-amber-600 bg-amber-500/10"
-                    )}
-                  >
-                    <span className="font-medium">{lesson.title}</span>
-                    {usedLessons.includes(lesson.id) && <span className="ml-1.5 text-[10px] text-emerald-700">✓ {vi ? "đã làm" : "done"}</span>}
-                    <span className="mt-0.5 block text-muted-foreground">💡 {lesson.takeaway}</span>
-                    <span className="mt-0.5 block text-[10px] text-amber-700">📚 {lesson.method}</span>
-                  </button>
-                ))}
-              </div>
+              {!searching && (
+                <div className="space-y-1">
+                  {PILLAR_GROUPS.map((g) => (
+                    <div key={g.id} className="flex flex-wrap items-center gap-1.5">
+                      <span className="w-full text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:w-40">{g.label}</span>
+                      {LESSON_PILLARS.filter((p) => p.group === g.id).map((p) => (
+                        <Chip key={p.id} active={pillar === p.id} onClick={() => update({ pillar: p.id })}>
+                          {p.label} {library && <span className="opacity-60">{library.lessonsFor(p.id, config.kidAge).length}</span>}
+                        </Chip>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!library ? (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> {vi ? "Đang tải kho bài học…" : "Loading lessons…"}</p>
+              ) : searching && !lessons.length ? (
+                <p className="text-xs text-muted-foreground">{vi ? "Không có bài nào khớp — thử từ khác." : "No lesson matches."}</p>
+              ) : (
+                <div className="grid max-h-[420px] gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2">
+                  {lessons.map((lesson) => (
+                    <button
+                      key={lesson.id}
+                      type="button"
+                      onClick={() => pickLesson(lesson)}
+                      aria-pressed={config.lessonId === lesson.id}
+                      className={cn(
+                        "rounded-md border bg-background p-2 text-left text-xs transition-colors hover:border-amber-500/60",
+                        config.lessonId === lesson.id && "border-amber-600 bg-amber-500/10"
+                      )}
+                    >
+                      <span className="font-medium">{lesson.title}</span>
+                      {usedLessons.includes(lesson.id) && <span className="ml-1.5 text-[10px] text-emerald-700">✓ {vi ? "đã làm" : "done"}</span>}
+                      {searching && <span className="ml-1.5 text-[10px] text-muted-foreground">{LESSON_PILLARS.find((p) => p.id === lesson.pillar)?.label}</span>}
+                      <span className="mt-0.5 block text-muted-foreground">💡 {lesson.takeaway}</span>
+                      <span className="mt-0.5 block text-[10px] text-amber-700">📚 {lesson.method}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-[11px] font-medium">{vi ? "Câu chốt:" : "Takeaway:"}</span>
                 <Chip active={config.takeaway !== "parent"} onClick={() => update({ takeaway: "narrator" })}>🎙️ {vi ? "Giọng dẫn cuối video" : "Narrator at the end"}</Chip>
@@ -224,9 +281,9 @@ export function CuteKidsCard(props: {
                 </Chip>
                 {config.abFormat && <span className="text-[11px] text-muted-foreground">{vi ? "Nên dùng 4 shot (40s)." : "Best with 4 shots."}</span>}
               </div>
-              {config.lessonId && findLesson(config.lessonId) && (
+              {picked && (
                 <p className="text-[11px] text-muted-foreground">
-                  {vi ? "Cách xử lý" : "Technique"} ({findLesson(config.lessonId)!.method}): {findLesson(config.lessonId)!.technique}
+                  <span className="font-medium text-foreground">{picked.title}</span> — {vi ? "Cách xử lý" : "Technique"} ({picked.method}): {picked.technique}
                 </p>
               )}
             </div>

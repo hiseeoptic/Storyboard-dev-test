@@ -11,6 +11,7 @@ import { getOpenAIClient } from "@/lib/openai/client";
 import { logOpenAiUsage } from "@/lib/ai/usage";
 import { createOpenAiChat } from "@/lib/ai/openai-models";
 import type { ActionResult, AIProvider } from "@/types";
+import { PARENTING_LESSONS } from "@/lib/kids/parenting-lessons";
 import {
   EPISODE_IDEAS_SYSTEM,
   buildEpisodeIdeasPrompt,
@@ -62,7 +63,11 @@ export async function suggestCuteKidsEpisodes(params: {
   avoid?: string[];
   provider?: AIProvider;
 }): Promise<ActionResult<EpisodeIdea[]>> {
-  const userPrompt = buildEpisodeIdeasPrompt(params.config, (params.avoid ?? []).slice(0, 20));
+  // Teach mode: the AI invents situations the lesson library does not have yet.
+  const libraryTitles = params.config?.goal === "teach"
+    ? PARENTING_LESSONS.filter((l) => l.pillar === (params.config.pillar ?? "money")).map((l) => l.title).slice(0, 40)
+    : [];
+  const userPrompt = buildEpisodeIdeasPrompt(params.config, (params.avoid ?? []).slice(0, 20), libraryTitles);
   const first: AIProvider = params.provider === "gemini" ? "gemini" : "openai";
   let lastError: unknown = null;
   for (const provider of [first, first === "openai" ? "gemini" : "openai"] as AIProvider[]) {

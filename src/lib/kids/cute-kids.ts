@@ -9,7 +9,7 @@
 // ============================================================
 
 import { CHILD_SAFE_WORDING_RULE } from "./child-safe-wording.ts";
-import { LESSON_PILLARS, findLesson, pillarLabel, type LessonPillar, type ParentingLesson } from "./parenting-lessons.ts";
+import { LESSON_PILLARS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
 
 export type KidAge = "toddler" | "young" | "school";
 export type KidGender = "girl" | "boy";
@@ -38,6 +38,8 @@ export interface CuteKidsConfig {
   /** Teach mode: lesson pillar and the chosen lesson from the parenting library. */
   pillar?: LessonPillar;
   lessonId?: string;
+  /** Teach mode: a snapshot of the chosen lesson (the server swaps in the library's current version). */
+  lesson?: ParentingLesson;
   /** Teach mode: who says the takeaway — a short narrator voice-over at the end, or the parent. */
   takeaway?: "narrator" | "parent";
   /** Teach mode: show an ineffective way first, then the good way (A/B). */
@@ -232,10 +234,14 @@ export interface FamilyCastMember {
 const CHILD_MEMBERS = new Set<FamilyMember>(["baby", "sibling", "friend"]);
 const MEMBER_ROLE: Partial<Record<FamilyMember, string>> = { baby: "em bé", sibling: "anh trai", friend: "bạn của bé" };
 
+/** Teach mode: the picked lesson (the snapshot carried by the config). */
+export function lessonOf(config: Pick<CuteKidsConfig, "goal" | "lessonId" | "lesson">): ParentingLesson | undefined {
+  return config.goal === "teach" && config.lesson && config.lesson.id === config.lessonId ? config.lesson : undefined;
+}
+
 /** The chosen family plus whoever the picked lesson needs on screen. */
-export function familyWithLesson(config: Pick<CuteKidsConfig, "family" | "goal" | "lessonId">): FamilyMember[] {
-  const needs = config.goal === "teach" ? findLesson(config.lessonId)?.needs ?? [] : [];
-  return [...new Set([...config.family, ...needs])];
+export function familyWithLesson(config: Pick<CuteKidsConfig, "family" | "goal" | "lessonId" | "lesson">): FamilyMember[] {
+  return [...new Set([...config.family, ...(lessonOf(config)?.needs ?? [])])];
 }
 
 /** The locked cast: the kid first, then the chosen family (pets stay in the story text). */
@@ -278,7 +284,7 @@ export function cuteKidsStoryIdea(config: CuteKidsConfig): string {
 /** Teach mode, Vietnamese: the lesson, the parent's way, the takeaway and the A/B format. */
 function lessonLinesVi(config: CuteKidsConfig): string[] {
   if (config.goal !== "teach") return [];
-  const lesson = findLesson(config.lessonId);
+  const lesson = lessonOf(config);
   const who = config.takeaway === "parent" ? "bố mẹ nói với bé ở cuối video" : "giọng dẫn ngắn ở cuối video";
   return [
     lesson ? `🎓 Bài học dạy con (${pillarLabel(lesson.pillar)}): ${lesson.title}.` : "🎓 Video dạy con: bố mẹ xử lý tình huống bằng một cách cụ thể, tôn trọng bé.",
@@ -291,7 +297,7 @@ function lessonLinesVi(config: CuteKidsConfig): string[] {
 /** Teach mode: the parenting lesson, its structure, the takeaway and the A/B format. */
 function parentingDirective(config: CuteKidsConfig, kidName: string): string[] {
   if (config.goal !== "teach") return [];
-  const lesson = findLesson(config.lessonId);
+  const lesson = lessonOf(config);
   const n = config.shots;
   const narrator = config.takeaway !== "parent";
   const structure = config.abFormat
@@ -384,7 +390,7 @@ export function labelCuteKidsPosts(posts: SocialPostsLike | undefined | null, ra
   if (!posts) return;
   const config = normalizeCuteKids(raw);
   if (config?.goal === "teach") {
-    const lesson: ParentingLesson | undefined = findLesson(config.lessonId);
+    const lesson = lessonOf(config);
     const tip = [
       lesson ? `💡 Mẹo cho bố mẹ: ${lesson.takeaway}` : "",
       lesson ? `📚 Cách làm: ${lesson.method}` : "",
@@ -413,6 +419,32 @@ export function labelAiSocialPosts(posts: {
   if (posts.facebook_reel) posts.facebook_reel.caption = add(posts.facebook_reel.caption);
 }
 
+const clip = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
+
+/** A lesson snapshot from the client, kept only when it is complete and matches the picked id. */
+function lessonFields(raw: unknown, lessonId: unknown): { lessonId?: string; lesson?: ParentingLesson } {
+  if (!raw || typeof raw !== "object" || typeof lessonId !== "string") return {};
+  const r = raw as Record<string, unknown>;
+  const pillar = LESSON_PILLARS.find((p) => p.id === r.pillar)?.id;
+  const ages = Array.isArray(r.ages) ? r.ages.filter((a): a is KidAge => a === "toddler" || a === "young" || a === "school") : [];
+  const needs = Array.isArray(r.needs) ? r.needs.filter((m): m is FamilyMember => FAMILY_MEMBERS.includes(m as FamilyMember)) : [];
+  const lesson: ParentingLesson = {
+    id: clip(r.id, 60),
+    pillar: pillar ?? "money",
+    ages,
+    title: clip(r.title, 120),
+    situation: clip(r.situation, 600),
+    behavior: clip(r.behavior, 400),
+    technique: clip(r.technique, 900),
+    takeaway: clip(r.takeaway, 300),
+    wrongWay: clip(r.wrongWay, 400),
+    method: clip(r.method, 120),
+    ...(needs.length ? { needs: [...new Set(needs)] } : {}),
+  };
+  const complete = pillar && ages.length && lesson.id === lessonId && [lesson.title, lesson.situation, lesson.behavior, lesson.technique, lesson.takeaway, lesson.wrongWay, lesson.method].every(Boolean);
+  return complete ? { lessonId, lesson } : {};
+}
+
 /** Normalise a config coming from the client. */
 export function normalizeCuteKids(raw: unknown): CuteKidsConfig | undefined {
   if (!raw || typeof raw !== "object") return undefined;
@@ -436,7 +468,7 @@ export function normalizeCuteKids(raw: unknown): CuteKidsConfig | undefined {
       : DEFAULT_CUTE_KIDS.traits,
     goal: pick(r.goal, ["fun", "teach"] as const, "fun"),
     pillar: pick(r.pillar, LESSON_PILLARS.map((p) => p.id), "money"),
-    ...(typeof r.lessonId === "string" && findLesson(r.lessonId) ? { lessonId: r.lessonId } : {}),
+    ...lessonFields(r.lesson, r.lessonId),
     takeaway: pick(r.takeaway, ["narrator", "parent"] as const, "narrator"),
     abFormat: r.abFormat === true,
   };
@@ -459,7 +491,7 @@ export const EPISODE_IDEAS_SYSTEM =
   "You are a Vietnamese short-video creator who makes wholesome viral family reels starring young children. You know what makes these reels loved and shared: a relatable everyday family moment, an instant hook on the child's face, the child's honest logic and big expressions, and a sweet or funny ending. Child safety always comes first. Answer with JSON only.";
 
 /** Prompt for 10 fresh episode ideas for the same kid and family. */
-export function buildEpisodeIdeasPrompt(raw: CuteKidsConfig, avoid: string[] = []): string {
+export function buildEpisodeIdeasPrompt(raw: CuteKidsConfig, avoid: string[] = [], libraryTitles: string[] = []): string {
   const config = normalizeCuteKids(raw) ?? DEFAULT_CUTE_KIDS;
   const cast = familyCast(config);
   const pets = familyWithLesson(config).filter((m) => PETS.has(m)).map((m) => FAMILY_LABEL[m][config.dialect]);
@@ -472,6 +504,9 @@ export function buildEpisodeIdeasPrompt(raw: CuteKidsConfig, avoid: string[] = [
     (config.traits ?? []).length ? `The kid's personality, shown in every idea: ${(config.traits ?? []).map((t) => KID_TRAITS.find((k) => k.id === t)!.label_en.replace(/^\S+\s/, "")).join(", ")}; the parents always play along warmly.` : "",
     config.goal === "teach"
       ? `PARENTING CHANNEL: every idea teaches parents one everyday lesson in the area "${pillarLabel(config.pillar ?? "money").replace(/^\S+\s/, "")}" through the story (the kid's behaviour → the parent's calm, respectful technique → a warm result); end each "request" with "Bài học: …" in one short line.`
+      : "",
+    config.goal === "teach" && libraryTitles.length
+      ? `The channel's lesson library already covers these situations in this area — give fresh, different ones: ${libraryTitles.join("; ")}.`
       : "",
     `Give 10 different episode ideas for ${config.shots} clips of 10 seconds, all at home or everyday places, each with a clear hook, escalation and a punchline that fits the kid's age. ${CHILD_SAFETY_RULES}`,
     'Return {"ideas":[{"title":"short Vietnamese title (max 8 words)","request":"one or two Vietnamese sentences: the situation, what the kid does and the ending"}]}',

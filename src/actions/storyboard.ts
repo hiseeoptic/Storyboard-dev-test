@@ -42,6 +42,7 @@ import {
 import { enforceProductShootContract, productShootSubject } from "@/lib/product-shoot/storyboard";
 import { enforceProductPlacements, outfitCostume, placementItems } from "@/lib/product-placement";
 import { cuteKidsVoice, labelCuteKidsPosts, normalizeCuteKids } from "@/lib/kids/cute-kids";
+import { withLibraryLesson } from "@/lib/kids/parenting-lessons";
 import { castHasChild, childSafeDeep } from "@/lib/kids/child-safe-wording";
 import {
   REFERENCE_CHARACTER_ANTI_PLASTIC,
@@ -2396,7 +2397,8 @@ function normalizePlanInput(input: StoryboardGenerationInput): StoryboardGenerat
   // both speech channels are off).
   // "Bé cưng viral": the client config is clamped to known values; anything
   // unknown is dropped.
-  if (input.cute_kids) input = { ...input, cute_kids: normalizeCuteKids(input.cute_kids) };
+  // A picked parenting lesson is taken from the library (the client sends a snapshot).
+  if (input.cute_kids) input = { ...input, cute_kids: normalizeCuteKids(withLibraryLesson(input.cute_kids)) };
   const shootPresence = resolveInputProductShoot(input)?.presence;
   if (shootPresence === "product_only" || shootPresence === "hands_only") {
     const narrate = input.voice_over_enabled === true || input.character_dialogue_enabled !== false;
