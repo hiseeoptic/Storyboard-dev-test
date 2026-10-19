@@ -17,7 +17,7 @@ import { SET_QUALITY_NEGATIVE, SET_QUALITY_NOTE, stripBlandSetClauses } from "..
 import { buildSetMap, cameraSideLock, setMapBrief, type SetMap } from "../environment/set-map.ts";
 import { outfitReferenceContract } from "../fashion/outfit.ts";
 import { makeupContract, makeupText, type MakeupMode } from "../character-makeup.ts";
-import { PHONE_PLATE_NOTE, PHONE_RENDER_NOTE, PHONE_VIDEO_NOTE, cuteKidsPerformanceNote, type KidTrait } from "../kids/cute-kids.ts";
+import { PHONE_PLATE_NOTE, PHONE_RENDER_NOTE, PHONE_VIDEO_NOTE, cuteKidsPerformanceNote, type KidAge, type KidTrait } from "../kids/cute-kids.ts";
 import { castHasChild, childSafeDeep } from "../kids/child-safe-wording.ts";
 import { KEYFRAME_CANDID_NOTE } from "../performance/human-performance.ts";
 import { setDressingFor, setDressingLock } from "../environment/set-dressing.ts";
@@ -87,7 +87,7 @@ export interface BuildNanoFlowManifestOptions {
   /** "Bé cưng viral" family reel: every character without a photo gets a
    * sheet built from the locked description (one face in every shot), and
    * "phone" swaps the cinema look for a parent's smartphone video. */
-  cuteKids?: { filming: "phone" | "cinematic"; kidName?: string; traits?: KidTrait[] };
+  cuteKids?: { filming: "phone" | "cinematic"; kidName?: string; traits?: KidTrait[]; kidAge?: KidAge };
   affiliateProductIR?: ProductIR;
   affiliateDisclosure?: string;
   /** Explicit character medium selected in the app (one of the ten locked video
@@ -1908,7 +1908,7 @@ export function buildNanoFlowManifest(
     phoneLook ? prompt.split(KEYFRAME_RENDER_NOTE).join(note) : prompt;
   // Cute-kids reel: the kid's big, cute performance is explicitly wanted (the
   // general audio/acting laws say "restrained, never theatrical").
-  const kidPerformance = opts.cuteKids?.kidName?.trim() ? cuteKidsPerformanceNote(opts.cuteKids.kidName.trim(), opts.cuteKids.traits) : "";
+  const kidPerformance = opts.cuteKids?.kidName?.trim() ? cuteKidsPerformanceNote(opts.cuteKids.kidName.trim(), opts.cuteKids.traits, opts.cuteKids.kidAge) : "";
   const withKidPerformance = (prompt: string) =>
     kidPerformance ? withPromptContract(prompt, "child_performance", kidPerformance, ["makeup_contract", "outfit_reference_contract", "cast", "camera", "opening_frame"]) : prompt;
   // Every keyframe with people is a candid moment of real footage, not a pose.

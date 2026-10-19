@@ -126,3 +126,22 @@ test("voices: the kid gets a lively nũng nịu delivery, parents warm expressiv
   assert.match(dad, /with warm, expressive natural pitch variation/);
   assert.match(cuteKidsPerformanceNote("Na"), /overrides any "restrained \/ never theatrical" rule for Na only/);
 });
+
+test("real child behaviour per age and serve-and-return with the parents are in the contract", () => {
+  const toddler = cuteKidsDirective(config({ kidName: "Su", kidAge: "toddler" }));
+  assert.match(toddler, /REAL TODDLER BEHAVIOUR \(what makes Su a real 2–3-year-old, not an AI doll\): she looks up at a parent's face before and after everything/);
+  assert.match(toddler, /hides behind a parent's leg and peeks out/);
+  assert.match(cuteKidsDirective(config({ kidAge: "young" })), /REAL 4–5-YEAR-OLD BEHAVIOUR: Bé Na tugs a parent's hand/);
+  assert.match(cuteKidsDirective(config({ kidAge: "school", kidGender: "boy", kidName: "Bin" })), /REAL 6–7-YEAR-OLD BEHAVIOUR: Bin negotiates ticking points off on his fingers/);
+  const d = cuteKidsDirective(config({ kidName: "Na" }));
+  assert.match(d, /SERVE AND RETURN \(every clip is a back-and-forth, never a monologue\)/);
+  assert.match(d, /gets an IMMEDIATE, visible "return" from a parent within a second/);
+  assert.match(d, /at least two full exchanges per clip/);
+  assert.match(cuteKidsDirective(config({ dialect: "south" })), /"Con muốn cái này hả\?"/);
+  assert.match(cuteKidsRoomSeed(config({ kidAge: "toddler" })), /Tương tác qua lại như thật: .*đáp lại ngay.*nấp sau chân bố mẹ rồi ló ra cười/);
+  const note = cuteKidsPerformanceNote("Su", ["sweet_whiny"], "toddler");
+  assert.match(note, /Real child behaviour: looks up at the parent's face to check every reaction/);
+  assert.match(note, /SERVE AND RETURN: every look, point, whine, word or hug from Su gets an instant warm return/);
+  assert.doesNotMatch(cuteKidsPerformanceNote("Su"), /Real child behaviour/);
+  assert.doesNotMatch(`${toddler} ${note}`, /\b(kiss|lips?|pout|undress|swimwear|bath|limbs|suggestive)\b/i);
+});

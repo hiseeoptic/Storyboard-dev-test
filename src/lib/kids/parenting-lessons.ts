@@ -4,12 +4,28 @@
 // respectful technique (positive-discipline principles), a one-line
 // takeaway for the narrator/caption and a mild "ineffective" reaction for
 // the optional A/B format (never hitting, yelling, threats or shaming).
-// Pure data (node-testable). First pillars: money and emotions.
+// Techniques follow well-known programmes: Positive Discipline (Nelsen),
+// emotion coaching (Gottman), "How to Talk So Kids Will Listen" (Faber &
+// Mazlish), Montessori practical life, Harvard's serve and return, CASEL's
+// social-emotional skills, growth mindset (Dweck) and UNICEF's positive
+// parenting tips. Pure data (node-testable).
 // ============================================================
 
-import type { KidAge } from "./cute-kids.ts";
+import type { FamilyMember, KidAge } from "./cute-kids.ts";
 
-export type LessonPillar = "money" | "emotions";
+export type LessonPillar =
+  | "money"
+  | "emotions"
+  | "routines"
+  | "screens"
+  | "manners"
+  | "independence"
+  | "social"
+  | "honesty"
+  | "confidence"
+  | "empathy"
+  | "safety"
+  | "learning";
 
 export interface ParentingLesson {
   id: string;
@@ -26,11 +42,25 @@ export interface ParentingLesson {
   takeaway: string;
   /** Mild ineffective reaction for "Cách 1" in the A/B format. */
   wrongWay: string;
+  /** The named approach behind the technique (shown to parents, gives the reel credibility). */
+  method: string;
+  /** Family members the story needs on screen (added to the cast when the lesson is picked). */
+  needs?: FamilyMember[];
 }
 
 export const LESSON_PILLARS: Array<{ id: LessonPillar; label: string }> = [
   { id: "money", label: "💰 Tiền bạc" },
   { id: "emotions", label: "😤 Cảm xúc" },
+  { id: "routines", label: "⏰ Thói quen" },
+  { id: "screens", label: "📱 Màn hình" },
+  { id: "manners", label: "🙏 Lễ phép" },
+  { id: "independence", label: "🧒 Tự lập" },
+  { id: "social", label: "🤝 Bạn bè & anh em" },
+  { id: "honesty", label: "💡 Trung thực & trách nhiệm" },
+  { id: "confidence", label: "🌱 Tự tin" },
+  { id: "empathy", label: "💞 Yêu thương & biết ơn" },
+  { id: "safety", label: "🛡️ An toàn" },
+  { id: "learning", label: "📚 Học tập & tò mò" },
 ];
 
 const ALL: KidAge[] = ["toddler", "young", "school"];
@@ -39,7 +69,7 @@ const OLDER: KidAge[] = ["young", "school"];
 export const PARENTING_LESSONS: ParentingLesson[] = [
   // ─── 💰 Tiền bạc ──────────────────────────────────────────────────────────
   {
-    id: "toy_aisle", pillar: "money", ages: ALL,
+    id: "toy_aisle", pillar: "money", ages: ALL, method: "Thừa nhận mong muốn, giữ giới hạn (Kỷ luật tích cực)",
     title: "Đòi mua đồ chơi ở siêu thị",
     situation: "Đi siêu thị, bé đứng lì ở quầy đồ chơi, ôm chặt một món đồ chơi và đòi mua cho bằng được.",
     behavior: "nài nỉ ngọt ngào, bị từ chối thì ăn vạ ngay giữa quầy",
@@ -48,7 +78,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "bố mẹ nói cụt \"Không mua là không mua!\" khiến bé khóc to hơn, rồi lại mua cho xong chuyện",
   },
   {
-    id: "three_jars", pillar: "money", ages: OLDER,
+    id: "three_jars", pillar: "money", ages: OLDER, method: "Ba hũ tiền: tiêu, để dành, chia sẻ",
     title: "Đòi đập heo đất mua kẹo",
     situation: "Bé ôm heo đất đòi lấy hết tiền ra mua kẹo ngay bây giờ.",
     behavior: "lắc heo đất, nũng nịu đòi tiêu luôn, lý sự rằng tiền của con thì con được tiêu",
@@ -57,7 +87,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "bố mẹ cất heo đất lên tủ và nói \"Để mẹ giữ cho\", bé dỗi không hiểu vì sao",
   },
   {
-    id: "need_vs_want", pillar: "money", ages: OLDER,
+    id: "need_vs_want", pillar: "money", ages: OLDER, method: "Học qua trò chơi",
     title: "Cần hay muốn?",
     situation: "Bé đã có hai đôi giày nhưng vẫn đòi mua thêm đôi giày phát sáng thứ ba.",
     behavior: "liệt kê đủ lý do vì sao \"con cần\" đôi giày mới",
@@ -66,7 +96,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "bố mẹ giảng một tràng dài về tiết kiệm trong khi bé chán nản nhìn đi chỗ khác",
   },
   {
-    id: "lucky_money", pillar: "money", ages: OLDER,
+    id: "lucky_money", pillar: "money", ages: OLDER, method: "Quyền đi kèm trách nhiệm",
     title: "Tiền lì xì của ai?",
     situation: "Sau Tết, mẹ định giữ tiền lì xì giúp, bé ôm phong bao không chịu đưa.",
     behavior: "giấu phong bao sau lưng, cãi \"tiền của con mà\"",
@@ -75,7 +105,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "mẹ lấy hết phong bao và nói \"Mẹ giữ cho, lớn mẹ trả\"",
   },
   {
-    id: "where_money_from", pillar: "money", ages: OLDER,
+    id: "where_money_from", pillar: "money", ages: OLDER, method: "Cho con thấy tiền từ công sức",
     title: "Tiền ở đâu ra?",
     situation: "Bé đòi mua đồ và nói \"Bố cứ quẹt thẻ là có tiền mà!\".",
     behavior: "ngây thơ tin rằng chiếc thẻ tự sinh ra tiền",
@@ -84,7 +114,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "bố trả lời qua loa \"Thẻ thì có tiền chứ sao\" rồi mua luôn, bé càng tin thẻ tự sinh ra tiền",
   },
   {
-    id: "chores_for_pay", pillar: "money", ages: ["school"],
+    id: "chores_for_pay", pillar: "money", ages: ["school"], method: "Việc chung không trả tiền",
     title: "Dọn đồ chơi đòi trả tiền",
     situation: "Mẹ nhờ bé dọn đồ chơi, bé khoanh tay ra điều kiện: \"Mẹ trả con mười nghìn con mới dọn\".",
     behavior: "mặc cả khôn lanh như một doanh nhân nhí",
@@ -93,7 +123,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "mẹ đồng ý trả tiền cho mọi việc, hôm sau bé đòi tiền cả việc đánh răng",
   },
   {
-    id: "pay_by_myself", pillar: "money", ages: OLDER,
+    id: "pay_by_myself", pillar: "money", ages: OLDER, method: "Để con tự thực hành",
     title: "Lần đầu tự trả tiền",
     situation: "Đi mua kem, mẹ đưa tiền cho bé tự trả cô bán hàng và tự nhận tiền thừa.",
     behavior: "hồi hộp, đếm tiền nghiêm túc, tự hào khi làm được",
@@ -102,7 +132,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "mẹ giành trả hết vì sợ chậm, bé đứng nhìn không học được gì",
   },
   {
-    id: "same_as_friend", pillar: "money", ages: OLDER,
+    id: "same_as_friend", pillar: "money", ages: OLDER, method: "Hỏi lý do, cùng lập kế hoạch",
     title: "Bạn có thì con cũng phải có",
     situation: "Bé về nhà đòi mua chiếc cặp giống hệt của bạn cùng lớp.",
     behavior: "dỗi vì \"bạn nào cũng có\"",
@@ -111,7 +141,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "bố mẹ gạt đi \"Cặp cũ vẫn dùng được\" mà không hỏi lý do, bé dỗi",
   },
   {
-    id: "broke_toy", pillar: "money", ages: ALL,
+    id: "broke_toy", pillar: "money", ages: ALL, method: "Hậu quả tự nhiên (Kỷ luật tích cực)",
     title: "Làm hỏng đồ chơi đòi mua cái mới",
     situation: "Bé ném chiếc ô tô đồ chơi làm gãy bánh, rồi đòi mua ngay một chiếc mới.",
     behavior: "mếu máo đòi cái mới, đổ lỗi cho chiếc ô tô",
@@ -120,7 +150,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "bố mẹ mua ngay cái mới cho bé nín",
   },
   {
-    id: "saving_goal", pillar: "money", ages: OLDER,
+    id: "saving_goal", pillar: "money", ages: OLDER, method: "Mục tiêu bằng hình ảnh",
     title: "Để dành mua xe đạp",
     situation: "Bé mơ có một chiếc xe đạp mới và hỏi bố bao giờ mới mua.",
     behavior: "sốt ruột, ngày nào cũng hỏi",
@@ -131,7 +161,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
 
   // ─── 😤 Cảm xúc ────────────────────────────────────────────────────────────
   {
-    id: "screen_tantrum", pillar: "emotions", ages: ALL,
+    id: "screen_tantrum", pillar: "emotions", ages: ALL, method: "Huấn luyện cảm xúc (Gottman)",
     title: "Ăn vạ khi phải tắt tivi",
     situation: "Đến giờ tắt tivi, bé lăn ra sofa khóc ăn vạ đòi xem thêm một tập.",
     behavior: "khóc nhè, hé mắt xem bố mẹ có mềm lòng không",
@@ -140,7 +170,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "bố mẹ nói cứng \"Hết giờ là hết, không khóc nữa\", bé càng khóc to hơn",
   },
   {
-    id: "jealous_sibling", pillar: "emotions", ages: ALL,
+    id: "jealous_sibling", pillar: "emotions", ages: ALL, method: "Thời gian riêng (Kỷ luật tích cực)", needs: ["baby"],
     title: "Ghen với em bé",
     situation: "Mẹ đang bế em bé, bé lớn giận dỗi ngồi một góc, nói \"Mẹ chỉ thương em thôi\".",
     behavior: "dỗi, quay lưng, liếc trộm mẹ",
@@ -149,7 +179,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "mẹ vừa bế em vừa nói vội \"Con lớn rồi, tự chơi đi\", bé càng dỗi",
   },
   {
-    id: "sore_loser", pillar: "emotions", ages: OLDER,
+    id: "sore_loser", pillar: "emotions", ages: OLDER, method: "Bố mẹ làm gương",
     title: "Thua là giận",
     situation: "Chơi cờ cá ngựa với bố, bé thua và hất tung bàn cờ.",
     behavior: "giận dỗi, khoanh tay, nói \"Con không chơi nữa\"",
@@ -158,7 +188,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "bố cố tình nhường hết các ván để bé không khóc",
   },
   {
-    id: "afraid_dark", pillar: "emotions", ages: ALL,
+    id: "afraid_dark", pillar: "emotions", ages: ALL, method: "Biến nỗi sợ thành trò chơi",
     title: "Sợ ngủ một mình",
     situation: "Đến giờ ngủ, bé không chịu ở phòng một mình vì sợ \"có quái vật\".",
     behavior: "ôm gấu bông, níu tay bố mẹ không cho đi",
@@ -167,7 +197,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "bố mẹ nói \"Có gì đâu mà sợ, ngủ đi!\" rồi tắt đèn đi ra",
   },
   {
-    id: "spilled_lie", pillar: "emotions", ages: OLDER,
+    id: "spilled_lie", pillar: "emotions", ages: OLDER, method: "Cảm ơn sự thật trước", needs: ["cat"],
     title: "Làm đổ nước cam rồi đổ cho mèo",
     situation: "Bé làm đổ cốc nước cam lên sofa, khi mẹ hỏi thì chỉ tay vào con mèo.",
     behavior: "lúng túng, mắt đảo, đổ lỗi đầy khôn lanh",
@@ -176,16 +206,16 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "mẹ hỏi dồn \"Có đúng là con mèo không?\" khiến bé càng chối",
   },
   {
-    id: "wont_share", pillar: "emotions", ages: ALL,
+    id: "wont_share", pillar: "emotions", ages: ALL, method: "Đến lượt bằng đồng hồ cát", needs: ["friend"],
     title: "Không chịu chia đồ chơi",
-    situation: "Em họ đến chơi, bé ôm hết đồ chơi vào lòng không cho em động vào.",
+    situation: "Bạn hàng xóm sang nhà chơi, bé ôm hết đồ chơi vào lòng không cho bạn động vào.",
     behavior: "giữ chặt, la \"Của con!\"",
     technique: "bố mẹ không ép, mà dùng đồng hồ cát: mỗi người chơi một lượt, khi cát chảy hết thì \"đến lượt\" người kia",
     takeaway: "Đừng ép con chia — hãy dạy con \"đến lượt\" bằng một chiếc đồng hồ.",
-    wrongWay: "bố mẹ lấy đồ chơi từ tay bé đưa cho em, bé càng ôm chặt phần còn lại",
+    wrongWay: "bố mẹ lấy đồ chơi từ tay bé đưa cho bạn, bé càng ôm chặt phần còn lại",
   },
   {
-    id: "friend_teased", pillar: "emotions", ages: OLDER,
+    id: "friend_teased", pillar: "emotions", ages: OLDER, method: "Khen nỗ lực cụ thể",
     title: "Bị bạn chê, buồn",
     situation: "Bé đi học về buồn thiu vì bạn chê bức tranh của bé xấu.",
     behavior: "ỉu xìu, giấu bức tranh sau lưng",
@@ -194,7 +224,7 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "bố mẹ gạt đi \"Kệ nó, có gì đâu mà buồn\"",
   },
   {
-    id: "i_hate_you", pillar: "emotions", ages: OLDER,
+    id: "i_hate_you", pillar: "emotions", ages: OLDER, method: "Gọi tên cảm xúc (Gottman)",
     title: "\"Con ghét mẹ!\"",
     situation: "Bị cấm ăn kem trước bữa tối, bé hét lên \"Con ghét mẹ!\".",
     behavior: "giận đỏ mặt, dậm chân",
@@ -203,22 +233,636 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
     wrongWay: "mẹ phật ý đáp \"Ừ, thế thì thôi\" rồi quay đi, bé càng dậm chân",
   },
   {
-    id: "repair_not_sorry", pillar: "emotions", ages: ALL,
+    id: "repair_not_sorry", pillar: "emotions", ages: ALL, method: "Sửa sai bằng hành động (Kỷ luật tích cực)", needs: ["sibling"],
     title: "Không chịu xin lỗi em",
-    situation: "Bé giành đồ chơi làm em khóc, mẹ bảo xin lỗi thì bé quay mặt đi.",
-    behavior: "bướng, khoanh tay, nhưng liếc nhìn em",
-    technique: "mẹ không ép nói câu xin lỗi, mà hướng dẫn bé \"sửa sai\": hỏi em có đau không, trả lại đồ chơi, cùng em chơi tiếp",
+    situation: "Bé giành chiếc ô tô làm đổ mô hình anh trai vừa xếp, anh buồn thiu; mẹ bảo xin lỗi thì bé quay mặt đi.",
+    behavior: "bướng, khoanh tay, nhưng liếc nhìn anh",
+    technique: "mẹ không ép nói câu xin lỗi, mà hướng dẫn bé \"sửa sai\": hỏi anh có buồn không, trả lại ô tô, cùng anh xếp lại mô hình",
     takeaway: "Dạy con sửa sai bằng hành động, không chỉ ép nói \"xin lỗi\".",
     wrongWay: "mẹ ép bé nói \"xin lỗi\" ngay, bé nói lí nhí cho xong rồi lại giành đồ",
   },
   {
-    id: "first_school_day", pillar: "emotions", ages: ALL,
+    id: "first_school_day", pillar: "emotions", ages: ALL, method: "Kể trước điều sẽ xảy ra",
     title: "Hồi hộp ngày đầu đi học",
     situation: "Tối trước ngày đầu đi học, bé lo lắng không chịu ngủ, nói \"Con không muốn đi học\".",
     behavior: "níu tay bố mẹ, hỏi đi hỏi lại",
     technique: "bố mẹ kể trước cho bé nghe ngày mai sẽ diễn ra thế nào, cùng bé vẽ một \"trái tim dũng cảm\" trong lòng bàn tay để bé nắm lại khi nhớ bố mẹ",
     takeaway: "Kể trước cho con biết điều gì sẽ xảy ra — biết trước là bớt sợ.",
     wrongWay: "bố mẹ nói \"Đi học thì có gì đâu, ngủ ngay!\"",
+  },
+
+  // ─── ⏰ Thói quen & sinh hoạt ─────────────────────────────────────────────
+  {
+    id: "bedtime_stall", pillar: "routines", ages: ALL, method: "Bảng thói quen bằng hình (Kỷ luật tích cực)",
+    title: "Không chịu đi ngủ",
+    situation: "Đến giờ ngủ, bé đòi thêm một truyện, thêm cốc nước, thêm một cái ôm… kéo dài mãi không chịu nằm.",
+    behavior: "mặc cả từng thứ một, nũng nịu \"một cái nữa thôi mà\"",
+    technique: "bố mẹ cùng bé làm \"bảng giờ ngủ\" bằng hình: đánh răng → thay đồ ngủ → một truyện → ôm thật chặt → tắt đèn; bé tự lật từng thẻ, đến thẻ cuối là ngủ",
+    takeaway: "Thói quen bằng hình giúp con tự biết việc tiếp theo — bố mẹ bớt phải nhắc, con bớt mặc cả.",
+    wrongWay: "bố mẹ chiều thêm hết lần này đến lần khác rồi bực bội tắt đèn",
+  },
+  {
+    id: "brush_teeth", pillar: "routines", ages: ALL, method: "Biến việc khó thành trò chơi",
+    title: "Không chịu đánh răng",
+    situation: "Tối nào bé cũng chạy trốn khi thấy bàn chải đánh răng.",
+    behavior: "chạy vòng quanh, che mặt, lắc đầu nguầy nguậy",
+    technique: "bố thi đánh răng cùng bé theo một bài hát hai phút, cho bé \"đánh răng cho gấu bông\" trước, rồi soi gương khoe răng trắng",
+    takeaway: "Biến việc khó thành trò chơi — trẻ hợp tác bằng niềm vui, không phải bằng ép buộc.",
+    wrongWay: "bố mẹ cằn nhằn nhắc đi nhắc lại, bé càng chạy trốn",
+  },
+  {
+    id: "picky_eater", pillar: "routines", ages: ALL, method: "Cho trẻ tham gia chuẩn bị",
+    title: "Kén ăn, không chịu ăn rau",
+    situation: "Bữa tối, bé gạt hết rau sang mép đĩa và nhất quyết không ăn.",
+    behavior: "nhăn mũi, đẩy đĩa ra, nũng nịu \"rau đắng lắm\"",
+    technique: "hôm sau mẹ cho bé cùng nhặt rau, tự chọn rau bỏ vào đĩa mình, đặt tên vui (\"cây súp lơ khủng long\"); không ép, bố mẹ ăn ngon lành làm mẫu",
+    takeaway: "Trẻ dễ ăn món mình được tự tay chuẩn bị — đừng ép, hãy mời con tham gia.",
+    wrongWay: "bố mẹ dỗ \"ăn hết rau thì được kẹo\", hôm sau bé đòi kẹo trước",
+  },
+  {
+    id: "morning_rush", pillar: "routines", ages: OLDER, method: "Lựa chọn có giới hạn (Kỷ luật tích cực)",
+    title: "Sáng nào cũng lề mề",
+    situation: "Sắp muộn học, bé vẫn mải chơi xếp hình, chưa thay đồ.",
+    behavior: "giả vờ không nghe thấy, \"con xếp xong cái này đã\"",
+    technique: "mẹ nói ngắn \"Còn năm phút là mình đi\" và đưa hai lựa chọn \"Con mặc áo xanh hay áo vàng?\", đặt đồng hồ cát cho việc thay đồ",
+    takeaway: "Hai lựa chọn nhỏ thay cho mười lời giục — con thấy mình được quyết định nên làm nhanh hơn.",
+    wrongWay: "mẹ giục liên tục \"Nhanh lên! Nhanh lên!\", bé càng ì ra",
+  },
+  {
+    id: "wash_hands", pillar: "routines", ages: ALL, method: "Một từ nhắc (Faber & Mazlish)",
+    title: "Đi chơi về không chịu rửa tay",
+    situation: "Vừa đi chơi về, bé chạy thẳng tới hộp bánh mà chưa rửa tay.",
+    behavior: "giấu tay sau lưng, cười tinh nghịch",
+    technique: "mẹ chỉ nói một từ \"Tay!\" kèm cử chỉ vui như vòi nước, bé phá lên cười và chạy đi rửa tay",
+    takeaway: "Một từ nhắc nhẹ nhàng hiệu quả hơn một bài giảng dài.",
+    wrongWay: "mẹ giảng một tràng dài về vi khuẩn khi bé đang mải nhìn hộp bánh",
+  },
+  {
+    id: "tidy_toys", pillar: "routines", ages: ALL, method: "Mô tả điều mình thấy (Faber & Mazlish)",
+    title: "Bày bừa không chịu dọn",
+    situation: "Đồ chơi rải khắp phòng khách, bé nằm dài không chịu dọn.",
+    behavior: "nũng nịu \"con mỏi tay lắm\", lăn qua lăn lại",
+    technique: "mẹ mô tả \"Mẹ thấy mấy chiếc ô tô đang lạc khắp sàn, chúng cần về garage\" rồi bật bài hát thi dọn với bé",
+    takeaway: "Mô tả điều con thấy thay vì chê con bừa — trẻ dễ hợp tác khi không bị gán nhãn.",
+    wrongWay: "mẹ nói \"Con bừa bộn quá\", bé dỗi quay đi",
+  },
+  {
+    id: "snack_before_meal", pillar: "routines", ages: ALL, method: "Nói rõ \"khi nào\"",
+    title: "Đòi ăn vặt trước bữa cơm",
+    situation: "Sắp đến giờ cơm, bé đòi ăn bánh quy ngay.",
+    behavior: "ôm hộp bánh, chớp mắt nài nỉ",
+    technique: "mẹ nói \"Bánh ăn sau bữa cơm nhé\", để bé tự đặt bánh vào \"hộp chờ\" nhìn thấy được trên bàn",
+    takeaway: "Nói rõ \"khi nào\" thay vì \"không bao giờ\" — con chờ được khi biết chắc sẽ có.",
+    wrongWay: "mẹ cho ăn bánh cho bé nín, đến bữa bé không ăn cơm",
+  },
+  {
+    id: "mealtime_running", pillar: "routines", ages: ALL, method: "Nói một lần rồi làm (Kỷ luật tích cực)",
+    title: "Ăn cơm chạy khắp nhà",
+    situation: "Đang ăn, bé tụt khỏi ghế chạy đi chơi, mẹ phải bưng bát đuổi theo.",
+    behavior: "chạy vòng quanh bàn, cười khanh khách",
+    technique: "mẹ nhắc một lần \"Bữa ăn ở bàn nhé, con rời bàn là con báo con no rồi\", rồi nhẹ nhàng cất bát khi bé chạy đi; bữa sau bé ngồi yên ăn",
+    takeaway: "Bữa ăn có giờ và có chỗ — nhắc một lần, rồi để hậu quả tự nhiên dạy con.",
+    wrongWay: "mẹ bưng bát chạy theo đút khắp nhà",
+  },
+
+  // ─── 📱 Màn hình & công nghệ ──────────────────────────────────────────────
+  {
+    id: "parent_phone_model", pillar: "screens", ages: OLDER, method: "Bố mẹ làm gương",
+    title: "\"Mẹ cũng xem điện thoại mà!\"",
+    situation: "Mẹ bảo bé tắt máy tính bảng, bé chỉ vào điện thoại trên tay mẹ: \"Mẹ cũng xem mà!\".",
+    behavior: "khoanh tay lý sự, liếc điện thoại của mẹ",
+    technique: "mẹ thừa nhận bé nói đúng, cất điện thoại đi và lập \"giờ không điện thoại\" cho cả nhà trong bữa tối",
+    takeaway: "Muốn con bớt màn hình, bố mẹ làm gương trước — cả nhà cùng có giờ không điện thoại.",
+    wrongWay: "mẹ nói \"Mẹ là người lớn, khác!\" rồi vẫn lướt điện thoại",
+  },
+  {
+    id: "self_timer", pillar: "screens", ages: OLDER, method: "Hẹn giờ do con đặt",
+    title: "Tự tắt khi hết giờ",
+    situation: "Bé xem hoạt hình, mỗi lần hết giờ là cả nhà lại đôi co.",
+    behavior: "xin thêm \"năm phút nữa thôi\"",
+    technique: "bố để bé tự vặn đồng hồ hẹn giờ hai mươi phút; khi chuông reo, bé tự bấm tắt và được bố khen cụ thể",
+    takeaway: "Để con tự đặt giờ và tự tắt — con học tự điều chỉnh thay vì chờ bị nhắc.",
+    wrongWay: "bố mẹ rút điện tivi giữa chừng không báo trước, bé gào lên",
+  },
+  {
+    id: "strange_video", pillar: "screens", ages: OLDER, method: "Ngồi cùng con khi dùng thiết bị",
+    title: "Xem phải video lạ",
+    situation: "Bé đang xem video thì bấm nhầm sang một video lạ, bé ngơ ngác chạy đi tìm mẹ.",
+    behavior: "cầm máy chạy đến, mắt tròn xoe lo lắng",
+    technique: "mẹ khen bé đã đến tìm mẹ ngay, cùng bé tắt video và đặt quy tắc: thấy điều gì lạ thì gọi bố mẹ; từ nay xem ở phòng khách cùng mọi người",
+    takeaway: "Khen con khi con đến tìm bố mẹ, và dạy con: thấy điều gì lạ thì gọi bố mẹ ngay.",
+    wrongWay: "mẹ đưa máy cho bé xem một mình để mẹ làm việc",
+  },
+  {
+    id: "bored_box", pillar: "screens", ages: OLDER, method: "Hộp ý tưởng chơi",
+    title: "Không có điện thoại là kêu chán",
+    situation: "Cuối tuần, bé nằm dài kêu \"chán quá\" và đòi điện thoại.",
+    behavior: "thở dài thườn thượt, lăn qua lăn lại trên sofa",
+    technique: "mẹ cùng bé làm \"hộp hết chán\" với các mảnh giấy ý tưởng (xây lâu đài chăn gối, vẽ, gấp máy bay giấy); bé bốc thăm và hào hứng làm",
+    takeaway: "Chán cũng tốt — một \"hộp ý tưởng\" giúp con tự tìm trò chơi thay vì màn hình.",
+    wrongWay: "bố mẹ đưa ngay điện thoại cho bé hết kêu",
+  },
+  {
+    id: "restaurant_screen", pillar: "screens", ages: ALL, method: "Chuẩn bị trò chơi thay thế",
+    title: "Đi ăn nhà hàng đòi điện thoại",
+    situation: "Vừa ngồi vào bàn nhà hàng, bé đã đòi điện thoại để xem.",
+    behavior: "nũng nịu, kéo tay áo mẹ",
+    technique: "mẹ lấy từ túi ra bút màu và chơi trò \"tìm đồ màu đỏ\" trong nhà hàng, cả nhà cùng chơi trong lúc chờ món",
+    takeaway: "Chuẩn bị sẵn trò chơi nhỏ — bữa ăn ngoài thành giờ trò chuyện của cả nhà.",
+    wrongWay: "bố mẹ đưa điện thoại ngay khi vừa ngồi xuống",
+  },
+  {
+    id: "ad_wants", pillar: "screens", ages: OLDER, method: "Giải thích quảng cáo",
+    title: "Xem quảng cáo là đòi mua",
+    situation: "Xem xong quảng cáo đồ chơi trên tivi, bé chạy tới đòi mua ngay.",
+    behavior: "nhảy cẫng lên, kể lại quảng cáo không ngừng",
+    technique: "bố cùng bé xem lại và hỏi \"Họ muốn mình làm gì nhỉ?\", bé tự nhận ra quảng cáo là để bán hàng",
+    takeaway: "Dạy con nhận ra quảng cáo muốn bán hàng — con bớt bị cuốn theo mỗi thứ nhìn thấy.",
+    wrongWay: "bố mẹ hứa mua để bé thôi đòi",
+  },
+
+  // ─── 🙏 Lễ phép & ứng xử ───────────────────────────────────────────────────
+  {
+    id: "greet_elders", pillar: "manners", ages: ALL, method: "Cho con chọn cách chào",
+    title: "Ngại chào khách",
+    situation: "Có khách đến nhà, bé nấp sau lưng mẹ, không chịu chào.",
+    behavior: "nấp sau lưng mẹ, hé mắt nhìn ra",
+    technique: "mẹ không ép, cho bé chọn cách chào: vẫy tay, khoanh tay hay đập tay; bé chọn đập tay và khách cười, mẹ khen bé",
+    takeaway: "Đừng ép con chào khi con ngại — cho con chọn cách chào, rồi con sẽ tự tin hơn.",
+    wrongWay: "mẹ ép bé chào to trước mặt khách, bé càng nấp kỹ",
+  },
+  {
+    id: "thank_gift", pillar: "manners", ages: OLDER, needs: ["grandma"], method: "Tập trước bằng đóng vai",
+    title: "Nhận quà không thích",
+    situation: "Bà tặng bé một chiếc áo len, bé buột miệng \"Con không thích cái này\".",
+    behavior: "nhăn mặt, đặt quà xuống",
+    technique: "mẹ nhẹ nhàng nói nhỏ với bé về tấm lòng của bà, rồi về nhà cả nhà chơi trò đóng vai \"nhận quà\": cảm ơn tấm lòng người tặng; lần sau bé ôm bà cảm ơn",
+    takeaway: "Tập cho con cảm ơn tấm lòng người tặng — biết ơn quan trọng hơn món quà.",
+    wrongWay: "mẹ trách bé ngay trước mặt bà",
+  },
+  {
+    id: "interrupting", pillar: "manners", ages: OLDER, method: "Tín hiệu im lặng (Kỷ luật tích cực)",
+    title: "Hay ngắt lời người lớn",
+    situation: "Mẹ đang nói chuyện điện thoại, bé liên tục chen vào \"Mẹ ơi, mẹ ơi!\".",
+    behavior: "kéo tay mẹ, nhảy lên nhảy xuống",
+    technique: "bố mẹ dạy bé \"tín hiệu bí mật\": bé đặt tay lên tay mẹ, mẹ nắm lại tay bé báo \"mẹ biết rồi\", nói xong quay sang bé ngay",
+    takeaway: "Một tín hiệu bí mật giúp con chờ đến lượt mà không thấy bị bỏ rơi.",
+    wrongWay: "mẹ vừa nói chuyện vừa xua tay \"Đợi đấy!\"",
+  },
+  {
+    id: "magic_words", pillar: "manners", ages: ALL, method: "Làm mẫu và nhắc vui",
+    title: "\"Đưa đây!\" thay vì \"Con xin\"",
+    situation: "Bé chỉ vào hộp sữa và ra lệnh \"Đưa đây!\".",
+    behavior: "chìa tay, mặt nghiêm như một ông chủ nhỏ",
+    technique: "mẹ giả vờ ngơ ngác \"Ơ, mẹ chưa nghe thấy từ phép màu\", bé cười và nói \"Con xin mẹ ạ\"; mẹ luôn nói \"cảm ơn con\" làm mẫu",
+    takeaway: "Trẻ học lễ phép từ cách bố mẹ nói với con mỗi ngày.",
+    wrongWay: "mẹ đưa luôn khi bé ra lệnh",
+  },
+  {
+    id: "restaurant_running", pillar: "manners", ages: ALL, method: "Nói điều được làm",
+    title: "Chạy nhảy trong quán ăn",
+    situation: "Ở quán ăn, bé chạy quanh các bàn.",
+    behavior: "chạy lon ton, cười khúc khích",
+    technique: "bố nói \"Ở đây mình đi chậm như chú rùa\" và giao bé việc giúp: xếp giấy ăn, chọn món tráng miệng",
+    takeaway: "Nói điều con nên làm thay vì điều bị cấm — trẻ làm theo dễ hơn.",
+    wrongWay: "bố mẹ liên tục \"Không được! Không được!\", bé càng chạy",
+  },
+  {
+    id: "curious_comment", pillar: "manners", ages: OLDER, method: "Hỏi nhỏ, nói lời tử tế",
+    title: "Nhận xét to về người lạ",
+    situation: "Ở công viên, bé chỉ một cụ già đi chậm và hỏi to \"Sao ông kia đi chậm thế?\".",
+    behavior: "tò mò thật thà, giọng to",
+    technique: "mẹ ngồi xuống nói nhỏ với bé rằng mỗi người một khác, chân của ông có thể đang đau; dạy bé hỏi nhỏ với bố mẹ và nói lời tử tế; bé vẫy chào ông",
+    takeaway: "Khi con tò mò về người khác, dạy con hỏi nhỏ và nói lời tử tế.",
+    wrongWay: "mẹ kéo bé đi vội, không giải thích gì",
+  },
+  {
+    id: "indoor_voice", pillar: "manners", ages: ALL, method: "Giọng nói theo từng nơi",
+    title: "Nói to nơi công cộng",
+    situation: "Trong thư viện, bé hào hứng nói to khiến mọi người quay lại.",
+    behavior: "reo lên khi thấy cuốn sách thích",
+    technique: "mẹ chơi trò \"giọng thư viện, giọng sân chơi\": mẹ thì thầm, bé thì thầm theo, cả hai cười khúc khích",
+    takeaway: "Dạy con \"giọng phù hợp từng nơi\" bằng trò chơi thì thầm.",
+    wrongWay: "mẹ \"suỵt\" liên tục, bé càng nói to",
+  },
+
+  // ─── 🧒 Tự lập & kỹ năng sống ─────────────────────────────────────────────
+  {
+    id: "dress_self", pillar: "independence", ages: ALL, method: "Giúp con tự làm (Montessori)",
+    title: "Đòi tự mặc đồ, mặc ngược",
+    situation: "Bé đòi tự mặc áo và mặc ngược nhưng vô cùng tự hào.",
+    behavior: "ưỡn ngực khoe \"con tự mặc đấy\"",
+    technique: "mẹ không sửa ngay, khen nỗ lực, tối hôm trước chuẩn bị sẵn hai bộ cho bé chọn và chỉ bé mẹo nhìn nhãn áo",
+    takeaway: "Cho con thời gian tự làm — một chiếc áo mặc ngược là bài học tự lập rất đẹp.",
+    wrongWay: "mẹ cởi ra mặc lại cho nhanh, bé xị mặt",
+  },
+  {
+    id: "pour_water", pillar: "independence", ages: ALL, method: "Môi trường vừa tay (Montessori)",
+    title: "Tự rót nước làm đổ",
+    situation: "Bé đòi tự rót nước và làm đổ ra bàn.",
+    behavior: "đứng sững, nhìn mẹ chờ phản ứng",
+    technique: "mẹ bình tĩnh đưa khăn cho bé tự lau, rồi chuẩn bị một bình nhỏ vừa tay để bé tập rót",
+    takeaway: "Đưa con chiếc khăn thay vì lời trách — làm đổ là một phần của học tự lập.",
+    wrongWay: "mẹ cấm \"Để mẹ làm, con làm đổ hết\"",
+  },
+  {
+    id: "help_cook", pillar: "independence", ages: OLDER, method: "Giao việc vừa sức",
+    title: "Đòi phụ mẹ nấu ăn",
+    situation: "Mẹ đang chuẩn bị bữa tối, bé đòi \"Con làm với!\".",
+    behavior: "kéo ghế, đứng cạnh mẹ háo hức",
+    technique: "mẹ giao bé việc vừa sức, an toàn: rửa rau trong chậu, bóc trứng luộc, xếp đĩa; bé tự hào bưng đĩa rau ra bàn",
+    takeaway: "Giao con việc vừa sức trong bếp — con thấy mình có ích và ăn ngon hơn.",
+    wrongWay: "mẹ bảo \"Ra chơi đi, vướng chân mẹ\"",
+  },
+  {
+    id: "pack_bag", pillar: "independence", ages: ["school"], method: "Danh sách bằng hình",
+    title: "Quên đồ đi học",
+    situation: "Bé lại quên bình nước ở nhà, gọi điện nhờ mẹ mang lên.",
+    behavior: "giọng mếu máo qua điện thoại",
+    technique: "mẹ không mang lên mà an ủi; tối đó cùng bé dán danh sách bằng hình cạnh cửa để bé tự soạn cặp mỗi tối",
+    takeaway: "Để con tự chịu trách nhiệm với đồ của mình — một lần quên nhỏ dạy nhiều hơn mười lần nhắc.",
+    wrongWay: "mẹ ngày nào cũng soạn cặp hộ",
+  },
+  {
+    id: "feed_self", pillar: "independence", ages: ["toddler"], method: "Tự phục vụ (Montessori)",
+    title: "Đòi tự xúc cơm",
+    situation: "Bé giành thìa đòi tự xúc, cơm rơi vãi khắp bàn.",
+    behavior: "nắm chặt thìa, mặt quyết tâm",
+    technique: "mẹ trải khăn dưới ghế, để bé tự xúc và cổ vũ từng thìa vào miệng",
+    takeaway: "Rơi vãi hôm nay là đôi tay khéo léo ngày mai.",
+    wrongWay: "mẹ lấy lại thìa để đút cho nhanh",
+  },
+  {
+    id: "water_plants", pillar: "independence", ages: ALL, method: "Việc thực hành đời sống (Montessori)",
+    title: "Chậu cây của con",
+    situation: "Bé thấy bố tưới cây và cũng muốn làm.",
+    behavior: "cầm bình tưới nhỏ, mắt sáng lên",
+    technique: "bố giao cho bé một chậu cây \"của riêng con\", mỗi sáng bé tưới và kể cây lớn thêm bao nhiêu",
+    takeaway: "Một nhiệm vụ nhỏ của riêng con giúp con học trách nhiệm mỗi ngày.",
+    wrongWay: "bố tự làm hết vì \"con còn nhỏ\"",
+  },
+  {
+    id: "fold_clothes", pillar: "independence", ages: OLDER, method: "Không làm lại việc con vừa làm",
+    title: "Phụ mẹ gấp quần áo",
+    situation: "Bé gấp quần áo giúp mẹ, gấp xấu nhưng rất hăng hái.",
+    behavior: "vuốt phẳng từng chiếc, khoe mẹ",
+    technique: "mẹ khen sự cố gắng, không gấp lại trước mặt bé, chỉ bé thêm một mẹo nhỏ cho chiếc tiếp theo",
+    takeaway: "Đừng làm lại việc con vừa làm — khen sự cố gắng, con sẽ muốn làm tiếp.",
+    wrongWay: "mẹ gấp lại ngay trước mặt bé, bé thôi không giúp nữa",
+  },
+  {
+    id: "try_first", pillar: "independence", ages: OLDER, method: "Hỏi trước khi giúp",
+    title: "Gặp khó là gọi mẹ",
+    situation: "Bé không mở được hộp bút, gọi ầm lên \"Mẹ mở cho con!\".",
+    behavior: "đưa hộp cho mẹ, nũng nịu",
+    technique: "mẹ hỏi \"Con đã thử những cách nào rồi?\", gợi ý một chút, bé tự mở được và reo lên",
+    takeaway: "Hỏi \"con thử cách nào chưa?\" trước khi giúp — con học tự giải quyết vấn đề.",
+    wrongWay: "mẹ mở hộ ngay lập tức",
+  },
+
+  // ─── 🤝 Bạn bè & anh chị em ────────────────────────────────────────────────
+  {
+    id: "sibling_seat", pillar: "social", ages: OLDER, needs: ["sibling"], method: "Tập trung vào giải pháp (Kỷ luật tích cực)",
+    title: "Tranh nhau chỗ ngồi",
+    situation: "Bé và anh trai giành nhau chỗ ngồi cạnh cửa sổ trên sofa.",
+    behavior: "ôm chặt gối, cãi \"chỗ của con\"",
+    technique: "bố không phân xử, hỏi \"Các con nghĩ cách nào công bằng?\"; hai anh em tự đề xuất luân phiên mỗi ngày",
+    takeaway: "Khi anh em tranh giành, hãy để các con tự nghĩ cách công bằng — con học giải quyết mâu thuẫn.",
+    wrongWay: "bố phân xử ngay \"Anh lớn thì nhường em\"",
+  },
+  {
+    id: "ask_to_borrow", pillar: "social", ages: ALL, needs: ["friend"], method: "Dạy câu nói thay cho hành động",
+    title: "Giành đồ chơi của bạn",
+    situation: "Bạn đến chơi, bé thích chiếc ô tô của bạn và định lấy luôn.",
+    behavior: "với tay, nhăn mặt quyết tâm",
+    technique: "mẹ ngồi xuống, dạy bé câu \"Cho tớ mượn khi cậu chơi xong nhé\"; bé thử nói và bạn gật đầu",
+    takeaway: "Dạy con câu nói để xin thay vì giành — trẻ cần được dạy từng câu cụ thể.",
+    wrongWay: "mẹ trách bé trước mặt bạn",
+  },
+  {
+    id: "left_out", pillar: "social", ages: OLDER, method: "Lắng nghe và tập cách tham gia",
+    title: "Bạn không cho chơi cùng",
+    situation: "Bé đi học về buồn thiu vì nhóm bạn không cho chơi cùng.",
+    behavior: "ỉu xìu, ôm gối ngồi một góc",
+    technique: "bố lắng nghe trọn vẹn, rồi đóng vai tập cách hỏi \"Tớ làm người gác cổng được không?\"; bé tập vài lần và cười tươi",
+    takeaway: "Lắng nghe nỗi buồn của con, rồi cùng con tập cách tham gia vào nhóm bạn.",
+    wrongWay: "bố nói \"Kệ chúng nó, chơi một mình cũng được\"",
+  },
+  {
+    id: "new_friend", pillar: "social", ages: ALL, needs: ["friend"], method: "Bố mẹ làm cây cầu",
+    title: "Ngại làm quen bạn mới",
+    situation: "Ở sân chơi, bé đứng nhìn một bạn đang xây lâu đài cát mà không dám lại gần.",
+    behavior: "níu tay mẹ, nhìn trộm",
+    technique: "mẹ cùng bé lại gần, khen lâu đài của bạn, hỏi bạn tên gì, rồi lùi lại để hai bé cùng chơi",
+    takeaway: "Bố mẹ làm cây cầu đầu tiên, rồi lùi lại để con tự kết bạn.",
+    wrongWay: "mẹ đẩy bé lên \"Ra chơi đi, nhát thế\"",
+  },
+  {
+    id: "tattling", pillar: "social", ages: OLDER, needs: ["sibling"], method: "Phân biệt \"mách\" và \"báo\"",
+    title: "Mách lẻo liên tục",
+    situation: "Cứ năm phút bé lại chạy đến \"Mẹ ơi anh lấy bút của con!\".",
+    behavior: "chống nạnh, chỉ tay về phía anh",
+    technique: "mẹ hỏi \"Con đã thử nói với anh chưa?\" và dạy bé phân biệt: \"báo\" là để giúp ai đó an toàn, còn chuyện nhỏ thì tự nói với nhau trước",
+    takeaway: "Dạy con phân biệt \"mách\" và \"báo\" — và khuyến khích con tự nói chuyện trước.",
+    wrongWay: "mẹ trách anh ngay theo lời bé, hai anh em cãi to hơn",
+  },
+  {
+    id: "showing_off", pillar: "social", ages: OLDER, needs: ["friend"], method: "Đặt mình vào vị trí bạn",
+    title: "Khoe đồ chơi mới",
+    situation: "Bé khoe mãi chiếc xe mới với bạn, không cho bạn chạm vào, bạn buồn.",
+    behavior: "giơ cao chiếc xe, vênh mặt",
+    technique: "mẹ hỏi nhỏ \"Con nghĩ bạn đang thấy thế nào?\"; bé nhìn bạn, rồi rủ bạn chơi cùng",
+    takeaway: "Một câu hỏi \"bạn thấy thế nào?\" giúp con học đặt mình vào vị trí người khác.",
+    wrongWay: "mẹ nói \"Đừng khoe nữa!\" rồi thôi",
+  },
+  {
+    id: "gentle_with_baby", pillar: "social", ages: ALL, needs: ["baby"], method: "Chỉ cách làm đúng",
+    title: "Chơi mạnh tay với em bé",
+    situation: "Em bé đang ngồi trong lòng mẹ, bé thương em nên ôm em thật chặt khiến em mếu máo.",
+    behavior: "ngơ ngác, sợ hãi nhìn mẹ",
+    technique: "mẹ hướng dẫn \"chạm nhẹ như chạm bông hoa\", cầm tay bé vuốt nhẹ tay em, khen khi bé nhẹ nhàng; em cười",
+    takeaway: "Thay vì chỉ nói \"đừng\", hãy chỉ cho con cách làm đúng.",
+    wrongWay: "mẹ hốt hoảng bế em ra và nói \"Không được động vào em!\"",
+  },
+
+  // ─── 💡 Trung thực & trách nhiệm ──────────────────────────────────────────
+  {
+    id: "keep_promise", pillar: "honesty", ages: OLDER, method: "Bố mẹ giữ lời trước",
+    title: "Bố hứa rồi quên",
+    situation: "Bố hứa đưa bé đi công viên nhưng lại bận, bé buồn nhắc \"Bố hứa rồi mà\".",
+    behavior: "đứng chờ ở cửa, mắt rưng rưng",
+    technique: "bố xin lỗi thật lòng, hẹn một giờ cụ thể và giữ đúng lời; bé reo lên khi bố đúng hẹn",
+    takeaway: "Con học giữ lời hứa từ việc bố mẹ giữ lời với con.",
+    wrongWay: "bố nói \"Để lúc khác\" mãi",
+  },
+  {
+    id: "found_money", pillar: "honesty", ages: OLDER, method: "Hỏi \"nếu là con thì sao?\"",
+    title: "Nhặt được tiền rơi",
+    situation: "Ở siêu thị, bé nhặt được tờ tiền rơi dưới sàn, mắt sáng lên định cất vào túi.",
+    behavior: "hào hứng giơ tờ tiền",
+    technique: "mẹ hỏi \"Nếu con làm rơi thì con muốn thế nào?\"; bé nghĩ một lúc rồi cùng mẹ mang đến quầy thu ngân",
+    takeaway: "Hỏi \"nếu là con thì sao?\" giúp con tự chọn điều đúng.",
+    wrongWay: "mẹ nói \"Nhặt được thì của mình\"",
+  },
+  {
+    id: "pet_fish", pillar: "honesty", ages: OLDER, method: "Bảng trách nhiệm",
+    title: "Đòi nuôi cá rồi quên cho ăn",
+    situation: "Bé đòi nuôi cá vàng, được vài hôm thì quên cho cá ăn.",
+    behavior: "giật mình nhớ ra, lo lắng nhìn bể cá",
+    technique: "bố cùng bé làm bảng tích mỗi ngày đã cho cá ăn, treo cạnh bể; bé tự tích và khoe",
+    takeaway: "Nuôi thú cưng là cơ hội tuyệt vời để con học trách nhiệm mỗi ngày.",
+    wrongWay: "mẹ lặng lẽ cho ăn hộ mãi",
+  },
+  {
+    id: "lost_borrowed", pillar: "honesty", ages: ["school"], method: "Nhận lỗi và đền bù",
+    title: "Làm mất bút của bạn",
+    situation: "Bé mượn bút của bạn rồi làm mất, về nhà lo lắng không dám nói.",
+    behavior: "lí nhí, cúi gằm mặt",
+    technique: "mẹ cảm ơn bé đã kể, cùng bé nghĩ cách đền: dùng tiền tiết kiệm mua bút mới và viết một tấm thiệp xin lỗi bạn",
+    takeaway: "Dạy con sửa sai: nhận lỗi và cùng tìm cách đền bù.",
+    wrongWay: "bố mẹ mua bút đền hộ, bé không phải làm gì",
+  },
+  {
+    id: "finish_puzzle", pillar: "honesty", ages: OLDER, method: "Chia việc lớn thành việc nhỏ",
+    title: "Bỏ dở giữa chừng",
+    situation: "Bé bỏ dở bức xếp hình một trăm mảnh, kêu \"khó quá, con không chơi nữa\".",
+    behavior: "đẩy các mảnh ghép ra, chán nản",
+    technique: "bố cùng bé chia nhỏ: \"Hôm nay mình làm phần bầu trời thôi\"; bé làm xong phần đó và muốn làm tiếp",
+    takeaway: "Chia việc lớn thành việc nhỏ — con học kiên trì từng bước.",
+    wrongWay: "bố xếp hộ cho xong",
+  },
+  {
+    id: "blame_sibling", pillar: "honesty", ages: OLDER, needs: ["sibling"], method: "Sửa sai thay vì tìm thủ phạm",
+    title: "Đổ lỗi cho anh",
+    situation: "Bé làm đổ cốc nước, vội nói \"Tại anh đấy!\".",
+    behavior: "chỉ tay sang anh, mắt đảo",
+    technique: "mẹ không truy hỏi ai làm, mà hỏi \"Mình làm gì để sửa nhỉ?\"; bé lấy khăn cùng lau, rồi tự nhận \"Con làm đổ ạ\"",
+    takeaway: "Tập trung vào sửa sai thay vì tìm thủ phạm — con sẽ dám nhận lỗi.",
+    wrongWay: "mẹ truy hỏi mãi ai làm, hai anh em cãi nhau",
+  },
+  {
+    id: "family_meeting", pillar: "honesty", ages: ALL, method: "Họp gia đình (Kỷ luật tích cực)",
+    title: "Việc nhà của cả nhà",
+    situation: "Cuối tuần, việc nhà dồn hết cho mẹ, bé thì mải chơi.",
+    behavior: "tò mò ngồi vào \"cuộc họp\"",
+    technique: "cả nhà họp ngắn, mỗi người tự chọn một việc; bé chọn xếp dép ngay ngắn và được cả nhà vỗ tay",
+    takeaway: "Một buổi họp gia đình nhỏ giúp con thấy mình là thành viên quan trọng.",
+    wrongWay: "bố mẹ phân việc bằng mệnh lệnh",
+  },
+
+  // ─── 🌱 Tự tin & tư duy phát triển ────────────────────────────────────────
+  {
+    id: "not_yet", pillar: "confidence", ages: OLDER, method: "Sức mạnh của chữ \"chưa\" (Dweck)",
+    title: "\"Con không làm được đâu!\"",
+    situation: "Bé tập buộc dây giày mãi không được, ném giày xuống.",
+    behavior: "mếu máo, khoanh tay",
+    technique: "mẹ thêm chữ \"chưa\": \"Con chưa làm được thôi\", chỉ bé bước nhỏ đầu tiên (làm tai thỏ), bé làm được một bước và cười",
+    takeaway: "Thêm chữ \"chưa\" vào câu \"con không làm được\" — con học rằng cố gắng sẽ tiến bộ.",
+    wrongWay: "mẹ buộc hộ luôn cho bé đỡ khóc",
+  },
+  {
+    id: "afraid_mistakes", pillar: "confidence", ages: ["school"], method: "Bố mẹ kể về lỗi sai của mình",
+    title: "Sợ viết sai không dám viết",
+    situation: "Bé ngồi trước trang vở mà không dám viết vì sợ sai.",
+    behavior: "cầm bút lơ lửng, liếc nhìn bố dò hỏi",
+    technique: "bố kể chuyện hồi nhỏ bố cũng viết sai rất nhiều, đưa bé chiếc tẩy \"thần kỳ\" và bảo sai thì sửa; bé viết chữ đầu tiên",
+    takeaway: "Kể cho con nghe về lỗi sai của bố mẹ — con biết sai là một phần của học.",
+    wrongWay: "bố chê \"Sao viết xấu thế\"",
+  },
+  {
+    id: "best_in_class", pillar: "confidence", ages: OLDER, method: "So với chính mình hôm qua",
+    title: "\"Con giỏi nhất lớp đúng không?\"",
+    situation: "Bé khoe bức tranh và hỏi \"Con vẽ đẹp nhất lớp đúng không mẹ?\".",
+    behavior: "chờ đợi, mắt long lanh",
+    technique: "mẹ hỏi bé thích điều gì nhất ở bức tranh, rồi đặt cạnh bức tranh tháng trước để bé tự thấy mình tiến bộ",
+    takeaway: "Giúp con so sánh với chính mình hôm qua, không phải với bạn bè.",
+    wrongWay: "mẹ đáp \"Đúng, con giỏi nhất!\"",
+  },
+  {
+    id: "bike_brave", pillar: "confidence", ages: OLDER, method: "Ăn mừng bước tiến nhỏ",
+    title: "Sợ tập xe đạp",
+    situation: "Bé sợ ngã, không dám đạp chiếc xe đạp mới.",
+    behavior: "bám chặt tay bố, lắc đầu",
+    technique: "bố chia nhỏ từng bước (ngồi lên, đẩy chân, đạp ba vòng) và ăn mừng mỗi bước; bé đạp được ba vòng và hét lên sung sướng",
+    takeaway: "Ăn mừng từng bước nhỏ — sự dũng cảm lớn lên từ những thành công nhỏ.",
+    wrongWay: "bố nói \"Có gì đâu mà sợ, đạp đi!\"",
+  },
+  {
+    id: "stage_fright", pillar: "confidence", ages: OLDER, method: "Sân khấu an toàn ở nhà",
+    title: "Ngại biểu diễn trước lớp",
+    situation: "Mai bé phải hát trước lớp, tối nay bé lo lắng nói không muốn đi.",
+    behavior: "nấp sau rèm, nói lí nhí",
+    technique: "cả nhà làm \"sân khấu phòng khách\": bố mẹ làm khán giả cổ vũ, bé tập hát vài lần và cúi chào trong tiếng vỗ tay",
+    takeaway: "Cho con một sân khấu an toàn ở nhà trước khi bước ra sân khấu thật.",
+    wrongWay: "mẹ ép bé hát trước mặt khách",
+  },
+  {
+    id: "no_prize", pillar: "confidence", ages: ["school"], method: "Tự hào về quá trình",
+    title: "Không được giải",
+    situation: "Bé không được giải trong cuộc thi vẽ, về nhà buồn bã.",
+    behavior: "giấu bức tranh, mắt cụp xuống",
+    technique: "bố hỏi bé đã cố gắng ở đâu nhất, rồi treo bức tranh lên \"phòng triển lãm nhà mình\"; bé kể say sưa",
+    takeaway: "Giúp con tự hào về quá trình, không chỉ về kết quả.",
+    wrongWay: "bố nói \"Lần sau phải được giải nhé\"",
+  },
+
+  // ─── 💞 Yêu thương & biết ơn ──────────────────────────────────────────────
+  {
+    id: "mom_tired", pillar: "empathy", ages: OLDER, method: "Nói thật cảm xúc của mình (Faber & Mazlish)",
+    title: "Mẹ mệt, bé đòi chơi",
+    situation: "Mẹ đi làm về rất mệt, bé kéo tay mẹ đòi chơi ngay.",
+    behavior: "nũng nịu kéo tay, nhảy tưng tưng",
+    technique: "mẹ ngồi xuống nói thật \"Mẹ đang mệt, mẹ cần nghỉ mười phút rồi chơi với con\"; bé mang gối cho mẹ và ngồi vẽ cạnh mẹ",
+    takeaway: "Nói thật cảm xúc của bố mẹ — con học quan tâm đến người khác.",
+    wrongWay: "mẹ cố chơi tiếp dù mệt rồi bực bội bất ngờ",
+  },
+  {
+    id: "card_for_grandma", pillar: "empathy", ages: ALL, needs: ["grandma"], method: "Biết ơn bằng hành động",
+    title: "Làm thiệp tặng bà",
+    situation: "Sắp sinh nhật bà, bé hỏi mẹ nên tặng bà gì.",
+    behavior: "nghĩ ngợi, chống cằm",
+    technique: "mẹ cùng bé vẽ một tấm thiệp kể điều bé thích nhất ở bà; bà mở thiệp và xúc động ôm bé",
+    takeaway: "Lòng biết ơn được nuôi lớn bằng những hành động nhỏ, cụ thể.",
+    wrongWay: "mẹ mua sẵn quà và bảo bé cầm đưa",
+  },
+  {
+    id: "gratitude_dinner", pillar: "empathy", ages: ALL, method: "Nghi thức gia đình mỗi tối",
+    title: "Điều vui nhất hôm nay",
+    situation: "Bữa tối, mọi người ăn im lặng, mỗi người một suy nghĩ.",
+    behavior: "hào hứng giơ tay muốn kể trước",
+    technique: "bố bắt đầu trò \"điều vui nhất hôm nay\": mỗi người kể một điều mình biết ơn; bé kể \"con vui vì bố về sớm\"",
+    takeaway: "Một nghi thức nhỏ mỗi tối giúp con quen nhìn thấy điều tốt đẹp.",
+    wrongWay: "bữa tối ai cũng nhìn điện thoại",
+  },
+  {
+    id: "comfort_baby", pillar: "empathy", ages: ALL, needs: ["baby"], method: "Đặt mình vào vị trí người khác (CASEL)",
+    title: "An ủi em khi em khóc",
+    situation: "Em bé quấy khóc trong lòng mẹ, bé lớn bịt tai kêu \"ồn quá\".",
+    behavior: "nhăn mặt, rồi tò mò nhìn em",
+    technique: "mẹ hỏi \"Con nghĩ em đang thấy thế nào? Mình làm gì cho em vui nhỉ?\"; bé mang gấu bông lại và làm mặt xấu, em nín và cười",
+    takeaway: "Hỏi con \"người kia đang cảm thấy gì\" — con học đồng cảm từ những câu hỏi nhỏ.",
+    wrongWay: "mẹ nói \"Kệ em, con ra chỗ khác chơi\"",
+  },
+  {
+    id: "donate_toys", pillar: "empathy", ages: OLDER, method: "Để con tự chọn chia sẻ",
+    title: "Tặng đồ chơi cũ",
+    situation: "Mẹ rủ bé chọn đồ chơi cũ để tặng các bạn nhỏ vùng khó khăn.",
+    behavior: "phân vân, ôm khư khư con gấu",
+    technique: "mẹ để bé tự quyết món nào muốn tặng; bé giữ con gấu nhưng tự chọn ba món khác và tự tay gói lại",
+    takeaway: "Để con tự chọn món đồ để chia sẻ — lòng tốt tự nguyện mới bền lâu.",
+    wrongWay: "mẹ tự đem cho đồ chơi của bé mà không hỏi",
+  },
+  {
+    id: "help_grandpa", pillar: "empathy", ages: OLDER, needs: ["grandpa"], method: "Khen đúng hành động tử tế",
+    title: "Giúp ông xách đồ",
+    situation: "Ông đi chợ về xách nhiều đồ, bé chạy ra giúp ông cầm túi rau nhẹ.",
+    behavior: "gồng mình bê túi, mặt tự hào",
+    technique: "ông cảm ơn, bố khen cụ thể \"Con thấy ông mệt nên giúp ông, bố tự hào lắm\"",
+    takeaway: "Khen đúng hành động tử tế — con sẽ muốn lặp lại điều tốt.",
+    wrongWay: "bố không để ý, bé lặng lẽ đi chơi",
+  },
+
+  // ─── 🛡️ An toàn (tập bằng trò chơi ở nhà) ─────────────────────────────────
+  {
+    id: "lost_drill", pillar: "safety", ages: OLDER, method: "Diễn tập bằng trò chơi",
+    title: "Nếu con bị lạc",
+    situation: "Sau một lần suýt lạc ở siêu thị, cả nhà chơi trò \"nếu bị lạc thì làm gì\" ở phòng khách.",
+    behavior: "nghiêm túc tập, rồi cười khúc khích",
+    technique: "bố mẹ tập cùng bé ba bước: đứng yên, tìm cô thu ngân hoặc chú bảo vệ, nói tên bố mẹ; bé tập vài lần và được khen",
+    takeaway: "Diễn tập trước bằng trò chơi — khi cần, con sẽ biết phải làm gì.",
+    wrongWay: "bố mẹ chỉ dặn \"Đừng đi lung tung\" mà không tập",
+  },
+  {
+    id: "stranger_role_play", pillar: "safety", ages: OLDER, method: "Đóng vai tập nói \"không\"",
+    title: "Người lạ cho quà",
+    situation: "Ở phòng khách, bố đội một chiếc mũ ngộ nghĩnh đóng vai \"chú lạ\" mời bé ăn kẹo để cả nhà tập.",
+    behavior: "lúc đầu định cầm kẹo, rồi nhớ ra và lắc đầu",
+    technique: "bé tập nói \"Con phải hỏi bố mẹ đã\" và chạy về phía mẹ; cả nhà vỗ tay, chơi lại vài lần cho thuộc",
+    takeaway: "Tập cho con câu \"con phải hỏi bố mẹ\" bằng trò chơi đóng vai, không làm con sợ.",
+    wrongWay: "bố mẹ chỉ nói những câu làm bé sợ mà không tập cách làm",
+  },
+  {
+    id: "phone_song", pillar: "safety", ages: ["school"], method: "Biến thành bài hát",
+    title: "Thuộc số điện thoại bố mẹ",
+    situation: "Mẹ muốn bé thuộc số điện thoại của mẹ.",
+    behavior: "nhẩm sai, cười ngượng",
+    technique: "cả nhà đặt số điện thoại thành một bài hát vui có vỗ tay; bé hát thuộc làu",
+    takeaway: "Một bài hát vui giúp con thuộc số điện thoại của bố mẹ.",
+    wrongWay: "mẹ bắt bé học thuộc như bài kiểm tra",
+  },
+  {
+    id: "hold_hands_road", pillar: "safety", ages: ALL, method: "Quy tắc ngắn, nhất quán",
+    title: "Qua đường phải nắm tay",
+    situation: "Ra đến vỉa hè, bé đòi tự đi không nắm tay.",
+    behavior: "rụt tay lại, muốn chạy trước",
+    technique: "bố mẹ dùng một quy tắc ngắn lặp lại mỗi lần: \"Đường to là tay nắm tay\"; bé tự đưa tay ra và được khen",
+    takeaway: "Một quy tắc ngắn, lặp lại mỗi lần — an toàn trở thành thói quen của con.",
+    wrongWay: "lúc nắm tay lúc không, bé không biết khi nào phải nắm",
+  },
+  {
+    id: "door_knock", pillar: "safety", ages: OLDER, method: "Đóng vai tập trước",
+    title: "Có người gõ cửa",
+    situation: "Cả nhà chơi trò tập \"có người gõ cửa thì làm gì\".",
+    behavior: "chạy ra cửa, rồi dừng lại nhớ quy tắc",
+    technique: "bố gõ cửa đóng vai người lạ, bé tập gọi to \"Mẹ ơi có người!\" thay vì tự mở; mẹ khen và cả nhà đổi vai",
+    takeaway: "Tập trước bằng đóng vai để con nhớ: chỉ mở cửa khi có bố mẹ.",
+    wrongWay: "bố mẹ chỉ dặn một lần rồi thôi",
+  },
+
+  // ─── 📚 Học tập & tò mò ────────────────────────────────────────────────────
+  {
+    id: "endless_why", pillar: "learning", ages: ALL, method: "Hỏi lại để con suy nghĩ",
+    title: "Hỏi \"tại sao\" không ngừng",
+    situation: "Bé hỏi \"tại sao trời mưa?\", rồi \"tại sao có mây?\", rồi \"tại sao…\" liên tục.",
+    behavior: "mắt tròn xoe, hỏi dồn dập",
+    technique: "mẹ hỏi lại \"Con nghĩ vì sao?\", nghe bé đoán rồi cùng mở sách tranh tìm câu trả lời",
+    takeaway: "Đáp câu hỏi của con bằng một câu hỏi — con học cách tự suy nghĩ.",
+    wrongWay: "mẹ trả lời qua loa \"Vì thế đấy\"",
+  },
+  {
+    id: "writing_practice", pillar: "learning", ages: ["school"], method: "Chia nhỏ thời gian + cho chọn",
+    title: "Không chịu tập viết",
+    situation: "Đến giờ tập viết, bé nằm bò ra bàn than \"chán lắm\".",
+    behavior: "thở dài, vẽ nguệch ngoạc",
+    technique: "bố chia mười phút, cho bé chọn bút màu và chỗ ngồi, khen cụ thể nét chữ đẹp nhất",
+    takeaway: "Chia nhỏ thời gian và cho con quyền chọn — việc học bớt thành cuộc chiến.",
+    wrongWay: "bố ngồi canh và chê từng chữ",
+  },
+  {
+    id: "read_together", pillar: "learning", ages: ALL, method: "Đọc tương tác — serve & return (Harvard)",
+    title: "Giờ đọc truyện cùng bố",
+    situation: "Bé mang cuốn truyện đến, bố đang mải xem điện thoại.",
+    behavior: "chen vào lòng bố, giơ cuốn truyện",
+    technique: "bố cất điện thoại, vừa đọc vừa hỏi \"Con đoán xem chuyện gì xảy ra tiếp?\", bé làm giọng nhân vật",
+    takeaway: "Mười lăm phút đọc truyện cùng nhau mỗi ngày là món quà lớn cho con.",
+    wrongWay: "bố vừa đọc vừa xem điện thoại",
+  },
+  {
+    id: "one_thing", pillar: "learning", ages: OLDER, method: "Một việc một lúc",
+    title: "Làm gì cũng bỏ dở",
+    situation: "Bé đang tô màu thì chạy đi xếp hình, rồi lại chạy đi xem tivi.",
+    behavior: "chạy từ góc này sang góc kia",
+    technique: "mẹ dọn bàn chỉ để một việc, đặt đồng hồ cát, khen khi bé làm xong một việc trọn vẹn",
+    takeaway: "Một không gian gọn và một việc một lúc giúp con tập trung.",
+    wrongWay: "mẹ để bé làm bài cạnh tivi đang bật",
+  },
+  {
+    id: "plant_seeds", pillar: "learning", ages: ALL, method: "Cho phép khám phá",
+    title: "Muốn nghịch đất",
+    situation: "Bé muốn đào đất trong chậu cây ngoài ban công.",
+    behavior: "tay lấm lem, cười tít mắt",
+    technique: "mẹ cho bé mặc áo cũ, cùng gieo hạt đậu và mỗi ngày quan sát mầm lớn",
+    takeaway: "Cho con lấm bẩn để khám phá — tò mò là động cơ học tập mạnh nhất.",
+    wrongWay: "mẹ cấm \"Bẩn hết bây giờ\"",
+  },
+  {
+    id: "count_everyday", pillar: "learning", ages: ["toddler", "young"], method: "Học qua đời sống",
+    title: "Học đếm mỗi ngày",
+    situation: "Bé đếm sai khi chia kẹo cho cả nhà.",
+    behavior: "đếm ngón tay, lẩm bẩm",
+    technique: "mẹ cùng bé đếm bậc cầu thang, đếm bát đũa khi dọn bàn, chia kẹo đều cho từng người",
+    takeaway: "Toán học có ở khắp nơi — đếm bậc thang cũng là một bài học.",
+    wrongWay: "mẹ ép bé ngồi làm phiếu bài tập",
   },
 ];
 

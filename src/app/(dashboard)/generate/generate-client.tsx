@@ -3140,7 +3140,7 @@ function ProjectWorkspace() {
           : undefined,
       productPlacements: genInput?.product_placements,
       ...(genInput?.cute_kids
-        ? { cuteKids: { filming: genInput.cute_kids.filming, kidName: genInput.cute_kids.kidName, traits: genInput.cute_kids.traits } }
+        ? { cuteKids: { filming: genInput.cute_kids.filming, kidName: genInput.cute_kids.kidName, traits: genInput.cute_kids.traits, kidAge: genInput.cute_kids.kidAge } }
         : {}),
       // Embed each uploaded character frontal photo so the extension auto-loads
       // it (no manual per-image attach). No photo ⇒ a null slot as before.

@@ -27,7 +27,7 @@ import {
   type KidAge,
   type KidTrait,
 } from "@/lib/kids/cute-kids";
-import { LESSON_PILLARS, findLesson, lessonsFor, type LessonPillar, type ParentingLesson } from "@/lib/kids/parenting-lessons";
+import { LESSON_PILLARS, PARENTING_LESSONS, findLesson, lessonsFor, type LessonPillar, type ParentingLesson } from "@/lib/kids/parenting-lessons";
 
 type Lang = "vi" | "en";
 
@@ -51,6 +51,8 @@ const FAMILY_CHIPS: Array<{ id: FamilyMember; vi: (south: boolean) => string; en
   { id: "grandpa", vi: () => "👴 Ông", en: "👴 Grandpa" },
   { id: "grandma", vi: () => "👵 Bà", en: "👵 Grandma" },
   { id: "baby", vi: () => "👶 Em bé", en: "👶 Baby" },
+  { id: "sibling", vi: () => "👦 Anh trai", en: "👦 Big brother" },
+  { id: "friend", vi: () => "🧒 Bạn hàng xóm", en: "🧒 Friend" },
   { id: "dog", vi: () => "🐶 Cún", en: "🐶 Dog" },
   { id: "cat", vi: () => "🐱 Mèo", en: "🐱 Cat" },
 ];
@@ -128,8 +130,11 @@ export function CuteKidsCard(props: {
   const teach = config.goal === "teach";
   const pillar: LessonPillar = config.pillar ?? "money";
   const lessons = lessonsFor(pillar, config.kidAge);
+  // Picking a lesson also brings the family members its story needs (a sibling, a friend, grandma…).
   const pickLesson = (lesson: ParentingLesson) =>
-    update(config.lessonId === lesson.id ? { lessonId: undefined } : { lessonId: lesson.id, request: lesson.situation, format: "auto" });
+    update(config.lessonId === lesson.id
+      ? { lessonId: undefined }
+      : { lessonId: lesson.id, request: lesson.situation, format: "auto", family: [...new Set([...config.family, ...(lesson.needs ?? [])])] });
   // Remember which lessons became videos, so the library shows what is still new.
   const markUsed = () => {
     const id = teach ? config.lessonId : undefined;
@@ -175,12 +180,14 @@ export function CuteKidsCard(props: {
             <div className="space-y-2 rounded-md border border-amber-400/50 bg-amber-500/[0.06] p-2.5">
               <p className="text-xs text-muted-foreground">
                 {vi
-                  ? "Bài học được thể hiện qua câu chuyện (không giảng): bé gặp tình huống → bố mẹ xử lý khéo, tôn trọng bé → kết ấm áp + câu chốt. Caption tự có \"💡 Mẹo cho bố mẹ\" và câu hỏi gợi bình luận."
-                  : "The lesson is shown through the story: the kid's moment → the parent's respectful technique → a warm ending + takeaway."}
+                  ? `Kho ${PARENTING_LESSONS.length} bài · ${LESSON_PILLARS.length} chủ đề, cách xử lý theo Kỷ luật tích cực, Gottman, Faber & Mazlish, Montessori, serve & return (Harvard), CASEL. Bài học thể hiện qua câu chuyện (không giảng): bé gặp tình huống → bố mẹ xử lý khéo, tôn trọng bé → kết ấm áp + câu chốt. Caption tự có "💡 Mẹo cho bố mẹ" và câu hỏi gợi bình luận.`
+                  : `${PARENTING_LESSONS.length} lessons in ${LESSON_PILLARS.length} areas (Positive Discipline, Gottman, Faber & Mazlish, Montessori, serve and return, CASEL). The lesson is shown through the story: the kid's moment → the parent's respectful technique → a warm ending + takeaway.`}
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {LESSON_PILLARS.map((p) => (
-                  <Chip key={p.id} active={pillar === p.id} onClick={() => update({ pillar: p.id, lessonId: undefined })}>{p.label}</Chip>
+                  <Chip key={p.id} active={pillar === p.id} onClick={() => update({ pillar: p.id, lessonId: undefined })}>
+                    {p.label} <span className="opacity-60">{lessonsFor(p.id, config.kidAge).length}</span>
+                  </Chip>
                 ))}
               </div>
               <div className="grid gap-1.5 sm:grid-cols-2">
@@ -198,6 +205,7 @@ export function CuteKidsCard(props: {
                     <span className="font-medium">{lesson.title}</span>
                     {usedLessons.includes(lesson.id) && <span className="ml-1.5 text-[10px] text-emerald-700">✓ {vi ? "đã làm" : "done"}</span>}
                     <span className="mt-0.5 block text-muted-foreground">💡 {lesson.takeaway}</span>
+                    <span className="mt-0.5 block text-[10px] text-amber-700">📚 {lesson.method}</span>
                   </button>
                 ))}
               </div>
@@ -218,7 +226,7 @@ export function CuteKidsCard(props: {
               </div>
               {config.lessonId && findLesson(config.lessonId) && (
                 <p className="text-[11px] text-muted-foreground">
-                  {vi ? "Cách xử lý: " : "Technique: "}{findLesson(config.lessonId)!.technique}
+                  {vi ? "Cách xử lý" : "Technique"} ({findLesson(config.lessonId)!.method}): {findLesson(config.lessonId)!.technique}
                 </p>
               )}
             </div>
