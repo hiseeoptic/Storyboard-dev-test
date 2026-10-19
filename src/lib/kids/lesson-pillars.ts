@@ -32,7 +32,10 @@ export type LessonPillar =
   | "thinking"
   | "nature"
   | "seasons"
-  | "public";
+  | "public"
+  | "play"
+  | "travel"
+  | "pets";
 
 export interface ParentingLesson {
   id: string;
@@ -61,6 +64,7 @@ export const PILLAR_GROUPS: Array<{ id: string; label: string }> = [
   { id: "daily", label: "Sinh hoạt hằng ngày" },
   { id: "conduct", label: "Hành vi & ứng xử" },
   { id: "people", label: "Gia đình, bạn bè, trường lớp" },
+  { id: "explore", label: "Vui chơi & khám phá" },
   { id: "world", label: "Tiền bạc & thế giới quanh con" },
 ];
 
@@ -83,10 +87,13 @@ export const LESSON_PILLARS: Array<{ id: LessonPillar; label: string; group: str
   { id: "social", label: "🤝 Bạn bè & anh em", group: "people" },
   { id: "empathy", label: "💞 Yêu thương & biết ơn", group: "people" },
   { id: "school", label: "🏫 Trường lớp", group: "people" },
+  { id: "play", label: "🎨 Vui chơi, nghệ thuật & thể thao", group: "explore" },
+  { id: "learning", label: "📚 Học tập & tò mò", group: "explore" },
+  { id: "thinking", label: "🧠 Tư duy & sáng tạo", group: "explore" },
+  { id: "nature", label: "🌿 Thiên nhiên & môi trường", group: "explore" },
+  { id: "pets", label: "🐾 Thú cưng", group: "explore" },
+  { id: "travel", label: "✈️ Đi chơi xa & du lịch", group: "explore" },
   { id: "money", label: "💰 Tiền bạc", group: "world" },
-  { id: "learning", label: "📚 Học tập & tò mò", group: "world" },
-  { id: "thinking", label: "🧠 Tư duy & sáng tạo", group: "world" },
-  { id: "nature", label: "🌿 Thiên nhiên & môi trường", group: "world" },
   { id: "seasons", label: "🧧 Lễ Tết & truyền thống", group: "world" },
   { id: "public", label: "🚌 Nơi công cộng", group: "world" },
   { id: "safety", label: "🛡️ An toàn", group: "world" },
