@@ -4,8 +4,8 @@ import { LESSON_PILLARS, PARENTING_LESSONS, PILLAR_GROUPS, findLesson, lessonsFo
 import { DEFAULT_CUTE_KIDS, FAMILY_MEMBERS, cuteKidsDirective, cuteKidsRoomSeed, cuteKidsStoryIdea, buildEpisodeIdeasPrompt, familyCast, labelCuteKidsPosts, normalizeCuteKids, AI_LABEL_VI, type CuteKidsConfig } from "./cute-kids.ts";
 import { childSafeText } from "./child-safe-wording.ts";
 
-const MIN_PER_PILLAR = 5;
-const MIN_TOTAL = 80;
+const MIN_PER_PILLAR = 9;
+const MIN_TOTAL = 350;
 
 // The card sends the picked lesson as a snapshot next to its id.
 const teach = (patch: Partial<CuteKidsConfig> = {}): CuteKidsConfig => {
@@ -124,6 +124,10 @@ test("captions: parent tip, comment question and disclaimer before the AI label;
 
 test("search, a fresh random pick and the server's library lesson", () => {
   assert.ok(searchLessons("an va").some((l) => l.id === "screen_tantrum"), "accents are optional");
+  const lixi = searchLessons("li xi");
+  assert.ok(lixi.length >= 3 && lixi.every((l) => /lì xì/i.test(`${l.title} ${l.situation} ${l.behavior} ${l.takeaway}`)), "the phrase, not \"xin lỗi\"");
+  assert.match(lixi[0]!.title, /lì xì/i, "title matches first");
+  assert.ok(searchLessons("nha tre").length >= 1);
   assert.ok(searchLessons("Gottman").length >= 2, "methods are searchable");
   assert.deepEqual(searchLessons(" "), []);
   assert.ok(searchLessons("tiền", "toddler").every((l) => l.ages.includes("toddler")));

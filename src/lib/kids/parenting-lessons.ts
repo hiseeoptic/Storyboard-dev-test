@@ -18,10 +18,24 @@
 import type { KidAge } from "./cute-kids.ts";
 import { LESSON_PILLARS, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
 import { CORE_LESSONS } from "./lessons/core.ts";
+import { FEELINGS_LESSONS } from "./lessons/feelings.ts";
+import { DAILY_LIFE_LESSONS } from "./lessons/daily-life.ts";
+import { CONDUCT_LESSONS } from "./lessons/conduct.ts";
+import { PEOPLE_LESSONS } from "./lessons/people.ts";
+import { MIND_AND_WORLD_LESSONS } from "./lessons/mind-and-world.ts";
+import { SEASONS_AND_OUTINGS_LESSONS } from "./lessons/seasons-and-outings.ts";
 
 export { LESSON_PILLARS, PILLAR_GROUPS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
 
-export const PARENTING_LESSONS: ParentingLesson[] = [...CORE_LESSONS];
+export const PARENTING_LESSONS: ParentingLesson[] = [
+  ...CORE_LESSONS,
+  ...FEELINGS_LESSONS,
+  ...DAILY_LIFE_LESSONS,
+  ...CONDUCT_LESSONS,
+  ...PEOPLE_LESSONS,
+  ...MIND_AND_WORLD_LESSONS,
+  ...SEASONS_AND_OUTINGS_LESSONS,
+];
 
 const BY_ID = new Map(PARENTING_LESSONS.map((l) => [l.id, l]));
 
@@ -38,15 +52,26 @@ export function lessonsFor(pillar: LessonPillar, age: KidAge): ParentingLesson[]
 
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 
-/** Lessons whose title, situation, takeaway or method contain every word of the query (accents optional). */
+const startsWord = (text: string, phrase: string) => new RegExp(`(?:^|[^a-z0-9])${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(text);
+
+/**
+ * Lessons matching the query (accents optional): the whole phrase first
+ * ("li xi" → lì xì), otherwise every word at the start of a word; title
+ * matches come first.
+ */
 export function searchLessons(query: string, age?: KidAge): ParentingLesson[] {
-  const words = fold(query).split(/\s+/).filter(Boolean);
-  if (!words.length) return [];
-  return PARENTING_LESSONS.filter((l) => {
-    if (age && !l.ages.includes(age)) return false;
-    const text = fold(`${l.title} ${l.situation} ${l.behavior} ${l.takeaway} ${l.method} ${LESSON_PILLARS.find((p) => p.id === l.pillar)?.label ?? ""}`);
-    return words.every((w) => text.includes(w));
-  });
+  const q = fold(query).replace(/\s+/g, " ").trim();
+  if (!q) return [];
+  const pool = PARENTING_LESSONS.filter((l) => !age || l.ages.includes(age)).map((l) => ({
+    lesson: l,
+    title: fold(l.title),
+    text: fold(`${l.title} ${l.situation} ${l.behavior} ${l.takeaway} ${l.method} ${LESSON_PILLARS.find((p) => p.id === l.pillar)?.label ?? ""}`),
+  }));
+  const words = q.split(" ");
+  const phrase = pool.filter((e) => startsWord(e.text, q));
+  const hits = phrase.length ? phrase : pool.filter((e) => words.every((w) => startsWord(e.text, w)));
+  const inTitle = (e: (typeof pool)[number]) => (phrase.length ? startsWord(e.title, q) : words.every((w) => startsWord(e.title, w)));
+  return [...hits.filter(inTitle), ...hits.filter((e) => !inTitle(e))].map((e) => e.lesson);
 }
 
 /** A lesson for this age that has not been used yet (any lesson for the age when all are used). */
