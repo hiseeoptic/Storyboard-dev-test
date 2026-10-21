@@ -20,6 +20,8 @@ import {
   AGE_STAGE,
   DEFAULT_CUTE_KIDS,
   KID_AGES,
+  isOlderKid,
+  traitLabelVi,
   KID_TRAITS,
   VIRAL_FORMATS,
   normalizeCuteKids,
@@ -362,8 +364,8 @@ export function CuteKidsCard(props: {
             <label className="text-xs font-medium">{vi ? "Tính cách bé (diễn trong mọi shot)" : "Kid's personality (in every shot)"}</label>
             <div className="flex flex-wrap gap-1.5">
               {KID_TRAITS.map((t) => (
-                <Chip key={t.id} active={traits.includes(t.id)} onClick={() => toggleTrait(t.id)} title={t.room_vi}>
-                  {vi ? t.label_vi : t.label_en}
+                <Chip key={t.id} active={traits.includes(t.id)} onClick={() => toggleTrait(t.id)} title={isOlderKid(config.kidAge) ? t.older_room_vi ?? t.room_vi : t.room_vi}>
+                  {vi ? traitLabelVi(t.id, config.kidAge) : t.label_en}
                 </Chip>
               ))}
             </div>

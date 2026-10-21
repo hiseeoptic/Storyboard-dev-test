@@ -179,4 +179,8 @@ test("8–10 and 11–12: age-true speech, behaviour, personality, voice and bac
   assert.match(note, /never toddler babble/);
   assert.match(note, /BACK-AND-FORTH: every look, sigh, argument or joke from Minh/);
   assert.doesNotMatch(note, /SERVE AND RETURN|huhu/);
+  // The card and the Vietnamese brief name the personality the way an 8–12-year-old shows it.
+  assert.match(cuteKidsStoryIdea(config({ kidAge: "preteen" })), /Tính cách bé: năn nỉ ngọt, than thở "bi kịch", khôn lanh/);
+  assert.match(cuteKidsRoomSeed(config({ kidAge: "middle" })), /than thở "bi kịch" cho vui \(nằm vật ra sofa/);
+  assert.doesNotMatch(cuteKidsRoomSeed(config({ kidAge: "middle" })), /huhuhu|mếu máo/);
 });

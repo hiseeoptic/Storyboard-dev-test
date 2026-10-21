@@ -34,6 +34,12 @@ import { SCHOOL_MONEY_IDEAS_LESSONS } from "./lessons/school-money-ideas.ts";
 import { NATURE_AND_PETS_LESSONS } from "./lessons/nature-and-pets.ts";
 import { OCCASIONS_AND_OUTINGS_LESSONS } from "./lessons/occasions-and-outings.ts";
 import { PLAY_AND_TRAVEL_LESSONS } from "./lessons/play-and-travel.ts";
+import { OLDER_INNER_WORLD_LESSONS } from "./lessons/older-inner-world.ts";
+import { OLDER_DAILY_LIFE_LESSONS } from "./lessons/older-daily-life.ts";
+import { OLDER_CONDUCT_LESSONS } from "./lessons/older-conduct.ts";
+import { OLDER_PEOPLE_LESSONS } from "./lessons/older-people.ts";
+import { OLDER_MIND_AND_WORLD_LESSONS } from "./lessons/older-mind-and-world.ts";
+import { OLDER_PRETEEN_AND_OUTINGS_LESSONS } from "./lessons/older-preteen-and-outings.ts";
 
 export { LESSON_PILLARS, PILLAR_GROUPS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
 
@@ -55,6 +61,12 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
   ...NATURE_AND_PETS_LESSONS,
   ...OCCASIONS_AND_OUTINGS_LESSONS,
   ...PLAY_AND_TRAVEL_LESSONS,
+  ...OLDER_INNER_WORLD_LESSONS,
+  ...OLDER_DAILY_LIFE_LESSONS,
+  ...OLDER_CONDUCT_LESSONS,
+  ...OLDER_PEOPLE_LESSONS,
+  ...OLDER_MIND_AND_WORLD_LESSONS,
+  ...OLDER_PRETEEN_AND_OUTINGS_LESSONS,
 ];
 
 const BY_ID = new Map(PARENTING_LESSONS.map((l) => [l.id, l]));

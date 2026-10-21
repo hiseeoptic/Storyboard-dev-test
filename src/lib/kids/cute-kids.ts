@@ -183,12 +183,18 @@ export const OLDER_EXPRESSION_BANK =
 export const EXPRESSION_BANK =
   "a sulky frown with puffed-up cheeks, arms crossed and turning away with a \"hmph\", slow side-eye, gasp with both hands over the mouth, shy smile hiding behind little hands, proud chin-up grin, sleepy slow blinks, tiny stamp of the foot, eyes going wide in disbelief";
 
-export const KID_TRAITS: Array<{ id: KidTrait; label_vi: string; label_en: string; room_vi: string }> = [
-  { id: "sweet_whiny", label_vi: "🥺 Nũng nịu", label_en: "🥺 Sweet & whiny", room_vi: "nũng nịu (giọng kéo dài, lắc lư, níu tay áo bố mẹ, chắp tay nài nỉ, mắt tròn long lanh)" },
-  { id: "fake_cry", label_vi: "😭 Khóc nhè / ăn vạ", label_en: "😭 Pretend crying", room_vi: "khóc nhè ăn vạ cho vui (mếu máo \"huhuhu\", dụi mắt, hé ngón tay xem bố mẹ có dỗ không, được chiều là cười ngay)" },
-  { id: "clever", label_vi: "😏 Khôn lanh", label_en: "😏 Clever", room_vi: "khôn lanh (lý lẽ trẻ con mà làm bố mẹ cứng họng, ra \"điều kiện\", liếc mắt tinh nghịch, chốt câu thắng cuộc)" },
+export const KID_TRAITS: Array<{ id: KidTrait; label_vi: string; label_en: string; room_vi: string; older_vi?: string; older_room_vi?: string }> = [
+  { id: "sweet_whiny", label_vi: "🥺 Nũng nịu", label_en: "🥺 Sweet & whiny", room_vi: "nũng nịu (giọng kéo dài, lắc lư, níu tay áo bố mẹ, chắp tay nài nỉ, mắt tròn long lanh)", older_vi: "🥺 Năn nỉ ngọt", older_room_vi: "năn nỉ ngọt (tựa vai bố mẹ, mắt cún con, chắp tay \"Đi mà mẹ…\", kéo dài \"Mẹ ơiii\" nửa đùa nửa thật)" },
+  { id: "fake_cry", label_vi: "😭 Khóc nhè / ăn vạ", label_en: "😭 Pretend crying", room_vi: "khóc nhè ăn vạ cho vui (mếu máo \"huhuhu\", dụi mắt, hé ngón tay xem bố mẹ có dỗ không, được chiều là cười ngay)", older_vi: "😩 Than thở \"bi kịch\"", older_room_vi: "than thở \"bi kịch\" cho vui (nằm vật ra sofa \"Trời ơiii…\", úp gối lên mặt rồi hé ra xem, không khóc thật, rồi tự bật cười)" },
+  { id: "clever", label_vi: "😏 Khôn lanh", label_en: "😏 Clever", room_vi: "khôn lanh (lý lẽ trẻ con mà làm bố mẹ cứng họng, ra \"điều kiện\", liếc mắt tinh nghịch, chốt câu thắng cuộc)", older_room_vi: "khôn lanh (lý lẽ đâu ra đấy, trích lại chính lời bố mẹ, đề xuất \"thỏa thuận công bằng\", liếc mắt tinh nghịch, chốt câu thắng cuộc)" },
   { id: "cheerful", label_vi: "😄 Hồn nhiên", label_en: "😄 Sunny", room_vi: "hồn nhiên (cười khanh khách, vỗ tay, xoay vòng, chạy ào tới ôm)" },
 ];
+
+/** The trait's Vietnamese label for this age (8–12-year-olds get age-true names). */
+export function traitLabelVi(trait: KidTrait, age?: KidAge): string {
+  const k = KID_TRAITS.find((x) => x.id === trait)!;
+  return isOlderKid(age) ? k.older_vi ?? k.label_vi : k.label_vi;
+}
 
 /** What each trait looks and sounds like on screen (pronouns follow the kid). */
 function traitPerformance(trait: KidTrait, name: string, she: string, her: string, dialect: Dialect, age?: KidAge): string {
@@ -340,7 +346,7 @@ export function cuteKidsStoryIdea(config: CuteKidsConfig): string {
     config.request.trim(),
     `Nhân vật: ${cast[0]!.name} (${config.kidGender === "girl" ? "bé gái" : "bé trai"} ${AGE_LABEL[config.kidAge].vi})${cast.length > 1 ? `, ${cast.slice(1).map((c) => c.name).join(", ")}` : ""}${pets.length ? `; thú cưng: ${pets.join(", ")}` : ""}.`,
     format ? `Kiểu video: ${format.label_vi}.` : "",
-    (config.traits ?? []).length ? `Tính cách bé: ${(config.traits ?? []).map((t) => KID_TRAITS.find((k) => k.id === t)!.label_vi.replace(/^\S+\s/, "").toLowerCase()).join(", ")}; bố mẹ luôn hưởng ứng.` : "",
+    (config.traits ?? []).length ? `Tính cách bé: ${(config.traits ?? []).map((t) => traitLabelVi(t, config.kidAge).replace(/^\S+\s/, "").toLowerCase()).join(", ")}; bố mẹ luôn hưởng ứng.` : "",
     ...lessonLinesVi(config),
   ].filter(Boolean).join("\n");
 }
@@ -430,7 +436,7 @@ export function cuteKidsRoomSeed(config: CuteKidsConfig): string {
   return [
     cuteKidsStoryIdea(config),
     `Yêu cầu: video ngắn ${config.shots} shot × 10 giây, 2 giây đầu là gương mặt/biểu cảm của bé hoặc khoảnh khắc gây chuyện; kết bằng câu chốt hoặc cú quay xe ấm áp.`,
-    ...((config.traits ?? []).length ? [`Bé phải thật dễ thương từ cử chỉ, điệu bộ đến lời nói, mỗi shot có ít nhất một khoảnh khắc: ${(config.traits ?? []).map((t) => KID_TRAITS.find((k) => k.id === t)!.room_vi).join("; ")}.`] : []),
+    ...((config.traits ?? []).length ? [`Bé phải thật dễ thương từ cử chỉ, điệu bộ đến lời nói, mỗi shot có ít nhất một khoảnh khắc: ${(config.traits ?? []).map((t) => { const k = KID_TRAITS.find((x) => x.id === t)!; return isOlderKid(config.kidAge) ? k.older_room_vi ?? k.room_vi : k.room_vi; }).join("; ")}.`] : []),
     "Bố mẹ luôn hưởng ứng: tan chảy, bật cười, trêu lại nhẹ nhàng, giả vờ nghiêm rồi chiều, gọi bé bằng tên âu yếm; không bao giờ phớt lờ hay mắng gắt.",
     isOlderKid(config.kidAge)
       ? `Tương tác qua lại như thật: mỗi câu lý lẽ, cái thở dài, câu đùa hay cái nhún vai của con đều được bố mẹ đáp lại ngay (ngồi xuống cạnh con, đùa lại, gọi tên cảm xúc, hỏi ý kiến con, đặt tay lên vai, đập tay), rồi con phản ứng lại — mỗi shot ít nhất hai lượt qua lại, không giảng giải dài. Con có cử chỉ thật của trẻ ${AGE_LABEL[config.kidAge].vi}: ${REAL_CHILD_VI[config.kidAge]}.`
