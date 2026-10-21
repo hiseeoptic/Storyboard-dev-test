@@ -74,7 +74,7 @@ test("social captions get the AI label once", () => {
 });
 
 test("client configs are clamped and cleaned", () => {
-  const c = normalizeCuteKids({ kidName: "  ", kidAge: "teen", family: ["dad", "dad", "alien"], shots: 9, filming: "drone", format: "nope" })!;
+  const c = normalizeCuteKids({ kidName: "  ", kidAge: "adult", family: ["dad", "dad", "alien"], shots: 9, filming: "drone", format: "nope" })!;
   assert.equal(c.kidName, DEFAULT_CUTE_KIDS.kidName);
   assert.equal(c.kidAge, "school");
   assert.deepEqual(c.family, ["dad"]);
@@ -179,6 +179,17 @@ test("8–10 and 11–12: age-true speech, behaviour, personality, voice and bac
   assert.match(note, /never toddler babble/);
   assert.match(note, /BACK-AND-FORTH: every look, sigh, argument or joke from Minh/);
   assert.doesNotMatch(note, /SERVE AND RETURN|huhu/);
+  // 13–15: a teenager, still with the parents' warm back-and-forth.
+  const teen = cuteKidsDirective(config({ kidName: "Khoa", kidGender: "boy", kidAge: "teen" }));
+  assert.match(teen, /about 13–15 years old/);
+  assert.match(teen, /at most 18 words/);
+  assert.match(teen, /REAL 13–15-YEAR-OLD BEHAVIOUR: Khoa answers with a shrug/);
+  assert.match(teen, /NĂN NỈ NGỌT \(sweet coaxing, age-true for 13–15\)/);
+  assert.match(teen, /BACK-AND-FORTH/);
+  assert.doesNotMatch(teen, /huhuhuuu|REAL TODDLER|\b(kiss|lips?|pout)\b/i);
+  assert.match(familyCast(config({ kidAge: "teen", family: ["sibling"] }))[1]!.appearance, /older brother about 17–18 years old/);
+  assert.equal(normalizeCuteKids({ kidAge: "teen" })!.kidAge, "teen");
+  assert.match(cuteKidsPerformanceNote("Khoa", ["clever"], "teen"), /a charming, age-true 13–15-year-old/);
   // The card and the Vietnamese brief name the personality the way an 8–12-year-old shows it.
   assert.match(cuteKidsStoryIdea(config({ kidAge: "preteen" })), /Tính cách bé: năn nỉ ngọt, than thở "bi kịch", khôn lanh/);
   assert.match(cuteKidsRoomSeed(config({ kidAge: "middle" })), /than thở "bi kịch" cho vui \(nằm vật ra sofa/);

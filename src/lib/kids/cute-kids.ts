@@ -11,10 +11,10 @@
 import { CHILD_SAFE_WORDING_RULE } from "./child-safe-wording.ts";
 import { LESSON_PILLARS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
 
-export type KidAge = "toddler" | "young" | "school" | "middle" | "preteen";
-export const KID_AGES: readonly KidAge[] = ["toddler", "young", "school", "middle", "preteen"];
-/** 8–12-year-olds: older-kid acting, voices and parenting (no toddler babble or tantrums). */
-export const isOlderKid = (age: KidAge | undefined) => age === "middle" || age === "preteen";
+export type KidAge = "toddler" | "young" | "school" | "middle" | "preteen" | "teen";
+export const KID_AGES: readonly KidAge[] = ["toddler", "young", "school", "middle", "preteen", "teen"];
+/** 8–15-year-olds: older-kid acting, voices and parenting (no toddler babble or tantrums). */
+export const isOlderKid = (age: KidAge | undefined) => age === "middle" || age === "preteen" || age === "teen";
 export type KidGender = "girl" | "boy";
 export type FamilyMember = "dad" | "mom" | "grandpa" | "grandma" | "baby" | "sibling" | "friend" | "dog" | "cat";
 export const FAMILY_MEMBERS: readonly FamilyMember[] = ["dad", "mom", "grandpa", "grandma", "baby", "sibling", "friend", "dog", "cat"];
@@ -72,6 +72,7 @@ export const AGE_LABEL: Record<KidAge, { vi: string; en: string }> = {
   school: { vi: "6–7 tuổi", en: "6–7 years" },
   middle: { vi: "8–10 tuổi", en: "8–10 years" },
   preteen: { vi: "11–12 tuổi", en: "11–12 years" },
+  teen: { vi: "13–15 tuổi", en: "13–15 years" },
 };
 
 /** Where a child of that age is in the Vietnamese school system (for the age picker). */
@@ -81,6 +82,7 @@ export const AGE_STAGE: Record<KidAge, { vi: string; en: string }> = {
   school: { vi: "lớp 1–2", en: "grade 1–2" },
   middle: { vi: "lớp 3–5", en: "grade 3–5" },
   preteen: { vi: "lớp 6–7", en: "grade 6–7" },
+  teen: { vi: "lớp 8–9", en: "grade 8–9" },
 };
 
 interface AgeProfile {
@@ -133,6 +135,14 @@ export const AGE_PROFILES: Record<KidAge, AgeProfile> = {
       "an 11–12-year-old: natural sentences of up to 16 words — wants to be treated as older (\"Con lớn rồi mà!\"), a sigh or \"Mẹ không hiểu đâu\", dry humour and a half-smile, a short mumble when embarrassed; a young voice, never adult.",
     motor: "slouches on the sofa, shrugs, half-closes the bedroom door, leans on the kitchen counter to talk, walks a step ahead of the parents in public, tries to look cool and then laughs",
     body: "a real 11–12-year-old — a still-childlike face on the way to looking older, a neat school-age haircut",
+  },
+  teen: {
+    years: "about 13–15 years old",
+    maxWords: 18,
+    speech:
+      "a 13–15-year-old teenager: natural sentences of up to 18 words — a light touch of everyday teen talk (\"Ủa?\", \"Ok mẹ\", \"Cạn lời\"), dry humour, sometimes a one-word answer, wants to be heard and treated as nearly grown-up; a teenager's voice, never an adult's.",
+    motor: "lounges on the sofa with headphones around the neck, leans on the doorframe, glances at the phone between sentences, shrugs, then joins in when it is interesting",
+    body: "a real 13–15-year-old teenager — a youthful face, neat everyday teen style",
   },
 };
 
@@ -199,7 +209,7 @@ export function traitLabelVi(trait: KidTrait, age?: KidAge): string {
 /** What each trait looks and sounds like on screen (pronouns follow the kid). */
 function traitPerformance(trait: KidTrait, name: string, she: string, her: string, dialect: Dialect, age?: KidAge): string {
   const south = dialect === "south";
-  if (isOlderKid(age)) return olderTraitPerformance(trait, name, she, her, south);
+  if (isOlderKid(age)) return olderTraitPerformance(trait, name, she, her, south, age);
   switch (trait) {
     case "sweet_whiny":
       return `NŨNG NỊU (whiny-sweet, coaxing): ${name} sways side to side, tugs a parent's sleeve or hand, leans ${her} head against a parent's arm, clasps both hands under ${her} chin and begs with big round shining eyes, tilts ${her} head, bounces on ${her} toes, does a tiny twist-and-stomp, hides ${her} face against a parent's arm and peeks back up. ${she[0]!.toUpperCase() + she.slice(1)} speaks in a high, sweet sing-song with drawn-out vowels and endearing particles, often calling ${her}self by name — e.g. ${south ? `"Ba ơiii~", "Má ơi, cho con đi mà, nhaaa", "Con hông chịu đâu~", "${name} muốn mà~"` : `"Bố ơiii~", "Mẹ ơi, cho con đi màaa", "Thôi mà bố~", "${name} muốn cơơ!"`}.`;
@@ -213,10 +223,10 @@ function traitPerformance(trait: KidTrait, name: string, she: string, her: strin
 }
 
 /** The same personality at 8–12: charming and age-true, never toddler-like. */
-function olderTraitPerformance(trait: KidTrait, name: string, she: string, her: string, south: boolean): string {
+function olderTraitPerformance(trait: KidTrait, name: string, she: string, her: string, south: boolean, age?: KidAge): string {
   switch (trait) {
     case "sweet_whiny":
-      return `NĂN NỈ NGỌT (sweet coaxing, age-true for 8–12): ${name} leans on a parent's shoulder, puts on puppy eyes, clasps ${her} hands — "${south ? "Đi mà má…" : "Đi mà mẹ…"}" — drags out "${south ? "Ba ơiii" : "Bố ơiii"}" half-jokingly, and grins when it works. Charming, never babyish.`;
+      return `NĂN NỈ NGỌT (sweet coaxing, age-true for ${age === "teen" ? "13–15" : "8–12"}): ${name} leans on a parent's shoulder, puts on puppy eyes, clasps ${her} hands — "${south ? "Đi mà má…" : "Đi mà mẹ…"}" — drags out "${south ? "Ba ơiii" : "Bố ơiii"}" half-jokingly, and grins when it works. Charming, never babyish.`;
     case "fake_cry":
       return `GIẢ VỜ "BI KỊCH" (theatrical protest for laughs): when told no, ${name} flops onto the sofa with a long groan "Trời ơiii…", pulls a cushion over ${her} face, peeks out to check whether it is working, then laughs it off. No real tears; it lasts 2–4 seconds and a parent answers with warm humour.`;
     case "clever":
@@ -249,6 +259,8 @@ function realChildBehaviour(age: KidAge, name: string, she: string, her: string)
       return `REAL 6–7-YEAR-OLD BEHAVIOUR: ${name} negotiates ticking points off on ${her} fingers; a playful eye-roll and a dramatic sigh; leans ${her} whole weight on a parent's arm; tries to wink and blinks both eyes; copies a parent's tone and gesture exactly; giggles behind ${her} hand; looks up with pleading puppy eyes, then breaks into a grin; fiddles with a pencil or toy while thinking; checks a parent's face to see whether the joke landed.`;
     case "middle":
       return `REAL 8–10-YEAR-OLD BEHAVIOUR: ${name} argues with real logic and counts reasons on ${her} fingers; flops onto the sofa with a theatrical groan; explains something seriously with big hand gestures; fiddles with a pencil, a Rubik's cube or a backpack strap while talking; does a quick victory dance on a win; whispers a joke to a sibling and both snicker; glances at a parent to check whether ${she} is in trouble; beams at specific praise.`;
+    case "teen":
+      return `REAL 13–15-YEAR-OLD BEHAVIOUR: ${name} answers with a shrug or "Ừ", then talks a lot when the topic is ${her} own idea; wears headphones around ${her} neck; glances at the phone between sentences; leans on the doorframe of ${her} room; rolls ${her} eyes at a parent's joke but smiles; cares how ${she} looks in front of friends; opens up late in the evening when the house is quiet; says thanks in a low voice.`;
     case "preteen":
       return `REAL 11–12-YEAR-OLD BEHAVIOUR: ${name} rolls ${her} eyes and then smiles despite ${her}self; shrugs and answers "Bình thường"; keeps the bedroom door half-closed; types quickly on a homework tablet; walks a step ahead of the parents in public; tries to look cool, then cracks up at a parent's silly joke; looks away and mumbles when embarrassed; leans on the counter to talk when it is ${her} own idea.`;
   }
@@ -301,6 +313,7 @@ const SIBLING_YEARS: Record<KidAge, string> = {
   school: "about 9–10 years old",
   middle: "about 12–13 years old",
   preteen: "about 14–15 years old",
+  teen: "about 17–18 years old",
 };
 const MEMBER_ROLE: Partial<Record<FamilyMember, string>> = { baby: "em bé", sibling: "anh trai", friend: "bạn của bé" };
 
@@ -453,6 +466,7 @@ const REAL_CHILD_VI: Record<KidAge, string> = {
   young: "kéo tay bố mẹ đi, thì thầm \"bí mật\" vào tai, đếm trên ngón tay, diễn bằng cả người, mắt tròn xoe lấp lánh, liếc trộm xem bố mẹ có nhìn không, không chịu đứng yên, cười gập cả người",
   school: "mặc cả đếm từng điều kiện trên ngón tay, đảo mắt tinh nghịch, thở dài kiểu người lớn, dựa cả người vào tay bố mẹ, nháy mắt mà nhắm cả hai mắt, nhại giọng bố mẹ, che miệng cười khúc khích",
   middle: "lý lẽ đâu ra đấy, đếm lý do trên ngón tay, nằm vật ra sofa than \"Trời ơi\", vừa nói vừa xoay bút hay khối rubik, nhảy điệu ăn mừng khi thắng, thì thầm trêu anh chị rồi cùng cười khúc khích, liếc bố mẹ xem mình có bị mắng không",
+  teen: "nhún vai \"Ừ\" rồi nói say sưa khi đúng chủ đề mình thích, đeo tai nghe trên cổ, liếc điện thoại giữa câu, tựa khung cửa phòng nói chuyện, đảo mắt trước câu đùa của bố mà vẫn cười, ngại trước mặt bạn bè, tối muộn mới mở lòng, cảm ơn nho nhỏ",
   preteen: "đảo mắt rồi vẫn bật cười, nhún vai trả lời \"Bình thường\", khép hờ cửa phòng, đi trước bố mẹ một bước ở chỗ đông người, cố tỏ ra \"ngầu\" rồi phì cười vì câu đùa của bố, ngại thì nhìn đi chỗ khác và nói lí nhí, tự ra bếp tựa bàn kể chuyện khi muốn",
 };
 
@@ -639,6 +653,7 @@ const REAL_CHILD_SHORT: Record<KidAge, string> = {
   young: "tugs a parent's hand, whispers into an ear, counts on fingers, acts with the whole body, sparkling wide eyes, sideways glances to check the parent, cannot keep still",
   school: "counts conditions on fingers, a playful eye-roll and sigh, leans on a parent's arm, a two-eyed wink attempt, copies the parent's tone, giggles behind a hand",
   middle: "argues with real logic counting reasons on fingers, flops on the sofa with a groan, fiddles with a pencil or cube while talking, a quick victory dance, checks the parent's face",
+  teen: "a shrug and \"Ừ\" that turns into real talk on a favourite topic, headphones around the neck, a glance at the phone, leaning on the doorframe, an eye-roll that ends in a smile",
   preteen: "an eye-roll that turns into a smile, a shrug and \"Bình thường\", a half-closed bedroom door, trying to look cool then laughing, mumbling and looking away when embarrassed",
 };
 

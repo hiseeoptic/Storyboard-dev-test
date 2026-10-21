@@ -355,7 +355,9 @@ export function CuteKidsCard(props: {
                       ? vi ? "Câu ≤ 10 từ, ngọt ngào lém lỉnh, có câu chốt." : "Up to 10 words, a sassy punchline."
                       : config.kidAge === "middle"
                         ? vi ? "Lớp 3–5: câu ≤ 14 từ, lý lẽ, mặc cả, hài hước; bố mẹ cùng con giải quyết." : "Grade 3–5: up to 14 words, logic and humour."
-                        : vi ? "Lớp 6–7: câu ≤ 16 từ, muốn được coi là người lớn, đảo mắt rồi bật cười; bố mẹ tôn trọng, hỏi ý kiến con." : "Grade 6–7: up to 16 words, wants to be treated as older."}
+                        : config.kidAge === "preteen"
+                          ? vi ? "Lớp 6–7: câu ≤ 16 từ, muốn được coi là người lớn, đảo mắt rồi bật cười; bố mẹ tôn trọng, hỏi ý kiến con." : "Grade 6–7: up to 16 words, wants to be treated as older."
+                          : vi ? "Lớp 8–9: câu ≤ 18 từ, kiệm lời rồi bỗng nói nhiều khi đúng chủ đề, cần riêng tư; bố mẹ lắng nghe, cùng thỏa thuận." : "Grade 8–9: up to 18 words, needs privacy; parents listen and agree together."}
               </p>
             </div>
           </div>

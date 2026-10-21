@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LESSON_PILLARS, PARENTING_LESSONS, PILLAR_GROUPS, findLesson, lessonCountByAge, lessonsFor, pickFreshLesson, searchLessons, withLibraryLesson } from "./parenting-lessons.ts";
-import { DEFAULT_CUTE_KIDS, FAMILY_MEMBERS, KID_AGES, isOlderKid, cuteKidsDirective, cuteKidsRoomSeed, cuteKidsStoryIdea, buildEpisodeIdeasPrompt, familyCast, labelCuteKidsPosts, normalizeCuteKids, AI_LABEL_VI, type CuteKidsConfig } from "./cute-kids.ts";
+import { DEFAULT_CUTE_KIDS, FAMILY_MEMBERS, KID_AGES, cuteKidsDirective, cuteKidsRoomSeed, cuteKidsStoryIdea, buildEpisodeIdeasPrompt, familyCast, labelCuteKidsPosts, normalizeCuteKids, AI_LABEL_VI, type CuteKidsConfig } from "./cute-kids.ts";
 import { childSafeText } from "./child-safe-wording.ts";
 
 const MIN_PER_PILLAR = 25;
 const MIN_TOTAL = 1000;
+const MIN_OLDER_PER_AREA = 10;
 
 // The card sends the picked lesson as a snapshot next to its id.
 const teach = (patch: Partial<CuteKidsConfig> = {}): CuteKidsConfig => {
@@ -13,9 +14,9 @@ const teach = (patch: Partial<CuteKidsConfig> = {}): CuteKidsConfig => {
   return { ...c, lesson: findLesson(c.lessonId) };
 };
 
-test("the library covers 29 parenting areas in 6 groups, every lesson complete, sourced and respectful", () => {
-  assert.equal(LESSON_PILLARS.length, 29);
-  assert.equal(new Set(LESSON_PILLARS.map((p) => p.id)).size, 29);
+test("the library covers 30 parenting areas in 6 groups, every lesson complete, sourced and respectful", () => {
+  assert.equal(LESSON_PILLARS.length, 30);
+  assert.equal(new Set(LESSON_PILLARS.map((p) => p.id)).size, 30);
   assert.equal(PILLAR_GROUPS.length, 6);
   for (const p of LESSON_PILLARS) assert.ok(PILLAR_GROUPS.some((g) => g.id === p.group), p.id);
   for (const p of LESSON_PILLARS) assert.ok(PARENTING_LESSONS.filter((l) => l.pillar === p.id).length >= MIN_PER_PILLAR, `${p.id} has lessons`);
@@ -40,7 +41,7 @@ test("the library covers 29 parenting areas in 6 groups, every lesson complete, 
     for (const age of KID_AGES) {
       const fit = lessonsFor(p.id, age);
       assert.ok(fit.every((l) => l.ages.includes(age)), `${p.id} ${age} filtered by age`);
-      const meant = p.id === "toddler" ? age === "toddler" : p.id === "preteen" ? isOlderKid(age) : true;
+      const meant = p.id === "toddler" ? age === "toddler" : p.id === "preteen" ? age === "middle" || age === "preteen" : p.id === "teen" ? age === "teen" : true;
       if (meant) assert.ok(fit.length >= 1, `${p.id} has lessons for ${age}`);
       else assert.equal(fit.length, 0, `${p.id} is not for ${age}`);
     }
@@ -48,6 +49,14 @@ test("the library covers 29 parenting areas in 6 groups, every lesson complete, 
   // 8–12-year-olds have their own shelf.
   assert.ok(lessonCountByAge("middle") >= 250, `8–10: ${lessonCountByAge("middle")}`);
   assert.ok(lessonCountByAge("preteen") >= 150, `11–12: ${lessonCountByAge("preteen")}`);
+  // …and so do 13–15-year-olds; every area has a real shelf for each older age.
+  assert.ok(lessonCountByAge("teen") >= 250, `13–15: ${lessonCountByAge("teen")}`);
+  for (const p of LESSON_PILLARS) {
+    for (const age of ["middle", "preteen", "teen"] as const) {
+      const meant = p.id === "toddler" ? false : p.id === "preteen" ? age !== "teen" : p.id === "teen" ? age === "teen" : true;
+      if (meant) assert.ok(lessonsFor(p.id, age).length >= MIN_OLDER_PER_AREA, `${p.id} ${age}: ${lessonsFor(p.id, age).length}`);
+    }
+  }
   // Titles stay distinct so the library never shows the same lesson twice.
   const titles = PARENTING_LESSONS.map((l) => l.title.toLowerCase());
   assert.equal(new Set(titles).size, titles.length, "unique titles");
