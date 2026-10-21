@@ -17,7 +17,9 @@ import { suggestCuteKidsEpisodes } from "@/actions";
 import type { AIProvider } from "@/types";
 import {
   AGE_LABEL,
+  AGE_STAGE,
   DEFAULT_CUTE_KIDS,
+  KID_AGES,
   KID_TRAITS,
   VIRAL_FORMATS,
   normalizeCuteKids,
@@ -159,6 +161,10 @@ export function CuteKidsCard(props: {
     update(config.lessonId === lesson.id
       ? { lessonId: undefined, lesson: undefined }
       : { lessonId: lesson.id, lesson, pillar: lesson.pillar, request: lesson.situation, format: "auto", family: [...new Set([...config.family, ...(lesson.needs ?? [])])] });
+  // Changing the age keeps only a picked lesson that was written for the new age.
+  const setAge = (age: KidAge) =>
+    update(picked && !picked.ages.includes(age) ? { kidAge: age, lessonId: undefined, lesson: undefined } : { kidAge: age });
+  const pillarsForAge = library ? LESSON_PILLARS.filter((p) => library.lessonsFor(p.id, config.kidAge).length > 0) : LESSON_PILLARS;
   const pickFresh = (anyPillar: boolean) => {
     const lesson = library?.pickFreshLesson(config.kidAge, usedLessons, anyPillar ? undefined : pillar);
     if (lesson) { setQuery(""); pickLesson(lesson); }
@@ -212,6 +218,14 @@ export function CuteKidsCard(props: {
                   : `${library ? library.PARENTING_LESSONS.length : "…"} lessons in ${LESSON_PILLARS.length} areas from real Vietnamese family situations (Positive Discipline, Gottman, Faber & Mazlish, Montessori, No-Drama Discipline, Good Inside, RIE, serve and return, CASEL…). The lesson is shown through the story: the kid's moment → the parent's respectful technique → a warm ending + takeaway.`}
               </p>
               <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-medium">{vi ? "Độ tuổi của con:" : "Child's age:"}</span>
+                {KID_AGES.map((age) => (
+                  <Chip key={age} active={config.kidAge === age} onClick={() => setAge(age)} title={AGE_STAGE[age][lang]}>
+                    {AGE_LABEL[age][lang]} <span className="opacity-60">· {AGE_STAGE[age][lang]}{library ? ` · ${library.lessonCountByAge(age)}` : ""}</span>
+                  </Chip>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -228,10 +242,10 @@ export function CuteKidsCard(props: {
               </div>
               {!searching && (
                 <div className="space-y-1">
-                  {PILLAR_GROUPS.map((g) => (
+                  {PILLAR_GROUPS.filter((g) => pillarsForAge.some((p) => p.group === g.id)).map((g) => (
                     <div key={g.id} className="flex flex-wrap items-center gap-1.5">
                       <span className="w-full text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:w-40">{g.label}</span>
-                      {LESSON_PILLARS.filter((p) => p.group === g.id).map((p) => (
+                      {pillarsForAge.filter((p) => p.group === g.id).map((p) => (
                         <Chip key={p.id} active={pillar === p.id} onClick={() => update({ pillar: p.id })}>
                           {p.label} {library && <span className="opacity-60">{library.lessonsFor(p.id, config.kidAge).length}</span>}
                         </Chip>
@@ -244,6 +258,10 @@ export function CuteKidsCard(props: {
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> {vi ? "Đang tải kho bài học…" : "Loading lessons…"}</p>
               ) : searching && !lessons.length ? (
                 <p className="text-xs text-muted-foreground">{vi ? "Không có bài nào khớp — thử từ khác." : "No lesson matches."}</p>
+              ) : !lessons.length ? (
+                <p className="text-xs text-muted-foreground">
+                  {vi ? `Chủ đề này chưa có bài cho tuổi ${AGE_LABEL[config.kidAge].vi} — chọn chủ đề khác ở trên.` : "No lesson in this area for this age yet — pick another area."}
+                </p>
               ) : (
                 <div className="grid max-h-[420px] gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2">
                   {lessons.map((lesson) => (
@@ -262,6 +280,7 @@ export function CuteKidsCard(props: {
                       {searching && <span className="ml-1.5 text-[10px] text-muted-foreground">{LESSON_PILLARS.find((p) => p.id === lesson.pillar)?.label}</span>}
                       <span className="mt-0.5 block text-muted-foreground">💡 {lesson.takeaway}</span>
                       <span className="mt-0.5 block text-[10px] text-amber-700">📚 {lesson.method}</span>
+                      <span className="mt-0.5 block text-[10px] text-muted-foreground">🎂 {lesson.ages.map((a) => AGE_LABEL[a][lang]).join(" · ")}</span>
                     </button>
                   ))}
                 </div>
@@ -319,8 +338,8 @@ export function CuteKidsCard(props: {
             <div className="space-y-1.5">
               <label className="text-xs font-medium">{vi ? "Tuổi bé" : "Age"}</label>
               <div className="flex flex-wrap gap-1.5">
-                {(["toddler", "young", "school"] as KidAge[]).map((age) => (
-                  <Chip key={age} active={config.kidAge === age} onClick={() => update({ kidAge: age })}>
+                {KID_AGES.map((age) => (
+                  <Chip key={age} active={config.kidAge === age} onClick={() => setAge(age)} title={AGE_STAGE[age][lang]}>
                     {AGE_LABEL[age][lang]}
                   </Chip>
                 ))}
@@ -330,7 +349,11 @@ export function CuteKidsCard(props: {
                   ? vi ? "Bé nói 1–3 từ, bập bẹ; bố mẹ dẫn lời, bé “diễn” bằng biểu cảm." : "1–3 word lines; parents carry the dialogue."
                   : config.kidAge === "young"
                     ? vi ? "Câu ngắn ≤ 6 từ, logic ngây ngô." : "Short lines up to 6 words."
-                    : vi ? "Câu ≤ 10 từ, ngọt ngào lém lỉnh, có câu chốt." : "Up to 10 words, a sassy punchline."}
+                    : config.kidAge === "school"
+                      ? vi ? "Câu ≤ 10 từ, ngọt ngào lém lỉnh, có câu chốt." : "Up to 10 words, a sassy punchline."
+                      : config.kidAge === "middle"
+                        ? vi ? "Lớp 3–5: câu ≤ 14 từ, lý lẽ, mặc cả, hài hước; bố mẹ cùng con giải quyết." : "Grade 3–5: up to 14 words, logic and humour."
+                        : vi ? "Lớp 6–7: câu ≤ 16 từ, muốn được coi là người lớn, đảo mắt rồi bật cười; bố mẹ tôn trọng, hỏi ý kiến con." : "Grade 6–7: up to 16 words, wants to be treated as older."}
               </p>
             </div>
           </div>

@@ -199,7 +199,7 @@ function enforceCuteKidsVoices(input: StoryboardGenerationInput, breakdown: Stor
   const star = locks.find((l) => l.name.trim().toLowerCase() === kidName) ?? locks.find((l) => l.is_child === true);
   for (const lock of locks) {
     if (!lock.voice) continue;
-    if (lock === star) lock.voice = cuteKidsVoice(lock.voice, { isKid: true, traits: kids.traits });
+    if (lock === star) lock.voice = cuteKidsVoice(lock.voice, { isKid: true, traits: kids.traits, kidAge: kids.kidAge });
     else if (lock.is_child !== true) lock.voice = cuteKidsVoice(lock.voice, { isKid: false });
   }
 }

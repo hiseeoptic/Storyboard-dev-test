@@ -145,3 +145,38 @@ test("real child behaviour per age and serve-and-return with the parents are in 
   assert.doesNotMatch(cuteKidsPerformanceNote("Su"), /Real child behaviour/);
   assert.doesNotMatch(`${toddler} ${note}`, /\b(kiss|lips?|pout|undress|swimwear|bath|limbs|suggestive)\b/i);
 });
+
+test("8–10 and 11–12: age-true speech, behaviour, personality, voice and back-and-forth — never toddler-like", () => {
+  const middle = cuteKidsDirective(config({ kidName: "Minh", kidGender: "boy", kidAge: "middle" }));
+  assert.match(middle, /about 8–10 years old/);
+  assert.match(middle, /at most 14 words/);
+  assert.match(middle, /REAL 8–10-YEAR-OLD BEHAVIOUR: Minh argues with real logic/);
+  assert.match(middle, /NĂN NỈ NGỌT \(sweet coaxing, age-true for 8–12\)/);
+  assert.match(middle, /GIẢ VỜ "BI KỊCH"/);
+  assert.doesNotMatch(middle, /NŨNG NỊU \(whiny-sweet|huhuhuuu|REAL TODDLER|SERVE AND RETURN \(every clip/);
+  assert.match(middle, /BACK-AND-FORTH \(every clip is a real exchange, never a lecture\)/);
+  assert.match(middle, /a playful eye-roll, a dramatic sigh/);
+  assert.match(middle, /a real 8–10-year-old's voice — clear and lively/);
+  assert.match(middle, /Default arc: sweet coaxing → a parent's playful "no" → a dramatic groan on the sofa/);
+  const preteen = cuteKidsDirective(config({ kidName: "Linh", kidAge: "preteen" }));
+  assert.match(preteen, /at most 16 words/);
+  assert.match(preteen, /"Con lớn rồi mà!"/);
+  assert.match(preteen, /REAL 11–12-YEAR-OLD BEHAVIOUR: Linh rolls her eyes/);
+  assert.doesNotMatch(`${middle} ${preteen}`, /\b(kiss|lips?|pout|undress|swimwear|bath|limbs|suggestive)\b/i);
+  assert.match(cuteKidsRoomSeed(config({ kidAge: "preteen" })), /Tương tác qua lại như thật: mỗi câu lý lẽ, cái thở dài/);
+  // The big brother is older than the star; ages survive normalisation.
+  assert.match(familyCast(config({ kidAge: "preteen", family: ["sibling"] }))[1]!.appearance, /older brother about 14–15 years old/);
+  assert.match(familyCast(config({ kidAge: "school", family: ["sibling"] }))[1]!.appearance, /older brother about 9–10 years old/);
+  assert.equal(normalizeCuteKids({ kidAge: "middle" })!.kidAge, "middle");
+  assert.equal(normalizeCuteKids({ kidAge: "preteen" })!.kidAge, "preteen");
+  // Voice and the video note follow the age.
+  const voice = cuteKidsVoice("bright child timbre with restrained pitch variation.", { isKid: true, traits: ["sweet_whiny", "fake_cry"], kidAge: "middle" });
+  assert.match(voice, /lively, natural pitch variation/);
+  assert.match(voice, /sweet coaxing tones when asking, dramatic groans that melt into laughter/);
+  assert.doesNotMatch(voice, /nũng nịu|huhu/);
+  const note = cuteKidsPerformanceNote("Minh", ["sweet_whiny", "fake_cry", "clever"], "middle");
+  assert.match(note, /a charming, age-true 8–10-year-old/);
+  assert.match(note, /never toddler babble/);
+  assert.match(note, /BACK-AND-FORTH: every look, sigh, argument or joke from Minh/);
+  assert.doesNotMatch(note, /SERVE AND RETURN|huhu/);
+});

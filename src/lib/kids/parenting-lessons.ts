@@ -63,11 +63,14 @@ export function findLesson(id: string | undefined | null): ParentingLesson | und
   return id ? BY_ID.get(id) : undefined;
 }
 
-/** Lessons for one pillar that suit the kid's age (all when no age match). */
+/** Lessons for one pillar written for the kid's age (the library is sorted by age group). */
 export function lessonsFor(pillar: LessonPillar, age: KidAge): ParentingLesson[] {
-  const inPillar = PARENTING_LESSONS.filter((l) => l.pillar === pillar);
-  const fit = inPillar.filter((l) => l.ages.includes(age));
-  return fit.length ? fit : inPillar;
+  return PARENTING_LESSONS.filter((l) => l.pillar === pillar && l.ages.includes(age));
+}
+
+/** How many lessons the library holds for each age. */
+export function lessonCountByAge(age: KidAge): number {
+  return PARENTING_LESSONS.filter((l) => l.ages.includes(age)).length;
 }
 
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();

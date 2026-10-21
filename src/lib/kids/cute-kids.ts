@@ -11,7 +11,10 @@
 import { CHILD_SAFE_WORDING_RULE } from "./child-safe-wording.ts";
 import { LESSON_PILLARS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
 
-export type KidAge = "toddler" | "young" | "school";
+export type KidAge = "toddler" | "young" | "school" | "middle" | "preteen";
+export const KID_AGES: readonly KidAge[] = ["toddler", "young", "school", "middle", "preteen"];
+/** 8–12-year-olds: older-kid acting, voices and parenting (no toddler babble or tantrums). */
+export const isOlderKid = (age: KidAge | undefined) => age === "middle" || age === "preteen";
 export type KidGender = "girl" | "boy";
 export type FamilyMember = "dad" | "mom" | "grandpa" | "grandma" | "baby" | "sibling" | "friend" | "dog" | "cat";
 export const FAMILY_MEMBERS: readonly FamilyMember[] = ["dad", "mom", "grandpa", "grandma", "baby", "sibling", "friend", "dog", "cat"];
@@ -67,6 +70,17 @@ export const AGE_LABEL: Record<KidAge, { vi: string; en: string }> = {
   toddler: { vi: "2–3 tuổi", en: "2–3 years" },
   young: { vi: "4–5 tuổi", en: "4–5 years" },
   school: { vi: "6–7 tuổi", en: "6–7 years" },
+  middle: { vi: "8–10 tuổi", en: "8–10 years" },
+  preteen: { vi: "11–12 tuổi", en: "11–12 years" },
+};
+
+/** Where a child of that age is in the Vietnamese school system (for the age picker). */
+export const AGE_STAGE: Record<KidAge, { vi: string; en: string }> = {
+  toddler: { vi: "nhà trẻ", en: "nursery" },
+  young: { vi: "mẫu giáo", en: "preschool" },
+  school: { vi: "lớp 1–2", en: "grade 1–2" },
+  middle: { vi: "lớp 3–5", en: "grade 3–5" },
+  preteen: { vi: "lớp 6–7", en: "grade 6–7" },
 };
 
 interface AgeProfile {
@@ -103,6 +117,22 @@ export const AGE_PROFILES: Record<KidAge, AgeProfile> = {
       "a 6-year-old: clear sentences of up to 10 words — sweet and cheeky, child logic that sometimes sounds like a little grown-up (\"bà cụ non\"), and one punchline that lands the video; always a child's vocabulary and voice.",
     motor: "walks briskly, crosses arms, stands like a little boss with fists at the sides, squeezes in between people, mimics adult gestures",
     body: "a real 6–7-year-old — baby teeth with a gap where a front tooth is missing",
+  },
+  middle: {
+    years: "about 8–10 years old",
+    maxWords: 14,
+    speech:
+      "an 8–10-year-old: full natural sentences of up to 14 words — quick logic and negotiation (\"Nhưng mẹ hứa rồi mà…\"), jokes and wordplay, a dramatic \"Trời ơiii\"; still a child's voice and vocabulary, never adult slang.",
+    motor: "moves quickly and confidently — flops onto the sofa with a groan, paces while explaining, leans in the doorway, does a little victory dance, swings a school backpack",
+    body: "a real 8–10-year-old — a slim child's face, new grown-up front teeth that look a little big in the smile, a school-age haircut",
+  },
+  preteen: {
+    years: "about 11–12 years old",
+    maxWords: 16,
+    speech:
+      "an 11–12-year-old: natural sentences of up to 16 words — wants to be treated as older (\"Con lớn rồi mà!\"), a sigh or \"Mẹ không hiểu đâu\", dry humour and a half-smile, a short mumble when embarrassed; a young voice, never adult.",
+    motor: "slouches on the sofa, shrugs, half-closes the bedroom door, leans on the kitchen counter to talk, walks a step ahead of the parents in public, tries to look cool and then laughs",
+    body: "a real 11–12-year-old — a still-childlike face on the way to looking older, a neat school-age haircut",
   },
 };
 
@@ -146,6 +176,10 @@ export function detectFormat(request: string): ViralFormat | undefined {
   return VIRAL_FORMATS.find((f) => f.keywords.test(text));
 }
 
+/** Expressions of 8–12-year-olds (no toddler pouts or tiny stamps). */
+export const OLDER_EXPRESSION_BANK =
+  "a playful eye-roll, a dramatic sigh with the head tipped back, a half-smile fighting not to laugh, raised eyebrows, a \"seriously?\" look, a proud grin, an embarrassed hand over the eyes, wide eyes in disbelief, a shy shrug";
+
 export const EXPRESSION_BANK =
   "a sulky frown with puffed-up cheeks, arms crossed and turning away with a \"hmph\", slow side-eye, gasp with both hands over the mouth, shy smile hiding behind little hands, proud chin-up grin, sleepy slow blinks, tiny stamp of the foot, eyes going wide in disbelief";
 
@@ -157,8 +191,9 @@ export const KID_TRAITS: Array<{ id: KidTrait; label_vi: string; label_en: strin
 ];
 
 /** What each trait looks and sounds like on screen (pronouns follow the kid). */
-function traitPerformance(trait: KidTrait, name: string, she: string, her: string, dialect: Dialect): string {
+function traitPerformance(trait: KidTrait, name: string, she: string, her: string, dialect: Dialect, age?: KidAge): string {
   const south = dialect === "south";
+  if (isOlderKid(age)) return olderTraitPerformance(trait, name, she, her, south);
   switch (trait) {
     case "sweet_whiny":
       return `NŨNG NỊU (whiny-sweet, coaxing): ${name} sways side to side, tugs a parent's sleeve or hand, leans ${her} head against a parent's arm, clasps both hands under ${her} chin and begs with big round shining eyes, tilts ${her} head, bounces on ${her} toes, does a tiny twist-and-stomp, hides ${her} face against a parent's arm and peeks back up. ${she[0]!.toUpperCase() + she.slice(1)} speaks in a high, sweet sing-song with drawn-out vowels and endearing particles, often calling ${her}self by name — e.g. ${south ? `"Ba ơiii~", "Má ơi, cho con đi mà, nhaaa", "Con hông chịu đâu~", "${name} muốn mà~"` : `"Bố ơiii~", "Mẹ ơi, cho con đi màaa", "Thôi mà bố~", "${name} muốn cơơ!"`}.`;
@@ -168,6 +203,20 @@ function traitPerformance(trait: KidTrait, name: string, she: string, her: strin
       return `KHÔN LANH (quick-witted): ${name} out-thinks the parents with cheeky child logic — uses their own words against them, offers a "deal", turns a no into a yes — with a knowing side-glance or a sly little grin to the camera, and lands the video's punchline in a child's own words.`;
     case "cheerful":
       return `HỒN NHIÊN (sunny): bright giggles, clapping, a little spin, running to hug a parent, sparkling eyes.`;
+  }
+}
+
+/** The same personality at 8–12: charming and age-true, never toddler-like. */
+function olderTraitPerformance(trait: KidTrait, name: string, she: string, her: string, south: boolean): string {
+  switch (trait) {
+    case "sweet_whiny":
+      return `NĂN NỈ NGỌT (sweet coaxing, age-true for 8–12): ${name} leans on a parent's shoulder, puts on puppy eyes, clasps ${her} hands — "${south ? "Đi mà má…" : "Đi mà mẹ…"}" — drags out "${south ? "Ba ơiii" : "Bố ơiii"}" half-jokingly, and grins when it works. Charming, never babyish.`;
+    case "fake_cry":
+      return `GIẢ VỜ "BI KỊCH" (theatrical protest for laughs): when told no, ${name} flops onto the sofa with a long groan "Trời ơiii…", pulls a cushion over ${her} face, peeks out to check whether it is working, then laughs it off. No real tears; it lasts 2–4 seconds and a parent answers with warm humour.`;
+    case "clever":
+      return `KHÔN LANH (quick-witted): ${name} out-argues the parents with real logic — quotes their own rules back, proposes a fair "deal", counts reasons on ${her} fingers — with a knowing side-glance, and lands the punchline in ${her} own words.`;
+    case "cheerful":
+      return `HỒN NHIÊN (sunny): ${she} laughs out loud, does a little victory dance, high-fives a parent, sparkling eyes.`;
   }
 }
 
@@ -192,11 +241,18 @@ function realChildBehaviour(age: KidAge, name: string, she: string, her: string)
       return `REAL 4–5-YEAR-OLD BEHAVIOUR: ${name} tugs a parent's hand to pull them toward something; whispers a "secret" into a parent's ear with a cupped hand; counts on ${her} fingers while explaining; acts with the whole body (arms wide for "this big", miming the story); eyes go wide and sparkle at a surprise; sneaks sideways glances to check whether a parent is watching; twists the hem of ${her} shirt or a toy while thinking; cannot keep still — shifts, hops, swings ${her} arms; a real belly laugh that makes ${her} fold over.`;
     case "school":
       return `REAL 6–7-YEAR-OLD BEHAVIOUR: ${name} negotiates ticking points off on ${her} fingers; a playful eye-roll and a dramatic sigh; leans ${her} whole weight on a parent's arm; tries to wink and blinks both eyes; copies a parent's tone and gesture exactly; giggles behind ${her} hand; looks up with pleading puppy eyes, then breaks into a grin; fiddles with a pencil or toy while thinking; checks a parent's face to see whether the joke landed.`;
+    case "middle":
+      return `REAL 8–10-YEAR-OLD BEHAVIOUR: ${name} argues with real logic and counts reasons on ${her} fingers; flops onto the sofa with a theatrical groan; explains something seriously with big hand gestures; fiddles with a pencil, a Rubik's cube or a backpack strap while talking; does a quick victory dance on a win; whispers a joke to a sibling and both snicker; glances at a parent to check whether ${she} is in trouble; beams at specific praise.`;
+    case "preteen":
+      return `REAL 11–12-YEAR-OLD BEHAVIOUR: ${name} rolls ${her} eyes and then smiles despite ${her}self; shrugs and answers "Bình thường"; keeps the bedroom door half-closed; types quickly on a homework tablet; walks a step ahead of the parents in public; tries to look cool, then cracks up at a parent's silly joke; looks away and mumbles when embarrassed; leans on the counter to talk when it is ${her} own idea.`;
   }
 }
 
 /** Every cute beat of the kid gets an instant warm answer, and the kid answers back (serve and return). */
-function serveAndReturn(name: string, she: string, her: string, dialect: Dialect): string {
+function serveAndReturn(name: string, she: string, her: string, dialect: Dialect, age?: KidAge): string {
+  if (isOlderKid(age)) {
+    return `BACK-AND-FORTH (every clip is a real exchange, never a lecture): each move from ${name} — a look, a sigh, an argument, a joke, a shrug — gets an immediate, visible answer from a parent: they sit down beside ${her} or lean in at ${her} eye level, match ${her} humour, name what ${she} feels (${dialect === "south" ? `"Con thấy không công bằng hả?"` : `"Con thấy không công bằng à?"`}), ask ${her} view, a hand on ${her} shoulder or a fist bump. Then ${name} reacts (a half-smile, a counter-argument, a nod) — at least two full exchanges per clip. Frame the exchanges as an eye-level two-shot so both faces read.`;
+  }
   return `SERVE AND RETURN (every clip is a back-and-forth, never a monologue): each "serve" from ${name} — a look, a point, a whine, a word, a held-up toy, a hug, a pretend cry — gets an IMMEDIATE, visible "return" from a parent within a second: they crouch to ${her} eye level, look where ${she} looks, mirror ${her} expression (a playful sulky face back, wide eyes back), name it warmly (${dialect === "south" ? `"Con muốn cái này hả?", "Ôi, bé cưng buồn rồi hả"` : `"Con muốn cái này à?", "Ôi, bé con buồn rồi à"`}), touch gently (a hand on ${her} back or head, fixing ${her} hair, a little squeeze), answer a nũng nịu voice with a soft sing-song voice of their own, or laugh with ${her}. Then ${name} reacts to that return (a shy smile, a giggle, a new serve) — at least two full exchanges per clip. A serve is never left hanging. Frame the exchanges as an eye-level two-shot so both faces read, and cut to the parent's face for the return.`;
 }
 
@@ -216,7 +272,7 @@ const FAMILY_LABEL: Record<FamilyMember, { north: string; south: string; en: str
   grandpa: { north: "Ông", south: "Ông", en: "grandfather in his 60s" },
   grandma: { north: "Bà", south: "Bà", en: "grandmother in her 60s" },
   baby: { north: "Em bé", south: "Em bé", en: "baby sibling about 1 year old" },
-  sibling: { north: "Anh Tin", south: "Anh Hai", en: "older brother about 8–9 years old" },
+  sibling: { north: "Anh Tin", south: "Anh Hai", en: "older brother" },
   friend: { north: "Bạn Bống", south: "Bạn Bống", en: "child friend from next door" },
   dog: { north: "Cún", south: "Cún", en: "small fluffy family dog" },
   cat: { north: "Mèo", south: "Mèo", en: "family cat" },
@@ -232,6 +288,14 @@ export interface FamilyCastMember {
 }
 
 const CHILD_MEMBERS = new Set<FamilyMember>(["baby", "sibling", "friend"]);
+/** The big brother is a few years older than the star. */
+const SIBLING_YEARS: Record<KidAge, string> = {
+  toddler: "about 8–9 years old",
+  young: "about 8–9 years old",
+  school: "about 9–10 years old",
+  middle: "about 12–13 years old",
+  preteen: "about 14–15 years old",
+};
 const MEMBER_ROLE: Partial<Record<FamilyMember, string>> = { baby: "em bé", sibling: "anh trai", friend: "bạn của bé" };
 
 /** Teach mode: the picked lesson (the snapshot carried by the config). */
@@ -260,7 +324,7 @@ export function familyCast(config: CuteKidsConfig): FamilyCastMember[] {
       return {
         name: label[config.dialect],
         role: MEMBER_ROLE[m] ?? "người nhà",
-        appearance: `Vietnamese ${m === "friend" ? `${label.en}, ${age.years}` : label.en}, warm friendly face, comfortable everyday home clothes`,
+        appearance: `Vietnamese ${m === "friend" ? `${label.en}, ${age.years}` : m === "sibling" ? `${label.en} ${SIBLING_YEARS[config.kidAge]}` : label.en}, warm friendly face, comfortable everyday home clothes`,
         isChild: CHILD_MEMBERS.has(m),
       };
     });
@@ -325,22 +389,27 @@ export function cuteKidsDirective(raw: CuteKidsConfig | null | undefined): strin
   const format = config.format && config.format !== "auto" ? VIRAL_FORMATS.find((f) => f.id === config.format) : detectFormat(config.request);
   const girl = config.kidGender === "girl";
   const traits = config.traits ?? [];
+  const older = isOlderKid(config.kidAge);
   const arc = traits.includes("sweet_whiny") && traits.includes("fake_cry") && traits.includes("clever")
-    ? ` Default arc: nũng nịu ask → a parent's playful "no" → khóc nhè theatre with peeking → a khôn lanh twist that wins → the family laughs and cuddles.`
+    ? older
+      ? ` Default arc: sweet coaxing → a parent's playful "no" → a dramatic groan on the sofa → a smart, fair deal that wins → everyone laughs.`
+      : ` Default arc: nũng nịu ask → a parent's playful "no" → khóc nhè theatre with peeking → a khôn lanh twist that wins → the family laughs and cuddles.`
     : "";
   return [
     `CUTE KIDS VIRAL REEL (HARD): a short family reel whose star is ${kid.name}, a ${config.kidGender} ${age.years}.`,
     `- STRUCTURE (${config.shots} clips of 10 s): 0–2 s hook on ${kid.name}'s face or the trigger moment, then escalation, then a punchline or warm twist; end on a moment that loops well. ${format ? `Format "${format.label_vi}": ${format.beats}.` : "Pick the most relatable everyday family situation in the request."}`,
     `- ${kid.name} SPEAKS LIKE ${age.speech} Every line of ${kid.name} has at most ${age.maxWords} words.`,
     `- ${kid.name} MOVES LIKE THE AGE: ${age.motor}. Body: ${age.body}.`,
-    `- EXPRESSIONS carry the reel: ${EXPRESSION_BANK}. Every clip has at least one clear close reaction on ${kid.name}.`,
+    `- EXPRESSIONS carry the reel: ${older ? OLDER_EXPRESSION_BANK : EXPRESSION_BANK}. Every clip has at least one clear close reaction on ${kid.name}.`,
     ...(traits.length
       ? [`- ${kid.name}'S PERSONALITY — adorable in gestures, body language and voice in EVERY clip (each clip holds at least one of these beats, performed big and clear):${arc}`,
-        ...traits.map((t) => `  · ${traitPerformance(t, kid.name, girl ? "she" : "he", girl ? "her" : "his", config.dialect)}`)]
+        ...traits.map((t) => `  · ${traitPerformance(t, kid.name, girl ? "she" : "he", girl ? "her" : "his", config.dialect, config.kidAge)}`)]
       : []),
     `- ${realChildBehaviour(config.kidAge, kid.name, girl ? "she" : "he", girl ? "her" : "his")} Use two or three of these per clip, motivated by the moment.`,
-    `- ${serveAndReturn(kid.name, girl ? "she" : "he", girl ? "her" : "his", config.dialect)}`,
-    `- VOICE of ${kid.name} (character_locks.voice): a high, sweet, real child's voice${traits.includes("sweet_whiny") ? " with a sing-song nũng nịu delivery — drawn-out vowels, playful pitch rises" : ""}${traits.includes("fake_cry") ? ", theatrical \"huhu\" sniffles that snap into giggles" : ""}; never adult-sounding.`,
+    `- ${serveAndReturn(kid.name, girl ? "she" : "he", girl ? "her" : "his", config.dialect, config.kidAge)}`,
+    older
+      ? `- VOICE of ${kid.name} (character_locks.voice): a real ${AGE_LABEL[config.kidAge].en.replace(" years", "")}-year-old's voice — clear and lively, a child's timbre that is not yet deep${traits.includes("sweet_whiny") ? ", sweet coaxing tones when asking" : ""}${traits.includes("fake_cry") ? ", dramatic groans that melt into laughter" : ""}; never adult-sounding.`
+      : `- VOICE of ${kid.name} (character_locks.voice): a high, sweet, real child's voice${traits.includes("sweet_whiny") ? " with a sing-song nũng nịu delivery — drawn-out vowels, playful pitch rises" : ""}${traits.includes("fake_cry") ? ", theatrical \"huhu\" sniffles that snap into giggles" : ""}; never adult-sounding.`,
     `- ${parentsPlayAlong(config.dialect)}`,
     ...parentingDirective(config, kid.name),
     `- Parents and family talk naturally and warmly in full everyday sentences that carry the scene; the comedy comes from ${kid.name}.`,
@@ -363,7 +432,9 @@ export function cuteKidsRoomSeed(config: CuteKidsConfig): string {
     `Yêu cầu: video ngắn ${config.shots} shot × 10 giây, 2 giây đầu là gương mặt/biểu cảm của bé hoặc khoảnh khắc gây chuyện; kết bằng câu chốt hoặc cú quay xe ấm áp.`,
     ...((config.traits ?? []).length ? [`Bé phải thật dễ thương từ cử chỉ, điệu bộ đến lời nói, mỗi shot có ít nhất một khoảnh khắc: ${(config.traits ?? []).map((t) => KID_TRAITS.find((k) => k.id === t)!.room_vi).join("; ")}.`] : []),
     "Bố mẹ luôn hưởng ứng: tan chảy, bật cười, trêu lại nhẹ nhàng, giả vờ nghiêm rồi chiều, gọi bé bằng tên âu yếm; không bao giờ phớt lờ hay mắng gắt.",
-    `Tương tác qua lại như thật: mỗi ánh mắt, cái chỉ tay, tiếng nũng nịu, câu nói hay cái ôm của bé đều được bố mẹ đáp lại ngay (ngồi xuống ngang tầm mắt, nhìn theo hướng bé nhìn, bắt chước biểu cảm của bé, gọi tên điều bé muốn, xoa đầu, ôm nhẹ), rồi bé phản ứng lại — mỗi shot ít nhất hai lượt qua lại. Bé có cử chỉ thật của trẻ ${AGE_LABEL[config.kidAge].vi}: ${REAL_CHILD_VI[config.kidAge]}.`,
+    isOlderKid(config.kidAge)
+      ? `Tương tác qua lại như thật: mỗi câu lý lẽ, cái thở dài, câu đùa hay cái nhún vai của con đều được bố mẹ đáp lại ngay (ngồi xuống cạnh con, đùa lại, gọi tên cảm xúc, hỏi ý kiến con, đặt tay lên vai, đập tay), rồi con phản ứng lại — mỗi shot ít nhất hai lượt qua lại, không giảng giải dài. Con có cử chỉ thật của trẻ ${AGE_LABEL[config.kidAge].vi}: ${REAL_CHILD_VI[config.kidAge]}.`
+      : `Tương tác qua lại như thật: mỗi ánh mắt, cái chỉ tay, tiếng nũng nịu, câu nói hay cái ôm của bé đều được bố mẹ đáp lại ngay (ngồi xuống ngang tầm mắt, nhìn theo hướng bé nhìn, bắt chước biểu cảm của bé, gọi tên điều bé muốn, xoa đầu, ôm nhẹ), rồi bé phản ứng lại — mỗi shot ít nhất hai lượt qua lại. Bé có cử chỉ thật của trẻ ${AGE_LABEL[config.kidAge].vi}: ${REAL_CHILD_VI[config.kidAge]}.`,
     ...(config.goal === "teach" ? ["Video dạy con: thể hiện bài học qua câu chuyện, không giảng; bố mẹ làm mẫu cách xử lý bình tĩnh, tôn trọng — không đánh, không quát, không dọa, không so sánh."] : []),
     `Bé nói đúng tuổi: mỗi câu tối đa ${age.maxWords} từ; bố mẹ nói tự nhiên. Quay kiểu ${config.filming === "phone" ? "điện thoại gia đình" : "điện ảnh"}, giọng ${config.dialect === "north" ? "miền Bắc" : "miền Nam"}.`,
     "Nội dung gia đình lành mạnh, an toàn cho trẻ: không nguy hiểm, không dọa hay làm bé khóc thật, bé mặc đồ ở nhà bình thường. Bố mẹ thể hiện tình cảm bằng ôm vai, nắm tay.",
@@ -375,6 +446,8 @@ const REAL_CHILD_VI: Record<KidAge, string> = {
   toddler: "ngước nhìn mặt bố mẹ trước và sau mỗi việc, chỉ bằng một ngón tay mũm mĩm, nắm ngón tay hoặc vạt áo bố mẹ, nấp sau chân bố mẹ rồi ló ra cười, úp mặt vào vai khi ngại, vỗ tay nhún nhảy, hai tay vỗ vỗ má bố mẹ, bi bô nghiêm túc, bước đi chập chững",
   young: "kéo tay bố mẹ đi, thì thầm \"bí mật\" vào tai, đếm trên ngón tay, diễn bằng cả người, mắt tròn xoe lấp lánh, liếc trộm xem bố mẹ có nhìn không, không chịu đứng yên, cười gập cả người",
   school: "mặc cả đếm từng điều kiện trên ngón tay, đảo mắt tinh nghịch, thở dài kiểu người lớn, dựa cả người vào tay bố mẹ, nháy mắt mà nhắm cả hai mắt, nhại giọng bố mẹ, che miệng cười khúc khích",
+  middle: "lý lẽ đâu ra đấy, đếm lý do trên ngón tay, nằm vật ra sofa than \"Trời ơi\", vừa nói vừa xoay bút hay khối rubik, nhảy điệu ăn mừng khi thắng, thì thầm trêu anh chị rồi cùng cười khúc khích, liếc bố mẹ xem mình có bị mắng không",
+  preteen: "đảo mắt rồi vẫn bật cười, nhún vai trả lời \"Bình thường\", khép hờ cửa phòng, đi trước bố mẹ một bước ở chỗ đông người, cố tỏ ra \"ngầu\" rồi phì cười vì câu đùa của bố, ngại thì nhìn đi chỗ khác và nói lí nhí, tự ra bếp tựa bàn kể chuyện khi muốn",
 };
 
 export const AI_LABEL_VI = "🤖 Video tạo bằng AI · #AIGenerated";
@@ -426,7 +499,7 @@ function lessonFields(raw: unknown, lessonId: unknown): { lessonId?: string; les
   if (!raw || typeof raw !== "object" || typeof lessonId !== "string") return {};
   const r = raw as Record<string, unknown>;
   const pillar = LESSON_PILLARS.find((p) => p.id === r.pillar)?.id;
-  const ages = Array.isArray(r.ages) ? r.ages.filter((a): a is KidAge => a === "toddler" || a === "young" || a === "school") : [];
+  const ages = Array.isArray(r.ages) ? r.ages.filter((a): a is KidAge => KID_AGES.includes(a as KidAge)) : [];
   const needs = Array.isArray(r.needs) ? r.needs.filter((m): m is FamilyMember => FAMILY_MEMBERS.includes(m as FamilyMember)) : [];
   const lesson: ParentingLesson = {
     id: clip(r.id, 60),
@@ -457,7 +530,7 @@ export function normalizeCuteKids(raw: unknown): CuteKidsConfig | undefined {
     request: String(r.request ?? "").slice(0, 4000),
     kidName: String(r.kidName ?? "").trim().slice(0, 40) || DEFAULT_CUTE_KIDS.kidName,
     kidGender: pick(r.kidGender, ["girl", "boy"] as const, "girl"),
-    kidAge: pick(r.kidAge, ["toddler", "young", "school"] as const, "school"),
+    kidAge: pick(r.kidAge, KID_AGES, "school"),
     family: [...new Set(family)],
     filming: pick(r.filming, ["phone", "cinematic"] as const, "phone"),
     dialect: pick(r.dialect, ["north", "south"] as const, "north"),
@@ -537,16 +610,17 @@ const RESTRAINED_PROSODY = /\b(?:with\s+)?restrained\s+(?:context-appropriate\s+
  * general audio law). In a cute-kids reel that flattens the kid: the kid gets
  * a lively sing-song delivery, the family warm expressive voices.
  */
-export function cuteKidsVoice(voice: string, opts: { isKid: boolean; traits?: KidTrait[] }): string {
+export function cuteKidsVoice(voice: string, opts: { isKid: boolean; traits?: KidTrait[]; kidAge?: KidAge }): string {
   const text = String(voice ?? "").trim();
   if (!text) return text;
-  const lively = opts.isKid ? "lively sing-song pitch rises" : "warm, expressive natural pitch variation";
+  const older = opts.isKid && isOlderKid(opts.kidAge);
+  const lively = !opts.isKid ? "warm, expressive natural pitch variation" : older ? "lively, natural pitch variation" : "lively sing-song pitch rises";
   let out = text.replace(RESTRAINED_PROSODY, `with ${lively}`);
   if (opts.isKid) {
     const traits = opts.traits ?? [];
     const extra = [
-      traits.includes("sweet_whiny") ? "a sweet nũng nịu sing-song with drawn-out vowels" : "",
-      traits.includes("fake_cry") ? "theatrical \"huhu\" sniffles that snap into giggles" : "",
+      traits.includes("sweet_whiny") ? (older ? "sweet coaxing tones when asking" : "a sweet nũng nịu sing-song with drawn-out vowels") : "",
+      traits.includes("fake_cry") ? (older ? "dramatic groans that melt into laughter" : "theatrical \"huhu\" sniffles that snap into giggles") : "",
       traits.includes("clever") ? "a cheeky, quick-witted tone on the punchline" : "",
     ].filter((e) => e && !out.includes(e));
     if (extra.length) out = `${out.replace(/[.;\s]+$/, "")}; ${extra.join(", ")}.`;
@@ -558,6 +632,8 @@ const REAL_CHILD_SHORT: Record<KidAge, string> = {
   toddler: "looks up at the parent's face to check every reaction, points with one finger, holds a parent's finger or shirt hem, hides behind a leg and peeks out, buries the face in a shoulder, claps and bounces, slightly wobbly steps",
   young: "tugs a parent's hand, whispers into an ear, counts on fingers, acts with the whole body, sparkling wide eyes, sideways glances to check the parent, cannot keep still",
   school: "counts conditions on fingers, a playful eye-roll and sigh, leans on a parent's arm, a two-eyed wink attempt, copies the parent's tone, giggles behind a hand",
+  middle: "argues with real logic counting reasons on fingers, flops on the sofa with a groan, fiddles with a pencil or cube while talking, a quick victory dance, checks the parent's face",
+  preteen: "an eye-roll that turns into a smile, a shrug and \"Bình thường\", a half-closed bedroom door, trying to look cool then laughing, mumbling and looking away when embarrassed",
 };
 
 /** Video-prompt note: this project explicitly wants the kid's big, cute performance. */
@@ -569,5 +645,14 @@ export function cuteKidsPerformanceNote(kidName: string, traits: KidTrait[] = DE
     traits.includes("cheerful") ? "bright giggles, claps and little spins" : "",
   ].filter(Boolean);
   const real = kidAge ? ` Real child behaviour: ${REAL_CHILD_SHORT[kidAge]}.` : "";
+  if (isOlderKid(kidAge)) {
+    const olderBeats = [
+      traits.includes("sweet_whiny") ? "sweet coaxing (puppy eyes, leaning on a parent's shoulder, a half-joking drawn-out \"Mẹ ơiii\")" : "",
+      traits.includes("fake_cry") ? "a dramatic groan on the sofa with a cushion over the face, peeking out, then laughing it off (no real tears)" : "",
+      traits.includes("clever") ? "real logic, a fair \"deal\" and a knowing side-glance on the punchline" : "",
+      traits.includes("cheerful") ? "laughing out loud, a little victory dance, a high-five" : "",
+    ].filter(Boolean);
+    return `CHILD PERFORMANCE (explicitly required by this project — overrides any "restrained / never theatrical" rule for ${kidName} only): ${kidName} is a charming, age-true ${AGE_LABEL[kidAge!].en.replace(" years", "")}-year-old with big, clear, natural expressions${olderBeats.length ? `: ${olderBeats.join("; ")}` : ""} — never toddler babble or a little child's tantrum.${real} The parents answer every beat warmly and with humour. BACK-AND-FORTH: every look, sigh, argument or joke from ${kidName} gets an immediate answer from a parent (sitting beside ${kidName}, matching the humour, naming the feeling, asking ${kidName}'s view, a hand on the shoulder or a fist bump), and ${kidName} reacts back — a real exchange with both faces visible.`;
+  }
   return `CHILD PERFORMANCE (explicitly required by this project — overrides any "restrained / never theatrical" rule for ${kidName} only): ${kidName} performs big, clear, adorable child expressions${beats.length ? `: ${beats.join("; ")}` : ""}.${real} The parents react warmly and visibly to every cute beat (melting smiles, laughs, gentle teasing, giving in with a cuddle). SERVE AND RETURN: every look, point, whine, word or hug from ${kidName} gets an instant warm return from a parent within a second (crouching to eye level, mirroring the expression, a gentle touch, a warm word or a soft sing-song answer), and ${kidName} reacts back — a real back-and-forth with both faces visible, never a serve left hanging.`;
 }

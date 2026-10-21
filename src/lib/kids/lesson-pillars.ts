@@ -35,7 +35,8 @@ export type LessonPillar =
   | "public"
   | "play"
   | "travel"
-  | "pets";
+  | "pets"
+  | "preteen";
 
 export interface ParentingLesson {
   id: string;
@@ -76,6 +77,7 @@ export const LESSON_PILLARS: Array<{ id: LessonPillar; label: string; group: str
   { id: "routines", label: "⏰ Thói quen", group: "daily" },
   { id: "eating", label: "🍚 Ăn uống & bữa cơm", group: "daily" },
   { id: "toddler", label: "🧸 Tuổi lên 2–3", group: "daily" },
+  { id: "preteen", label: "🧑 Tuổi tiền dậy thì", group: "daily" },
   { id: "independence", label: "🧒 Tự lập", group: "daily" },
   { id: "screens", label: "📱 Màn hình", group: "daily" },
   { id: "behavior", label: "🌋 Hành vi khó", group: "conduct" },
