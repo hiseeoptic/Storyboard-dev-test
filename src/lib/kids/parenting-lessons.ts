@@ -40,6 +40,9 @@ import { OLDER_CONDUCT_LESSONS } from "./lessons/older-conduct.ts";
 import { OLDER_PEOPLE_LESSONS } from "./lessons/older-people.ts";
 import { OLDER_MIND_AND_WORLD_LESSONS } from "./lessons/older-mind-and-world.ts";
 import { OLDER_PRETEEN_AND_OUTINGS_LESSONS } from "./lessons/older-preteen-and-outings.ts";
+import { OLDER_MORE_DAILY_LESSONS } from "./lessons/older-more-daily.ts";
+import { OLDER_MORE_CONDUCT_LESSONS } from "./lessons/older-more-conduct.ts";
+import { OLDER_MORE_WORLD_LESSONS } from "./lessons/older-more-world.ts";
 
 export { LESSON_PILLARS, PILLAR_GROUPS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
 
@@ -67,6 +70,9 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
   ...OLDER_PEOPLE_LESSONS,
   ...OLDER_MIND_AND_WORLD_LESSONS,
   ...OLDER_PRETEEN_AND_OUTINGS_LESSONS,
+  ...OLDER_MORE_DAILY_LESSONS,
+  ...OLDER_MORE_CONDUCT_LESSONS,
+  ...OLDER_MORE_WORLD_LESSONS,
 ];
 
 const BY_ID = new Map(PARENTING_LESSONS.map((l) => [l.id, l]));
