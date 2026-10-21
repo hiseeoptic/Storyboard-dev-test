@@ -24,6 +24,16 @@ import { CONDUCT_LESSONS } from "./lessons/conduct.ts";
 import { PEOPLE_LESSONS } from "./lessons/people.ts";
 import { MIND_AND_WORLD_LESSONS } from "./lessons/mind-and-world.ts";
 import { SEASONS_AND_OUTINGS_LESSONS } from "./lessons/seasons-and-outings.ts";
+import { INNER_WORLD_LESSONS } from "./lessons/inner-world.ts";
+import { CLOSENESS_LESSONS } from "./lessons/closeness.ts";
+import { HOME_RHYTHM_LESSONS } from "./lessons/home-rhythm.ts";
+import { GROWING_UP_LESSONS } from "./lessons/growing-up.ts";
+import { SPEAKING_AND_BEHAVING_LESSONS } from "./lessons/speaking-and-behaving.ts";
+import { FAIRNESS_LESSONS } from "./lessons/fairness.ts";
+import { SCHOOL_MONEY_IDEAS_LESSONS } from "./lessons/school-money-ideas.ts";
+import { NATURE_AND_PETS_LESSONS } from "./lessons/nature-and-pets.ts";
+import { OCCASIONS_AND_OUTINGS_LESSONS } from "./lessons/occasions-and-outings.ts";
+import { PLAY_AND_TRAVEL_LESSONS } from "./lessons/play-and-travel.ts";
 
 export { LESSON_PILLARS, PILLAR_GROUPS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
 
@@ -35,6 +45,16 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
   ...PEOPLE_LESSONS,
   ...MIND_AND_WORLD_LESSONS,
   ...SEASONS_AND_OUTINGS_LESSONS,
+  ...INNER_WORLD_LESSONS,
+  ...CLOSENESS_LESSONS,
+  ...HOME_RHYTHM_LESSONS,
+  ...GROWING_UP_LESSONS,
+  ...SPEAKING_AND_BEHAVING_LESSONS,
+  ...FAIRNESS_LESSONS,
+  ...SCHOOL_MONEY_IDEAS_LESSONS,
+  ...NATURE_AND_PETS_LESSONS,
+  ...OCCASIONS_AND_OUTINGS_LESSONS,
+  ...PLAY_AND_TRAVEL_LESSONS,
 ];
 
 const BY_ID = new Map(PARENTING_LESSONS.map((l) => [l.id, l]));

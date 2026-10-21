@@ -4,8 +4,8 @@ import { LESSON_PILLARS, PARENTING_LESSONS, PILLAR_GROUPS, findLesson, lessonsFo
 import { DEFAULT_CUTE_KIDS, FAMILY_MEMBERS, cuteKidsDirective, cuteKidsRoomSeed, cuteKidsStoryIdea, buildEpisodeIdeasPrompt, familyCast, labelCuteKidsPosts, normalizeCuteKids, AI_LABEL_VI, type CuteKidsConfig } from "./cute-kids.ts";
 import { childSafeText } from "./child-safe-wording.ts";
 
-const MIN_PER_PILLAR = 9;
-const MIN_TOTAL = 350;
+const MIN_PER_PILLAR = 25;
+const MIN_TOTAL = 1000;
 
 // The card sends the picked lesson as a snapshot next to its id.
 const teach = (patch: Partial<CuteKidsConfig> = {}): CuteKidsConfig => {
@@ -13,9 +13,10 @@ const teach = (patch: Partial<CuteKidsConfig> = {}): CuteKidsConfig => {
   return { ...c, lesson: findLesson(c.lessonId) };
 };
 
-test("the library covers 25 parenting areas in 5 groups, every lesson complete, sourced and respectful", () => {
-  assert.equal(LESSON_PILLARS.length, 25);
-  assert.equal(new Set(LESSON_PILLARS.map((p) => p.id)).size, 25);
+test("the library covers 28 parenting areas in 6 groups, every lesson complete, sourced and respectful", () => {
+  assert.equal(LESSON_PILLARS.length, 28);
+  assert.equal(new Set(LESSON_PILLARS.map((p) => p.id)).size, 28);
+  assert.equal(PILLAR_GROUPS.length, 6);
   for (const p of LESSON_PILLARS) assert.ok(PILLAR_GROUPS.some((g) => g.id === p.group), p.id);
   for (const p of LESSON_PILLARS) assert.ok(PARENTING_LESSONS.filter((l) => l.pillar === p.id).length >= MIN_PER_PILLAR, `${p.id} has lessons`);
   assert.ok(PARENTING_LESSONS.length >= MIN_TOTAL, `${PARENTING_LESSONS.length} lessons`);
