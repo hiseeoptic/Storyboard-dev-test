@@ -3,11 +3,12 @@ import test from "node:test";
 import { AI_LOOK_NEGATIVE, HUMAN_PERFORMANCE_DOCTRINE, HUMAN_PERFORMANCE_LAW, KEYFRAME_CANDID_NOTE, performanceDirection } from "./human-performance.ts";
 import { childSafeText } from "../kids/child-safe-wording.ts";
 
-test("the doctrine covers reactions, eyes, changing faces, hands, listeners, timing and spoken lines", () => {
-  for (const rule of ["REACT, THEN ACT", "EYES LEAD", "EXPRESSIONS CHANGE INSIDE THE CLIP", "REAL BODIES", "HANDS HAVE BUSINESS", "LISTENERS ARE ALIVE", "REAL TIMING", "SPOKEN, NOT WRITTEN"]) {
+test("the doctrine covers reactions, eyes, changing faces, hands, listeners, turn direction, timing and spoken lines", () => {
+  for (const rule of ["REACT, THEN ACT", "EYES LEAD", "EXPRESSIONS CHANGE INSIDE THE CLIP", "REAL BODIES", "HANDS HAVE BUSINESS", "LISTENERS ARE ALIVE", "DIRECT EVERY TURN", "REAL TIMING", "SPOKEN, NOT WRITTEN"]) {
     assert.ok(HUMAN_PERFORMANCE_DOCTRINE.includes(rule), rule);
   }
   assert.match(HUMAN_PERFORMANCE_DOCTRINE, /"Hả\?", "Thật á\?"/);
+  assert.match(HUMAN_PERFORMANCE_DOCTRINE, /number of dialogue turns is never fixed[\s\S]*Nobody freezes/);
 });
 
 test("each clip gets the writer's acting plus the real-people law", () => {

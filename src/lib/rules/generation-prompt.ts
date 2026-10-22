@@ -112,7 +112,8 @@ function dialogueModule(packet: ActiveStoryboardRulePacket): GenerationPromptMod
     `DIALOGUE AND AUDIO:
 - ${authority}${spoken}
 - The user prompt owns speech-channel selection, language, voice profiles, music, ambience, and foley. A disabled channel stays empty; never invent narration to fill silence or turn action directions/titles into spoken lines.
-- dialogue_lines is the only numeric clock. Turns are sequential and non-overlapping; one mouth moves at a time. Use at most three turns and normally two speakers per clip, with on-screen speakers bound to a beat that shows them. Off-screen and voice-over delivery retain their declared visibility rules.
+- dialogue_lines owns the clock. Turns are sequential; one mouth moves at a time. There is NO fixed maximum number of turns: natural delivery, breathing and reactions decide what fits. Bind each on-screen speaker to a beat showing them; retain off-screen/voice-over visibility.
+- Direct EACH turn: pre-line reaction → speaker eyes/face/posture/gesture/voice → listeners' silent responses → after-beat motivating the next turn. Nobody freezes while waiting to speak.
 - Assign natural delivery windows and leave breathing/reaction room. Never speed up a voice, overlap speakers, duplicate a line in motion_prompt, or silently reassign a speaker to make text fit. Move only a whole authorized thought to an adjacent compatible clip when the selected dialogue authority permits redistribution.
 - Foley follows visible contact and effect; loud impacts do not overlap speech. Continuous locations preserve their acoustic bed, while declared location/time cuts reset only the named audio dimensions.`
   );

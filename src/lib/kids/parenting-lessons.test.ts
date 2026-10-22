@@ -97,7 +97,8 @@ test("every lesson expands into a positive model, concrete steps and an observab
     assert.ok(shotAdvice.recommendedShots === 3 || shotAdvice.recommendedShots === 4, `${lesson.id} shot count`);
     assert.equal(shotAdvice.shotPlan.length, shotAdvice.recommendedShots, `${lesson.id} shot plan`);
     assert.ok(shotAdvice.shotPlan.every((beat) => /biểu cảm|nét mặt|phản ứng/i.test(beat)), `${lesson.id} performance in every shot`);
-    assert.match(shotAdvice.dialogueDirection, /tối đa hai lượt thoại ngắn[\s\S]*Giọng nói phải theo đúng thái độ/);
+    assert.match(shotAdvice.dialogueDirection, /Không khóa số lượt thoại[\s\S]*Trước, trong và sau từng câu[\s\S]*không ai đứng đơ/);
+    assert.doesNotMatch(shotAdvice.dialogueDirection, /tối đa hai lượt/);
   }
   const phone = findLesson("parent_phone_model")!;
   const guide = lessonTeachingGuideVi(phone);
@@ -141,7 +142,8 @@ test("teach mode: lesson, structure, narrator takeaway and respectful parents ar
   assert.match(d, /LESSON STRUCTURE \(3 clips\): clip 1 = the relatable moment/);
   assert.match(d, /TAKEAWAY BY NARRATOR: the last clip ends with a short, warm narrator voice-over/);
   assert.match(d, /10-SECOND SHOT ADVICE: recommended/);
-  assert.match(d, /PERFORMANCE AND DIALOGUE:[\s\S]*Mỗi shot tối đa hai lượt thoại ngắn/);
+  assert.match(d, /PERFORMANCE DIRECTOR — TURN BY TURN:[\s\S]*NO fixed maximum number of dialogue turns/);
+  assert.match(d, /PERFORMANCE BEFORE WORDS:[\s\S]*nobody freezes while waiting to speak/i);
   assert.match(d, /never hitting, yelling, threats, shaming/);
   assert.doesNotMatch(cuteKidsDirective({ ...teach(), goal: "fun" }), /PARENTING LESSON/);
   assert.match(cuteKidsDirective(teach({ takeaway: "parent" })), /TAKEAWAY BY THE PARENT: in the last clip the parent says the lesson to Na/);

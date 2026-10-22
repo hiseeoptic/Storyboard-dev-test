@@ -67,6 +67,9 @@ test("preserve mode selects dialogue preservation and never activates authoring 
   assert.ok(!compiled.module_ids.includes("dialogue_authoring"));
   assert.match(compiled.prompt, /Preserve every enabled spoken line/);
   assert.doesNotMatch(compiled.prompt, /menu explicitly authorizes one creative polish pass/i);
+  assert.match(compiled.prompt, /NO fixed maximum number of turns/);
+  assert.match(compiled.prompt, /Direct EACH turn/);
+  assert.doesNotMatch(compiled.prompt, /Use at most three turns/);
 });
 
 test("polish menu selects bounded dialogue authorship without replacing story facts", () => {
