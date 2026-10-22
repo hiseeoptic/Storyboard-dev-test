@@ -21,6 +21,8 @@ import {
   DEFAULT_CUTE_KIDS,
   KID_AGES,
   isOlderKid,
+  lessonTeachingBriefVi,
+  lessonTeachingGuideVi,
   traitLabelVi,
   KID_TRAITS,
   VIRAL_FORMATS,
@@ -158,11 +160,12 @@ export function CuteKidsCard(props: {
   const searching = query.trim().length > 1;
   const lessons = library ? (searching ? library.searchLessons(query, config.kidAge).slice(0, 40) : library.lessonsFor(pillar, config.kidAge)) : [];
   const picked = config.lesson?.id === config.lessonId ? config.lesson : undefined;
+  const pickedGuide = picked ? lessonTeachingGuideVi(picked) : undefined;
   // Picking a lesson also brings the family members its story needs (a sibling, a friend, grandma…).
   const pickLesson = (lesson: ParentingLesson) =>
     update(config.lessonId === lesson.id
       ? { lessonId: undefined, lesson: undefined }
-      : { lessonId: lesson.id, lesson, pillar: lesson.pillar, request: lesson.situation, format: "auto", family: [...new Set([...config.family, ...(lesson.needs ?? [])])] });
+      : { lessonId: lesson.id, lesson, pillar: lesson.pillar, request: lessonTeachingBriefVi(lesson), format: "auto", family: [...new Set([...config.family, ...(lesson.needs ?? [])])] });
   // Changing the age keeps only a picked lesson that was written for the new age.
   const setAge = (age: KidAge) =>
     update(picked && !picked.ages.includes(age) ? { kidAge: age, lessonId: undefined, lesson: undefined } : { kidAge: age });
@@ -302,10 +305,18 @@ export function CuteKidsCard(props: {
                 </Chip>
                 {config.abFormat && <span className="text-[11px] text-muted-foreground">{vi ? "Nên dùng 4 shot (40s)." : "Best with 4 shots."}</span>}
               </div>
-              {picked && (
-                <p className="text-[11px] text-muted-foreground">
-                  <span className="font-medium text-foreground">{picked.title}</span> — {vi ? "Cách xử lý" : "Technique"} ({picked.method}): {picked.technique}
-                </p>
+              {picked && pickedGuide && (
+                <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/[0.06] p-2.5 text-[11px]">
+                  <p><span className="font-semibold text-foreground">{picked.title}</span> · <span className="text-amber-700">{picked.method}</span></p>
+                  <p><span className="font-medium text-foreground">🌱 {vi ? "Bố mẹ làm mẫu:" : "Parent models:"}</span> <span className="text-muted-foreground">{pickedGuide.positiveModel}</span></p>
+                  <div>
+                    <span className="font-medium text-foreground">🪜 {vi ? "Xử lý từng bước:" : "Steps:"}</span>
+                    <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-muted-foreground">{pickedGuide.steps.map((step, index) => <li key={index}>{step}</li>)}</ol>
+                  </div>
+                  <p><span className="font-medium text-foreground">👀 {vi ? "Cho con tự thấy đúng–sai:" : "Observable proof:"}</span> <span className="text-muted-foreground">{pickedGuide.observableProof}</span></p>
+                  <p><span className="font-medium text-foreground">✅ {vi ? "Vì sao phù hợp:" : "Why it works:"}</span> <span className="text-muted-foreground">{pickedGuide.whyRight}</span></p>
+                  <p><span className="font-medium text-foreground">⚠️ {vi ? "Tránh làm:" : "Avoid:"}</span> <span className="text-muted-foreground">{pickedGuide.avoid}</span></p>
+                </div>
               )}
             </div>
           )}
@@ -315,7 +326,7 @@ export function CuteKidsCard(props: {
             <Textarea
               value={config.request}
               onChange={(e) => update({ request: e.target.value })}
-              rows={3}
+              rows={teach && picked ? 10 : 3}
               className="resize-none"
               placeholder={vi ? "VD: Bố ôm mẹ trong bếp, bé thấy liền chen vào giữa, phụng phịu đòi bố bế mình trước" : "e.g. Dad hugs Mom in the kitchen, the kid squeezes in between"}
             />
@@ -357,7 +368,7 @@ export function CuteKidsCard(props: {
                         ? vi ? "Lớp 3–5: câu ≤ 14 từ, lý lẽ, mặc cả, hài hước; bố mẹ cùng con giải quyết." : "Grade 3–5: up to 14 words, logic and humour."
                         : config.kidAge === "preteen"
                           ? vi ? "Lớp 6–7: câu ≤ 16 từ, muốn được coi là người lớn, đảo mắt rồi bật cười; bố mẹ tôn trọng, hỏi ý kiến con." : "Grade 6–7: up to 16 words, wants to be treated as older."
-                          : vi ? "Lớp 8–9: câu ≤ 18 từ, kiệm lời rồi bỗng nói nhiều khi đúng chủ đề, cần riêng tư; bố mẹ lắng nghe, cùng thỏa thuận." : "Grade 8–9: up to 18 words, needs privacy; parents listen and agree together."}
+                          : vi ? "Lớp 8–10: câu ≤ 18 từ, kiệm lời rồi bỗng nói nhiều khi đúng chủ đề, cần riêng tư; bố mẹ lắng nghe, cùng thỏa thuận." : "Grade 8–10: up to 18 words, needs privacy; parents listen and agree together."}
               </p>
             </div>
           </div>

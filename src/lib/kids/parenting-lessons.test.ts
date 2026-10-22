@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LESSON_PILLARS, PARENTING_LESSONS, PILLAR_GROUPS, findLesson, lessonCountByAge, lessonsFor, pickFreshLesson, searchLessons, withLibraryLesson } from "./parenting-lessons.ts";
-import { DEFAULT_CUTE_KIDS, FAMILY_MEMBERS, KID_AGES, cuteKidsDirective, cuteKidsRoomSeed, cuteKidsStoryIdea, buildEpisodeIdeasPrompt, familyCast, labelCuteKidsPosts, normalizeCuteKids, AI_LABEL_VI, type CuteKidsConfig } from "./cute-kids.ts";
+import { DEFAULT_CUTE_KIDS, FAMILY_MEMBERS, KID_AGES, cuteKidsDirective, cuteKidsRoomSeed, cuteKidsStoryIdea, buildEpisodeIdeasPrompt, familyCast, labelCuteKidsPosts, lessonTeachingBriefVi, lessonTeachingGuideVi, normalizeCuteKids, AI_LABEL_VI, type CuteKidsConfig } from "./cute-kids.ts";
 import { childSafeText } from "./child-safe-wording.ts";
 import { teenSafetyViolations } from "./teen-safety.ts";
 
@@ -85,6 +85,22 @@ test("every teen lesson passes the dedicated topic gate", () => {
   }
 });
 
+test("every lesson expands into a positive model, concrete steps and an observable right-versus-wrong demonstration", () => {
+  for (const lesson of PARENTING_LESSONS) {
+    const guide = lessonTeachingGuideVi(lesson);
+    assert.ok(guide.positiveModel.length > 30, `${lesson.id} positive model`);
+    assert.ok(guide.steps.length >= 3 && guide.steps.every((step) => step.length > 15), `${lesson.id} concrete steps`);
+    assert.ok(guide.observableProof.length > 40, `${lesson.id} observable proof`);
+    assert.ok(guide.whyRight.length > 20, `${lesson.id} why right`);
+    assert.ok(guide.avoid.length > 10, `${lesson.id} avoid`);
+  }
+  const phone = findLesson("parent_phone_model")!;
+  const guide = lessonTeachingGuideVi(phone);
+  assert.match(guide.positiveModel, /Con nói đúng[\s\S]*cất điện thoại/);
+  assert.match(guide.observableProof, /cùng một giỏ[\s\S]*quy tắc gia đình/);
+  assert.match(lessonTeachingBriefVi(phone), /Hình mẫu tích cực[\s\S]*Xử lý từng bước:[\s\S]*Cho con tự thấy đúng–sai:[\s\S]*Vì sao cách này phù hợp:[\s\S]*Tránh làm:/);
+});
+
 test("every lesson's directive is free of wording the video model refuses", () => {
   for (const l of PARENTING_LESSONS) {
     for (const kidAge of l.ages) {
@@ -129,14 +145,17 @@ test("A/B format: Cách 1 the mild way, a rewind, then Cách 2", () => {
   assert.match(four, /"2 CÁCH XỬ LÝ" \(A\/B\): Cách 1 fills clip 1–2 — the same relatable moment handled the ineffective way \(bố mẹ nói cụt/);
   assert.match(four, /the narrator says "Cách 1…" at the start and "Còn cách 2…" at the rewind/);
   assert.match(cuteKidsDirective(teach({ abFormat: true, shots: 3, takeaway: "parent" })), /Cách 1 fills clip 1 —.*the scene visibly restarts from the same moment/);
-  assert.match(cuteKidsStoryIdea(teach({ abFormat: true })), /Kiểu "2 cách xử lý": cách 1 — bố mẹ nói cụt/);
+  assert.match(cuteKidsStoryIdea(teach({ abFormat: true })), /Kiểu "2 cách xử lý": cách 1 — phản ứng chưa khéo/);
 });
 
 test("Vietnamese idea, room seed and episode ideas carry the lesson", () => {
   const idea = cuteKidsStoryIdea(teach());
   assert.match(idea, /🎓 Bài học dạy con \(💰 Tiền bạc\): Đòi mua đồ chơi ở siêu thị\./);
   assert.match(idea, /Câu chốt \(giọng dẫn ngắn ở cuối video\): Thừa nhận mong muốn/);
-  assert.match(idea, /Cách bố mẹ xử lý \(Thừa nhận mong muốn, giữ giới hạn \(Kỷ luật tích cực\)\): bố mẹ ngồi xuống/);
+  assert.match(idea, /Hình mẫu tích cực của bố mẹ:/);
+  assert.match(idea, /Xử lý từng bước:/);
+  assert.match(idea, /Cho con tự thấy đúng–sai:/);
+  assert.match(idea, /Cách làm: Thừa nhận mong muốn, giữ giới hạn \(Kỷ luật tích cực\)\./);
   assert.match(cuteKidsRoomSeed(teach()), /không đánh, không quát, không dọa, không so sánh/);
   assert.match(buildEpisodeIdeasPrompt(teach({ pillar: "emotions" })), /PARENTING CHANNEL: every idea teaches parents one everyday lesson in the area "Cảm xúc"/);
   assert.match(buildEpisodeIdeasPrompt(teach({ pillar: "emotions" }), [], ["Ăn vạ khi phải tắt tivi"]), /library already covers these situations in this area — give fresh, different ones: Ăn vạ khi phải tắt tivi\./);

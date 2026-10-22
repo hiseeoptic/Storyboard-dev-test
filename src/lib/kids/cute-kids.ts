@@ -323,6 +323,102 @@ export function lessonOf(config: Pick<CuteKidsConfig, "goal" | "lessonId" | "les
   return config.goal === "teach" && config.lesson && config.lesson.id === config.lessonId ? config.lesson : undefined;
 }
 
+export interface LessonTeachingGuide {
+  positiveModel: string;
+  steps: string[];
+  observableProof: string;
+  whyRight: string;
+  avoid: string;
+}
+
+const SOCIAL_PILLARS = new Set<LessonPillar>(["behavior", "words", "manners", "honesty", "respect", "family", "social", "empathy"]);
+const PRACTICE_PILLARS = new Set<LessonPillar>(["routines", "eating", "independence", "school", "learning", "play", "nature", "pets"]);
+const SAFETY_PILLARS = new Set<LessonPillar>(["safety", "public", "travel"]);
+
+function positiveModelFor(lesson: ParentingLesson, child: string): string {
+  if (["emotions", "calm", "confidence", "connection"].includes(lesson.pillar)) {
+    return `Bố mẹ tự nói cảm xúc và nhu cầu của mình bằng giọng bình tĩnh, nghe hết câu rồi mới giải quyết để ${child} thấy bình tĩnh không có nghĩa là giấu cảm xúc.`;
+  }
+  if (lesson.pillar === "screens") {
+    return `Bố mẹ đặt thiết bị của mình xuống trước, làm đúng quy tắc đang yêu cầu và nói rõ khi nào người lớn thật sự phải dùng thiết bị cho công việc gấp.`;
+  }
+  if (SOCIAL_PILLARS.has(lesson.pillar)) {
+    return `Bố mẹ dùng chính cách nói và hành vi tôn trọng mà mình muốn ${child} học: không gắn nhãn, không mỉa mai, nhận phần sai của mình và sửa bằng hành động.`;
+  }
+  if (PRACTICE_PILLARS.has(lesson.pillar)) {
+    return `Bố mẹ làm mẫu một lượt thật chậm, nói thành lời điều mình đang làm, rồi lùi lại để ${child} tự thử thay vì làm hộ hoặc chỉ ra lệnh.`;
+  }
+  if (lesson.pillar === "money") {
+    return `Bố mẹ cũng dùng danh sách, ngân sách và so sánh lựa chọn của chính mình để ${child} thấy quy tắc tiền bạc áp dụng cho cả nhà.`;
+  }
+  if (lesson.pillar === "thinking") {
+    return `Bố mẹ sẵn sàng nói “Bố mẹ chưa biết, mình cùng kiểm tra”, xem bằng chứng trước khi kết luận và đổi ý khi dữ kiện mới rõ hơn.`;
+  }
+  if (SAFETY_PILLARS.has(lesson.pillar)) {
+    return `Người lớn làm đúng quy tắc an toàn trước, giải thích ngắn gọn và tập cùng ${child}; không dùng lời dọa để buộc con nghe.`;
+  }
+  return `Bố mẹ làm trước điều mình đang yêu cầu, giữ lời đã thống nhất và cho ${child} thấy người lớn cũng sửa sai khi làm chưa đúng.`;
+}
+
+function proofFor(lesson: ParentingLesson, child: string): string {
+  if (lesson.pillar === "screens") return `Dùng đồng hồ hẹn giờ, giỏ cất thiết bị hoặc bảng giờ chung; để ${child} tận mắt thấy thiết bị của người lớn cũng được cất và cả nhà cùng thực hiện.`;
+  if (["emotions", "calm", "confidence", "connection"].includes(lesson.pillar)) return `Sau khi cùng dừng lại, hỏi ${child} tự nhận xét giọng nói, nét mặt hoặc mức bình tĩnh trước và sau; kết quả quan sát được là hai bên nói tiếp được và tìm ra một bước giải quyết.`;
+  if (SOCIAL_PILLARS.has(lesson.pillar)) return `Đóng vai nhanh hai cách nói — cách thiếu tôn trọng và cách phù hợp — rồi hỏi ${child} người nghe cảm thấy gì và cách nào giúp vấn đề được giải quyết.`;
+  if (PRACTICE_PILLARS.has(lesson.pillar)) return `Dùng một dấu hiệu nhìn thấy được như danh sách, đồng hồ, đồ vật đã hoàn thành hoặc lần thử thật; để ${child} tự đối chiếu trước–sau thay vì chỉ nghe người lớn khẳng định.`;
+  if (lesson.pillar === "money") return `Đặt các lựa chọn, giá tiền và số tiền đang có cạnh nhau; để ${child} tự tính và nhìn thấy lựa chọn nào nằm trong kế hoạch.`;
+  if (lesson.pillar === "thinking") return `Cùng thử, đo hoặc kiểm tra ít nhất hai nguồn/cách làm; để kết quả thực tế trả lời thay cho câu “bố mẹ luôn đúng”.`;
+  if (SAFETY_PILLARS.has(lesson.pillar)) return `Tập thử trong tình huống an toàn và có người lớn giám sát, sau đó để ${child} chỉ lại dấu hiệu nguy hiểm, điểm dừng hoặc người cần tìm khi cần giúp.`;
+  return `Cho ${child} thử lựa chọn phù hợp ngay trong một việc nhỏ, rồi cùng nhìn kết quả và hỏi “Cách nào giúp mọi người an toàn, được tôn trọng và giữ đúng thỏa thuận hơn?”.`;
+}
+
+/** Turn every compact library row into a detailed, filmable teaching plan. */
+export function lessonTeachingGuideVi(lesson: ParentingLesson): LessonTeachingGuide {
+  const older = lesson.ages.some((age) => isOlderKid(age));
+  const child = older ? "con" : "bé";
+  const clauses = lesson.technique.split(/;\s*/).map((part) => part.trim()).filter(Boolean);
+  const coreSteps = (clauses.length > 1 ? clauses : [lesson.technique]).map((part) =>
+    part.length > 15 ? part : `Thực hiện rõ bước “${part}”, rồi dừng lại để ${child} quan sát và phản hồi.`
+  );
+  const steps = [
+    `Dừng phản ứng vội, đến gần ${child}, mô tả điều đang xảy ra và nghe ${child} nói hết câu.`,
+    ...coreSteps,
+    `Mời ${child} nhắc lại hoặc tự làm một bước nhỏ; bố mẹ ghi nhận đúng hành động cụ thể và giữ giới hạn đã thống nhất.`,
+  ];
+  const base: LessonTeachingGuide = {
+    positiveModel: positiveModelFor(lesson, child),
+    steps,
+    observableProof: proofFor(lesson, child),
+    whyRight: lesson.takeaway,
+    avoid: lesson.wrongWay,
+  };
+  if (lesson.id !== "parent_phone_model") return base;
+  return {
+    positiveModel: `Mẹ nói: “Con nói đúng, mẹ cũng đang xem.” Mẹ cất điện thoại của mình trước để bé thấy quy tắc không chỉ dành cho trẻ con.`,
+    steps: [
+      `Mẹ cảm ơn bé đã chỉ ra điều chưa nhất quán, không dùng câu “Mẹ là người lớn nên khác”.`,
+      `Mẹ cất điện thoại, chờ bé hoàn thành đoạn đang xem rồi cùng bé tắt máy tính bảng.`,
+      `Hai mẹ con đặt cả hai thiết bị vào một giỏ và thống nhất giờ không màn hình trong bữa tối.`,
+      `Nếu có việc gấp, mẹ nói rõ “Mẹ trả lời công việc hai phút rồi cất máy”, làm đúng thời gian đã nói.`,
+      `Sau bữa ăn, mẹ hỏi bé thấy cả nhà trò chuyện khác thế nào khi không ai cầm thiết bị.`,
+    ],
+    observableProof: `Đặt điện thoại và máy tính bảng cạnh nhau trong cùng một giỏ, bật đồng hồ nếu cần dùng gấp và cùng kiểm tra khi chuông reo. Bé nhìn thấy người lớn cũng giữ lời, nên hiểu đây là quy tắc gia đình chứ không phải hình phạt riêng cho bé.`,
+    whyRight: `Trẻ học mạnh nhất từ điều bố mẹ làm. Khi người lớn nhận phần chưa đúng và làm mẫu trước, bé dễ hợp tác mà vẫn học được sự công bằng và tự kiểm soát.`,
+    avoid: `Mẹ nói “Mẹ là người lớn, khác!” rồi tiếp tục lướt điện thoại; cách này khiến bé thấy quy tắc thiếu công bằng và học rằng quyền lực quan trọng hơn việc giữ lời.`,
+  };
+}
+
+export function lessonTeachingBriefVi(lesson: ParentingLesson): string {
+  const guide = lessonTeachingGuideVi(lesson);
+  return [
+    `Tình huống: ${lesson.situation}`,
+    `Hình mẫu tích cực của bố mẹ: ${guide.positiveModel}`,
+    `Xử lý từng bước:\n${guide.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
+    `Cho con tự thấy đúng–sai: ${guide.observableProof}`,
+    `Vì sao cách này phù hợp: ${guide.whyRight}`,
+    `Tránh làm: ${guide.avoid}`,
+  ].join("\n");
+}
+
 /** The chosen family plus whoever the picked lesson needs on screen. */
 export function familyWithLesson(config: Pick<CuteKidsConfig, "family" | "goal" | "lessonId" | "lesson">): FamilyMember[] {
   return [...new Set([...config.family, ...(lessonOf(config)?.needs ?? [])])];
@@ -354,10 +450,11 @@ export function familyCast(config: CuteKidsConfig): FamilyCastMember[] {
 /** The idea text that goes into the story box (and the writers' room). */
 export function cuteKidsStoryIdea(config: CuteKidsConfig): string {
   const cast = familyCast(config);
+  const pickedLesson = lessonOf(config);
   const pets = familyWithLesson(config).filter((m) => PETS.has(m)).map((m) => FAMILY_LABEL[m][config.dialect]);
   const format = config.format && config.format !== "auto" ? VIRAL_FORMATS.find((f) => f.id === config.format) : detectFormat(config.request);
   return [
-    config.request.trim(),
+    pickedLesson ? pickedLesson.situation : config.request.trim(),
     `Nhân vật: ${cast[0]!.name} (${config.kidGender === "girl" ? "bé gái" : "bé trai"} ${AGE_LABEL[config.kidAge].vi})${cast.length > 1 ? `, ${cast.slice(1).map((c) => c.name).join(", ")}` : ""}${pets.length ? `; thú cưng: ${pets.join(", ")}` : ""}.`,
     format ? `Kiểu video: ${format.label_vi}.` : "",
     (config.traits ?? []).length ? `Tính cách bé: ${(config.traits ?? []).map((t) => traitLabelVi(t, config.kidAge).replace(/^\S+\s/, "").toLowerCase()).join(", ")}; bố mẹ luôn hưởng ứng.` : "",
@@ -369,12 +466,17 @@ export function cuteKidsStoryIdea(config: CuteKidsConfig): string {
 function lessonLinesVi(config: CuteKidsConfig): string[] {
   if (config.goal !== "teach") return [];
   const lesson = lessonOf(config);
+  const guide = lesson ? lessonTeachingGuideVi(lesson) : undefined;
   const who = config.takeaway === "parent" ? "bố mẹ nói với bé ở cuối video" : "giọng dẫn ngắn ở cuối video";
   return [
     lesson ? `🎓 Bài học dạy con (${pillarLabel(lesson.pillar)}): ${lesson.title}.` : "🎓 Video dạy con: bố mẹ xử lý tình huống bằng một cách cụ thể, tôn trọng bé.",
-    lesson ? `Cách bố mẹ xử lý (${lesson.method}): ${lesson.technique}.` : "",
+    guide ? `Hình mẫu tích cực của bố mẹ: ${guide.positiveModel}` : "",
+    guide ? `Xử lý từng bước: ${guide.steps.map((step, index) => `${index + 1}) ${step}`).join(" ")}` : "",
+    guide ? `Cho con tự thấy đúng–sai: ${guide.observableProof}` : "",
+    lesson ? `Cách làm: ${lesson.method}.` : "",
     lesson ? `Câu chốt (${who}): ${lesson.takeaway}` : `Câu chốt: ${who}.`,
-    config.abFormat ? `Kiểu "2 cách xử lý": cách 1 — ${lesson ? lesson.wrongWay : "phản ứng chưa khéo"} (bé càng ăn vạ); cách 2 — cách xử lý khéo ở trên, bé dịu lại.` : "",
+    lesson ? `Cách chưa khéo cần tránh: ${guide?.avoid ?? lesson.wrongWay}` : "",
+    config.abFormat ? `Kiểu "2 cách xử lý": cách 1 — phản ứng chưa khéo ở trên; cách 2 — bố mẹ làm mẫu, hướng dẫn từng bước và để con tự quan sát kết quả.` : "",
   ].filter(Boolean);
 }
 
@@ -382,6 +484,7 @@ function lessonLinesVi(config: CuteKidsConfig): string[] {
 function parentingDirective(config: CuteKidsConfig, kidName: string): string[] {
   if (config.goal !== "teach") return [];
   const lesson = lessonOf(config);
+  const guide = lesson ? lessonTeachingGuideVi(lesson) : undefined;
   const n = config.shots;
   const narrator = config.takeaway !== "parent";
   const structure = config.abFormat
@@ -394,6 +497,12 @@ function parentingDirective(config: CuteKidsConfig, kidName: string): string[] {
     `- PARENTING LESSON (the reel teaches parents through the story — show it, never preach)${lesson
       ? `: "${lesson.title}" — ${kidName} ${lesson.behavior}; the parent's technique: ${lesson.technique} (approach: ${lesson.method}).`
       : ": take the lesson from the request; the parent answers the kid's behaviour with one concrete, respectful technique (name the feeling, keep the limit, offer a choice or a plan, a natural consequence)."}`,
+    ...(guide ? [
+      `- POSITIVE ROLE MODEL: ${guide.positiveModel}`,
+      `- STEP-BY-STEP PARENT RESPONSE: ${guide.steps.map((step, index) => `${index + 1}) ${step}`).join(" ")}`,
+      `- LET THE CHILD SEE WHY: ${guide.observableProof} Show the observable comparison or result on screen; do not turn it into a lecture or an unsupported claim.`,
+      `- RIGHT VS WRONG: the respectful way works because ${guide.whyRight}; avoid this response: ${guide.avoid}`,
+    ] : []),
     `- LESSON STRUCTURE (${n} clips): ${structure}`,
     `- ${takeaway}`,
     "- PARENTS MODEL RESPECTFUL PARENTING: calm, warm and firm when needed; never hitting, yelling, threats, shaming or comparing the kid with others. The advice is general and gentle (positive-discipline principles), with no medical or psychological claims.",
@@ -602,14 +711,14 @@ export function buildEpisodeIdeasPrompt(raw: CuteKidsConfig, avoid: string[] = [
     avoid.length ? `Do not repeat these: ${avoid.join("; ")}.` : "",
     (config.traits ?? []).length ? `The kid's personality, shown in every idea: ${(config.traits ?? []).map((t) => KID_TRAITS.find((k) => k.id === t)!.label_en.replace(/^\S+\s/, "")).join(", ")}; the parents always play along warmly.` : "",
     config.goal === "teach"
-      ? `PARENTING CHANNEL: every idea teaches parents one everyday lesson in the area "${pillarLabel(config.pillar ?? "money").replace(/^\S+\s/, "")}" through the story (the kid's behaviour → the parent's calm, respectful technique → a warm result); end each "request" with "Bài học: …" in one short line.`
+      ? `PARENTING CHANNEL: every idea teaches parents one everyday lesson in the area "${pillarLabel(config.pillar ?? "money").replace(/^\S+\s/, "")}". Each request must include: the situation; the positive behaviour the parent models first; three concrete response steps; one visible comparison, rehearsal or result that lets the child understand right versus wrong; the warm ending; and one short "Bài học: …" line. Show the teaching through action, never a lecture.`
       : "",
     config.goal === "teach" && libraryTitles.length
       ? `The channel's lesson library already covers these situations in this area — give fresh, different ones: ${libraryTitles.join("; ")}.`
       : "",
     ...(config.kidAge === "teen" ? [TEEN_SAFETY_RULE] : []),
     `Give 10 different episode ideas for ${config.shots} clips of 10 seconds, all at home or everyday places, each with a clear hook, escalation and a punchline that fits the kid's age. ${CHILD_SAFETY_RULES}`,
-    'Return {"ideas":[{"title":"short Vietnamese title (max 8 words)","request":"one or two Vietnamese sentences: the situation, what the kid does and the ending"}]}',
+    'Return {"ideas":[{"title":"short Vietnamese title (max 8 words)","request":"six to eight concise Vietnamese sentences covering the situation, parent role model, three steps, visible right/wrong demonstration, warm ending and Bài học"}]}',
   ].filter(Boolean).join("\n");
 }
 
@@ -619,7 +728,7 @@ export function normalizeEpisodeIdeas(raw: unknown): EpisodeIdea[] {
   return list
     .map((item) => {
       const r = (item ?? {}) as Record<string, unknown>;
-      return { title: String(r.title ?? "").trim().slice(0, 80), request: String(r.request ?? "").trim().slice(0, 400) };
+      return { title: String(r.title ?? "").trim().slice(0, 80), request: String(r.request ?? "").trim().slice(0, 1400) };
     })
     .filter((i) => i.title && i.request && !seen.has(i.title.toLowerCase()) && seen.add(i.title.toLowerCase()))
     .slice(0, 10);
