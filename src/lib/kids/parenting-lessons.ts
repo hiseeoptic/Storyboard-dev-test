@@ -43,7 +43,7 @@ import { OLDER_PRETEEN_AND_OUTINGS_LESSONS } from "./lessons/older-preteen-and-o
 import { OLDER_MORE_DAILY_LESSONS } from "./lessons/older-more-daily.ts";
 import { OLDER_MORE_CONDUCT_LESSONS } from "./lessons/older-more-conduct.ts";
 import { OLDER_MORE_WORLD_LESSONS } from "./lessons/older-more-world.ts";
-import { TEEN_LESSONS, withTeenEvidence } from "./lessons/teen.ts";
+import { TEEN_LESSONS } from "./lessons/teen.ts";
 import { TEEN_INNER_WORLD_LESSONS } from "./lessons/teen-inner-world.ts";
 import { TEEN_DAILY_LIFE_LESSONS } from "./lessons/teen-daily-life.ts";
 import { TEEN_CONDUCT_LESSONS } from "./lessons/teen-conduct.ts";
@@ -52,7 +52,6 @@ import { TEEN_MIND_AND_WORLD_LESSONS } from "./lessons/teen-mind-and-world.ts";
 import { TEEN_YEARS_AND_OUTINGS_LESSONS } from "./lessons/teen-years-and-outings.ts";
 
 export { LESSON_PILLARS, PILLAR_GROUPS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
-export { TEEN_EVIDENCE_SOURCES, teenEvidenceSource, type TeenEvidenceSourceId } from "./teen-sources.ts";
 
 const CLAUDE_TEEN_LESSONS = [
   ...TEEN_INNER_WORLD_LESSONS,
@@ -61,11 +60,11 @@ const CLAUDE_TEEN_LESSONS = [
   ...TEEN_PEOPLE_LESSONS,
   ...TEEN_MIND_AND_WORLD_LESSONS,
   ...TEEN_YEARS_AND_OUTINGS_LESSONS,
-].map(withTeenEvidence);
+];
 
 // Claude's detailed shelf has 323 stories but several areas contain only
 // 10–11. Keep every hand-written story and take only enough deterministic
-// evidence-backed lessons from our set to bring each applicable area to 12.
+// lessons from our set to bring each applicable area to 12.
 const teenGapByPillar = new Map<LessonPillar, number>();
 for (const pillar of LESSON_PILLARS) {
   if (pillar.id === "toddler" || pillar.id === "preteen") continue;

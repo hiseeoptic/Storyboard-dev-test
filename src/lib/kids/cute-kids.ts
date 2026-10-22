@@ -10,7 +10,6 @@
 
 import { CHILD_SAFE_WORDING_RULE } from "./child-safe-wording.ts";
 import { TEEN_SAFETY_RULE, teenSafeRequest, teenSafetyViolations } from "./teen-safety.ts";
-import { TEEN_EVIDENCE_SOURCES, type TeenEvidenceSourceId } from "./teen-sources.ts";
 import { LESSON_PILLARS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
 
 export type KidAge = "toddler" | "young" | "school" | "middle" | "preteen" | "teen";
@@ -525,9 +524,6 @@ function lessonFields(raw: unknown, lessonId: unknown): { lessonId?: string; les
   const pillar = LESSON_PILLARS.find((p) => p.id === r.pillar)?.id;
   const ages = Array.isArray(r.ages) ? r.ages.filter((a): a is KidAge => KID_AGES.includes(a as KidAge)) : [];
   const needs = Array.isArray(r.needs) ? r.needs.filter((m): m is FamilyMember => FAMILY_MEMBERS.includes(m as FamilyMember)) : [];
-  const sourceIds = Array.isArray(r.sourceIds)
-    ? [...new Set(r.sourceIds.filter((id): id is TeenEvidenceSourceId => typeof id === "string" && id in TEEN_EVIDENCE_SOURCES))].slice(0, 6)
-    : [];
   const lesson: ParentingLesson = {
     id: clip(r.id, 60),
     pillar: pillar ?? "money",
@@ -539,11 +535,10 @@ function lessonFields(raw: unknown, lessonId: unknown): { lessonId?: string; les
     takeaway: clip(r.takeaway, 300),
     wrongWay: clip(r.wrongWay, 400),
     method: clip(r.method, 120),
-    ...(sourceIds.length ? { sourceIds } : {}),
     ...(needs.length ? { needs: [...new Set(needs)] } : {}),
   };
   const lessonText = [lesson.title, lesson.situation, lesson.behavior, lesson.technique, lesson.takeaway, lesson.wrongWay, lesson.method];
-  const teenValid = !ages.includes("teen") || (sourceIds.length >= 2 && teenSafetyViolations(lessonText.join(" ")).length === 0);
+  const teenValid = !ages.includes("teen") || teenSafetyViolations(lessonText.join(" ")).length === 0;
   const complete = pillar && ages.length && teenValid && lesson.id === lessonId && lessonText.every(Boolean);
   return complete ? { lessonId, lesson } : {};
 }

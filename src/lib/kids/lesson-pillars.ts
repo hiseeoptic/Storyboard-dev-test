@@ -6,7 +6,6 @@
 // ============================================================
 
 import type { FamilyMember, KidAge } from "./cute-kids.ts";
-import type { TeenEvidenceSourceId } from "./teen-sources.ts";
 
 export type LessonPillar =
   | "money"
@@ -57,8 +56,6 @@ export interface ParentingLesson {
   wrongWay: string;
   /** The named approach behind the technique (shown to parents, gives the reel credibility). */
   method: string;
-  /** Auditable evidence trail. Required for the new teen shelf; optional on legacy lessons. */
-  sourceIds?: TeenEvidenceSourceId[];
   /** Family members the story needs on screen (added to the cast when the lesson is picked). */
   needs?: FamilyMember[];
 }
