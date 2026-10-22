@@ -53,7 +53,8 @@ test("the library covers 30 parenting areas in 6 groups, every lesson complete, 
   assert.ok(lessonCountByAge("teen") >= 250, `13–15: ${lessonCountByAge("teen")}`);
   for (const p of LESSON_PILLARS) {
     for (const age of ["middle", "preteen", "teen"] as const) {
-      const meant = p.id === "toddler" ? false : p.id === "preteen" ? age !== "teen" : p.id === "teen" ? age === "teen" : true;
+      // The two phase areas are a full shelf only for their own age (the pre-teen one also lends some lessons to 8–10).
+      const meant = p.id === "toddler" ? false : p.id === "preteen" ? age === "preteen" : p.id === "teen" ? age === "teen" : true;
       if (meant) assert.ok(lessonsFor(p.id, age).length >= MIN_OLDER_PER_AREA, `${p.id} ${age}: ${lessonsFor(p.id, age).length}`);
     }
   }

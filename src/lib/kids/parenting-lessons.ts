@@ -43,6 +43,12 @@ import { OLDER_PRETEEN_AND_OUTINGS_LESSONS } from "./lessons/older-preteen-and-o
 import { OLDER_MORE_DAILY_LESSONS } from "./lessons/older-more-daily.ts";
 import { OLDER_MORE_CONDUCT_LESSONS } from "./lessons/older-more-conduct.ts";
 import { OLDER_MORE_WORLD_LESSONS } from "./lessons/older-more-world.ts";
+import { TEEN_INNER_WORLD_LESSONS } from "./lessons/teen-inner-world.ts";
+import { TEEN_DAILY_LIFE_LESSONS } from "./lessons/teen-daily-life.ts";
+import { TEEN_CONDUCT_LESSONS } from "./lessons/teen-conduct.ts";
+import { TEEN_PEOPLE_LESSONS } from "./lessons/teen-people.ts";
+import { TEEN_MIND_AND_WORLD_LESSONS } from "./lessons/teen-mind-and-world.ts";
+import { TEEN_YEARS_AND_OUTINGS_LESSONS } from "./lessons/teen-years-and-outings.ts";
 
 export { LESSON_PILLARS, PILLAR_GROUPS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
 
@@ -73,6 +79,12 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
   ...OLDER_MORE_DAILY_LESSONS,
   ...OLDER_MORE_CONDUCT_LESSONS,
   ...OLDER_MORE_WORLD_LESSONS,
+  ...TEEN_INNER_WORLD_LESSONS,
+  ...TEEN_DAILY_LIFE_LESSONS,
+  ...TEEN_CONDUCT_LESSONS,
+  ...TEEN_PEOPLE_LESSONS,
+  ...TEEN_MIND_AND_WORLD_LESSONS,
+  ...TEEN_YEARS_AND_OUTINGS_LESSONS,
 ];
 
 const BY_ID = new Map(PARENTING_LESSONS.map((l) => [l.id, l]));
