@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LESSON_PILLARS, PARENTING_LESSONS, PILLAR_GROUPS, findLesson, lessonCountByAge, lessonsFor, pickFreshLesson, searchLessons, withLibraryLesson } from "./parenting-lessons.ts";
-import { DEFAULT_CUTE_KIDS, FAMILY_MEMBERS, KID_AGES, cuteKidsDirective, cuteKidsRoomSeed, cuteKidsStoryIdea, buildEpisodeIdeasPrompt, familyCast, labelCuteKidsPosts, lessonTeachingBriefVi, lessonTeachingGuideVi, normalizeCuteKids, AI_LABEL_VI, type CuteKidsConfig } from "./cute-kids.ts";
+import { DEFAULT_CUTE_KIDS, FAMILY_MEMBERS, KID_AGES, cuteKidsDirective, cuteKidsRoomSeed, cuteKidsStoryIdea, buildEpisodeIdeasPrompt, familyCast, labelCuteKidsPosts, lessonShotAdviceVi, lessonTeachingBriefVi, lessonTeachingGuideVi, normalizeCuteKids, AI_LABEL_VI, type CuteKidsConfig } from "./cute-kids.ts";
 import { childSafeText } from "./child-safe-wording.ts";
 import { teenSafetyViolations } from "./teen-safety.ts";
 
@@ -93,11 +93,17 @@ test("every lesson expands into a positive model, concrete steps and an observab
     assert.ok(guide.observableProof.length > 40, `${lesson.id} observable proof`);
     assert.ok(guide.whyRight.length > 20, `${lesson.id} why right`);
     assert.ok(guide.avoid.length > 10, `${lesson.id} avoid`);
+    const shotAdvice = lessonShotAdviceVi(lesson);
+    assert.ok(shotAdvice.recommendedShots === 3 || shotAdvice.recommendedShots === 4, `${lesson.id} shot count`);
+    assert.equal(shotAdvice.shotPlan.length, shotAdvice.recommendedShots, `${lesson.id} shot plan`);
+    assert.ok(shotAdvice.shotPlan.every((beat) => /biểu cảm|nét mặt|phản ứng/i.test(beat)), `${lesson.id} performance in every shot`);
+    assert.match(shotAdvice.dialogueDirection, /tối đa hai lượt thoại ngắn[\s\S]*Giọng nói phải theo đúng thái độ/);
   }
   const phone = findLesson("parent_phone_model")!;
   const guide = lessonTeachingGuideVi(phone);
   assert.match(guide.positiveModel, /Con nói đúng[\s\S]*cất điện thoại/);
   assert.match(guide.observableProof, /cùng một giỏ[\s\S]*quy tắc gia đình/);
+  assert.equal(lessonShotAdviceVi(phone).recommendedShots, 4);
   assert.match(lessonTeachingBriefVi(phone), /Hình mẫu tích cực[\s\S]*Xử lý từng bước:[\s\S]*Cho con tự thấy đúng–sai:[\s\S]*Vì sao cách này phù hợp:[\s\S]*Tránh làm:/);
 });
 
@@ -134,6 +140,8 @@ test("teach mode: lesson, structure, narrator takeaway and respectful parents ar
   assert.match(d, /\(approach: Thừa nhận mong muốn, giữ giới hạn \(Kỷ luật tích cực\)\)/);
   assert.match(d, /LESSON STRUCTURE \(3 clips\): clip 1 = the relatable moment/);
   assert.match(d, /TAKEAWAY BY NARRATOR: the last clip ends with a short, warm narrator voice-over/);
+  assert.match(d, /10-SECOND SHOT ADVICE: recommended/);
+  assert.match(d, /PERFORMANCE AND DIALOGUE:[\s\S]*Mỗi shot tối đa hai lượt thoại ngắn/);
   assert.match(d, /never hitting, yelling, threats, shaming/);
   assert.doesNotMatch(cuteKidsDirective({ ...teach(), goal: "fun" }), /PARENTING LESSON/);
   assert.match(cuteKidsDirective(teach({ takeaway: "parent" })), /TAKEAWAY BY THE PARENT: in the last clip the parent says the lesson to Na/);

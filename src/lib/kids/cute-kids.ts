@@ -409,6 +409,7 @@ export function lessonTeachingGuideVi(lesson: ParentingLesson): LessonTeachingGu
 
 export function lessonTeachingBriefVi(lesson: ParentingLesson): string {
   const guide = lessonTeachingGuideVi(lesson);
+  const shotAdvice = lessonShotAdviceVi(lesson);
   return [
     `Tình huống: ${lesson.situation}`,
     `Hình mẫu tích cực của bố mẹ: ${guide.positiveModel}`,
@@ -416,7 +417,72 @@ export function lessonTeachingBriefVi(lesson: ParentingLesson): string {
     `Cho con tự thấy đúng–sai: ${guide.observableProof}`,
     `Vì sao cách này phù hợp: ${guide.whyRight}`,
     `Tránh làm: ${guide.avoid}`,
+    `Nhịp video đề xuất: ${shotAdvice.recommendedShots} shot × 10 giây (${shotAdvice.totalSeconds} giây). ${shotAdvice.dialogueDirection}`,
   ].join("\n");
+}
+
+export interface LessonShotAdvice {
+  recommendedShots: 3 | 4;
+  totalSeconds: 30 | 40;
+  reason: string;
+  shotPlan: string[];
+  dialogueDirection: string;
+}
+
+/** Recommend a compact 10-second-shot structure without turning the lesson into a dialogue-heavy lecture. */
+export function lessonShotAdviceVi(lesson: ParentingLesson, abFormat = false): LessonShotAdvice {
+  const guide = lessonTeachingGuideVi(lesson);
+  const complexPillars = new Set<LessonPillar>(["emotions", "calm", "screens", "behavior", "honesty", "family", "social", "school", "thinking", "money", "safety", "public", "preteen", "teen"]);
+  const recommendedShots: 3 | 4 = abFormat || guide.steps.length >= 5 || complexPillars.has(lesson.pillar) ? 4 : 3;
+  const dialogueDirection = "Mỗi shot tối đa hai lượt thoại ngắn; ưu tiên ánh mắt, nét mặt, khoảng dừng, tư thế và hành động. Giọng nói phải theo đúng thái độ: bực nhưng không quát, ngập ngừng khi nhận sai, chậm và ấm khi kết nối, sáng lên khi đã hiểu.";
+  const shotPlan = abFormat
+    ? [
+        `Shot 1 — Cách chưa khéo: mở thẳng vào tình huống; cận biểu cảm và thái độ của con khi bố mẹ phản ứng theo cách cần tránh. Chỉ một câu cảm xúc ngắn.`,
+        `Shot 2 — Hậu quả và chuyển nhịp: con phản ứng rõ hơn bằng gương mặt/cử chỉ; bố mẹ nhận ra, dừng lại, thở và tua lại tình huống.`,
+        `Shot 3 — Cách phù hợp: bố mẹ làm mẫu tích cực, nói một câu có nhấn nhá đúng cảm xúc rồi thực hiện các bước chính; quay hai người trong cùng khung để thấy phản ứng qua lại.`,
+        `Shot 4 — Con tự thấy kết quả: con thử một bước, quan sát minh chứng đúng–sai, thái độ dịu hoặc tự tin hơn; kết bằng khoảnh khắc ấm và câu chốt ngắn.`,
+      ]
+    : recommendedShots === 4
+      ? [
+          `Shot 1 — Móc câu: vào thẳng tình huống và cận biểu cảm, thái độ đặc trưng của con; con nói một câu ngắn có cảm xúc, không giải thích dài.`,
+          `Shot 2 — Bố mẹ làm mẫu: người lớn dừng phản ứng vội, thể hiện nét mặt bình tĩnh, nhận cảm xúc hoặc phần chưa đúng của mình; một câu nói chậm, có khoảng dừng và từ khóa được nhấn.`,
+          `Shot 3 — Cùng thực hành: bố mẹ thực hiện các bước chính, biểu cảm của con phản hồi bằng ánh mắt, tư thế và một hành động cụ thể; lời thoại chỉ hỗ trợ điều đang diễn ra.`,
+          `Shot 4 — Con tự thấy đúng–sai: cho thấy kết quả hoặc so sánh quan sát được, biểu cảm con chuyển biến tự nhiên; kết bằng tương tác ấm và một câu chốt ngắn.`,
+        ]
+      : [
+          `Shot 1 — Móc câu: tình huống xuất hiện ngay, cận biểu cảm và thái độ của con; dùng một câu thoại cảm xúc thật ngắn.`,
+          `Shot 2 — Làm mẫu và xử lý: bố mẹ bình tĩnh làm mẫu, thực hiện kỹ thuật chính; quay phản ứng qua lại và chỉ dùng một đến hai câu có nhịp nghỉ, nhấn đúng cảm xúc.`,
+          `Shot 3 — Con thử và thấy kết quả: con làm một bước, nhìn thấy điều thay đổi, biểu cảm dịu/tự tin hơn; kết bằng hành động ấm áp và câu chốt ngắn.`,
+        ];
+  return {
+    recommendedShots,
+    totalSeconds: (recommendedShots * 10) as 30 | 40,
+    reason: recommendedShots === 4
+      ? "Bài có nhiều chuyển biến hoặc cần cho thấy rõ tình huống → bố mẹ làm mẫu → con thực hành → kết quả."
+      : "Bài có một kỹ thuật chính, phù hợp nhịp gọn: tình huống → bố mẹ xử lý → con thấy kết quả.",
+    shotPlan,
+    dialogueDirection,
+  };
+}
+
+function lessonShotPlanForCountVi(lesson: ParentingLesson, shots: number, abFormat: boolean): string[] {
+  const advice = lessonShotAdviceVi(lesson, abFormat);
+  if (shots === advice.recommendedShots) return advice.shotPlan;
+  if (shots <= 2) return [
+    `Shot 1 — Tình huống và biểu cảm: mở bằng hành vi “${lesson.behavior}”; con chỉ nói một câu cảm xúc ngắn, bố mẹ dừng lại và làm mẫu ngay trong cùng shot.`,
+    `Shot 2 — Xử lý và kết quả: bố mẹ thực hiện kỹ thuật chính, con tự thử một bước và nhìn thấy kết quả; ưu tiên thay đổi nét mặt/cử chỉ, kết bằng câu chốt rất ngắn.`,
+  ];
+  if (shots === 3) return [
+    `Shot 1 — Tình huống: vào thẳng mâu thuẫn, cận biểu cảm và thái độ “${lesson.behavior}”; một câu thoại cảm xúc ngắn.`,
+    `Shot 2 — Bố mẹ làm mẫu và xử lý: nét mặt bình tĩnh, giọng có khoảng dừng và nhấn từ khóa; thực hiện kỹ thuật bằng hành động, không giảng dài.`,
+    `Shot 3 — Con thực hành và tự thấy kết quả: quay phản ứng thay đổi, hành động đúng và khoảnh khắc kết nối; chỉ một câu chốt.`,
+  ];
+  return [
+    `Shot 1 — Tình huống và biểu cảm của con: “${lesson.behavior}”; dùng cận cảnh và một câu thoại ngắn làm móc câu.`,
+    `Shot 2 — Bố mẹ dừng lại và làm mẫu: thể hiện thái độ bình tĩnh bằng gương mặt, tư thế, khoảng dừng rồi mới nói.`,
+    `Shot 3 — Cùng xử lý: bố mẹ hướng dẫn, con tự làm một bước; lời thoại ngắn đi cùng hành động và phản ứng qua lại.`,
+    `Shot 4 — Minh chứng và kết quả: con nhìn thấy điều thay đổi, biểu cảm chuyển biến tự nhiên; kết ấm áp và câu chốt ngắn.`,
+  ];
 }
 
 /** The chosen family plus whoever the picked lesson needs on screen. */
@@ -467,6 +533,7 @@ function lessonLinesVi(config: CuteKidsConfig): string[] {
   if (config.goal !== "teach") return [];
   const lesson = lessonOf(config);
   const guide = lesson ? lessonTeachingGuideVi(lesson) : undefined;
+  const shotAdvice = lesson ? lessonShotAdviceVi(lesson, config.abFormat === true) : undefined;
   const who = config.takeaway === "parent" ? "bố mẹ nói với bé ở cuối video" : "giọng dẫn ngắn ở cuối video";
   return [
     lesson ? `🎓 Bài học dạy con (${pillarLabel(lesson.pillar)}): ${lesson.title}.` : "🎓 Video dạy con: bố mẹ xử lý tình huống bằng một cách cụ thể, tôn trọng bé.",
@@ -476,6 +543,8 @@ function lessonLinesVi(config: CuteKidsConfig): string[] {
     lesson ? `Cách làm: ${lesson.method}.` : "",
     lesson ? `Câu chốt (${who}): ${lesson.takeaway}` : `Câu chốt: ${who}.`,
     lesson ? `Cách chưa khéo cần tránh: ${guide?.avoid ?? lesson.wrongWay}` : "",
+    shotAdvice ? `Gợi ý số shot: ${shotAdvice.recommendedShots} shot × 10 giây = ${shotAdvice.totalSeconds} giây. ${shotAdvice.reason}` : "",
+    shotAdvice ? `Biểu cảm và lời thoại: ${shotAdvice.dialogueDirection}` : "",
     config.abFormat ? `Kiểu "2 cách xử lý": cách 1 — phản ứng chưa khéo ở trên; cách 2 — bố mẹ làm mẫu, hướng dẫn từng bước và để con tự quan sát kết quả.` : "",
   ].filter(Boolean);
 }
@@ -485,6 +554,8 @@ function parentingDirective(config: CuteKidsConfig, kidName: string): string[] {
   if (config.goal !== "teach") return [];
   const lesson = lessonOf(config);
   const guide = lesson ? lessonTeachingGuideVi(lesson) : undefined;
+  const shotAdvice = lesson ? lessonShotAdviceVi(lesson, config.abFormat === true) : undefined;
+  const actualShotPlan = lesson ? lessonShotPlanForCountVi(lesson, config.shots, config.abFormat === true) : [];
   const n = config.shots;
   const narrator = config.takeaway !== "parent";
   const structure = config.abFormat
@@ -502,6 +573,8 @@ function parentingDirective(config: CuteKidsConfig, kidName: string): string[] {
       `- STEP-BY-STEP PARENT RESPONSE: ${guide.steps.map((step, index) => `${index + 1}) ${step}`).join(" ")}`,
       `- LET THE CHILD SEE WHY: ${guide.observableProof} Show the observable comparison or result on screen; do not turn it into a lecture or an unsupported claim.`,
       `- RIGHT VS WRONG: the respectful way works because ${guide.whyRight}; avoid this response: ${guide.avoid}`,
+      `- 10-SECOND SHOT ADVICE: recommended ${shotAdvice!.recommendedShots} shots (${shotAdvice!.totalSeconds} seconds) because ${shotAdvice!.reason} The creator selected ${n} shots; follow this exact plan: ${actualShotPlan.join(" ")}`,
+      `- PERFORMANCE AND DIALOGUE: ${shotAdvice!.dialogueDirection} Every spoken line must name its delivery through the visible performance — pace, pause, emphasis, volume, eyes, mouth and posture all tell the same emotion.`,
     ] : []),
     `- LESSON STRUCTURE (${n} clips): ${structure}`,
     `- ${takeaway}`,
@@ -530,6 +603,7 @@ export function cuteKidsDirective(raw: CuteKidsConfig | null | undefined): strin
     `- ${kid.name} SPEAKS LIKE ${age.speech} Every line of ${kid.name} has at most ${age.maxWords} words.`,
     `- ${kid.name} MOVES LIKE THE AGE: ${age.motor}. Body: ${age.body}.`,
     `- EXPRESSIONS carry the reel: ${older ? OLDER_EXPRESSION_BANK : EXPRESSION_BANK}. Every clip has at least one clear close reaction on ${kid.name}.`,
+    `- PERFORMANCE BEFORE WORDS: every 10-second clip is led by a readable facial expression, attitude, body action and reaction beat. Use at most two short spoken turns per clip; no explanatory monologues. Dialogue has emotional pacing — pauses, emphasis and tone must match what the face and body are doing.`,
     ...(traits.length
       ? [`- ${kid.name}'S PERSONALITY — adorable in gestures, body language and voice in EVERY clip (each clip holds at least one of these beats, performed big and clear):${arc}`,
         ...traits.map((t) => `  · ${traitPerformance(t, kid.name, girl ? "she" : "he", girl ? "her" : "his", config.dialect, config.kidAge)}`)]

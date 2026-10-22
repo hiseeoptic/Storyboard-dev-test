@@ -23,6 +23,7 @@ import {
   isOlderKid,
   lessonTeachingBriefVi,
   lessonTeachingGuideVi,
+  lessonShotAdviceVi,
   traitLabelVi,
   KID_TRAITS,
   VIRAL_FORMATS,
@@ -161,11 +162,12 @@ export function CuteKidsCard(props: {
   const lessons = library ? (searching ? library.searchLessons(query, config.kidAge).slice(0, 40) : library.lessonsFor(pillar, config.kidAge)) : [];
   const picked = config.lesson?.id === config.lessonId ? config.lesson : undefined;
   const pickedGuide = picked ? lessonTeachingGuideVi(picked) : undefined;
+  const pickedShotAdvice = picked ? lessonShotAdviceVi(picked, config.abFormat) : undefined;
   // Picking a lesson also brings the family members its story needs (a sibling, a friend, grandma…).
   const pickLesson = (lesson: ParentingLesson) =>
     update(config.lessonId === lesson.id
       ? { lessonId: undefined, lesson: undefined }
-      : { lessonId: lesson.id, lesson, pillar: lesson.pillar, request: lessonTeachingBriefVi(lesson), format: "auto", family: [...new Set([...config.family, ...(lesson.needs ?? [])])] });
+      : { lessonId: lesson.id, lesson, pillar: lesson.pillar, request: lessonTeachingBriefVi(lesson), shots: lessonShotAdviceVi(lesson, config.abFormat === true).recommendedShots, format: "auto", family: [...new Set([...config.family, ...(lesson.needs ?? [])])] });
   // Changing the age keeps only a picked lesson that was written for the new age.
   const setAge = (age: KidAge) =>
     update(picked && !picked.ages.includes(age) ? { kidAge: age, lessonId: undefined, lesson: undefined } : { kidAge: age });
@@ -298,7 +300,9 @@ export function CuteKidsCard(props: {
               <div className="flex flex-wrap items-center gap-1.5">
                 <Chip
                   active={config.abFormat === true}
-                  onClick={() => update(config.abFormat ? { abFormat: false } : { abFormat: true, shots: Math.max(config.shots, 4) })}
+                  onClick={() => update(config.abFormat
+                    ? { abFormat: false, ...(picked ? { shots: lessonShotAdviceVi(picked, false).recommendedShots } : {}) }
+                    : { abFormat: true, shots: 4 })}
                   title={vi ? "Cách 1 chưa khéo (bé càng ăn vạ) → Cách 2 khéo (bé dịu lại). Không đánh, không quát." : "Way 1 backfires gently, way 2 works."}
                 >
                   🔀 {vi ? "2 cách xử lý (A/B)" : "Two ways (A/B)"}
@@ -316,6 +320,11 @@ export function CuteKidsCard(props: {
                   <p><span className="font-medium text-foreground">👀 {vi ? "Cho con tự thấy đúng–sai:" : "Observable proof:"}</span> <span className="text-muted-foreground">{pickedGuide.observableProof}</span></p>
                   <p><span className="font-medium text-foreground">✅ {vi ? "Vì sao phù hợp:" : "Why it works:"}</span> <span className="text-muted-foreground">{pickedGuide.whyRight}</span></p>
                   <p><span className="font-medium text-foreground">⚠️ {vi ? "Tránh làm:" : "Avoid:"}</span> <span className="text-muted-foreground">{pickedGuide.avoid}</span></p>
+                  {pickedShotAdvice && <div className="border-t border-amber-500/20 pt-2">
+                    <p><span className="font-medium text-foreground">🎬 {vi ? "Số shot đề xuất:" : "Recommended length:"}</span> <span className="text-amber-700">{pickedShotAdvice.recommendedShots} shot × 10s = {pickedShotAdvice.totalSeconds}s</span> — <span className="text-muted-foreground">{pickedShotAdvice.reason}</span></p>
+                    <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-muted-foreground">{pickedShotAdvice.shotPlan.map((beat, index) => <li key={index}>{beat.replace(/^Shot \d+ — /, "")}</li>)}</ol>
+                    <p className="mt-1"><span className="font-medium text-foreground">🎭 {vi ? "Biểu cảm & lời thoại:" : "Performance & dialogue:"}</span> <span className="text-muted-foreground">{pickedShotAdvice.dialogueDirection}</span></p>
+                  </div>}
                 </div>
               )}
             </div>
@@ -420,7 +429,7 @@ export function CuteKidsCard(props: {
               <div className="flex flex-wrap gap-1.5">
                 {[2, 3, 4].map((n) => (
                   <Chip key={n} active={config.shots === n} onClick={() => update({ shots: n })}>
-                    {n} shot · {n * 10}s
+                    {n} shot · {n * 10}s {pickedShotAdvice?.recommendedShots === n ? (vi ? "· gợi ý" : "· suggested") : ""}
                   </Chip>
                 ))}
               </div>
