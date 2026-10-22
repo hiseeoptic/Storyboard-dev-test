@@ -47,6 +47,19 @@ const SPECS: TeenPillarSpec[] = [
   { pillar: "safety", label: "An toàn", method: "Nhận diện rủi ro, kế hoạch nếu–thì và tìm người lớn tin cậy (UNICEF–CDC)", coaching: "cùng con tập trước một kế hoạch nếu–thì, thông tin liên lạc và cách tìm người lớn đáng tin khi tình huống thay đổi", sourceIds: ["cdc_parental_monitoring_2024", "who_unicef_hat_2021"], topics: t("đội mũ bảo hiểm đúng cách khi ngồi sau|qua đường tại nơi có vạch|biết số điện thoại của bố mẹ|khóa cửa khi ở nhà cùng anh chị|không mở cửa cho người chưa rõ|kiểm tra lối ra ở nơi đông|gọi người lớn khi thiết bị có mùi lạ|dừng lại khi thời tiết chuyển xấu|mang thẻ thông tin khi đi xa|thống nhất người đón sau giờ học|giữ khoảng cách ở công trình|biết nơi tìm trợ giúp công cộng") },
 ];
 
+const SPEC_BY_PILLAR = new Map<TeenPillar, TeenPillarSpec>(SPECS.map((spec) => [spec.pillar, spec]));
+
+/**
+ * Attach an auditable, topic-matched evidence trail to a hand-written teen
+ * lesson.  This deliberately replaces an unsourced technique label rather
+ * than presenting a book/programme name as if it were a verified citation.
+ */
+export function withTeenEvidence(lesson: ParentingLesson): ParentingLesson {
+  const spec = SPEC_BY_PILLAR.get(lesson.pillar as TeenPillar);
+  if (!spec || !lesson.ages.includes("teen")) throw new Error(`${lesson.id} is not a supported teen lesson`);
+  return { ...lesson, method: spec.method, sourceIds: [...spec.sourceIds] };
+}
+
 const BEHAVIOURS = [
   "nhún vai nói \"Con biết rồi\" nhưng vẫn đứng lại nghe",
   "thở dài, nhìn sang chỗ khác rồi nói thật điều mình đang vướng",

@@ -196,6 +196,7 @@ test("8–10 and 11–12: age-true speech, behaviour, personality, voice and bac
   assert.equal(AGE_STAGE.teen.vi, "lớp 8–10");
   assert.equal(AGE_STAGE.teen.en, "grade 8–10");
   assert.equal(teenSafetyViolations("Con đi học, làm dự án và chơi thể thao").length, 0);
+  assert.equal(teenSafetyViolations("Mẹ lái ô tô đưa con đi học, bố chạy xe máy đi làm").length, 0, "adult driving remains an ordinary family scene");
   assert.deepEqual(teenSafetyViolations("Con đòi lái xe máy đi chơi đêm và cá cược"), ["gambling", "road_driving", "late_night"]);
   assert.match(teenSafeRequest("Con rủ bạn đi chơi đêm"), /tình huống đời thường an toàn/);
   assert.equal(teenSafeRequest("Con muốn tự lập lịch học"), "Con muốn tự lập lịch học");

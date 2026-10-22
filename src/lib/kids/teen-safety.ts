@@ -13,7 +13,7 @@ const BLOCKED: Array<{ id: string; pattern: RegExp }> = [
   { id: "self_harm", pattern: /(?<!\p{L})(?:tự làm hại|tự gây thương tích|tự tử|suicide|self[- ]?harm)(?!\p{L})/iu },
   { id: "violence", pattern: /(?<!\p{L})(?:đánh nhau|ẩu đả|dao|súng|vũ khí|fighting|weapons?)(?!\p{L})/iu },
   { id: "gambling", pattern: /(?<!\p{L})(?:cờ bạc|cá cược|đánh bạc|gambling|betting)(?!\p{L})/iu },
-  { id: "road_driving", pattern: /(?<!\p{L})(?:(?:tự |đòi |lén )?(?:lái|chạy|điều khiển) (?:xe máy|ô tô)|motorbike driving|driving a car)(?!\p{L})/iu },
+  { id: "road_driving", pattern: /(?<!\p{L})(?:(?:(?:con|bé|em|tuổi teen)\s+)?(?:tự|đòi|lén)\s+(?:lái|chạy|điều khiển)\s+(?:xe máy|ô tô)|(?:con|bé|em|tuổi teen)\s+(?:lái|chạy|điều khiển)\s+(?:xe máy|ô tô)|motorbike driving|driving a car)(?!\p{L})/iu },
   { id: "late_night", pattern: /(?<!\p{L})(?:đi chơi đêm|đi qua đêm|trốn đi đêm|overnight party|late[- ]night outing)(?!\p{L})/iu },
 ];
 

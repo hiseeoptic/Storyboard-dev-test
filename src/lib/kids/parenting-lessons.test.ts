@@ -54,7 +54,7 @@ test("the library covers 30 parenting areas in 6 groups, every lesson complete, 
   assert.ok(lessonCountByAge("middle") >= 250, `8–10: ${lessonCountByAge("middle")}`);
   assert.ok(lessonCountByAge("preteen") >= 150, `11–12: ${lessonCountByAge("preteen")}`);
   // …and so do 13–15-year-olds; every area has a real shelf for each older age.
-  assert.ok(lessonCountByAge("teen") >= 320, `13–15: ${lessonCountByAge("teen")}`);
+  assert.equal(lessonCountByAge("teen"), 353, "323 detailed Claude lessons plus 30 evidence-backed gap fillers");
   const generalAreas = LESSON_PILLARS.filter((p) => !["toddler", "preteen", "teen"].includes(p.id));
   for (const age of ["middle", "preteen", "teen"] as const) {
     for (const p of generalAreas) assert.ok(lessonsFor(p.id, age).length >= MIN_OLDER_PER_AREA, `${p.id} ${age}: ${lessonsFor(p.id, age).length}`);
@@ -62,7 +62,7 @@ test("the library covers 30 parenting areas in 6 groups, every lesson complete, 
   assert.ok(lessonsFor("preteen", "middle").length > 0);
   assert.ok(lessonsFor("preteen", "preteen").length > 0);
   assert.equal(lessonsFor("preteen", "teen").length, 0);
-  assert.equal(lessonsFor("teen", "teen").length, MIN_OLDER_PER_AREA);
+  assert.ok(lessonsFor("teen", "teen").length >= MIN_OLDER_PER_AREA);
   // Titles stay distinct so the library never shows the same lesson twice.
   const titles = PARENTING_LESSONS.map((l) => l.title.toLowerCase());
   assert.equal(new Set(titles).size, titles.length, "unique titles");
@@ -74,6 +74,10 @@ test("the library covers 30 parenting areas in 6 groups, every lesson complete, 
 test("every teen lesson has a global evidence trail and passes the dedicated topic gate", () => {
   const teen = PARENTING_LESSONS.filter((l) => l.ages.includes("teen"));
   assert.ok(teen.length >= 320, `${teen.length} teen lessons`);
+  const merged = findLesson("emo_hsg_half_point_short")!;
+  assert.match(merged.title, /nửa điểm/i, "Claude's detailed lesson is retained");
+  assert.match(merged.method, /UNICEF/, "the detailed lesson receives the topic-matched sourced method");
+  assert.equal(merged.sourceIds?.length, 2);
   for (const lesson of teen) {
     assert.ok((lesson.sourceIds?.length ?? 0) >= 2, `${lesson.id} cites at least two sources`);
     const sources = lesson.sourceIds!.map((id) => TEEN_EVIDENCE_SOURCES[id]);
