@@ -282,6 +282,7 @@ export function CuteKidsCard(props: {
                       {searching && <span className="ml-1.5 text-[10px] text-muted-foreground">{LESSON_PILLARS.find((p) => p.id === lesson.pillar)?.label}</span>}
                       <span className="mt-0.5 block text-muted-foreground">💡 {lesson.takeaway}</span>
                       <span className="mt-0.5 block text-[10px] text-amber-700">📚 {lesson.method}</span>
+                      {!!lesson.sourceIds?.length && <span className="mt-0.5 block text-[10px] text-emerald-700">✓ {lesson.sourceIds.length} {vi ? "nguồn kiểm chứng" : "evidence sources"}</span>}
                       <span className="mt-0.5 block text-[10px] text-muted-foreground">🎂 {lesson.ages.map((a) => AGE_LABEL[a][lang]).join(" · ")}</span>
                     </button>
                   ))}
@@ -303,9 +304,25 @@ export function CuteKidsCard(props: {
                 {config.abFormat && <span className="text-[11px] text-muted-foreground">{vi ? "Nên dùng 4 shot (40s)." : "Best with 4 shots."}</span>}
               </div>
               {picked && (
-                <p className="text-[11px] text-muted-foreground">
-                  <span className="font-medium text-foreground">{picked.title}</span> — {vi ? "Cách xử lý" : "Technique"} ({picked.method}): {picked.technique}
-                </p>
+                <div className="space-y-1 text-[11px] text-muted-foreground">
+                  <p><span className="font-medium text-foreground">{picked.title}</span> — {vi ? "Cách xử lý" : "Technique"} ({picked.method}): {picked.technique}</p>
+                  {!!picked.sourceIds?.length && library && (
+                    <p>
+                      <span className="font-medium text-foreground">{vi ? "Nguồn kiểm chứng:" : "Evidence:"}</span>{" "}
+                      {picked.sourceIds.map((id, index) => {
+                        const source = library.TEEN_EVIDENCE_SOURCES[id];
+                        return (
+                          <span key={id}>
+                            {index > 0 && " · "}
+                            <a className="underline underline-offset-2 hover:text-foreground" href={source.url} target="_blank" rel="noreferrer" title={`${source.title} — ${source.locator}`}>
+                              {source.publisher} ({source.year})
+                            </a>
+                          </span>
+                        );
+                      })}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}

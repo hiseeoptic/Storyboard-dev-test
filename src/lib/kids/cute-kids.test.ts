@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AI_LABEL_VI,
+  AGE_STAGE,
   buildEpisodeIdeasPrompt,
   normalizeEpisodeIdeas,
   DEFAULT_CUTE_KIDS,
@@ -16,6 +17,7 @@ import {
   normalizeCuteKids,
   type CuteKidsConfig,
 } from "./cute-kids.ts";
+import { TEEN_SAFETY_RULE, teenSafeRequest, teenSafetyViolations } from "./teen-safety.ts";
 
 const config = (patch: Partial<CuteKidsConfig> = {}): CuteKidsConfig => ({ ...DEFAULT_CUTE_KIDS, ...patch });
 
@@ -186,10 +188,18 @@ test("8–10 and 11–12: age-true speech, behaviour, personality, voice and bac
   assert.match(teen, /REAL 13–15-YEAR-OLD BEHAVIOUR: Khoa answers with a shrug/);
   assert.match(teen, /NĂN NỈ NGỌT \(sweet coaxing, age-true for 13–15\)/);
   assert.match(teen, /BACK-AND-FORTH/);
+  assert.match(teen, /TEEN 13–15 SAFETY \(HARD\)/);
   assert.doesNotMatch(teen, /huhuhuuu|REAL TODDLER|\b(kiss|lips?|pout)\b/i);
   assert.match(familyCast(config({ kidAge: "teen", family: ["sibling"] }))[1]!.appearance, /older brother about 17–18 years old/);
   assert.equal(normalizeCuteKids({ kidAge: "teen" })!.kidAge, "teen");
   assert.match(cuteKidsPerformanceNote("Khoa", ["clever"], "teen"), /a charming, age-true 13–15-year-old/);
+  assert.equal(AGE_STAGE.teen.vi, "lớp 8–10");
+  assert.equal(AGE_STAGE.teen.en, "grade 8–10");
+  assert.equal(teenSafetyViolations("Con đi học, làm dự án và chơi thể thao").length, 0);
+  assert.deepEqual(teenSafetyViolations("Con đòi lái xe máy đi chơi đêm và cá cược"), ["gambling", "road_driving", "late_night"]);
+  assert.match(teenSafeRequest("Con rủ bạn đi chơi đêm"), /tình huống đời thường an toàn/);
+  assert.equal(teenSafeRequest("Con muốn tự lập lịch học"), "Con muốn tự lập lịch học");
+  assert.match(TEEN_SAFETY_RULE, /romance or dating[\s\S]*self-harm[\s\S]*gambling/);
   // The card and the Vietnamese brief name the personality the way an 8–12-year-old shows it.
   assert.match(cuteKidsStoryIdea(config({ kidAge: "preteen" })), /Tính cách bé: năn nỉ ngọt, than thở "bi kịch", khôn lanh/);
   assert.match(cuteKidsRoomSeed(config({ kidAge: "middle" })), /than thở "bi kịch" cho vui \(nằm vật ra sofa/);

@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LESSON_PILLARS, PARENTING_LESSONS, PILLAR_GROUPS, findLesson, lessonCountByAge, lessonsFor, pickFreshLesson, searchLessons, withLibraryLesson } from "./parenting-lessons.ts";
+import { LESSON_PILLARS, PARENTING_LESSONS, PILLAR_GROUPS, TEEN_EVIDENCE_SOURCES, findLesson, lessonCountByAge, lessonsFor, pickFreshLesson, searchLessons, withLibraryLesson } from "./parenting-lessons.ts";
 import { DEFAULT_CUTE_KIDS, FAMILY_MEMBERS, KID_AGES, cuteKidsDirective, cuteKidsRoomSeed, cuteKidsStoryIdea, buildEpisodeIdeasPrompt, familyCast, labelCuteKidsPosts, normalizeCuteKids, AI_LABEL_VI, type CuteKidsConfig } from "./cute-kids.ts";
 import { childSafeText } from "./child-safe-wording.ts";
+import { teenSafetyViolations } from "./teen-safety.ts";
 
 const MIN_PER_PILLAR = 25;
 const MIN_TOTAL = 1000;
-const MIN_OLDER_PER_AREA = 10;
+const MIN_OLDER_PER_AREA = 12;
 
 // The card sends the picked lesson as a snapshot next to its id.
 const teach = (patch: Partial<CuteKidsConfig> = {}): CuteKidsConfig => {
@@ -19,7 +20,10 @@ test("the library covers 30 parenting areas in 6 groups, every lesson complete, 
   assert.equal(new Set(LESSON_PILLARS.map((p) => p.id)).size, 30);
   assert.equal(PILLAR_GROUPS.length, 6);
   for (const p of LESSON_PILLARS) assert.ok(PILLAR_GROUPS.some((g) => g.id === p.group), p.id);
-  for (const p of LESSON_PILLARS) assert.ok(PARENTING_LESSONS.filter((l) => l.pillar === p.id).length >= MIN_PER_PILLAR, `${p.id} has lessons`);
+  for (const p of LESSON_PILLARS) {
+    const minimum = p.id === "teen" ? MIN_OLDER_PER_AREA : MIN_PER_PILLAR;
+    assert.ok(PARENTING_LESSONS.filter((l) => l.pillar === p.id).length >= minimum, `${p.id} has lessons`);
+  }
   assert.ok(PARENTING_LESSONS.length >= MIN_TOTAL, `${PARENTING_LESSONS.length} lessons`);
   const ids = new Set<string>();
   for (const l of PARENTING_LESSONS) {
@@ -50,19 +54,41 @@ test("the library covers 30 parenting areas in 6 groups, every lesson complete, 
   assert.ok(lessonCountByAge("middle") >= 250, `8–10: ${lessonCountByAge("middle")}`);
   assert.ok(lessonCountByAge("preteen") >= 150, `11–12: ${lessonCountByAge("preteen")}`);
   // …and so do 13–15-year-olds; every area has a real shelf for each older age.
-  assert.ok(lessonCountByAge("teen") >= 250, `13–15: ${lessonCountByAge("teen")}`);
-  for (const p of LESSON_PILLARS) {
-    for (const age of ["middle", "preteen", "teen"] as const) {
-      const meant = p.id === "toddler" ? false : p.id === "preteen" ? age !== "teen" : p.id === "teen" ? age === "teen" : true;
-      if (meant) assert.ok(lessonsFor(p.id, age).length >= MIN_OLDER_PER_AREA, `${p.id} ${age}: ${lessonsFor(p.id, age).length}`);
-    }
+  assert.ok(lessonCountByAge("teen") >= 320, `13–15: ${lessonCountByAge("teen")}`);
+  const generalAreas = LESSON_PILLARS.filter((p) => !["toddler", "preteen", "teen"].includes(p.id));
+  for (const age of ["middle", "preteen", "teen"] as const) {
+    for (const p of generalAreas) assert.ok(lessonsFor(p.id, age).length >= MIN_OLDER_PER_AREA, `${p.id} ${age}: ${lessonsFor(p.id, age).length}`);
   }
+  assert.ok(lessonsFor("preteen", "middle").length > 0);
+  assert.ok(lessonsFor("preteen", "preteen").length > 0);
+  assert.equal(lessonsFor("preteen", "teen").length, 0);
+  assert.equal(lessonsFor("teen", "teen").length, MIN_OLDER_PER_AREA);
   // Titles stay distinct so the library never shows the same lesson twice.
   const titles = PARENTING_LESSONS.map((l) => l.title.toLowerCase());
   assert.equal(new Set(titles).size, titles.length, "unique titles");
   // The named approaches come from known programmes.
   const methods = PARENTING_LESSONS.map((l) => l.method).join(" ");
   for (const source of ["Kỷ luật tích cực", "Gottman", "Faber & Mazlish", "Montessori", "Harvard", "CASEL", "Dweck"]) assert.ok(methods.includes(source), source);
+});
+
+test("every teen lesson has a global evidence trail and passes the dedicated topic gate", () => {
+  const teen = PARENTING_LESSONS.filter((l) => l.ages.includes("teen"));
+  assert.ok(teen.length >= 320, `${teen.length} teen lessons`);
+  for (const lesson of teen) {
+    assert.ok((lesson.sourceIds?.length ?? 0) >= 2, `${lesson.id} cites at least two sources`);
+    const sources = lesson.sourceIds!.map((id) => TEEN_EVIDENCE_SOURCES[id]);
+    assert.ok(sources.every(Boolean), `${lesson.id} source ids resolve`);
+    assert.ok(sources.some((source) => source.scope !== "Vietnam"), `${lesson.id} includes global evidence`);
+    assert.deepEqual(
+      teenSafetyViolations([lesson.title, lesson.situation, lesson.behavior, lesson.technique, lesson.takeaway, lesson.wrongWay, lesson.method].join(" ")),
+      [],
+      `${lesson.id} stays inside the teen reel scope`,
+    );
+  }
+  for (const [id, source] of Object.entries(TEEN_EVIDENCE_SOURCES)) {
+    assert.match(source.url, /^https:\/\//, `${id} URL`);
+    assert.ok(source.year >= 2016 && source.locator.length > 15, `${id} version and locator`);
+  }
 });
 
 test("every lesson's directive is free of wording the video model refuses", () => {
@@ -163,5 +189,9 @@ test("search, a fresh random pick and the server's library lesson", () => {
   assert.equal(normalizeCuteKids(withLibraryLesson(tampered))!.lesson!.technique, findLesson("toy_aisle")!.technique);
   assert.equal(normalizeCuteKids({ ...teach(), lessonId: "three_jars" })!.lesson, undefined, "snapshot of another lesson is dropped");
   assert.equal(normalizeCuteKids({ ...teach(), lesson: { ...findLesson("toy_aisle")!, method: "" } })!.lessonId, undefined, "incomplete snapshot is dropped");
+  const teen = findLesson("teen_emotions_01")!;
+  assert.equal(normalizeCuteKids({ ...teach(), kidAge: "teen", lessonId: teen.id, lesson: teen })!.lesson!.sourceIds?.length, 2);
+  assert.equal(normalizeCuteKids({ ...teach(), kidAge: "teen", lessonId: teen.id, lesson: { ...teen, sourceIds: ["made_up"] } })!.lesson, undefined, "teen snapshots without registered evidence are dropped");
+  assert.equal(normalizeCuteKids({ ...teach(), kidAge: "teen", lessonId: teen.id, lesson: { ...teen, situation: "Rủ nhau uống rượu" } })!.lesson, undefined, "unsafe teen snapshots are dropped");
   assert.equal(withLibraryLesson(null), null);
 });

@@ -9,6 +9,8 @@
 // ============================================================
 
 import { CHILD_SAFE_WORDING_RULE } from "./child-safe-wording.ts";
+import { TEEN_SAFETY_RULE, teenSafeRequest, teenSafetyViolations } from "./teen-safety.ts";
+import { TEEN_EVIDENCE_SOURCES, type TeenEvidenceSourceId } from "./teen-sources.ts";
 import { LESSON_PILLARS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
 
 export type KidAge = "toddler" | "young" | "school" | "middle" | "preteen" | "teen";
@@ -82,7 +84,7 @@ export const AGE_STAGE: Record<KidAge, { vi: string; en: string }> = {
   school: { vi: "lớp 1–2", en: "grade 1–2" },
   middle: { vi: "lớp 3–5", en: "grade 3–5" },
   preteen: { vi: "lớp 6–7", en: "grade 6–7" },
-  teen: { vi: "lớp 8–9", en: "grade 8–9" },
+  teen: { vi: "lớp 8–10", en: "grade 8–10" },
 };
 
 interface AgeProfile {
@@ -439,6 +441,7 @@ export function cuteKidsDirective(raw: CuteKidsConfig | null | undefined): strin
     `- ${config.filming === "phone" ? PHONE_CAPTURE : CINEMATIC_CAPTURE} Real lived-in Vietnamese home or everyday place that fits the request.`,
     `- ${DIALECT_NOTE[config.dialect]}`,
     `- ${CHILD_SAFETY_RULES}`,
+    ...(config.kidAge === "teen" ? [`- ${TEEN_SAFETY_RULE}`] : []),
     `- ${CHILD_SAFE_WORDING_RULE}`,
   ].join("\n");
 }
@@ -455,6 +458,7 @@ export function cuteKidsRoomSeed(config: CuteKidsConfig): string {
       ? `Tương tác qua lại như thật: mỗi câu lý lẽ, cái thở dài, câu đùa hay cái nhún vai của con đều được bố mẹ đáp lại ngay (ngồi xuống cạnh con, đùa lại, gọi tên cảm xúc, hỏi ý kiến con, đặt tay lên vai, đập tay), rồi con phản ứng lại — mỗi shot ít nhất hai lượt qua lại, không giảng giải dài. Con có cử chỉ thật của trẻ ${AGE_LABEL[config.kidAge].vi}: ${REAL_CHILD_VI[config.kidAge]}.`
       : `Tương tác qua lại như thật: mỗi ánh mắt, cái chỉ tay, tiếng nũng nịu, câu nói hay cái ôm của bé đều được bố mẹ đáp lại ngay (ngồi xuống ngang tầm mắt, nhìn theo hướng bé nhìn, bắt chước biểu cảm của bé, gọi tên điều bé muốn, xoa đầu, ôm nhẹ), rồi bé phản ứng lại — mỗi shot ít nhất hai lượt qua lại. Bé có cử chỉ thật của trẻ ${AGE_LABEL[config.kidAge].vi}: ${REAL_CHILD_VI[config.kidAge]}.`,
     ...(config.goal === "teach" ? ["Video dạy con: thể hiện bài học qua câu chuyện, không giảng; bố mẹ làm mẫu cách xử lý bình tĩnh, tôn trọng — không đánh, không quát, không dọa, không so sánh."] : []),
+    ...(config.kidAge === "teen" ? [TEEN_SAFETY_RULE] : []),
     `Bé nói đúng tuổi: mỗi câu tối đa ${age.maxWords} từ; bố mẹ nói tự nhiên. Quay kiểu ${config.filming === "phone" ? "điện thoại gia đình" : "điện ảnh"}, giọng ${config.dialect === "north" ? "miền Bắc" : "miền Nam"}.`,
     "Nội dung gia đình lành mạnh, an toàn cho trẻ: không nguy hiểm, không dọa hay làm bé khóc thật, bé mặc đồ ở nhà bình thường. Bố mẹ thể hiện tình cảm bằng ôm vai, nắm tay.",
     familyWithLesson(config).includes("baby") ? "Em bé luôn được bế hoặc ở ngay cạnh người lớn đang chăm (nắm tay, ru, cười nói với em), em có phản ứng trong cảnh và có mặt ở kết — không để em ngồi một mình hay bị bỏ quên." : "",
@@ -521,6 +525,9 @@ function lessonFields(raw: unknown, lessonId: unknown): { lessonId?: string; les
   const pillar = LESSON_PILLARS.find((p) => p.id === r.pillar)?.id;
   const ages = Array.isArray(r.ages) ? r.ages.filter((a): a is KidAge => KID_AGES.includes(a as KidAge)) : [];
   const needs = Array.isArray(r.needs) ? r.needs.filter((m): m is FamilyMember => FAMILY_MEMBERS.includes(m as FamilyMember)) : [];
+  const sourceIds = Array.isArray(r.sourceIds)
+    ? [...new Set(r.sourceIds.filter((id): id is TeenEvidenceSourceId => typeof id === "string" && id in TEEN_EVIDENCE_SOURCES))].slice(0, 6)
+    : [];
   const lesson: ParentingLesson = {
     id: clip(r.id, 60),
     pillar: pillar ?? "money",
@@ -532,9 +539,12 @@ function lessonFields(raw: unknown, lessonId: unknown): { lessonId?: string; les
     takeaway: clip(r.takeaway, 300),
     wrongWay: clip(r.wrongWay, 400),
     method: clip(r.method, 120),
+    ...(sourceIds.length ? { sourceIds } : {}),
     ...(needs.length ? { needs: [...new Set(needs)] } : {}),
   };
-  const complete = pillar && ages.length && lesson.id === lessonId && [lesson.title, lesson.situation, lesson.behavior, lesson.technique, lesson.takeaway, lesson.wrongWay, lesson.method].every(Boolean);
+  const lessonText = [lesson.title, lesson.situation, lesson.behavior, lesson.technique, lesson.takeaway, lesson.wrongWay, lesson.method];
+  const teenValid = !ages.includes("teen") || (sourceIds.length >= 2 && teenSafetyViolations(lessonText.join(" ")).length === 0);
+  const complete = pillar && ages.length && teenValid && lesson.id === lessonId && lessonText.every(Boolean);
   return complete ? { lessonId, lesson } : {};
 }
 
@@ -546,11 +556,12 @@ export function normalizeCuteKids(raw: unknown): CuteKidsConfig | undefined {
   const family = Array.isArray(r.family)
     ? (r.family.filter((m) => FAMILY_MEMBERS.includes(m as FamilyMember)) as FamilyMember[])
     : DEFAULT_CUTE_KIDS.family;
+  const kidAge = pick(r.kidAge, KID_AGES, "school");
   return {
-    request: String(r.request ?? "").slice(0, 4000),
+    request: kidAge === "teen" ? teenSafeRequest(String(r.request ?? "")) : String(r.request ?? "").slice(0, 4000),
     kidName: String(r.kidName ?? "").trim().slice(0, 40) || DEFAULT_CUTE_KIDS.kidName,
     kidGender: pick(r.kidGender, ["girl", "boy"] as const, "girl"),
-    kidAge: pick(r.kidAge, KID_AGES, "school"),
+    kidAge,
     family: [...new Set(family)],
     filming: pick(r.filming, ["phone", "cinematic"] as const, "phone"),
     dialect: pick(r.dialect, ["north", "south"] as const, "north"),
@@ -601,6 +612,7 @@ export function buildEpisodeIdeasPrompt(raw: CuteKidsConfig, avoid: string[] = [
     config.goal === "teach" && libraryTitles.length
       ? `The channel's lesson library already covers these situations in this area — give fresh, different ones: ${libraryTitles.join("; ")}.`
       : "",
+    ...(config.kidAge === "teen" ? [TEEN_SAFETY_RULE] : []),
     `Give 10 different episode ideas for ${config.shots} clips of 10 seconds, all at home or everyday places, each with a clear hook, escalation and a punchline that fits the kid's age. ${CHILD_SAFETY_RULES}`,
     'Return {"ideas":[{"title":"short Vietnamese title (max 8 words)","request":"one or two Vietnamese sentences: the situation, what the kid does and the ending"}]}',
   ].filter(Boolean).join("\n");
