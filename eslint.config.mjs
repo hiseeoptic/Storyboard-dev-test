@@ -11,6 +11,9 @@ const compat = new FlatCompat({
 
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals"),
+  // eslint-config-next installs the TypeScript plugin but only "next/typescript"
+  // registers it; the no-unused-vars rule below needs it registered.
+  ...compat.config({ plugins: ["@typescript-eslint"] }),
   {
     rules: {
       "@next/next/no-img-element": "off",

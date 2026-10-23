@@ -109,7 +109,7 @@ export function CharacterStudio({
     }
   };
 
-  const useImage = (r: GenResult) => {
+  const applyImage = (r: GenResult) => {
     onApprove({
       id: rid(),
       preview: r.uri,
@@ -179,7 +179,7 @@ export function CharacterStudio({
               </button>
               <button
                 type="button"
-                onClick={() => useImage(r)}
+                onClick={() => applyImage(r)}
                 disabled={r.added}
                 className={`absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 py-1 text-[11px] font-medium ${
                   r.added ? "bg-primary text-primary-foreground" : "bg-black/60 text-white hover:bg-primary/80"
