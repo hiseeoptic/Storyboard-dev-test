@@ -6677,8 +6677,19 @@ function ProjectWorkspace() {
                   cảnh theo hành động) — không còn ô chọn tay, tránh ép số gây lỗi. */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">{L("segmentCount")}</label>
-                <Select value={String(segmentCount)} onChange={(e) => setSegmentCount(Number(e.target.value))} options={SEGMENT_OPTIONS.some((o) => o.value === String(segmentCount)) ? SEGMENT_OPTIONS : [...SEGMENT_OPTIONS, { value: String(segmentCount), label: `${segmentCount} (~${segmentCount * 10}s)` }].sort((a, b) => Number(a.value) - Number(b.value))} />
-                <p className="text-xs text-muted-foreground">{L("segmentCountHint")}</p>
+                {cuteKids ? (
+                  // The cute-kids / parenting card owns the reel's length; the writer and director plan for that count.
+                  <p className="rounded-md border border-pink-400/50 bg-pink-500/[0.06] px-3 py-2 text-xs">
+                    🧒 {lang === "vi"
+                      ? `${segmentCount} shot × 10 giây (~${segmentCount * 10}s) — đã chọn trong thẻ Bé cưng / Dạy con. Muốn đổi số shot, chỉnh trong thẻ rồi bấm tạo lại.`
+                      : `${segmentCount} shots × 10 s (~${segmentCount * 10}s) — set on the cute-kids card. Change it there and build again.`}
+                  </p>
+                ) : (
+                  <>
+                    <Select value={String(segmentCount)} onChange={(e) => setSegmentCount(Number(e.target.value))} options={SEGMENT_OPTIONS.some((o) => o.value === String(segmentCount)) ? SEGMENT_OPTIONS : [...SEGMENT_OPTIONS, { value: String(segmentCount), label: `${segmentCount} (~${segmentCount * 10}s)` }].sort((a, b) => Number(a.value) - Number(b.value))} />
+                    <p className="text-xs text-muted-foreground">{L("segmentCountHint")}</p>
+                  </>
+                )}
               </div>
 
               {locationMode === "auto" && roomCount(locationLibrary) > 0 && (

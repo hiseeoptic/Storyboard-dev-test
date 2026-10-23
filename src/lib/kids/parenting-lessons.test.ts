@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LESSON_PILLARS, PARENTING_LESSONS, PILLAR_GROUPS, findLesson, lessonCountByAge, lessonsFor, pickFreshLesson, searchLessons, withLibraryLesson } from "./parenting-lessons.ts";
-import { DEFAULT_CUTE_KIDS, FAMILY_MEMBERS, KID_AGES, cuteKidsDirective, cuteKidsRoomSeed, cuteKidsStoryIdea, buildEpisodeIdeasPrompt, familyCast, labelCuteKidsPosts, lessonShotAdviceVi, lessonTeachingBriefVi, lessonTeachingGuideVi, normalizeCuteKids, AI_LABEL_VI, type CuteKidsConfig } from "./cute-kids.ts";
+import { DEFAULT_CUTE_KIDS, FAMILY_MEMBERS, KID_AGES, cuteKidsDirective, cuteKidsRoomSeed, cuteKidsStoryIdea, buildEpisodeIdeasPrompt, familyCast, labelCuteKidsPosts, lessonShotAdviceVi, lessonShotPlanForCountVi, lessonTeachingBriefVi, lessonTeachingGuideVi, normalizeCuteKids, AI_LABEL_VI, type CuteKidsConfig } from "./cute-kids.ts";
 import { childSafeText } from "./child-safe-wording.ts";
 import { teenSafetyViolations } from "./teen-safety.ts";
 
+const capitalised = (text: string) => `${text.charAt(0).toLocaleUpperCase("vi")}${text.slice(1)}`;
 const MIN_PER_PILLAR = 25;
 const MIN_TOTAL = 1000;
 const MIN_OLDER_PER_AREA = 12;
@@ -113,6 +114,35 @@ test("every lesson expands into a positive model, concrete steps and an observab
   assert.doesNotMatch(lessonTeachingBriefVi(phone), /shot × 10 giây/, "the creator's shot count is not baked into the request box");
 });
 
+test("any clip count from 2 to 8 gets one beat per clip, in order, for every lesson", () => {
+  for (const lesson of PARENTING_LESSONS) {
+    for (const abFormat of [false, true]) {
+      for (let shots = 2; shots <= 8; shots++) {
+        const plan = lessonShotPlanForCountVi(lesson, shots, abFormat);
+        assert.equal(plan.length, shots, `${lesson.id} ${shots} shots${abFormat ? " A/B" : ""}`);
+        plan.forEach((beat, i) => assert.ok(beat.startsWith(`Shot ${i + 1} — `), `${lesson.id} beat ${i + 1} of ${shots}`));
+      }
+    }
+  }
+  // A long reel hands the technique out over the middle clips instead of cramming it into one.
+  const toy = findLesson("toy_aisle")!;
+  const eight = lessonShotPlanForCountVi(toy, 8, false);
+  assert.match(eight[2]!, /^Shot 3 — Cùng xử lý \(1\/4\)/);
+  assert.match(eight[6]!, /^Shot 7 — Con tự thấy đúng–sai/);
+  assert.match(eight[7]!, /^Shot 8 — Kết ấm áp/);
+  // A one-step technique comes first; the clips left over are practice beats, each a different one.
+  const six = lessonShotPlanForCountVi(toy, 6, false);
+  assert.ok(six[2]!.includes(capitalised(toy.technique.slice(0, 30))), "the technique opens the middle clips");
+  const leftover = (beat: string) => beat.replace(/^Shot \d+ — [^:]+: /, "");
+  assert.equal(new Set([eight[3]!, eight[4]!, eight[5]!].map(leftover)).size, 3, "leftover clips are not copies of each other");
+  const ab = lessonShotPlanForCountVi(toy, 6, true);
+  assert.match(ab[2]!, /^Shot 3 — Hậu quả và tua lại/);
+  assert.match(ab[3]!, /^Shot 4 — Cách phù hợp \(1\/2\)/);
+  const d = cuteKidsDirective(teach({ shots: 6 }));
+  assert.match(d, /The creator selected 6 shots; follow this exact plan: Shot 1 — [\s\S]*Shot 6 — Kết ấm áp/);
+  assert.match(d, /LESSON STRUCTURE \(6 clips\)/);
+});
+
 test("the guide fits the youngest age a lesson is written for, and safety comes first", () => {
   const road = lessonTeachingGuideVi(findLesson("hold_hands_road")!);
   assert.match(road.steps[0]!, /^An toàn trước: nếu có nguy hiểm, người lớn nắm tay/);
@@ -187,6 +217,8 @@ test("A/B format: Cách 1 the mild way, a rewind, then Cách 2", () => {
   assert.match(four, /"2 CÁCH XỬ LÝ" \(A\/B\): Cách 1 fills clip 1–2 — the same relatable moment handled the ineffective way \(bố mẹ nói cụt/);
   assert.match(four, /the narrator says "Cách 1…" at the start and "Còn cách 2…" at the rewind/);
   assert.match(cuteKidsDirective(teach({ abFormat: true, shots: 3, takeaway: "parent" })), /Cách 1 fills clip 1 —.*the scene visibly restarts from the same moment/);
+  assert.match(cuteKidsDirective(teach({ abFormat: true, shots: 5 })), /Cách 1 fills clip 1–2 —/);
+  assert.match(cuteKidsDirective(teach({ abFormat: true, shots: 8 })), /Cách 1 fills clip 1–3 —/);
   assert.match(cuteKidsStoryIdea(teach({ abFormat: true })), /Kiểu "2 cách xử lý": cách 1 — phản ứng chưa khéo/);
 });
 

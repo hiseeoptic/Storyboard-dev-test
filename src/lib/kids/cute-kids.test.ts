@@ -65,6 +65,9 @@ test("child safety and the capture look are always in the directive", () => {
   assert.match(cuteKidsDirective(config({ dialect: "south" })), /"hông"/);
   assert.equal(cuteKidsDirective(undefined), "");
   assert.match(cuteKidsRoomSeed(config({ shots: 4 })), /4 shot × 10 giây/);
+  // The creator's count is what the writer and the director plan for — one beat per clip, no cramming.
+  assert.match(cuteKidsRoomSeed(config({ shots: 7 })), /đúng 7 shot × 10 giây[\s\S]*Chia câu chuyện thành 7 nhịp[\s\S]*tối đa 3 lượt thoại ngắn/);
+  assert.match(cuteKidsDirective(config({ shots: 7 })), /STRUCTURE \(7 clips of 10 s\)[\s\S]*PACING FOR 7 CLIPS \(70 s, chosen by the creator\): [\s\S]*exactly 7 clips — one clear dramatic beat per clip/);
 });
 
 test("social captions get the AI label once", () => {
@@ -80,7 +83,10 @@ test("client configs are clamped and cleaned", () => {
   assert.equal(c.kidName, DEFAULT_CUTE_KIDS.kidName);
   assert.equal(c.kidAge, "school");
   assert.deepEqual(c.family, ["dad"]);
-  assert.equal(c.shots, 4);
+  assert.equal(c.shots, 8, "the card offers up to 8 shots");
+  for (const [raw, shots] of [[8, 8], [5, 5], [6.4, 6], [1, 2], ["7", 7], [undefined, DEFAULT_CUTE_KIDS.shots]] as const) {
+    assert.equal(normalizeCuteKids({ shots: raw })!.shots, shots, `shots ${String(raw)}`);
+  }
   assert.equal(c.filming, "phone");
   assert.equal(c.format, "auto");
   assert.equal(normalizeCuteKids(null), undefined);

@@ -11,6 +11,7 @@ import { Lightbulb, Loader2, PenLine, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Select } from "@/components/ui/select";
 import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploader";
 import { cn } from "@/lib/utils";
 import { suggestCuteKidsEpisodes } from "@/actions";
@@ -18,12 +19,15 @@ import type { AIProvider } from "@/types";
 import {
   AGE_LABEL,
   AGE_STAGE,
+  CUTE_KIDS_MAX_SHOTS,
+  CUTE_KIDS_MIN_SHOTS,
   DEFAULT_CUTE_KIDS,
   KID_AGES,
   isOlderKid,
   lessonTeachingBriefVi,
   lessonTeachingGuideVi,
   lessonShotAdviceVi,
+  lessonShotPlanForCountVi,
   traitLabelVi,
   KID_TRAITS,
   VIRAL_FORMATS,
@@ -164,8 +168,14 @@ export function CuteKidsCard(props: {
   const picked = config.lesson?.id === config.lessonId ? config.lesson : undefined;
   const pickedGuide = picked ? lessonTeachingGuideVi(picked) : undefined;
   const pickedShotAdvice = picked ? lessonShotAdviceVi(picked, config.abFormat) : undefined;
+  // How the picked lesson is spread over the clip count the creator chose (2–8).
+  const pickedShotPlan = picked ? lessonShotPlanForCountVi(picked, config.shots, config.abFormat === true) : [];
+  const shotOptions = Array.from({ length: CUTE_KIDS_MAX_SHOTS - CUTE_KIDS_MIN_SHOTS + 1 }, (_, i) => CUTE_KIDS_MIN_SHOTS + i).map((n) => ({
+    value: String(n),
+    label: `${n} shot · ${n * 10}s${pickedShotAdvice?.recommendedShots === n ? (vi ? " · gợi ý" : " · suggested") : ""}`,
+  }));
   // Picking a lesson also brings the family members its story needs (a sibling, a friend, grandma…).
-  // The creator's shot count stays as chosen; the suggested one is marked on the shot chips.
+  // The creator's shot count stays as chosen; the suggested one is marked in the shot list.
   const pickLesson = (lesson: ParentingLesson) =>
     update(config.lessonId === lesson.id
       ? { lessonId: undefined, lesson: undefined }
@@ -304,12 +314,12 @@ export function CuteKidsCard(props: {
               <div className="flex flex-wrap items-center gap-1.5">
                 <Chip
                   active={config.abFormat === true}
-                  onClick={() => update(config.abFormat ? { abFormat: false } : { abFormat: true, shots: 4 })}
+                  onClick={() => update(config.abFormat ? { abFormat: false } : { abFormat: true, shots: Math.max(config.shots, 4) })}
                   title={vi ? "Cách 1 chưa khéo (bé càng ăn vạ) → Cách 2 khéo (bé dịu lại). Không đánh, không quát." : "Way 1 backfires gently, way 2 works."}
                 >
                   🔀 {vi ? "2 cách xử lý (A/B)" : "Two ways (A/B)"}
                 </Chip>
-                {config.abFormat && <span className="text-[11px] text-muted-foreground">{vi ? "Nên dùng 4 shot (40s)." : "Best with 4 shots."}</span>}
+                {config.abFormat && <span className="text-[11px] text-muted-foreground">{vi ? "Nên dùng từ 4 shot (40s) trở lên." : "Best with 4 shots or more."}</span>}
               </div>
               {picked && pickedGuide && (
                 <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/[0.06] p-2.5 text-[11px]">
@@ -324,7 +334,8 @@ export function CuteKidsCard(props: {
                   <p><span className="font-medium text-foreground">⚠️ {vi ? "Tránh làm:" : "Avoid:"}</span> <span className="text-muted-foreground">{pickedGuide.avoid}</span></p>
                   {pickedShotAdvice && <div className="border-t border-amber-500/20 pt-2">
                     <p><span className="font-medium text-foreground">🎬 {vi ? "Số shot đề xuất:" : "Recommended length:"}</span> <span className="text-amber-700">{pickedShotAdvice.recommendedShots} shot × 10s = {pickedShotAdvice.totalSeconds}s</span> — <span className="text-muted-foreground">{pickedShotAdvice.reason}</span></p>
-                    <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-muted-foreground">{pickedShotAdvice.shotPlan.map((beat, index) => <li key={index}>{beat.replace(/^Shot \d+ — /, "")}</li>)}</ol>
+                    <p className="mt-1 font-medium text-foreground">{vi ? `Phân bổ cho ${config.shots} shot bạn chọn (${config.shots * 10}s):` : `Plan for your ${config.shots} shots (${config.shots * 10}s):`}</p>
+                    <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-muted-foreground">{pickedShotPlan.map((beat, index) => <li key={index}>{beat.replace(/^Shot \d+ — /, "")}</li>)}</ol>
                     <p className="mt-1"><span className="font-medium text-foreground">🎭 {vi ? "Biểu cảm & lời thoại:" : "Performance & dialogue:"}</span> <span className="text-muted-foreground">{pickedShotAdvice.dialogueDirection}</span></p>
                   </div>}
                 </div>
@@ -434,14 +445,13 @@ export function CuteKidsCard(props: {
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium">{vi ? "Độ dài" : "Length"}</label>
-              <div className="flex flex-wrap gap-1.5">
-                {[2, 3, 4].map((n) => (
-                  <Chip key={n} active={config.shots === n} onClick={() => update({ shots: n })}>
-                    {n} shot · {n * 10}s {pickedShotAdvice?.recommendedShots === n ? (vi ? "· gợi ý" : "· suggested") : ""}
-                  </Chip>
-                ))}
-              </div>
+              <label className="text-xs font-medium">{vi ? "Số shot (mỗi shot 10 giây)" : "Shots (10 s each)"}</label>
+              <Select value={String(config.shots)} onChange={(e) => update({ shots: Number(e.target.value) })} options={shotOptions} className="h-9 text-xs" />
+              <p className="text-[11px] text-muted-foreground">
+                {vi
+                  ? "Biên kịch và đạo diễn chia câu chuyện đúng theo số shot này: mỗi shot một nhịp, tối đa 3 lượt thoại ngắn. Nhiều shot hơn = thêm chỗ cho hành động và phản ứng, không dồn ép lời thoại."
+                  : "The writer and director spread the story over exactly this many shots: one beat per shot, at most three short turns. More shots mean more room, not more lines."}
+              </p>
             </div>
           </div>
 

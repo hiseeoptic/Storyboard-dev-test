@@ -67,6 +67,10 @@ export const DEFAULT_CUTE_KIDS: CuteKidsConfig = {
   abFormat: false,
 };
 
+/** The creator picks the reel's length on the card: 2–8 clips of 10 seconds. */
+export const CUTE_KIDS_MIN_SHOTS = 2;
+export const CUTE_KIDS_MAX_SHOTS = 8;
+
 export const AGE_LABEL: Record<KidAge, { vi: string; en: string }> = {
   toddler: { vi: "2–3 tuổi", en: "2–3 years" },
   young: { vi: "4–5 tuổi", en: "4–5 years" },
@@ -529,23 +533,70 @@ export function lessonShotAdviceVi(lesson: ParentingLesson, abFormat = false): L
   };
 }
 
-function lessonShotPlanForCountVi(lesson: ParentingLesson, shots: number, abFormat: boolean): string[] {
+/** Spread items over k groups in order, as evenly as possible; with fewer items than groups the items come first and the last groups stay empty. */
+function spreadOver<T>(items: T[], k: number): T[][] {
+  if (items.length <= k) return Array.from({ length: k }, (_, i) => (i < items.length ? [items[i]!] : []));
+  return Array.from({ length: k }, (_, i) => items.slice(Math.floor((i * items.length) / k), Math.floor(((i + 1) * items.length) / k)));
+}
+
+/** Beats for clips left over once the technique's own steps are placed: practice, a small setback, then doing it alone. */
+const PRACTICE_BEATS_VI = [
+  "con tự làm lại bước vừa học một lần nữa, bố mẹ lùi lại quan sát; để khoảng lặng cho nét mặt và phản ứng thay đổi, lời thoại thật ít.",
+  "một trở ngại nhỏ xuất hiện (con lúng túng hoặc muốn bỏ dở), bố mẹ vẫn bình tĩnh và chỉ nhắc đúng một câu then chốt; biểu cảm hai bên đổi dần.",
+  "con thử tự làm trọn vẹn không cần nhắc, bố mẹ chỉ gật đầu khích lệ; cận nét mặt tự tin dần của con, lời thoại rất ít.",
+];
+
+/** The lesson spread over the creator's clip count (2–8): one dramatic beat per 10-second clip, so a longer reel gets more room, never more lines per clip. */
+export function lessonShotPlanForCountVi(lesson: ParentingLesson, shots: number, abFormat: boolean): string[] {
   const advice = lessonShotAdviceVi(lesson, abFormat);
   if (shots === advice.recommendedShots) return advice.shotPlan;
   if (shots <= 2) return [
     `Shot 1 — Tình huống và biểu cảm: mở bằng hành vi “${lesson.behavior}”; trao đổi cảm xúc ngắn theo phản ứng qua lại, bố mẹ dừng lại và làm mẫu ngay trong cùng shot.`,
     `Shot 2 — Xử lý và kết quả: bố mẹ thực hiện kỹ thuật chính, con tự thử một bước và nhìn thấy kết quả; ưu tiên thay đổi nét mặt/cử chỉ, kết bằng câu chốt rất ngắn.`,
   ];
-  if (shots === 3) return [
+  if (abFormat && shots === 3) return [
+    `Shot 1 — Cách chưa khéo: vào thẳng tình huống, bố mẹ phản ứng theo cách cần tránh; cận biểu cảm và thái độ của con khi mọi chuyện căng hơn.`,
+    `Shot 2 — Tua lại và cách phù hợp: bố mẹ dừng lại, thở, làm lại từ đầu bằng cách tôn trọng; phản ứng của con dịu dần theo từng câu.`,
+    `Shot 3 — Con tự thấy kết quả: con thử một bước, nét mặt chuyển biến rõ; kết bằng khoảnh khắc ấm và câu chốt ngắn.`,
+  ];
+  if (!abFormat && shots === 3) return [
     `Shot 1 — Tình huống: vào thẳng mâu thuẫn, cận biểu cảm và thái độ “${lesson.behavior}”; lời thoại cảm xúc ngắn, mỗi lượt sinh ra từ phản ứng trước đó.`,
     `Shot 2 — Bố mẹ làm mẫu và xử lý: nét mặt bình tĩnh, giọng có khoảng dừng và nhấn từ khóa; thực hiện kỹ thuật bằng hành động, không giảng dài.`,
     `Shot 3 — Con thực hành và tự thấy kết quả: quay phản ứng thay đổi, hành động đúng và khoảnh khắc kết nối; lời chốt gọn theo nhịp diễn.`,
   ];
-  return [
+  if (!abFormat && shots === 4) return [
     `Shot 1 — Tình huống và biểu cảm của con: “${lesson.behavior}”; dùng cận cảnh và trao đổi ngắn làm móc câu.`,
     `Shot 2 — Bố mẹ dừng lại và làm mẫu: thể hiện thái độ bình tĩnh bằng gương mặt, tư thế, khoảng dừng rồi mới nói.`,
     `Shot 3 — Cùng xử lý: bố mẹ hướng dẫn, con tự làm một bước; lời thoại ngắn đi cùng hành động và phản ứng qua lại.`,
     `Shot 4 — Minh chứng và kết quả: con nhìn thấy điều thay đổi, biểu cảm chuyển biến tự nhiên; kết ấm áp và câu chốt ngắn.`,
+  ];
+  // 5–8 clips (A/B included): the technique's own beats are handed out one stretch per clip.
+  const beats = lesson.technique.split(/;\s*/).map((part) => part.trim()).filter(Boolean);
+  let extra = 0;
+  const practice = (chunk: string[], label: string) => chunk.length
+    ? `${label}: ${capitalise(chunk.join("; ")).replace(/[.;,]+$/, "")}. Biểu cảm và phản ứng của hai bên nối tiếp nhau; lời thoại chỉ đi cùng hành động.`
+    : `${label}: ${PRACTICE_BEATS_VI[extra++ % PRACTICE_BEATS_VI.length]}`;
+  if (abFormat) {
+    const wrong = shots >= 6 ? 2 : 1;
+    const right = shots - wrong - 2;
+    return [
+      ...Array.from({ length: wrong }, (_, i) => wrong === 1
+        ? `Shot 1 — Cách chưa khéo: mở thẳng vào tình huống, bố mẹ phản ứng theo cách cần tránh (${lesson.wrongWay}); cận biểu cảm và thái độ của con.`
+        : i === 0
+          ? `Shot 1 — Cách chưa khéo (mở đầu): vào thẳng tình huống, bố mẹ phản ứng theo cách cần tránh; cận biểu cảm và thái độ của con.`
+          : `Shot ${i + 1} — Cách chưa khéo (căng dần): ${lesson.wrongWay}; con phản ứng rõ hơn bằng nét mặt, cử chỉ, không ai tàn nhẫn.`),
+      `Shot ${wrong + 1} — Hậu quả và tua lại: bố mẹ nhận ra, dừng lại, thở; cảnh quay lại đúng khoảnh khắc ban đầu, nét mặt bố mẹ dịu xuống.`,
+      ...spreadOver(beats, right).map((chunk, i) => practice(chunk, `Shot ${wrong + 2 + i} — Cách phù hợp (${i + 1}/${right})`)),
+      `Shot ${shots} — Con tự thấy kết quả: con thử một bước, quan sát minh chứng đúng–sai, biểu cảm dịu hoặc tự tin hơn; kết bằng khoảnh khắc ấm và câu chốt ngắn.`,
+    ];
+  }
+  const middle = shots - 4;
+  return [
+    `Shot 1 — Móc câu: vào thẳng tình huống, cận biểu cảm và thái độ “${lesson.behavior}”; lời thoại ngắn có cảm xúc, không giải thích dài.`,
+    `Shot 2 — Bố mẹ dừng lại và làm mẫu: nét mặt bình tĩnh, nhận cảm xúc hoặc phần chưa đúng của mình; lời nói chậm, có khoảng dừng và từ khóa được nhấn.`,
+    ...spreadOver(beats, middle).map((chunk, i) => practice(chunk, `Shot ${3 + i} — Cùng xử lý (${i + 1}/${middle})`)),
+    `Shot ${shots - 1} — Con tự thấy đúng–sai: cho thấy kết quả hoặc so sánh quan sát được, biểu cảm của con chuyển biến tự nhiên; không giảng giải.`,
+    `Shot ${shots} — Kết ấm áp: khoảnh khắc kết nối, phản ứng vui của cả nhà và câu chốt gọn.`,
   ];
 }
 
@@ -631,8 +682,9 @@ function parentingDirective(config: CuteKidsConfig, kidName: string): string[] {
   const actualShotPlan = lesson ? lessonShotPlanForCountVi(lesson, config.shots, config.abFormat === true) : [];
   const n = config.shots;
   const narrator = config.takeaway !== "parent";
+  const cach1End = n >= 6 ? 3 : n >= 4 ? 2 : 1;
   const structure = config.abFormat
-    ? `"2 CÁCH XỬ LÝ" (A/B): Cách 1 fills clip 1${n >= 4 ? "–2" : ""} — the same relatable moment handled the ineffective way (${lesson ? lesson.wrongWay : "a flat no, or giving in at once"}), and ${kidName} escalates (comic and brief, never cruel). Then a clear rewind beat — ${narrator ? "the narrator says \"Cách 1…\" at the start and \"Còn cách 2…\" at the rewind" : "the scene visibly restarts from the same moment: the parent pauses, takes a breath and begins again"} — and Cách 2 fills the remaining clips: the parent uses the technique, ${kidName} calms step by step, and the ending is warm.`
+    ? `"2 CÁCH XỬ LÝ" (A/B): Cách 1 fills clip 1${cach1End > 1 ? `–${cach1End}` : ""} — the same relatable moment handled the ineffective way (${lesson ? lesson.wrongWay : "a flat no, or giving in at once"}), and ${kidName} escalates (comic and brief, never cruel). Then a clear rewind beat — ${narrator ? "the narrator says \"Cách 1…\" at the start and \"Còn cách 2…\" at the rewind" : "the scene visibly restarts from the same moment: the parent pauses, takes a breath and begins again"} — and Cách 2 fills the remaining clips: the parent uses the technique, ${kidName} calms step by step, and the ending is warm.`
     : `clip 1 = the relatable moment every parent knows (hook in 0–2 s); the middle clip${n > 3 ? "s" : ""} = ${kidName} escalates with the personality beats while the parent stays calm and applies the technique step by step; the last clip = the warm result and the takeaway.`;
   const takeaway = narrator
     ? `TAKEAWAY BY NARRATOR: the last clip ends with a short, warm narrator voice-over (≤ 18 words, same regional accent) that speaks to parents — "Mẹo nhỏ: …" or "Bố mẹ ơi, …"${lesson ? ` — carrying the idea: "${lesson.takeaway}"` : ""}. ${config.abFormat ? "Besides the two labels, it is the only voice-over." : "It is the only voice-over in the video."}`
@@ -673,6 +725,7 @@ export function cuteKidsDirective(raw: CuteKidsConfig | null | undefined): strin
   return [
     `CUTE KIDS VIRAL REEL (HARD): a short family reel whose star is ${kid.name}, a ${config.kidGender} ${age.years}.`,
     `- STRUCTURE (${config.shots} clips of 10 s): 0–2 s hook on ${kid.name}'s face or the trigger moment, then escalation, then a punchline or warm twist; end on a moment that loops well. ${format ? `Format "${format.label_vi}": ${format.beats}.` : "Pick the most relatable everyday family situation in the request."}`,
+    `- PACING FOR ${config.shots} CLIPS (${config.shots * 10} s, chosen by the creator): the writer and the director spread the story over exactly ${config.shots} clips — one clear dramatic beat per clip, each with its own action, reactions and at most three short dialogue turns. More clips mean more room to breathe and react, never more lines per clip; never stretch one beat over two clips or squeeze two beats into one. Every clip ends on a physical and emotional state that leads into the next.`,
     `- ${kid.name} SPEAKS LIKE ${age.speech} Every line of ${kid.name} has at most ${age.maxWords} words.`,
     `- ${kid.name} MOVES LIKE THE AGE: ${age.motor}. Body: ${age.body}.`,
     `- EXPRESSIONS carry the reel: ${older ? OLDER_EXPRESSION_BANK : EXPRESSION_BANK}. Every clip has at least one clear close reaction on ${kid.name}.`,
@@ -706,7 +759,7 @@ export function cuteKidsRoomSeed(config: CuteKidsConfig): string {
   const age = AGE_PROFILES[config.kidAge];
   return [
     cuteKidsStoryIdea(config),
-    `Yêu cầu: video ngắn ${config.shots} shot × 10 giây, 2 giây đầu là gương mặt/biểu cảm của bé hoặc khoảnh khắc gây chuyện; kết bằng câu chốt hoặc cú quay xe ấm áp.`,
+    `Yêu cầu: video ngắn đúng ${config.shots} shot × 10 giây, 2 giây đầu là gương mặt/biểu cảm của bé hoặc khoảnh khắc gây chuyện; kết bằng câu chốt hoặc cú quay xe ấm áp. Chia câu chuyện thành ${config.shots} nhịp, mỗi shot một nhịp rõ ràng với hành động riêng và tối đa 3 lượt thoại ngắn — đủ chỗ cho phản ứng, không dồn ép.`,
     ...((config.traits ?? []).length ? [`Bé phải thật dễ thương từ cử chỉ, điệu bộ đến lời nói, mỗi shot có ít nhất một khoảnh khắc: ${(config.traits ?? []).map((t) => { const k = KID_TRAITS.find((x) => x.id === t)!; return isOlderKid(config.kidAge) ? k.older_room_vi ?? k.room_vi : k.room_vi; }).join("; ")}.`] : []),
     "Bố mẹ luôn hưởng ứng: tan chảy, bật cười, trêu lại nhẹ nhàng, giả vờ nghiêm rồi chiều, gọi bé bằng tên âu yếm; không bao giờ phớt lờ hay mắng gắt.",
     isOlderKid(config.kidAge)
@@ -815,7 +868,7 @@ export function normalizeCuteKids(raw: unknown): CuteKidsConfig | undefined {
     family: [...new Set(family)],
     filming: pick(r.filming, ["phone", "cinematic"] as const, "phone"),
     dialect: pick(r.dialect, ["north", "south"] as const, "north"),
-    shots: Math.min(4, Math.max(2, Number(r.shots) || DEFAULT_CUTE_KIDS.shots)),
+    shots: Math.min(CUTE_KIDS_MAX_SHOTS, Math.max(CUTE_KIDS_MIN_SHOTS, Math.round(Number(r.shots)) || DEFAULT_CUTE_KIDS.shots)),
     format: typeof r.format === "string" && (r.format === "auto" || VIRAL_FORMATS.some((f) => f.id === r.format)) ? r.format : "auto",
     traits: Array.isArray(r.traits)
       ? [...new Set(r.traits.filter((t): t is KidTrait => KID_TRAITS.some((k) => k.id === t)))]
