@@ -334,10 +334,16 @@ export interface LessonTeachingGuide {
 const SOCIAL_PILLARS = new Set<LessonPillar>(["behavior", "words", "manners", "honesty", "respect", "family", "social", "empathy"]);
 const PRACTICE_PILLARS = new Set<LessonPillar>(["routines", "eating", "independence", "school", "learning", "play", "nature", "pets"]);
 const SAFETY_PILLARS = new Set<LessonPillar>(["safety", "public", "travel"]);
+const FEELING_PILLARS = new Set<LessonPillar>(["emotions", "calm", "confidence", "connection"]);
 
-function positiveModelFor(lesson: ParentingLesson, child: string): string {
-  if (["emotions", "calm", "confidence", "connection"].includes(lesson.pillar)) {
-    return `Bố mẹ tự nói cảm xúc và nhu cầu của mình bằng giọng bình tĩnh, nghe hết câu rồi mới giải quyết để ${child} thấy bình tĩnh không có nghĩa là giấu cảm xúc.`;
+/** A lesson written for 2–5-year-olds: its guide has to work for a child who answers with a nod, a point or a few words. */
+const isLittleLesson = (lesson: ParentingLesson) => lesson.ages.some((age) => age === "toddler" || age === "young");
+
+function positiveModelFor(lesson: ParentingLesson, child: string, little: boolean): string {
+  if (FEELING_PILLARS.has(lesson.pillar)) {
+    return little
+      ? `Bố mẹ giữ giọng nhỏ và chậm, ngồi ngang tầm mắt ${child} và gọi tên cảm xúc thay ${child} (“Con đang sợ/giận, bố mẹ ở đây”) để ${child} học cách bình tĩnh từ chính bố mẹ.`
+      : `Bố mẹ tự nói cảm xúc và nhu cầu của mình bằng giọng bình tĩnh, nghe hết câu rồi mới giải quyết để ${child} thấy bình tĩnh không có nghĩa là giấu cảm xúc.`;
   }
   if (lesson.pillar === "screens") {
     return `Bố mẹ đặt thiết bị của mình xuống trước, làm đúng quy tắc đang yêu cầu và nói rõ khi nào người lớn thật sự phải dùng thiết bị cho công việc gấp.`;
@@ -360,36 +366,87 @@ function positiveModelFor(lesson: ParentingLesson, child: string): string {
   return `Bố mẹ làm trước điều mình đang yêu cầu, giữ lời đã thống nhất và cho ${child} thấy người lớn cũng sửa sai khi làm chưa đúng.`;
 }
 
-function proofFor(lesson: ParentingLesson, child: string): string {
+function proofFor(lesson: ParentingLesson, child: string, little: boolean): string {
   if (lesson.pillar === "screens") return `Dùng đồng hồ hẹn giờ, giỏ cất thiết bị hoặc bảng giờ chung; để ${child} tận mắt thấy thiết bị của người lớn cũng được cất và cả nhà cùng thực hiện.`;
-  if (["emotions", "calm", "confidence", "connection"].includes(lesson.pillar)) return `Sau khi cùng dừng lại, hỏi ${child} tự nhận xét giọng nói, nét mặt hoặc mức bình tĩnh trước và sau; kết quả quan sát được là hai bên nói tiếp được và tìm ra một bước giải quyết.`;
-  if (SOCIAL_PILLARS.has(lesson.pillar)) return `Đóng vai nhanh hai cách nói — cách thiếu tôn trọng và cách phù hợp — rồi hỏi ${child} người nghe cảm thấy gì và cách nào giúp vấn đề được giải quyết.`;
-  if (PRACTICE_PILLARS.has(lesson.pillar)) return `Dùng một dấu hiệu nhìn thấy được như danh sách, đồng hồ, đồ vật đã hoàn thành hoặc lần thử thật; để ${child} tự đối chiếu trước–sau thay vì chỉ nghe người lớn khẳng định.`;
-  if (lesson.pillar === "money") return `Đặt các lựa chọn, giá tiền và số tiền đang có cạnh nhau; để ${child} tự tính và nhìn thấy lựa chọn nào nằm trong kế hoạch.`;
-  if (lesson.pillar === "thinking") return `Cùng thử, đo hoặc kiểm tra ít nhất hai nguồn/cách làm; để kết quả thực tế trả lời thay cho câu “bố mẹ luôn đúng”.`;
-  if (SAFETY_PILLARS.has(lesson.pillar)) return `Tập thử trong tình huống an toàn và có người lớn giám sát, sau đó để ${child} chỉ lại dấu hiệu nguy hiểm, điểm dừng hoặc người cần tìm khi cần giúp.`;
-  return `Cho ${child} thử lựa chọn phù hợp ngay trong một việc nhỏ, rồi cùng nhìn kết quả và hỏi “Cách nào giúp mọi người an toàn, được tôn trọng và giữ đúng thỏa thuận hơn?”.`;
+  if (FEELING_PILLARS.has(lesson.pillar)) {
+    return little
+      ? `Bố mẹ nói thành lời điều vừa thay đổi để ${child} nhận ra (“Lúc nãy con còn sợ, giờ con thở chậm rồi đấy”); kết quả nhìn thấy được là ${child} dịu lại, nhìn bố mẹ và cùng làm tiếp.`
+      : `Sau khi cùng dừng lại, hỏi ${child} tự nhận xét giọng nói, nét mặt hoặc mức bình tĩnh trước và sau; kết quả quan sát được là hai bên nói tiếp được và tìm ra một bước giải quyết.`;
+  }
+  if (SOCIAL_PILLARS.has(lesson.pillar)) {
+    return little
+      ? `Bố mẹ diễn nhanh hai cách bằng thú bông hoặc chính mình — một cách giành giật, nói cộc và một cách nhẹ nhàng — rồi hỏi “Bạn gấu thích cách nào?”; ${child} chỉ tay hoặc gật đầu chọn cách phù hợp.`
+      : `Đóng vai nhanh hai cách nói — cách thiếu tôn trọng và cách phù hợp — rồi hỏi ${child} người nghe cảm thấy gì và cách nào giúp vấn đề được giải quyết.`;
+  }
+  if (PRACTICE_PILLARS.has(lesson.pillar)) {
+    return little
+      ? `Dùng một dấu hiệu nhìn thấy ngay như đồ đã vào giỏ, đĩa đã sạch hay hình dán trên bảng; để ${child} tự nhìn trước–sau và được khen đúng việc vừa làm.`
+      : `Dùng một dấu hiệu nhìn thấy được như danh sách, đồng hồ, đồ vật đã hoàn thành hoặc lần thử thật; để ${child} tự đối chiếu trước–sau thay vì chỉ nghe người lớn khẳng định.`;
+  }
+  if (lesson.pillar === "money") {
+    return little
+      ? `Đặt món đồ và số xu ${child} đang có cạnh nhau rồi cùng đếm; để ${child} tự thấy đủ hay chưa đủ thay vì chỉ nghe “không được”.`
+      : `Đặt các lựa chọn, giá tiền và số tiền đang có cạnh nhau; để ${child} tự tính và nhìn thấy lựa chọn nào nằm trong kế hoạch.`;
+  }
+  if (lesson.pillar === "thinking") {
+    return little
+      ? `Cùng thử tận tay (đổ nước, thả đồ, đặt hai thứ cạnh nhau) để kết quả trả lời; ${child} chỉ vào điều mình nhìn thấy thay vì nghe bố mẹ nói đáp án.`
+      : `Cùng thử, đo hoặc kiểm tra ít nhất hai nguồn/cách làm; để kết quả thực tế trả lời thay cho câu “bố mẹ luôn đúng”.`;
+  }
+  if (SAFETY_PILLARS.has(lesson.pillar)) {
+    return little
+      ? `Tập lại lúc đang an toàn, có người lớn nắm tay hoặc đứng sát bên; để ${child} làm đúng động tác hoặc chỉ vào chỗ phải dừng, rồi khen ngay khi ${child} làm đúng.`
+      : `Tập thử trong tình huống an toàn và có người lớn giám sát, sau đó để ${child} chỉ lại dấu hiệu nguy hiểm, điểm dừng hoặc người cần tìm khi cần giúp.`;
+  }
+  return little
+    ? `Cho ${child} thử cách phù hợp trong một việc nhỏ, rồi bố mẹ nói thành lời kết quả ${child} nhìn thấy (“Con chờ đến lượt, bạn cười với con rồi kìa”).`
+    : `Cho ${child} thử lựa chọn phù hợp ngay trong một việc nhỏ, rồi cùng nhìn kết quả và hỏi “Cách nào giúp mọi người an toàn, được tôn trọng và giữ đúng thỏa thuận hơn?”.`;
 }
 
-/** Turn every compact library row into a detailed, filmable teaching plan. */
+/** The first step: safety comes before any talk; a little one gets a crouch and one short sentence. */
+function openingStepFor(lesson: ParentingLesson, child: string, little: boolean): string {
+  if (SAFETY_PILLARS.has(lesson.pillar)) {
+    return `An toàn trước: nếu có nguy hiểm, người lớn nắm tay hoặc đưa ${child} ra chỗ an toàn ngay; khi đã an toàn mới nói ngắn gọn bằng giọng bình tĩnh.`;
+  }
+  return little
+    ? `Dừng phản ứng vội, ngồi xuống ngang tầm mắt ${child} và gọi tên điều ${child} đang muốn hoặc cảm thấy bằng một câu thật ngắn.`
+    : `Dừng phản ứng vội, đến gần ${child}, mô tả điều đang xảy ra và nghe ${child} nói hết câu.`;
+}
+
+// A clause whose subject is the child (not "con mèo", "con cá"…) is the child's response, not a parent's step.
+const CHILD_SUBJECT = /^(?:bé|con)\s+(?!(?:mèo|chó|cún|cá|chim|gà|thỏ|gấu|vật|thú|búp bê)(?!\p{L}))/iu;
+
+const capitalise = (text: string) => `${text.charAt(0).toLocaleUpperCase("vi")}${text.slice(1)}`;
+
+/** One technique clause as a step a parent can follow: capitalised, and the child's part framed as the response to wait for. */
+function stepFromClause(clause: string, child: string): string {
+  const text = clause.trim().replace(/[.;,]+$/, "");
+  const step = capitalise(CHILD_SUBJECT.test(text) ? `Chờ ${child} phản hồi: ${text}` : text);
+  return /[.!?…"”»)]$/.test(step) ? step : `${step}.`;
+}
+
+/** Turn every compact library row into a detailed, filmable teaching plan that fits the youngest age it is written for. */
 export function lessonTeachingGuideVi(lesson: ParentingLesson): LessonTeachingGuide {
   const older = lesson.ages.some((age) => isOlderKid(age));
+  const little = isLittleLesson(lesson);
   const child = older ? "con" : "bé";
   const clauses = lesson.technique.split(/;\s*/).map((part) => part.trim()).filter(Boolean);
   const coreSteps = (clauses.length > 1 ? clauses : [lesson.technique]).map((part) =>
-    part.length > 15 ? part : `Thực hiện rõ bước “${part}”, rồi dừng lại để ${child} quan sát và phản hồi.`
+    part.length > 15 ? stepFromClause(part, child) : `Thực hiện rõ bước “${part}”, rồi dừng lại để ${child} quan sát và phản hồi.`
   );
   const steps = [
-    `Dừng phản ứng vội, đến gần ${child}, mô tả điều đang xảy ra và nghe ${child} nói hết câu.`,
+    openingStepFor(lesson, child, little),
     ...coreSteps,
-    `Mời ${child} nhắc lại hoặc tự làm một bước nhỏ; bố mẹ ghi nhận đúng hành động cụ thể và giữ giới hạn đã thống nhất.`,
+    little
+      ? `Để ${child} tự làm một bước nhỏ (đưa tay, gật đầu, tự cất đồ…); bố mẹ khen đúng hành động cụ thể và giữ giới hạn đã nói.`
+      : `Mời ${child} nhắc lại hoặc tự làm một bước nhỏ; bố mẹ ghi nhận đúng hành động cụ thể và giữ giới hạn đã thống nhất.`,
   ];
   const base: LessonTeachingGuide = {
-    positiveModel: positiveModelFor(lesson, child),
+    positiveModel: positiveModelFor(lesson, child, little),
     steps,
-    observableProof: proofFor(lesson, child),
+    observableProof: proofFor(lesson, child, little),
     whyRight: lesson.takeaway,
-    avoid: lesson.wrongWay,
+    avoid: capitalise(lesson.wrongWay),
   };
   if (lesson.id !== "parent_phone_model") return base;
   return {
@@ -407,9 +464,9 @@ export function lessonTeachingGuideVi(lesson: ParentingLesson): LessonTeachingGu
   };
 }
 
+/** The teaching brief the card puts in the request box; the shot count stays out of it because the creator may pick another one. */
 export function lessonTeachingBriefVi(lesson: ParentingLesson): string {
   const guide = lessonTeachingGuideVi(lesson);
-  const shotAdvice = lessonShotAdviceVi(lesson);
   return [
     `Tình huống: ${lesson.situation}`,
     `Hình mẫu tích cực của bố mẹ: ${guide.positiveModel}`,
@@ -417,8 +474,12 @@ export function lessonTeachingBriefVi(lesson: ParentingLesson): string {
     `Cho con tự thấy đúng–sai: ${guide.observableProof}`,
     `Vì sao cách này phù hợp: ${guide.whyRight}`,
     `Tránh làm: ${guide.avoid}`,
-    `Nhịp video đề xuất: ${shotAdvice.recommendedShots} shot × 10 giây (${shotAdvice.totalSeconds} giây). ${shotAdvice.dialogueDirection}`,
   ].join("\n");
+}
+
+/** True when the request already carries a lesson's teaching brief (picked from the library, maybe edited). */
+function hasTeachingBrief(request: string): boolean {
+  return /Xử lý từng bước:/.test(request);
 }
 
 export interface LessonShotAdvice {
@@ -431,10 +492,11 @@ export interface LessonShotAdvice {
 
 /** Recommend a compact 10-second-shot structure with director-led acting and naturally timed dialogue. */
 export function lessonShotAdviceVi(lesson: ParentingLesson, abFormat = false): LessonShotAdvice {
-  const guide = lessonTeachingGuideVi(lesson);
-  const complexPillars = new Set<LessonPillar>(["emotions", "calm", "screens", "behavior", "honesty", "family", "social", "school", "thinking", "money", "safety", "public", "preteen", "teen"]);
-  const recommendedShots: 3 | 4 = abFormat || guide.steps.length >= 5 || complexPillars.has(lesson.pillar) ? 4 : 3;
-  const dialogueDirection = "Không khóa số lượt thoại. Đạo diễn phân bổ vừa đủ trong 10 giây theo nhịp tình huống: có thể là 2–3 lượt hoặc nhiều câu rất ngắn nếu vẫn nói tự nhiên và còn khoảng thở/phản ứng. Trước, trong và sau từng câu phải chỉ rõ ánh mắt, nét mặt, tư thế, hành động của người nói và phản ứng đang diễn ra của người nghe. Giọng nói bám đúng thái độ: bực nhưng không quát, ngập ngừng khi nhận sai, chậm và ấm khi kết nối, sáng lên khi đã hiểu; không ai đứng đơ chờ đến lượt.";
+  // A long chain of beats or extra people on screen needs the fourth clip; most lessons fit 30 seconds.
+  const beats = lesson.technique.split(/;\s*/).filter((part) => part.trim()).length;
+  const extraCast = (lesson.needs ?? []).length;
+  const recommendedShots: 3 | 4 = abFormat || beats >= 6 || extraCast >= 2 ? 4 : 3;
+  const dialogueDirection = "Mỗi shot tối đa 3 lượt thoại và 2 người nói chính; trong giới hạn đó, nhịp tình huống quyết định số lượt — có thể chỉ một câu, 2–3 lượt ngắn hoặc một khoảnh khắc im lặng có phản ứng, miễn là nói tự nhiên và còn khoảng thở. Câu nào không vừa thì chuyển sang shot sau. Trước, trong và sau từng câu phải chỉ rõ ánh mắt, nét mặt, tư thế, hành động của người nói và phản ứng đang diễn ra của người nghe. Giọng nói bám đúng thái độ: bực nhưng không quát, ngập ngừng khi nhận sai, chậm và ấm khi kết nối, sáng lên khi đã hiểu; không ai đứng đơ chờ đến lượt.";
   const shotPlan = abFormat
     ? [
         `Shot 1 — Cách chưa khéo: mở thẳng vào tình huống; cận biểu cảm và thái độ của con khi bố mẹ phản ứng theo cách cần tránh. Trao đổi ngắn vừa đủ, từng lượt có phản ứng nối tiếp.`,
@@ -457,9 +519,11 @@ export function lessonShotAdviceVi(lesson: ParentingLesson, abFormat = false): L
   return {
     recommendedShots,
     totalSeconds: (recommendedShots * 10) as 30 | 40,
-    reason: recommendedShots === 4
-      ? "Bài có nhiều chuyển biến hoặc cần cho thấy rõ tình huống → bố mẹ làm mẫu → con thực hành → kết quả."
-      : "Bài có một kỹ thuật chính, phù hợp nhịp gọn: tình huống → bố mẹ xử lý → con thấy kết quả.",
+    reason: abFormat
+      ? "Kiểu “2 cách xử lý” cần đủ bốn nhịp: cách chưa khéo → tua lại → cách phù hợp → con thấy kết quả."
+      : recommendedShots === 4
+        ? "Bài có nhiều nhịp xử lý hoặc nhiều nhân vật, cần thêm một shot để thấy rõ tình huống → bố mẹ làm mẫu → con thực hành → kết quả."
+        : "Bài có một chuỗi xử lý gọn, vừa nhịp 30 giây: tình huống → bố mẹ xử lý → con thấy kết quả.",
     shotPlan,
     dialogueDirection,
   };
@@ -513,6 +577,13 @@ export function familyCast(config: CuteKidsConfig): FamilyCastMember[] {
   return [kid, ...others];
 }
 
+/** The creator's request as it may reach a model: a 13–15 request on a blocked topic is swapped for a safe
+ * everyday one (the card warns while it is typed). The stored request itself is never rewritten. */
+function requestForModel(config: CuteKidsConfig): string {
+  const request = config.request.trim();
+  return config.kidAge === "teen" ? teenSafeRequest(request) : request;
+}
+
 /** The idea text that goes into the story box (and the writers' room). */
 export function cuteKidsStoryIdea(config: CuteKidsConfig): string {
   const cast = familyCast(config);
@@ -520,7 +591,7 @@ export function cuteKidsStoryIdea(config: CuteKidsConfig): string {
   const pets = familyWithLesson(config).filter((m) => PETS.has(m)).map((m) => FAMILY_LABEL[m][config.dialect]);
   const format = config.format && config.format !== "auto" ? VIRAL_FORMATS.find((f) => f.id === config.format) : detectFormat(config.request);
   return [
-    pickedLesson ? pickedLesson.situation : config.request.trim(),
+    requestForModel(config) || pickedLesson?.situation,
     `Nhân vật: ${cast[0]!.name} (${config.kidGender === "girl" ? "bé gái" : "bé trai"} ${AGE_LABEL[config.kidAge].vi})${cast.length > 1 ? `, ${cast.slice(1).map((c) => c.name).join(", ")}` : ""}${pets.length ? `; thú cưng: ${pets.join(", ")}` : ""}.`,
     format ? `Kiểu video: ${format.label_vi}.` : "",
     (config.traits ?? []).length ? `Tính cách bé: ${(config.traits ?? []).map((t) => traitLabelVi(t, config.kidAge).replace(/^\S+\s/, "").toLowerCase()).join(", ")}; bố mẹ luôn hưởng ứng.` : "",
@@ -535,15 +606,17 @@ function lessonLinesVi(config: CuteKidsConfig): string[] {
   const guide = lesson ? lessonTeachingGuideVi(lesson) : undefined;
   const shotAdvice = lesson ? lessonShotAdviceVi(lesson, config.abFormat === true) : undefined;
   const who = config.takeaway === "parent" ? "bố mẹ nói với bé ở cuối video" : "giọng dẫn ngắn ở cuối video";
+  // The brief picked from the library (and maybe edited by the creator) already sits in the request: don't repeat it.
+  const detailed = guide && !hasTeachingBrief(requestForModel(config)) ? guide : undefined;
   return [
     lesson ? `🎓 Bài học dạy con (${pillarLabel(lesson.pillar)}): ${lesson.title}.` : "🎓 Video dạy con: bố mẹ xử lý tình huống bằng một cách cụ thể, tôn trọng bé.",
-    guide ? `Hình mẫu tích cực của bố mẹ: ${guide.positiveModel}` : "",
-    guide ? `Xử lý từng bước: ${guide.steps.map((step, index) => `${index + 1}) ${step}`).join(" ")}` : "",
-    guide ? `Cho con tự thấy đúng–sai: ${guide.observableProof}` : "",
+    detailed ? `Hình mẫu tích cực của bố mẹ: ${detailed.positiveModel}` : "",
+    detailed ? `Xử lý từng bước: ${detailed.steps.map((step, index) => `${index + 1}) ${step}`).join(" ")}` : "",
+    detailed ? `Cho con tự thấy đúng–sai: ${detailed.observableProof}` : "",
     lesson ? `Cách làm: ${lesson.method}.` : "",
     lesson ? `Câu chốt (${who}): ${lesson.takeaway}` : `Câu chốt: ${who}.`,
-    lesson ? `Cách chưa khéo cần tránh: ${guide?.avoid ?? lesson.wrongWay}` : "",
-    shotAdvice ? `Gợi ý số shot: ${shotAdvice.recommendedShots} shot × 10 giây = ${shotAdvice.totalSeconds} giây. ${shotAdvice.reason}` : "",
+    detailed ? `Cách chưa khéo cần tránh: ${detailed.avoid}` : "",
+    shotAdvice ? `Số shot: ${config.shots} shot × 10 giây = ${config.shots * 10} giây (gợi ý ${shotAdvice.recommendedShots} shot — ${shotAdvice.reason})` : "",
     shotAdvice ? `Biểu cảm và lời thoại: ${shotAdvice.dialogueDirection}` : "",
     config.abFormat ? `Kiểu "2 cách xử lý": cách 1 — phản ứng chưa khéo ở trên; cách 2 — bố mẹ làm mẫu, hướng dẫn từng bước và để con tự quan sát kết quả.` : "",
   ].filter(Boolean);
@@ -574,7 +647,7 @@ function parentingDirective(config: CuteKidsConfig, kidName: string): string[] {
       `- LET THE CHILD SEE WHY: ${guide.observableProof} Show the observable comparison or result on screen; do not turn it into a lecture or an unsupported claim.`,
       `- RIGHT VS WRONG: the respectful way works because ${guide.whyRight}; avoid this response: ${guide.avoid}`,
       `- 10-SECOND SHOT ADVICE: recommended ${shotAdvice!.recommendedShots} shots (${shotAdvice!.totalSeconds} seconds) because ${shotAdvice!.reason} The creator selected ${n} shots; follow this exact plan: ${actualShotPlan.join(" ")}`,
-      `- PERFORMANCE DIRECTOR — TURN BY TURN: ${shotAdvice!.dialogueDirection} There is NO fixed maximum number of dialogue turns. Fit only what can be performed naturally inside 10 seconds. For every turn, choreograph in order: the trigger/reaction before speech → the speaker's eyes, face, posture and motivated gesture during the line → the listener's simultaneous silent response → the physical/emotional after-beat that motivates the next turn. Pace, pause, emphasis and volume must match the visible acting.`,
+      `- PERFORMANCE DIRECTOR — TURN BY TURN: ${shotAdvice!.dialogueDirection} Use at most three dialogue turns and two main speakers per 10-second clip; move any further line to the next clip. Fit only what can be performed naturally inside 10 seconds. For every turn, choreograph in order: the trigger/reaction before speech → the speaker's eyes, face, posture and motivated gesture during the line → the listener's simultaneous silent response → the physical/emotional after-beat that motivates the next turn. Pace, pause, emphasis and volume must match the visible acting.`,
     ] : []),
     `- LESSON STRUCTURE (${n} clips): ${structure}`,
     `- ${takeaway}`,
@@ -603,7 +676,7 @@ export function cuteKidsDirective(raw: CuteKidsConfig | null | undefined): strin
     `- ${kid.name} SPEAKS LIKE ${age.speech} Every line of ${kid.name} has at most ${age.maxWords} words.`,
     `- ${kid.name} MOVES LIKE THE AGE: ${age.motor}. Body: ${age.body}.`,
     `- EXPRESSIONS carry the reel: ${older ? OLDER_EXPRESSION_BANK : EXPRESSION_BANK}. Every clip has at least one clear close reaction on ${kid.name}.`,
-    `- PERFORMANCE BEFORE WORDS: treat every 10-second clip as if an acting director is on set. Dialogue turn count is story-led, never fixed: use two or three turns, more tiny turns, one line or silence only when that exact beat needs it and all speech fits at a natural pace with breathing/reaction room. Before, during and after EACH turn, direct the speaker's eyes, changing expression, posture and motivated action plus every listener's live silent reaction. No explanatory monologues; nobody freezes while waiting to speak. Pauses, emphasis, volume and tone must match the face and body.`,
+    `- PERFORMANCE BEFORE WORDS: treat every 10-second clip as if an acting director is on set. Dialogue turn count is story-led within a cap of three turns per clip: one line, two or three turns, or silence — whatever that exact beat needs, as long as all speech fits at a natural pace with breathing/reaction room. Before, during and after EACH turn, direct the speaker's eyes, changing expression, posture and motivated action plus every listener's live silent reaction. No explanatory monologues; nobody freezes while waiting to speak. Pauses, emphasis, volume and tone must match the face and body.`,
     ...(traits.length
       ? [`- ${kid.name}'S PERSONALITY — adorable in gestures, body language and voice in EVERY clip (each clip holds at least one of these beats, performed big and clear):${arc}`,
         ...traits.map((t) => `  · ${traitPerformance(t, kid.name, girl ? "she" : "he", girl ? "her" : "his", config.dialect, config.kidAge)}`)]
@@ -734,12 +807,11 @@ export function normalizeCuteKids(raw: unknown): CuteKidsConfig | undefined {
   const family = Array.isArray(r.family)
     ? (r.family.filter((m) => FAMILY_MEMBERS.includes(m as FamilyMember)) as FamilyMember[])
     : DEFAULT_CUTE_KIDS.family;
-  const kidAge = pick(r.kidAge, KID_AGES, "school");
   return {
-    request: kidAge === "teen" ? teenSafeRequest(String(r.request ?? "")) : String(r.request ?? "").slice(0, 4000),
+    request: String(r.request ?? "").slice(0, 4000),
     kidName: String(r.kidName ?? "").trim().slice(0, 40) || DEFAULT_CUTE_KIDS.kidName,
     kidGender: pick(r.kidGender, ["girl", "boy"] as const, "girl"),
-    kidAge,
+    kidAge: pick(r.kidAge, KID_AGES, "school"),
     family: [...new Set(family)],
     filming: pick(r.filming, ["phone", "cinematic"] as const, "phone"),
     dialect: pick(r.dialect, ["north", "south"] as const, "north"),
@@ -780,7 +852,7 @@ export function buildEpisodeIdeasPrompt(raw: CuteKidsConfig, avoid: string[] = [
   return [
     `Kid: ${cast[0]!.name}, ${config.kidGender === "girl" ? "bé gái" : "bé trai"} ${AGE_LABEL[config.kidAge].vi} (${AGE_PROFILES[config.kidAge].speech})`,
     `Family on screen: ${cast.slice(1).map((c) => c.name).join(", ") || "none"}${pets.length ? `; pets: ${pets.join(", ")}` : ""}.`,
-    config.request.trim() ? `The creator's current direction: ${config.request.trim()}` : "",
+    requestForModel(config) ? `The creator's current direction: ${requestForModel(config)}` : "",
     `Viral formats that work (mix them, do not copy): ${VIRAL_FORMATS.map((f) => f.label_vi).join("; ")}.`,
     avoid.length ? `Do not repeat these: ${avoid.join("; ")}.` : "",
     (config.traits ?? []).length ? `The kid's personality, shown in every idea: ${(config.traits ?? []).map((t) => KID_TRAITS.find((k) => k.id === t)!.label_en.replace(/^\S+\s/, "")).join(", ")}; the parents always play along warmly.` : "",
@@ -792,7 +864,9 @@ export function buildEpisodeIdeasPrompt(raw: CuteKidsConfig, avoid: string[] = [
       : "",
     ...(config.kidAge === "teen" ? [TEEN_SAFETY_RULE] : []),
     `Give 10 different episode ideas for ${config.shots} clips of 10 seconds, all at home or everyday places, each with a clear hook, escalation and a punchline that fits the kid's age. ${CHILD_SAFETY_RULES}`,
-    'Return {"ideas":[{"title":"short Vietnamese title (max 8 words)","request":"six to eight concise Vietnamese sentences covering the situation, parent role model, three steps, visible right/wrong demonstration, warm ending and Bài học"}]}',
+    config.goal === "teach"
+      ? 'Return {"ideas":[{"title":"short Vietnamese title (max 8 words)","request":"six to eight concise Vietnamese sentences covering the situation, parent role model, three steps, visible right/wrong demonstration, warm ending and Bài học"}]}'
+      : 'Return {"ideas":[{"title":"short Vietnamese title (max 8 words)","request":"one or two Vietnamese sentences: the situation, what the kid does and the ending"}]}',
   ].filter(Boolean).join("\n");
 }
 

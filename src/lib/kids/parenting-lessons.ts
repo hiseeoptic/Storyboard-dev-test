@@ -43,40 +43,15 @@ import { OLDER_PRETEEN_AND_OUTINGS_LESSONS } from "./lessons/older-preteen-and-o
 import { OLDER_MORE_DAILY_LESSONS } from "./lessons/older-more-daily.ts";
 import { OLDER_MORE_CONDUCT_LESSONS } from "./lessons/older-more-conduct.ts";
 import { OLDER_MORE_WORLD_LESSONS } from "./lessons/older-more-world.ts";
-import { TEEN_LESSONS } from "./lessons/teen.ts";
 import { TEEN_INNER_WORLD_LESSONS } from "./lessons/teen-inner-world.ts";
 import { TEEN_DAILY_LIFE_LESSONS } from "./lessons/teen-daily-life.ts";
 import { TEEN_CONDUCT_LESSONS } from "./lessons/teen-conduct.ts";
 import { TEEN_PEOPLE_LESSONS } from "./lessons/teen-people.ts";
 import { TEEN_MIND_AND_WORLD_LESSONS } from "./lessons/teen-mind-and-world.ts";
 import { TEEN_YEARS_AND_OUTINGS_LESSONS } from "./lessons/teen-years-and-outings.ts";
+import { TEEN_GAP_LESSONS } from "./lessons/teen.ts";
 
 export { LESSON_PILLARS, PILLAR_GROUPS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
-
-const CLAUDE_TEEN_LESSONS = [
-  ...TEEN_INNER_WORLD_LESSONS,
-  ...TEEN_DAILY_LIFE_LESSONS,
-  ...TEEN_CONDUCT_LESSONS,
-  ...TEEN_PEOPLE_LESSONS,
-  ...TEEN_MIND_AND_WORLD_LESSONS,
-  ...TEEN_YEARS_AND_OUTINGS_LESSONS,
-];
-
-// Claude's detailed shelf has 323 stories but several areas contain only
-// 10–11. Keep every hand-written story and take only enough deterministic
-// lessons from our set to bring each applicable area to 12.
-const teenGapByPillar = new Map<LessonPillar, number>();
-for (const pillar of LESSON_PILLARS) {
-  if (pillar.id === "toddler" || pillar.id === "preteen") continue;
-  const existing = CLAUDE_TEEN_LESSONS.filter((lesson) => lesson.pillar === pillar.id).length;
-  teenGapByPillar.set(pillar.id, Math.max(0, 12 - existing));
-}
-const TEEN_FILLER_LESSONS = TEEN_LESSONS.filter((lesson) => {
-  const gap = teenGapByPillar.get(lesson.pillar) ?? 0;
-  if (gap === 0) return false;
-  teenGapByPillar.set(lesson.pillar, gap - 1);
-  return true;
-});
 
 export const PARENTING_LESSONS: ParentingLesson[] = [
   ...CORE_LESSONS,
@@ -105,8 +80,13 @@ export const PARENTING_LESSONS: ParentingLesson[] = [
   ...OLDER_MORE_DAILY_LESSONS,
   ...OLDER_MORE_CONDUCT_LESSONS,
   ...OLDER_MORE_WORLD_LESSONS,
-  ...CLAUDE_TEEN_LESSONS,
-  ...TEEN_FILLER_LESSONS,
+  ...TEEN_INNER_WORLD_LESSONS,
+  ...TEEN_DAILY_LIFE_LESSONS,
+  ...TEEN_CONDUCT_LESSONS,
+  ...TEEN_PEOPLE_LESSONS,
+  ...TEEN_MIND_AND_WORLD_LESSONS,
+  ...TEEN_YEARS_AND_OUTINGS_LESSONS,
+  ...TEEN_GAP_LESSONS,
 ];
 
 const BY_ID = new Map(PARENTING_LESSONS.map((l) => [l.id, l]));

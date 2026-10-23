@@ -35,6 +35,7 @@ import {
   type KidTrait,
 } from "@/lib/kids/cute-kids";
 import { LESSON_PILLARS, PILLAR_GROUPS, type LessonPillar, type ParentingLesson } from "@/lib/kids/lesson-pillars";
+import { TEEN_TOPIC_LABEL_VI, teenSafetyViolations } from "@/lib/kids/teen-safety";
 
 /** The lesson library is big: it loads only when the "Dạy con" panel opens. */
 type LessonLibrary = typeof import("@/lib/kids/parenting-lessons");
@@ -164,10 +165,13 @@ export function CuteKidsCard(props: {
   const pickedGuide = picked ? lessonTeachingGuideVi(picked) : undefined;
   const pickedShotAdvice = picked ? lessonShotAdviceVi(picked, config.abFormat) : undefined;
   // Picking a lesson also brings the family members its story needs (a sibling, a friend, grandma…).
+  // The creator's shot count stays as chosen; the suggested one is marked on the shot chips.
   const pickLesson = (lesson: ParentingLesson) =>
     update(config.lessonId === lesson.id
       ? { lessonId: undefined, lesson: undefined }
-      : { lessonId: lesson.id, lesson, pillar: lesson.pillar, request: lessonTeachingBriefVi(lesson), shots: lessonShotAdviceVi(lesson, config.abFormat === true).recommendedShots, format: "auto", family: [...new Set([...config.family, ...(lesson.needs ?? [])])] });
+      : { lessonId: lesson.id, lesson, pillar: lesson.pillar, request: lessonTeachingBriefVi(lesson), format: "auto", family: [...new Set([...config.family, ...(lesson.needs ?? [])])] });
+  // A 13–15 request on a blocked topic is replaced by a safe everyday situation when it is sent: say so while it is typed.
+  const teenBlocked = config.kidAge === "teen" ? teenSafetyViolations(config.request) : [];
   // Changing the age keeps only a picked lesson that was written for the new age.
   const setAge = (age: KidAge) =>
     update(picked && !picked.ages.includes(age) ? { kidAge: age, lessonId: undefined, lesson: undefined } : { kidAge: age });
@@ -300,9 +304,7 @@ export function CuteKidsCard(props: {
               <div className="flex flex-wrap items-center gap-1.5">
                 <Chip
                   active={config.abFormat === true}
-                  onClick={() => update(config.abFormat
-                    ? { abFormat: false, ...(picked ? { shots: lessonShotAdviceVi(picked, false).recommendedShots } : {}) }
-                    : { abFormat: true, shots: 4 })}
+                  onClick={() => update(config.abFormat ? { abFormat: false } : { abFormat: true, shots: 4 })}
                   title={vi ? "Cách 1 chưa khéo (bé càng ăn vạ) → Cách 2 khéo (bé dịu lại). Không đánh, không quát." : "Way 1 backfires gently, way 2 works."}
                 >
                   🔀 {vi ? "2 cách xử lý (A/B)" : "Two ways (A/B)"}
@@ -339,6 +341,13 @@ export function CuteKidsCard(props: {
               className="resize-none"
               placeholder={vi ? "VD: Bố ôm mẹ trong bếp, bé thấy liền chen vào giữa, phụng phịu đòi bố bế mình trước" : "e.g. Dad hugs Mom in the kitchen, the kid squeezes in between"}
             />
+            {teenBlocked.length > 0 && (
+              <p className="text-[11px] text-amber-700">
+                ⚠️ {vi
+                  ? `Video tuổi 13–15 không dùng chủ đề: ${teenBlocked.map((id) => TEEN_TOPIC_LABEL_VI[id] ?? id).join("; ")}. Nếu giữ nguyên, khi tạo video yêu cầu này sẽ được thay bằng một tình huống đời thường an toàn — hãy sửa lại yêu cầu.`
+                  : `Teen (13–15) reels skip these topics: ${teenBlocked.join(", ")}. Left as is, the request is replaced by a safe everyday situation when sent.`}
+              </p>
+            )}
             <div className="flex flex-wrap gap-1.5">
               {VIRAL_FORMATS.map((f) => (
                 <Chip key={f.id} active={config.format === f.id} title={FORMAT_EXAMPLE[f.id]} onClick={() => update({ format: config.format === f.id ? "auto" : f.id, ...(config.request.trim() ? {} : { request: FORMAT_EXAMPLE[f.id] ?? "" }) })}>

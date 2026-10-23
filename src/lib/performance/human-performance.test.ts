@@ -8,7 +8,8 @@ test("the doctrine covers reactions, eyes, changing faces, hands, listeners, tur
     assert.ok(HUMAN_PERFORMANCE_DOCTRINE.includes(rule), rule);
   }
   assert.match(HUMAN_PERFORMANCE_DOCTRINE, /"Hả\?", "Thật á\?"/);
-  assert.match(HUMAN_PERFORMANCE_DOCTRINE, /number of dialogue turns is never fixed[\s\S]*Nobody freezes/);
+  assert.match(HUMAN_PERFORMANCE_DOCTRINE, /at most three per clip[\s\S]*Nobody freezes/);
+  assert.doesNotMatch(HUMAN_PERFORMANCE_DOCTRINE, /never fixed/);
 });
 
 test("each clip gets the writer's acting plus the real-people law", () => {

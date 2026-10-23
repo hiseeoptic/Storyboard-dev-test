@@ -54,7 +54,7 @@ test("the library covers 30 parenting areas in 6 groups, every lesson complete a
   assert.ok(lessonCountByAge("middle") >= 250, `8–10: ${lessonCountByAge("middle")}`);
   assert.ok(lessonCountByAge("preteen") >= 150, `11–12: ${lessonCountByAge("preteen")}`);
   // …and so do 13–15-year-olds; every area has a real shelf for each older age.
-  assert.equal(lessonCountByAge("teen"), 353, "323 detailed Claude lessons plus 30 gap fillers");
+  assert.ok(lessonCountByAge("teen") >= 350, `13–15: ${lessonCountByAge("teen")}`);
   const generalAreas = LESSON_PILLARS.filter((p) => !["toddler", "preteen", "teen"].includes(p.id));
   for (const age of ["middle", "preteen", "teen"] as const) {
     for (const p of generalAreas) assert.ok(lessonsFor(p.id, age).length >= MIN_OLDER_PER_AREA, `${p.id} ${age}: ${lessonsFor(p.id, age).length}`);
@@ -97,15 +97,46 @@ test("every lesson expands into a positive model, concrete steps and an observab
     assert.ok(shotAdvice.recommendedShots === 3 || shotAdvice.recommendedShots === 4, `${lesson.id} shot count`);
     assert.equal(shotAdvice.shotPlan.length, shotAdvice.recommendedShots, `${lesson.id} shot plan`);
     assert.ok(shotAdvice.shotPlan.every((beat) => /biểu cảm|nét mặt|phản ứng/i.test(beat)), `${lesson.id} performance in every shot`);
-    assert.match(shotAdvice.dialogueDirection, /Không khóa số lượt thoại[\s\S]*Trước, trong và sau từng câu[\s\S]*không ai đứng đơ/);
-    assert.doesNotMatch(shotAdvice.dialogueDirection, /tối đa hai lượt/);
+    assert.match(shotAdvice.dialogueDirection, /Mỗi shot tối đa 3 lượt thoại và 2 người nói chính[\s\S]*Trước, trong và sau từng câu[\s\S]*không ai đứng đơ/);
+    assert.ok(guide.steps.every((step) => step[0] === step[0]!.toLocaleUpperCase("vi")), `${lesson.id} steps start with a capital`);
   }
+  // Most lessons fit 30 seconds; only long chains of beats or extra cast ask for a fourth clip.
+  const fourShots = PARENTING_LESSONS.filter((l) => lessonShotAdviceVi(l).recommendedShots === 4).length;
+  assert.ok(fourShots > 0 && fourShots < PARENTING_LESSONS.length / 2, `${fourShots} of ${PARENTING_LESSONS.length} lessons ask for 4 shots`);
+  assert.equal(lessonShotAdviceVi(findLesson("toy_aisle")!, true).recommendedShots, 4, "A/B always needs four clips");
   const phone = findLesson("parent_phone_model")!;
   const guide = lessonTeachingGuideVi(phone);
   assert.match(guide.positiveModel, /Con nói đúng[\s\S]*cất điện thoại/);
   assert.match(guide.observableProof, /cùng một giỏ[\s\S]*quy tắc gia đình/);
-  assert.equal(lessonShotAdviceVi(phone).recommendedShots, 4);
+  assert.equal(lessonShotAdviceVi(phone).recommendedShots, 3, "one short chain of beats fits 30 seconds");
   assert.match(lessonTeachingBriefVi(phone), /Hình mẫu tích cực[\s\S]*Xử lý từng bước:[\s\S]*Cho con tự thấy đúng–sai:[\s\S]*Vì sao cách này phù hợp:[\s\S]*Tránh làm:/);
+  assert.doesNotMatch(lessonTeachingBriefVi(phone), /shot × 10 giây/, "the creator's shot count is not baked into the request box");
+});
+
+test("the guide fits the youngest age a lesson is written for, and safety comes first", () => {
+  const road = lessonTeachingGuideVi(findLesson("hold_hands_road")!);
+  assert.match(road.steps[0]!, /^An toàn trước: nếu có nguy hiểm, người lớn nắm tay/);
+  assert.ok(road.steps.some((step) => /^Chờ bé phản hồi: bé tự đưa tay ra/.test(step)), "the child's part reads as the response to wait for");
+  const vacuum = lessonTeachingGuideVi(findLesson("emo_vacuum_fear")!);
+  assert.match(vacuum.steps[0]!, /ngồi xuống ngang tầm mắt bé/);
+  for (const text of [vacuum.positiveModel, vacuum.observableProof, ...vacuum.steps]) {
+    assert.doesNotMatch(text, /nói hết câu|tự nhận xét|nghe hết câu/, "a 2–3-year-old is not asked to talk it through");
+  }
+  const teen = lessonTeachingGuideVi(findLesson("teen_emotions_01")!);
+  assert.match(teen.steps[0]!, /nghe con nói hết câu/);
+  assert.match(teen.observableProof, /tự nhận xét/);
+});
+
+test("the thirty hand-written teen lessons are distinct stories with no borrowed authority", () => {
+  const gap = PARENTING_LESSONS.filter((l) => l.id.startsWith("teen_"));
+  assert.equal(gap.length, 30);
+  assert.equal(new Set(gap.map((l) => l.behavior)).size, 30, "every story has its own behaviour");
+  assert.equal(new Set(gap.map((l) => l.technique.split(";")[0])).size, 30, "every story has its own opening move");
+  for (const l of gap) {
+    assert.deepEqual(l.ages, ["teen"], l.id);
+    assert.doesNotMatch(l.method, /UNICEF|WHO|AAP|OECD|CDC|UNCRC|UNESCO|PLH/, `${l.id} names no organisation`);
+    assert.doesNotMatch(l.situation, /gặp chuyện/, `${l.id} is a concrete moment, not a template`);
+  }
 });
 
 test("every lesson's directive is free of wording the video model refuses", () => {
@@ -142,7 +173,8 @@ test("teach mode: lesson, structure, narrator takeaway and respectful parents ar
   assert.match(d, /LESSON STRUCTURE \(3 clips\): clip 1 = the relatable moment/);
   assert.match(d, /TAKEAWAY BY NARRATOR: the last clip ends with a short, warm narrator voice-over/);
   assert.match(d, /10-SECOND SHOT ADVICE: recommended/);
-  assert.match(d, /PERFORMANCE DIRECTOR — TURN BY TURN:[\s\S]*NO fixed maximum number of dialogue turns/);
+  assert.match(d, /PERFORMANCE DIRECTOR — TURN BY TURN:[\s\S]*at most three dialogue turns and two main speakers per 10-second clip/);
+  assert.doesNotMatch(d, /NO fixed maximum/i);
   assert.match(d, /PERFORMANCE BEFORE WORDS:[\s\S]*nobody freezes while waiting to speak/i);
   assert.match(d, /never hitting, yelling, threats, shaming/);
   assert.doesNotMatch(cuteKidsDirective({ ...teach(), goal: "fun" }), /PARENTING LESSON/);
@@ -166,10 +198,24 @@ test("Vietnamese idea, room seed and episode ideas carry the lesson", () => {
   assert.match(idea, /Xử lý từng bước:/);
   assert.match(idea, /Cho con tự thấy đúng–sai:/);
   assert.match(idea, /Cách làm: Thừa nhận mong muốn, giữ giới hạn \(Kỷ luật tích cực\)\./);
+  assert.match(idea, /Số shot: 3 shot × 10 giây = 30 giây \(gợi ý \d shot/);
+  // The brief the card puts in the request box — edited by the creator — is what the story uses, once.
+  const toy = findLesson("toy_aisle")!;
+  const edited = lessonTeachingBriefVi(toy).replace(/Tình huống: [^\n]*/, "Tình huống: Ở chợ Bến Thành, bé đòi mua con quay đồ chơi.");
+  const editedIdea = cuteKidsStoryIdea(teach({ request: edited }));
+  assert.match(editedIdea, /chợ Bến Thành/);
+  assert.equal(editedIdea.match(/Hình mẫu tích cực của bố mẹ:/g)?.length, 1, "the guide is not repeated");
+  assert.equal(editedIdea.match(/Xử lý từng bước:/g)?.length, 1);
+  assert.match(cuteKidsStoryIdea(teach({ request: "" })), new RegExp(toy.situation.slice(0, 20)), "an empty box falls back to the lesson's situation");
   assert.match(cuteKidsRoomSeed(teach()), /không đánh, không quát, không dọa, không so sánh/);
   assert.match(buildEpisodeIdeasPrompt(teach({ pillar: "emotions" })), /PARENTING CHANNEL: every idea teaches parents one everyday lesson in the area "Cảm xúc"/);
   assert.match(buildEpisodeIdeasPrompt(teach({ pillar: "emotions" }), [], ["Ăn vạ khi phải tắt tivi"]), /library already covers these situations in this area — give fresh, different ones: Ăn vạ khi phải tắt tivi\./);
   assert.doesNotMatch(buildEpisodeIdeasPrompt({ ...teach(), goal: "fun" }, [], ["x"]), /library already covers/);
+  // Fun reels keep the short idea format; only the parenting channel asks for the teaching structure.
+  const fun = buildEpisodeIdeasPrompt({ ...DEFAULT_CUTE_KIDS });
+  assert.match(fun, /"request":"one or two Vietnamese sentences: the situation, what the kid does and the ending"/);
+  assert.doesNotMatch(fun, /parent role model|Bài học/);
+  assert.match(buildEpisodeIdeasPrompt(teach()), /six to eight concise Vietnamese sentences[\s\S]*Bài học/);
 });
 
 test("captions: parent tip, comment question and disclaimer before the AI label; normalised once", () => {

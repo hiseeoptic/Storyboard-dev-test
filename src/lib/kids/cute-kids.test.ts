@@ -200,6 +200,21 @@ test("8–10 and 11–12: age-true speech, behaviour, personality, voice and bac
   assert.deepEqual(teenSafetyViolations("Con đòi lái xe máy đi chơi đêm và cá cược"), ["gambling", "road_driving", "late_night"]);
   assert.match(teenSafeRequest("Con rủ bạn đi chơi đêm"), /tình huống đời thường an toàn/);
   assert.equal(teenSafeRequest("Con muốn tự lập lịch học"), "Con muốn tự lập lịch học");
+  // Everyday Vietnamese that only shares a word with a blocked topic stays allowed…
+  for (const ordinary of ["Những người yêu thương con luôn ở bên", "Con thấy dao động trước kỳ thi", "Con phụ mẹ rửa dao kéo sau bữa tối", "Hai anh em chơi súng nước ngoài sân", "Con kiểm tra cân nặng hành lý trước chuyến bay", "Ông kể chuyện bia đá ở Văn Miếu", "Con nhịn ăn sáng vì dậy muộn"]) {
+    assert.deepEqual(teenSafetyViolations(ordinary), [], ordinary);
+  }
+  // …while the topics themselves are still caught.
+  assert.deepEqual(teenSafetyViolations("Con nhớ người yêu cũ"), ["romance"]);
+  assert.deepEqual(teenSafetyViolations("Bạn mang dao găm đến lớp"), ["violence"]);
+  assert.deepEqual(teenSafetyViolations("Con lo về cân nặng của mình"), ["weight_diet"]);
+  assert.deepEqual(teenSafetyViolations("Bạn rủ uống bia"), ["substances"]);
+  // The stored request is never rewritten; only the text sent to a model is swapped.
+  const blocked = config({ kidAge: "teen", request: "Con rủ bạn đi chơi đêm" });
+  assert.equal(normalizeCuteKids(blocked)!.request, "Con rủ bạn đi chơi đêm", "the creator's text survives a reload");
+  assert.match(cuteKidsStoryIdea(blocked), /tình huống đời thường an toàn/);
+  assert.doesNotMatch(cuteKidsStoryIdea(blocked), /đi chơi đêm/);
+  assert.doesNotMatch(buildEpisodeIdeasPrompt(blocked), /đi chơi đêm/);
   assert.match(TEEN_SAFETY_RULE, /romance or dating[\s\S]*self-harm[\s\S]*gambling/);
   // The card and the Vietnamese brief name the personality the way an 8–12-year-old shows it.
   assert.match(cuteKidsStoryIdea(config({ kidAge: "preteen" })), /Tính cách bé: năn nỉ ngọt, than thở "bi kịch", khôn lanh/);
