@@ -2,8 +2,9 @@
 // AgentPlan — dựng LẠI ĐẦY ĐỦ quy trình Nano Flow cũ cho chế độ Agent của Flow mới.
 //
 // Flow mới chặn lệnh tạo do extension gửi, nên mọi ảnh/video phải do Agent tạo khi
-// người dùng gửi tin nhắn. Module này biến manifest thành ĐÚNG 3 TIN NHẮN theo thứ
-// tự pipeline cũ (genNanoImages / genNanoVideos), mỗi tin nhắn gom mọi mục cùng lúc:
+// người dùng gửi tin nhắn. Module này biến manifest thành các TIN NHẮN theo thứ tự
+// pipeline cũ (genNanoImages / genNanoVideos) — thường 3 tin, mỗi tin gom mọi mục cùng
+// lúc; bước nào có tổng prompt quá sức Agent một lượt (AGENT_TURN_CHARS) thì chia nhỏ:
 //   1. SHEET trang phục nhân vật (16:9, ref = ảnh nhân vật đã nạp; đổi đồ → sheet mới)
 //      + ảnh BỐI CẢNH chuẩn (16:9, khi bối cảnh không có ảnh nạp)
 //      + THUMBNAIL (ref = sản phẩm + ảnh nhân vật đã nạp — sheet chưa có lúc này)
@@ -388,6 +389,12 @@
     return parts.join('\n');
   }
 
+  // Số ký tự prompt mà Agent của Flow chép NGUYÊN VĂN được trong MỘT lượt trả lời.
+  // Nhật ký 23/10/2026: tin 1 (~19k ký tự, 6 mục) xong trọn; tin keyframe 5 shot
+  // (~198k, mỗi shot ~40k) chỉ tạo SHOT 01 rồi dừng lượt. Nên mỗi tin chỉ gom tới
+  // ngân sách này; một prompt dài hơn ngân sách vẫn đi nguyên văn, một mục / tin.
+  const AGENT_TURN_CHARS = 30000;
+
   function chunk(keys, sizeOf, maxCount, maxChars) {
     const out = [];
     let cur = [], size = 0;
@@ -402,13 +409,15 @@
 
   /**
    * Danh sách tin nhắn còn phải gửi (bỏ qua những gì đã có trong state.media).
-   * Mặc định KHÔNG chia: đúng 3 tin nhắn (1 sheet+bối cảnh+thumbnail · 2 keyframe · 3 video).
-   * Chỉ chia khi đặt maxCount (số mục / tin) hoặc khi khung chat cắt chữ (maxChars).
+   * Thường là 3 tin nhắn (1 sheet+bối cảnh+thumbnail · 2 keyframe · 3 video). Một bước
+   * được chia thêm khi tổng prompt vượt sức Agent một lượt (turnChars, mặc định
+   * AGENT_TURN_CHARS), khi đặt maxCount (số mục / tin) hoặc khi khung chat cắt chữ (maxChars).
    */
   function stages(ctx, state, opts) {
     opts = opts || {};
     const maxCount = opts.maxCount > 0 ? opts.maxCount : Infinity;
-    const maxChars = opts.maxChars > 0 ? Math.max(4000, opts.maxChars) : Infinity;
+    const turnChars = opts.turnChars > 0 ? opts.turnChars : AGENT_TURN_CHARS;
+    const maxChars = Math.min(opts.maxChars > 0 ? Math.max(4000, opts.maxChars) : Infinity, turnChars);
     const media = (state && state.media) || {};
     const videos = (state && state.videos) || {};
     const out = [];
@@ -491,5 +500,5 @@
     return Math.min(1, g.length / e.length);
   }
 
-  return { sheetPrompt, refUploads, buildContext, resolveIds, videoRefIds, stages, messageFor, matchKey, fidelity, clampDuration };
+  return { AGENT_TURN_CHARS, sheetPrompt, refUploads, buildContext, resolveIds, videoRefIds, stages, messageFor, matchKey, fidelity, clampDuration };
 });

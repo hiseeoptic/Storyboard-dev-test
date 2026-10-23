@@ -4707,7 +4707,7 @@
     appendApiTrace(d);
     if (d.via === 'init') { logUI('🔌 Net hook đã cài — đang lắng nghe API Flow. Hãy TẠO 1 video tay để bắt giao thức.', 'info'); return; }
     if (d.kind === 'log') { logUI(d.message || '', 'info'); return; }
-    if (d.kind === 'agentEvent') { logUI(d.text || '', d.event === 'timeout' ? 'warning' : 'info'); notify('AGENT_EVENT', { event: d.event || '', text: d.text || '', on: d.on, mediaId: d.mediaId || '', mediaKind: d.mediaKind || '' }); return; }
+    if (d.kind === 'agentEvent') { if (d.text) logUI(d.text, d.event === 'timeout' ? 'warning' : 'info'); notify('AGENT_EVENT', { event: d.event || '', text: d.text || '', on: d.on, mediaId: d.mediaId || '', mediaKind: d.mediaKind || '', permission: !!d.permission }); return; }
     if (d.kind === 'agentResult') { notify('AGENT_RESULT', { mediaId: d.mediaId, mediaKind: d.mediaKind, prompt: d.prompt || '', name: d.name || '', status: d.status || '', startId: d.startId || '', refIds: Array.isArray(d.refIds) ? d.refIds : [], pid: d.pid || '' }); return; }
     if (d.kind === 'agentMedia') { handleAgentMedia(d); return; }
     if (d.kind === 'agentRefs') { const w = _afAgentRefWaiters.get(d.reqId); if (w) { _afAgentRefWaiters.delete(d.reqId); w(d); } return; }

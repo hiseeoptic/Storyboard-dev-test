@@ -140,6 +140,7 @@
     } catch (e) {}
     const p = origFetch.apply(this, arguments);
     if (AGENT_STREAM_RE.test(_url)) {
+      try { agentTurnStart(); } catch (e) {}
       try { p.then((r) => r.clone().text()).then((t) => agentOnStream(t)).catch(() => {}); } catch (e) {}
     }
     if (_trace || _kind) {
@@ -166,6 +167,7 @@
   XMLHttpRequest.prototype.send = function (body) {
     try {
       if (AGENT_STREAM_RE.test(String(this.__afU || ''))) {
+        try { agentTurnStart(); } catch (e) {}
         this.addEventListener('load', () => { try { agentOnStream(this.responseText); } catch (e) {} });
       }
       if (interesting(this.__afU)) grabAuth(this.__afH || {});
@@ -673,10 +675,12 @@
       if (r.data != null) agentFindToolCalls(r.data, calls);
     }
     let added = 0;
+    let permission = false;
     for (const c of calls) {
       const kv = c.kv;
       const ph = kv.placeholder_frontend_id || c.ref;
       if (c.tool === 'ask_for_permission') {
+        permission = true;
         post({ via: 'agentEvent', kind: 'agentEvent', event: 'permission', text: '🙋 Agent đang xin phép tạo video — nút Approve đã được chọn sẵn, bạn nhấn Enter (extension không tự bấm).' });
         continue;
       }
@@ -712,6 +716,14 @@
       post({ via: 'agentEvent', kind: 'agentEvent', event: 'found', text: `🤖 Agent: đã thấy ${v.filter((x) => x.kind === 'image').length} ảnh, ${v.filter((x) => x.kind === 'video').length} video — đang chờ render để tải.` });
       agentSchedulePoll(3000);
     }
+    // Một phản hồi StreamChat = trọn MỘT lượt trả lời của Agent. Báo sidepanel lượt đã
+    // xong để nó gửi tiếp các mục Agent bỏ dở (lượt dừng sớm khi tin nhắn quá dài),
+    // trừ khi Agent đang chờ Approve — video sẽ tới ở lượt sau.
+    post({ via: 'agentEvent', kind: 'agentEvent', event: 'turnEnd', permission });
+  }
+  function agentTurnStart() {
+    if (!agent.on) return;
+    post({ via: 'agentEvent', kind: 'agentEvent', event: 'turnStart' });
   }
   function agentOnStream(text) {
     if (!agent.on || !text) return;

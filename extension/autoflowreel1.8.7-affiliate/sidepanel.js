@@ -5062,7 +5062,7 @@ function bindLicenseEvents() {
 // CHẾ ĐỘ AGENT (Flow mới). Extension KHÔNG tự gửi tin nhắn và KHÔNG tự bấm Approve
 // (reCAPTCHA chỉ hợp lệ khi chính người dùng thao tác). Extension: nạp ảnh tham
 // chiếu, ĐIỀN SẴN từng tin nhắn vào khung chat Agent theo đúng thứ tự pipeline cũ
-// (agent_plan.js: 3 tin nhắn — sheet + bối cảnh + thumbnail → keyframe → video), đọc
+// (agent_plan.js: thường 3 tin nhắn — sheet + bối cảnh + thumbnail → keyframe → video; bước quá dài thì chia nhỏ), đọc
 // kết quả Agent để lấy mã ảnh cho tin nhắn kế tiếp, và tự tải video về. Tới lượt người
 // dùng: rung chuông + thông báo Chrome + đặt sẵn con trỏ vào khung chat / nút Approve
 // để họ chỉ cần nhấn Enter (extension không tự bấm).
@@ -5177,7 +5177,7 @@ function agentPersistState(run) {
   persistNanoProjects();
 }
 
-// ── Bộ điều phối: mỗi dự án = 3 tin nhắn: 1 (sheet + bối cảnh + thumbnail) → 2 (keyframe) → 3 (video).
+// ── Bộ điều phối: mỗi dự án thường 3 tin nhắn: 1 (sheet + bối cảnh + thumbnail) → 2 (keyframe) → 3 (video); bước nào quá sức Agent một lượt thì chia nhỏ.
 let agentRun = null;
 function stopAgentRunAll(reason) {
   if (!agentRun) return;
@@ -5193,7 +5193,7 @@ function agentUpdateButtons() {
   if (lbl) lbl.textContent = agentRun ? 'Điền lại tin nhắn hiện tại' : 'Bắt đầu (dự án đang mở)';
 }
 async function startAgentRunAll(keys) {
-  if (!confirm(`Chạy ${keys.length} dự án bằng Agent của Flow (${keys.map((k) => 'DA' + k).join(', ')})?\n\nMỗi dự án: extension tạo project Flow mới, tự nạp ảnh, rồi ĐIỀN SẴN đúng 3 tin nhắn:\n  1. Sheet trang phục nhân vật + ảnh bối cảnh + thumbnail (cùng lúc)\n  2. Keyframe mọi shot (dùng mã sheet + bối cảnh vừa tạo)\n  3. Video mọi shot (${agentVideoMode() === 'first' ? 'khung đầu = keyframe' : 'tham chiếu keyframe + sheet + bối cảnh'})\nTới lượt bạn: chuông + thông báo, con trỏ đặt sẵn — chỉ cần nhấn Enter để gửi (và Enter để Approve khi Agent hỏi). Video + thumbnail tự tải về.\n\nGiữ tab Flow mở.`)) return;
+  if (!confirm(`Chạy ${keys.length} dự án bằng Agent của Flow (${keys.map((k) => 'DA' + k).join(', ')})?\n\nMỗi dự án: extension tạo project Flow mới, tự nạp ảnh, rồi ĐIỀN SẴN lần lượt các tin nhắn (thường 3; bước có prompt dài được chia nhỏ để Agent làm hết):\n  1. Sheet trang phục nhân vật + ảnh bối cảnh + thumbnail (cùng lúc)\n  2. Keyframe mọi shot (dùng mã sheet + bối cảnh vừa tạo)\n  3. Video mọi shot (${agentVideoMode() === 'first' ? 'khung đầu = keyframe' : 'tham chiếu keyframe + sheet + bối cảnh'})\nTới lượt bạn: chuông + thông báo, con trỏ đặt sẵn — chỉ cần nhấn Enter để gửi (và Enter để Approve khi Agent hỏi). Video + thumbnail tự tải về.\n\nGiữ tab Flow mở.`)) return;
   await agentStart(keys, true);
 }
 async function agentStart(keys, fresh) {
@@ -5245,7 +5245,7 @@ function agentStageKeysLeft(run, stage) {
   return stage.keys.filter((k) => !run.skipped.has(k) && !(stage.type === 'videos' ? st.videos[k] : st.media[k]));
 }
 function agentStageList(run) {
-  const maxCount = Math.max(0, Number(document.getElementById('nf-agent-batch')?.value) || 0);   // 0 = gộp hết
+  const maxCount = Math.max(0, Number(document.getElementById('nf-agent-batch')?.value) || 0);   // 0 = tự động: gộp tới sức Agent một lượt (AgentPlan.AGENT_TURN_CHARS)
   return window.AgentPlan.stages(run.ctx, run.state, { maxCount, maxChars: run.maxChars });
 }
 function agentNextStage(run) {
@@ -5374,6 +5374,40 @@ function agentOnVideoDone(mediaId, ok) {
   run.state.videos[key] = ok ? mediaId : 'failed:' + mediaId;
   agentCheckAdvance();
 }
+// Agent của Flow có thể KẾT THÚC LƯỢT khi mới làm một phần tin nhắn (tin quá dài: làm
+// SHOT 01 rồi dừng). Trước đây extension chờ mãi các mục còn lại. Nay: lượt xong mà bước
+// hiện tại còn ảnh chưa tạo → điền sẵn tin nhắn CHỈ gồm các mục còn thiếu (người dùng
+// vẫn tự nhấn Enter). Video không tự điền lại (video đã gửi nhưng chưa render vẫn tính là
+// "còn thiếu" → dễ tạo trùng); chỉ báo để người dùng bấm "Điền lại tin nhắn hiện tại".
+const AGENT_TURN_SETTLE_MS = 15000;   // chờ kết quả cuối của lượt về hết rồi mới xét
+const AGENT_AUTO_REFILLS = 3;         // tối đa 3 lần tự điền lại cho 1 bước (mục bị Flow từ chối mãi → bỏ qua)
+function agentOnTurnStart() {
+  const run = agentRun; if (!run) return;
+  run.turnSeq = (run.turnSeq || 0) + 1;
+}
+function agentOnTurnEnd(permission) {
+  const run = agentRun; if (!run || !run.stage) return;
+  const stage = run.stage;
+  const seq = run.turnSeq = (run.turnSeq || 0) + 1;
+  if (permission) return;   // Agent đang chờ Approve — video tới ở lượt sau
+  setTimeout(() => {
+    if (agentRun !== run || run.busy || run.stage !== stage || run.turnSeq !== seq) return;
+    const sent = new Set(Object.values(run.videoIds || {}));
+    const missing = agentStageKeysLeft(run, stage).filter((k) => stage.type !== 'videos' || !sent.has(k));
+    if (!missing.length) return;
+    if (stage.type === 'videos') {
+      agentSay(`⚠️ Agent đã dừng lượt nhưng chưa gửi video cho ${missing.join(', ')} — bấm "Điền lại tin nhắn hiện tại" để gửi tiếp các mục còn thiếu.`, 'warning');
+      return;
+    }
+    stage.autoRefills = (stage.autoRefills || 0) + 1;
+    if (stage.autoRefills > AGENT_AUTO_REFILLS) {
+      agentSay(`⚠️ Agent vẫn chưa tạo ${missing.join(', ')} sau ${AGENT_AUTO_REFILLS} lần gửi lại — xem Agent báo lỗi gì; bấm "⏭️ Bỏ qua bước này" nếu muốn đi tiếp.`, 'warning');
+      return;
+    }
+    addLog(`🔁 Agent dừng lượt khi mới làm một phần — còn thiếu ${missing.join(', ')}. Đã điền sẵn tin nhắn cho các mục còn thiếu, nhấn Enter để gửi.`, 'warning');
+    agentDeliver(true);
+  }, AGENT_TURN_SETTLE_MS);
+}
 function agentSkipStage() {
   const run = agentRun; if (!run || !run.stage) return;
   const left = agentStageKeysLeft(run, run.stage);
@@ -5437,6 +5471,8 @@ function initAgentMode() {
       agentAlert('approve', 'AutoFlow: Agent xin phép tạo video', 'Bấm vào đây rồi nhấn Enter để Approve (nút đã được chọn sẵn).');
     }
     if (m.type === 'AGENT_RESULT') agentOnResult(m);
+    if (m.type === 'AGENT_EVENT' && m.event === 'turnStart') agentOnTurnStart();
+    if (m.type === 'AGENT_EVENT' && m.event === 'turnEnd') agentOnTurnEnd(!!m.permission);
     if (m.type === 'AGENT_MEDIA_SAVED') {
       agentSay(m.ok ? `⬇️ Đã tải ${m.name}` : `❌ Tải lỗi: ${m.name}`, 'quiet');
       if (m.mediaKind === 'video') agentOnVideoDone(m.mediaId, !!m.ok);
