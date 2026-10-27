@@ -1,5 +1,6 @@
 import type { StoryboardGenerationOutput } from "../../types/index.ts";
 import { completeVoiceProfile } from "../laws/audioLaws.ts";
+import { isAdultKinName } from "../kids/cute-kids.ts";
 import { normalizeStateLedgerDimensions } from "./state-ledger.ts";
 import { buildProductionState } from "../production-state/normalizer.ts";
 
@@ -335,6 +336,9 @@ export function normalizeProductionContracts(
   const timelineTotalsSynchronized = synchronizeTimelineTotal(breakdown);
 
   for (const lock of breakdown.character_locks ?? []) {
+    // "Bố", "Mẹ", "Bà"… is never the child, whatever the writer flagged; a
+    // wrong flag gave a father the child voice fallback.
+    if (lock.is_child === true && isAdultKinName(lock.name)) lock.is_child = false;
     const before = (lock.voice ?? "").trim();
     const completed = completeVoiceProfile(
       before,

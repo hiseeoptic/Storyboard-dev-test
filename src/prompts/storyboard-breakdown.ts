@@ -39,6 +39,7 @@ import { compileCookingRecipeDigest } from "@/lib/cooking";
 import { compileProductIRDigest } from "@/lib/product-ir";
 import { productPlacementDirective } from "@/lib/product-placement";
 import { cuteKidsDirective } from "@/lib/kids/cute-kids";
+import { outfitNamesLowerGarment } from "@/lib/nano-flow/prompt-compaction";
 import { CHILD_SAFE_WORDING_RULE } from "@/lib/kids/child-safe-wording";
 import { AI_LOOK_NEGATIVE, HUMAN_PERFORMANCE_DOCTRINE, performanceDirection } from "@/lib/performance/human-performance";
 import { applyCameraAuthorityToClip } from "@/lib/product-shoot/clip-authority";
@@ -2691,9 +2692,19 @@ function luxWord(lux: number): string {
 }
 export function stripBurnableTech(text?: string | null): string {
   let out = (text ?? "").toString();
-  // "key 4000K", "~450 lux", "3000K, ~200 lux" → words
-  out = out.replace(/(?:key\s*)?~?\s*(\d{3,5})\s*K\b/g, (_m, k: string) => ` ${kelvinWord(parseInt(k, 10))}`);
-  out = out.replace(/~?\s*(\d{2,5})\s*lux\b/gi, (_m, l: string) => ` ${luxWord(parseInt(l, 10))} light level`);
+  // "key 4000K", "~450 lux", "3000K, ~200 lux" → words. A range ("400–600 lux",
+  // "2700–3000K") converts as one value; matching only its upper end left a
+  // dangling "400– bright" in the prompt.
+  out = out.replace(
+    /(?:key\s*)?~?\s*(?:(\d{3,5})\s*K?\s*(?:-|–|—|to)\s*)?(\d{3,5})\s*K\b/g,
+    (_m, low: string | undefined, k: string) =>
+      ` ${kelvinWord(low ? Math.round((parseInt(low, 10) + parseInt(k, 10)) / 2) : parseInt(k, 10))}`
+  );
+  out = out.replace(
+    /~?\s*(?:(\d{2,5})\s*(?:lux)?\s*(?:-|–|—|to)\s*)?(\d{2,5})\s*lux\b/gi,
+    (_m, low: string | undefined, l: string) =>
+      ` ${luxWord(low ? Math.round((parseInt(low, 10) + parseInt(l, 10)) / 2) : parseInt(l, 10))} light level`
+  );
   return out.replace(/\s{2,}/g, " ").replace(/\s+([,.;)])/g, "$1").trim();
 }
 function ageBand(n: number): string {
@@ -3017,10 +3028,15 @@ export function buildVeoJson(
       top:
         parts[0] ||
         "a plain solid-colour short-sleeve everyday top, kept identical in every clip",
+      // A one-phrase costume that already names the trousers, skirt or a
+      // one-piece needs no filler bottom ("…blue trousers., a plain matching
+      // pair of trousers…").
       bottom:
         parts.slice(1).join(", ") ||
         (parts[0]
-          ? `a plain matching pair of trousers completing the locked outfit, kept identical in every clip`
+          ? outfitNamesLowerGarment(parts[0])
+            ? ""
+            : `a plain matching pair of trousers completing the locked outfit, kept identical in every clip`
           : "plain dark everyday trousers, kept identical in every clip"),
     };
   };

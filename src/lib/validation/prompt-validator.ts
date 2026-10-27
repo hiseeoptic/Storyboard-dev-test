@@ -30,6 +30,7 @@ import {
   type SemanticValidationReport,
 } from "./semantic-validator.ts";
 import { validateProductionPromptAuthority } from "./production-authority-validator.ts";
+import { compactVideoPrompt } from "../nano-flow/prompt-compaction.ts";
 
 type Push = (f: SemanticFinding) => void;
 
@@ -664,23 +665,26 @@ function checkShot(shot: NanoFlowShot, push: Push): void {
     if (profile) speakingProfiles.set(profile, speakerName);
   }
 
-  if (serialized.length > 40_000) {
+  // Budget the clip Flow actually receives: the export sends the compact
+  // projection, which writes each repeated rule once.
+  const sentLength = JSON.stringify(compactVideoPrompt(clip)).length;
+  if (sentLength > 40_000) {
     push({
       code: "BUDGET-001",
       severity: "high",
       scope: "segment",
       segment_number: seg,
       message: "Compiled clip exceeds the safe prompt budget.",
-      evidence: `${serialized.length} characters`,
+      evidence: `${sentLength} characters`,
     });
-  } else if (serialized.length > 30_000) {
+  } else if (sentLength > 30_000) {
     push({
       code: "BUDGET-001",
       severity: "medium",
       scope: "segment",
       segment_number: seg,
       message: "Compiled clip is approaching the prompt budget.",
-      evidence: `${serialized.length} characters`,
+      evidence: `${sentLength} characters`,
     });
   }
 

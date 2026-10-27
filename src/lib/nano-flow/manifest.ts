@@ -17,7 +17,7 @@ import { SET_QUALITY_NEGATIVE, SET_QUALITY_NOTE, stripBlandSetClauses } from "..
 import { buildSetMap, cameraSideLock, setMapBrief, type SetMap } from "../environment/set-map.ts";
 import { outfitReferenceContract } from "../fashion/outfit.ts";
 import { makeupContract, makeupText, type MakeupMode } from "../character-makeup.ts";
-import { PHONE_PLATE_NOTE, PHONE_RENDER_NOTE, PHONE_VIDEO_NOTE, cuteKidsPerformanceNote, type KidAge, type KidTrait } from "../kids/cute-kids.ts";
+import { PHONE_PLATE_NOTE, PHONE_RENDER_NOTE, PHONE_VIDEO_NOTE, cuteKidsPerformanceNote, resolveKidLock, type KidAge, type KidTrait } from "../kids/cute-kids.ts";
 import { castHasChild, childSafeDeep } from "../kids/child-safe-wording.ts";
 import { KEYFRAME_CANDID_NOTE } from "../performance/human-performance.ts";
 import { setDressingFor, setDressingLock } from "../environment/set-dressing.ts";
@@ -39,6 +39,7 @@ import {
   normalizeBoardImagePanels,
   type BoardPlacementContract,
 } from "./board-image-validator.ts";
+import { keyframeReferenceBinding } from "./prompt-compaction.ts";
 import {
   decideFrameMode,
   type FrameMode,
@@ -1040,9 +1041,8 @@ function buildKeyframePrompt(params: {
     character_cardinality_contract: {
       identities: cast.map((entry) => ({
         name: entry.name,
-        reference_binding: characterStyleLock
-          ? `Use ONLY the attached character/design sheet labelled ${entry.name} for ${entry.name}; keep the exact proportions, line/shape/material language, palette and identity markers.`
-          : `Use ONLY the attached wardrobe sheet labelled ${entry.name} for ${entry.name}. That sheet holds THREE framings of the SAME person: take ${entry.name}'s FRONTAL FACE — eyes, nose, mouth, face shape, skin tone, hairline — from the SHARP CHEST-UP CLOSE-UP panel, which is the DEFINITIVE face. The 90° SIDE-PROFILE panel is ONLY for head/silhouette shape and the full-body panel ONLY for wardrobe and proportion — NEVER build a front-facing face from the side-profile panel. Never blend ${entry.name}'s face with another character's.`,
+        // Shared with the export compaction, which recognises this exact text.
+        reference_binding: keyframeReferenceBinding(entry.name ?? "", !!characterStyleLock),
         maximum_instances_per_panel: 1,
       })),
       rule:
@@ -1908,7 +1908,11 @@ export function buildNanoFlowManifest(
     phoneLook ? prompt.split(KEYFRAME_RENDER_NOTE).join(note) : prompt;
   // Cute-kids reel: the kid's big, cute performance is explicitly wanted (the
   // general audio/acting laws say "restrained, never theatrical").
-  const kidPerformance = opts.cuteKids?.kidName?.trim() ? cuteKidsPerformanceNote(opts.cuteKids.kidName.trim(), opts.cuteKids.traits, opts.cuteKids.kidAge) : "";
+  // Name the kid as the cast does ("Na"), not as the card did ("Bé Na"), so the
+  // note binds to the right character.
+  const kidCardName = opts.cuteKids?.kidName?.trim() ?? "";
+  const kidName = kidCardName ? resolveKidLock(breakdown.character_locks ?? [], kidCardName)?.name.trim() || kidCardName : "";
+  const kidPerformance = kidName ? cuteKidsPerformanceNote(kidName, opts.cuteKids?.traits, opts.cuteKids?.kidAge) : "";
   const withKidPerformance = (prompt: string) =>
     kidPerformance ? withPromptContract(prompt, "child_performance", kidPerformance, ["makeup_contract", "outfit_reference_contract", "cast", "camera", "opening_frame"]) : prompt;
   // Every keyframe with people is a candid moment of real footage, not a pose.

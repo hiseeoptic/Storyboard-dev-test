@@ -41,7 +41,7 @@ import {
 } from "@/lib/creative-routing";
 import { enforceProductShootContract, productShootSubject } from "@/lib/product-shoot/storyboard";
 import { enforceProductPlacements, outfitCostume, placementItems } from "@/lib/product-placement";
-import { cuteKidsVoice, labelCuteKidsPosts, normalizeCuteKids } from "@/lib/kids/cute-kids";
+import { cuteKidsVoice, isAdultKinName, labelCuteKidsPosts, normalizeCuteKids, resolveKidLock } from "@/lib/kids/cute-kids";
 import { withLibraryLesson } from "@/lib/kids/parenting-lessons";
 import { castHasChild, childSafeDeep } from "@/lib/kids/child-safe-wording";
 import {
@@ -195,12 +195,11 @@ function enforceCuteKidsVoices(input: StoryboardGenerationInput, breakdown: Stor
   const kids = normalizeCuteKids(input.cute_kids);
   if (!kids) return;
   const locks = breakdown.character_locks ?? [];
-  const kidName = kids.kidName.trim().toLowerCase();
-  const star = locks.find((l) => l.name.trim().toLowerCase() === kidName) ?? locks.find((l) => l.is_child === true);
+  const star = resolveKidLock(locks, kids.kidName);
   for (const lock of locks) {
     if (!lock.voice) continue;
     if (lock === star) lock.voice = cuteKidsVoice(lock.voice, { isKid: true, traits: kids.traits, kidAge: kids.kidAge });
-    else if (lock.is_child !== true) lock.voice = cuteKidsVoice(lock.voice, { isKid: false });
+    else if (lock.is_child !== true || isAdultKinName(lock.name)) lock.voice = cuteKidsVoice(lock.voice, { isKid: false });
   }
 }
 

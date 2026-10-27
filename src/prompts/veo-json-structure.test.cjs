@@ -1143,3 +1143,49 @@ test("context analysis designs the look of a place instead of leaving it unspeci
   assert.match(prompt, /does NOT apply to the look of a place/);
   assert.match(prompt, /PRODUCTION DESIGN — CHANNEL-QUALITY SETS/);
 });
+
+test("a one-phrase costume that already names trousers or a one-piece gets no filler bottom", () => {
+  const breakdown = {
+    character_locks: [
+      { name: "Na", gender: "female", is_child: true, costume: "Pale yellow cotton T-shirt and long blue cotton trousers.", voice: "child voice" },
+      { name: "Em bé", gender: "female", is_child: true, costume: "Light blue full-coverage cotton one-piece outfit.", voice: "infant sounds" },
+      { name: "Bố", gender: "male", is_child: false, costume: "Blue cotton T-shirt", voice: "male voice" },
+    ],
+    scene_bible: { lens: "phone lens", lighting: "daylight", backdrop: "living room", color_grade: "natural", film_grain: "clean" },
+    style_guide: { art_direction: "natural live action", color_palette: [] },
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      beats: [{ beat: "Na sits", camera: "medium" }],
+      first_frame_prompt: "A living room. Na, Em bé and Bố sit on the rug.",
+      motion_prompt: "Na looks at Bố.",
+      characters_in_scene: ["Na", "Em bé", "Bố"],
+      environment_ref: "custom",
+    }],
+  };
+  const clip = buildVeoJson(breakdown, { aspectRatio: "9:16", dialogueLanguage: "Vietnamese" }).clips[0];
+  const byName = Object.fromEntries(Object.values(clip.character_lock).map((lock) => [lock.name, lock]));
+  assert.equal(byName["Na"].outfit_bottom, "");
+  assert.equal(byName["Em bé"].outfit_bottom, "");
+  assert.match(byName["Bố"].outfit_bottom, /plain matching pair of trousers/);
+});
+
+test("Kelvin and lux ranges become one word each, with no dangling number", () => {
+  const { stripBurnableTech } = require("./storyboard-breakdown.ts");
+  assert.equal(
+    stripBurnableTech("Soft window daylight, approximately 5000K and 400–600 lux on the play area; a lamp around 2700–3000K."),
+    "Soft window daylight, approximately neutral daylight and bright, even light level on the play area; a lamp around warm golden tungsten light."
+  );
+  assert.equal(stripBurnableTech("key 4000K, ~450 lux"), "neutral warm-white light, bright, even light level");
+});
+
+test("an incomplete voice drops the whole numeric clause before the locked fallback", () => {
+  const { completeVoiceProfile } = require("../lib/laws/audioLaws.ts");
+  const voice = completeVoiceProfile(
+    "Northern Vietnamese accent; adult male timbre, natural F0 approximately 105–135 Hz, conversational 145–175 wpm, calm",
+    "male",
+    true
+  );
+  assert.doesNotMatch(voice, /approximately,|145–,|, ,/);
+  assert.match(voice, /^Northern Vietnamese accent; adult male timbre, calm; /);
+});

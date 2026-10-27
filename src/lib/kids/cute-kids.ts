@@ -940,6 +940,35 @@ export const PHONE_PLATE_NOTE =
 
 // ─── Voices and on-screen performance (applied after the storyboard) ─────────
 
+// A parent or grandparent role name. "Cô bé" / "Cậu bé" / "Chú bé" mean a
+// little girl or boy, so a following "bé" keeps the name a child's.
+const ADULT_KIN_WORD = /^(?:bố|ba|cha|mẹ|má|ông|bà|cô|chú|dì|bác|cậu|mợ|thím|dượng|dad|daddy|father|mom|mommy|mum|mother|grandpa|grandma|grandfather|grandmother|uncle|aunt|auntie)$/iu;
+
+export function isAdultKinName(name: string): boolean {
+  const words = String(name ?? "").normalize("NFC").trim().toLocaleLowerCase("vi").split(/\s+/u).filter(Boolean);
+  return words.length > 0 && ADULT_KIN_WORD.test(words[0]!) && words[1] !== "bé";
+}
+
+const KID_NAME_PREFIX = /^(?:bé|con|em|cu|bạn|cô bé|cậu bé|chú bé)\s+/iu;
+
+/**
+ * The cast lock the card's kid name refers to. The card often says "Bé Na"
+ * while the writer names the character "Na"; an exact-only match fell back to
+ * the first lock marked is_child — which could be a parent the writer
+ * mislabelled — and gave that parent the kid's sing-song voice.
+ */
+export function resolveKidLock<T extends { name: string; is_child?: boolean }>(locks: readonly T[], kidName: string): T | undefined {
+  const key = (name: string) => String(name ?? "").normalize("NFC").trim().toLocaleLowerCase("vi");
+  const wanted = key(kidName);
+  const bare = wanted.replace(KID_NAME_PREFIX, "");
+  const candidates = locks.filter((lock) => !isAdultKinName(lock.name));
+  return (
+    (wanted ? candidates.find((lock) => key(lock.name) === wanted) : undefined) ??
+    (bare ? candidates.find((lock) => key(lock.name).replace(KID_NAME_PREFIX, "") === bare) : undefined) ??
+    candidates.find((lock) => lock.is_child === true)
+  );
+}
+
 const RESTRAINED_PROSODY = /\b(?:with\s+)?restrained\s+(?:context-appropriate\s+)?(?:pitch variation|prosody|emotion)\b/giu;
 
 /**

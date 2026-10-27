@@ -210,6 +210,10 @@
         ? clip.background_lock : {};
       const loc = String(s.location_id || clip.location_id || bg.id || '').trim();
       const authority = locationAuthority[loc];
+      // Only the compact projection writes these two; re-adding a block it
+      // removed would put the duplicate back.
+      const compact = !!clip.character_lock_common
+        || !!(clip.state_transition_contract && Array.isArray(clip.state_transition_contract.end_changes));
       if (authority) {
         const tokens = clip.scene_bible_tokens && typeof clip.scene_bible_tokens === 'object'
           ? clip.scene_bible_tokens : {};
@@ -218,7 +222,9 @@
         // Scene-bible/audio fields are already script-derived for THIS shot.
         // Prefer them over a location's baseline so intentional temporal change
         // remains possible while geometry and location identity stay locked.
-        const shotLighting = String(tokens.lighting || authority.lighting || bg.lighting || '').trim();
+        // A compact clip (Storyboard writes each rule once) keeps the shot's own
+        // lighting only in background_lock — use it, not the location's first clause.
+        const shotLighting = String(tokens.lighting || (compact ? bg.lighting : '') || authority.lighting || bg.lighting || '').trim();
         const shotSoundBed = String(tokens.audio_bed || foley.environment_sound_bed || '').trim();
         const shotReverb = String(tokens.reverb || foley.environment_reverb || '').trim();
         clip.background_lock = Object.assign({}, bg, {
@@ -227,23 +233,31 @@
           scenery: authority.scenery || bg.scenery,
           lighting: shotLighting,
         });
-        if (clip.scene_bible_tokens && typeof clip.scene_bible_tokens === 'object') {
+        if (clip.scene_bible_tokens && typeof clip.scene_bible_tokens === 'object'
+            && (!compact || 'backdrop' in clip.scene_bible_tokens)) {
           clip.scene_bible_tokens = Object.assign({}, clip.scene_bible_tokens, {
             backdrop: authority.scenery || clip.scene_bible_tokens.backdrop,
           });
         }
         if (clip.foley_and_ambience && typeof clip.foley_and_ambience === 'object') {
-          clip.foley_and_ambience = Object.assign({}, clip.foley_and_ambience, {
+          const foleyPatch = {
             environment_sound_bed: shotSoundBed || clip.foley_and_ambience.environment_sound_bed,
             environment_reverb: shotReverb || clip.foley_and_ambience.environment_reverb,
-            ambience: shotSoundBed ? [shotSoundBed] : clip.foley_and_ambience.ambience,
-          });
+          };
+          if (!compact || 'ambience' in clip.foley_and_ambience) {
+            foleyPatch.ambience = shotSoundBed ? [shotSoundBed] : clip.foley_and_ambience.ambience;
+          }
+          clip.foley_and_ambience = Object.assign({}, clip.foley_and_ambience, foleyPatch);
         }
         if (clip.audio_transition && typeof clip.audio_transition === 'object') {
-          clip.audio_transition = Object.assign({}, clip.audio_transition, {
-            sound_bed: shotSoundBed || clip.audio_transition.sound_bed,
-            reverb_profile: shotReverb || clip.audio_transition.reverb_profile,
-          });
+          const transitionPatch = {};
+          if (!compact || 'sound_bed' in clip.audio_transition) {
+            transitionPatch.sound_bed = shotSoundBed || clip.audio_transition.sound_bed;
+          }
+          if (!compact || 'reverb_profile' in clip.audio_transition) {
+            transitionPatch.reverb_profile = shotReverb || clip.audio_transition.reverb_profile;
+          }
+          clip.audio_transition = Object.assign({}, clip.audio_transition, transitionPatch);
         }
       }
       if (clip.camera && typeof clip.camera === 'object') {
@@ -251,11 +265,14 @@
           movement: normalizeCameraMovement(clip.camera),
         });
       }
-      clip.board_usage = 'Use the attached single full-frame storyboard keyframe as the visual opening authority and animate forward in one continuous shot.';
-      if (clip.output_rules && typeof clip.output_rules === 'object') {
-        clip.output_rules = Object.assign({}, clip.output_rules, {
-          board_is_reference_not_a_frame: 'The attached image is one single full-frame storyboard keyframe. Keep it as the opening visual authority; never create a grid, collage, split screen, numbered panel or second camera setup.',
-        });
+      // A compact clip already says this once, in opening_frame.
+      if (!compact) {
+        clip.board_usage = 'Use the attached single full-frame storyboard keyframe as the visual opening authority and animate forward in one continuous shot.';
+        if (clip.output_rules && typeof clip.output_rules === 'object') {
+          clip.output_rules = Object.assign({}, clip.output_rules, {
+            board_is_reference_not_a_frame: 'The attached image is one single full-frame storyboard keyframe. Keep it as the opening visual authority; never create a grid, collage, split screen, numbered panel or second camera setup.',
+          });
+        }
       }
       return clip;
     };

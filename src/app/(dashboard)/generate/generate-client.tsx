@@ -91,6 +91,7 @@ import {
 import type { ColorLookId } from "@/types";
 import { COLOR_LOOK_OPTIONS, colorLooksForGenre } from "@/lib/color-look";
 import { buildNanoFlowManifest } from "@/lib/nano-flow/manifest";
+import { compactNanoFlowManifest, compactVideoPrompt } from "@/lib/nano-flow/prompt-compaction";
 import type { FrameModeOverride } from "@/lib/nano-flow/frame-mode-policy";
 import { buildSpeechManifestContract } from "@/lib/storyboard/anonymous-narration";
 import {
@@ -3183,7 +3184,10 @@ function ProjectWorkspace() {
       const manifest = buildResultManifest();
       if (!manifest) return null;
       return {
-        manifest,
+        // The gate checks the canonical contract (its blocks must agree word for
+        // word); Flow, the extension and the files get the compact projection
+        // that writes each of those rules once.
+        manifest: compactNanoFlowManifest(manifest),
         report: validateExportReadiness(result.breakdown, manifest),
         error: null,
       };
@@ -3456,10 +3460,13 @@ function ProjectWorkspace() {
         speechMode: exportSpeechContract?.mode,
         anonymousCharacters: exportSpeechContract?.anonymous_characters,
       });
-      zip.file(`veo_prompts.json`, JSON.stringify(veoJson, null, 2));
       const clipArr = Array.isArray((veoJson as { clips?: unknown[] }).clips)
-        ? ((veoJson as { clips: unknown[] }).clips as unknown[])
+        ? ((veoJson as { clips: unknown[] }).clips as unknown[]).map((clip) => compactVideoPrompt(clip))
         : [];
+      zip.file(
+        `veo_prompts.json`,
+        JSON.stringify(clipArr.length ? { ...(veoJson as Record<string, unknown>), clips: clipArr } : veoJson, null, 2)
+      );
       // Human-readable blocks: one pretty JSON object, blank line, next object.
       zip.file(
         `veo_prompts_blocks.txt`,

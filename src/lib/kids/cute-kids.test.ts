@@ -13,8 +13,10 @@ import {
   cuteKidsStoryIdea,
   detectFormat,
   familyCast,
+  isAdultKinName,
   labelAiSocialPosts,
   normalizeCuteKids,
+  resolveKidLock,
   type CuteKidsConfig,
 } from "./cute-kids.ts";
 import { TEEN_SAFETY_RULE, teenSafeRequest, teenSafetyViolations } from "./teen-safety.ts";
@@ -226,4 +228,21 @@ test("8–10 and 11–12: age-true speech, behaviour, personality, voice and bac
   assert.match(cuteKidsStoryIdea(config({ kidAge: "preteen" })), /Tính cách bé: năn nỉ ngọt, than thở "bi kịch", khôn lanh/);
   assert.match(cuteKidsRoomSeed(config({ kidAge: "middle" })), /than thở "bi kịch" cho vui \(nằm vật ra sofa/);
   assert.doesNotMatch(cuteKidsRoomSeed(config({ kidAge: "middle" })), /huhuhu|mếu máo/);
+});
+
+test("the card's kid name finds the cast lock even with a 'Bé' prefix, never a parent", () => {
+  const locks = [
+    { name: "Bố", is_child: true }, // writer mislabelled the father
+    { name: "Mẹ" },
+    { name: "Na", is_child: true },
+    { name: "Em bé", is_child: true },
+  ];
+  assert.equal(resolveKidLock(locks, "Bé Na")?.name, "Na");
+  assert.equal(resolveKidLock(locks, "Na")?.name, "Na");
+  // Unknown card name: the first child who is not a parent role.
+  assert.equal(resolveKidLock(locks, "Tí")?.name, "Na");
+  assert.equal(isAdultKinName("Bố"), true);
+  assert.equal(isAdultKinName("Bà ngoại"), true);
+  assert.equal(isAdultKinName("Cô bé Mai"), false);
+  assert.equal(isAdultKinName("Em bé"), false);
 });

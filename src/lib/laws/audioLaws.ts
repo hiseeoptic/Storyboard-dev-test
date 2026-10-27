@@ -80,17 +80,24 @@ export function completeVoiceProfile(
     return raw;
   }
 
+  // Drop the whole numeric clause ("natural F0 approximately 105–135 Hz",
+  // "conversational 145–175 wpm"), not only its last number: a half-removed
+  // range left "F0 approximately, conversational 145–," in the prompt.
+  const approx = "(?:(?:approximately|approx\\.?|about|around)\\s+|~\\s*)?";
   const actingDescription = raw
     .replace(
-      /\b(?:natural\s+)?(?:f0|fundamental frequency|pitch)?\s*~?\d{2,3}\s*(?:-|–|—|to)\s*\d{2,3}\s*hz(?:\s+with\s+small\s+human\s+variation)?/gi,
+      new RegExp(`\\b(?:natural\\s+)?(?:f0|fundamental frequency|pitch)?\\s*${approx}\\d{2,3}\\s*(?:-|–|—|to)\\s*\\d{2,3}\\s*hz(?:\\s+with\\s+small\\s+human\\s+variation)?`, "gi"),
       ""
     )
     .replace(
-      /\b(?:natural\s+)?(?:f0|fundamental frequency|pitch)?\s*~?\d{2,3}\s*hz\b/gi,
+      new RegExp(`\\b(?:natural\\s+)?(?:f0|fundamental frequency|pitch)?\\s*${approx}\\d{2,3}\\s*hz\\b`, "gi"),
       ""
     )
-    .replace(/\b(?:speaking\s+rate\s*)?~?\d{2,3}\s*wpm\b/gi, "")
-    .replace(/\s*[,;]\s*[,;]+/g, ", ")
+    .replace(
+      new RegExp(`\\b(?:(?:speaking\\s+rate|conversational|rate)\\s*)?${approx}\\d{2,3}(?:\\s*(?:-|–|—|to)\\s*\\d{2,3})?\\s*wpm\\b`, "gi"),
+      ""
+    )
+    .replace(/\s*[,;](?:\s*[,;])+/g, ", ")
     .replace(/^[\s,;.-]+|[\s,;.-]+$/g, "")
     .replace(/\s{2,}/g, " ");
   const fallback = defaultVoiceFor(inferredGender, isChild);
