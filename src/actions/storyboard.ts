@@ -56,6 +56,15 @@ import {
 } from "@/lib/timeline-contract";
 import { normalizeProductionContracts } from "@/lib/storyboard/production-normalizer";
 import { ledgerPropNames, normalizeBreakdownBlueprints } from "@/lib/continuity/blueprint";
+import { labelFamilyDramaPosts, normalizeFamilyDrama, withLibraryFamilyLesson } from "@/lib/family/family-drama";
+import {
+  LONG_FIRST_PART,
+  longVideoFindings,
+  longVideoTotal,
+  mergeLongVideoPart,
+  nextLongVideoRange,
+  stubSegments,
+} from "@/lib/storyboard/long-video";
 import { normalizeBeatCameraFields } from "@/lib/continuity/camera";
 import {
   bindOnScreenSpeakersToCameraBeats,
@@ -129,6 +138,8 @@ export interface StoryboardPlan {
   analysis: StoryboardAnalysis;
   videoPrompt: string;
   warnings: string[];
+  /** Long video written in parts: the whole clip count (the browser extends until reached). */
+  long_video_total?: number;
 }
 
 // Vercel stops this Server Action at 300s. Keep a safety margin for local JSON
@@ -1965,6 +1976,7 @@ function normalizeRepairCandidate(
   enforceProductShootContract(resolveInputProductShoot(input), breakdown);
   enforceProductPlacements(input.product_placements, breakdown);
   if (input.cute_kids) labelCuteKidsPosts(breakdown.social_posts, input.cute_kids);
+  if (input.family_drama) labelFamilyDramaPosts(breakdown.social_posts);
   enforceCuteKidsVoices(input, breakdown);
   bindOnScreenSpeakersToCameraBeats(breakdown);
   enforceSingleDialogueClock(breakdown);
@@ -2402,6 +2414,8 @@ function normalizePlanInput(input: StoryboardGenerationInput): StoryboardGenerat
   // unknown is dropped.
   // A picked parenting lesson is taken from the library (the client sends a snapshot).
   if (input.cute_kids) input = { ...input, cute_kids: normalizeCuteKids(withLibraryLesson(input.cute_kids)) };
+  // "Chuyện nhà": the family drama config is clamped; a picked lesson comes from the library.
+  if (input.family_drama) input = { ...input, family_drama: normalizeFamilyDrama(withLibraryFamilyLesson(input.family_drama)) };
   const shootPresence = resolveInputProductShoot(input)?.presence;
   if (shootPresence === "product_only" || shootPresence === "hands_only") {
     const narrate = input.voice_over_enabled === true || input.character_dialogue_enabled !== false;
@@ -2619,6 +2633,13 @@ async function runPlanBuild(
     ...stage2Input,
     resolved_context: sanitizedContext,
   };
+  // Long video (> 8 clips, e.g. a 2–3 minute family drama): this request writes
+  // the first part with every global lock of the whole story; the browser then
+  // calls extendStoryboardPlan for the next parts (each with its own budget).
+  const longTotal = compiledCooking ? 0 : longVideoTotal(stage2Input);
+  const partInput: StoryboardGenerationInput = longTotal
+    ? { ...contextBoundInput, segment_count: LONG_FIRST_PART, long_video_total: longTotal }
+    : contextBoundInput;
 
   let breakdown: StoryboardGenerationOutput;
   let activeStoryboardProvider = provider;
@@ -2631,7 +2652,7 @@ async function runPlanBuild(
   } else {
     try {
       // Stage 2: main provider expands the approved script into storyboard JSON.
-      breakdown = await generateStoryboardBreakdown(contextBoundInput, provider, {
+      breakdown = await generateStoryboardBreakdown(partInput, provider, {
         deadlineMs,
       });
     } catch (e) {
@@ -2661,7 +2682,7 @@ async function runPlanBuild(
       warnings.push(
         `${provider} không dựng được storyboard — đã tự chuyển sang ${fallbackProvider} dựng tiếp. (${e instanceof Error ? e.message : String(e)})`
       );
-      breakdown = await generateStoryboardBreakdown(contextBoundInput, fallbackProvider, {
+      breakdown = await generateStoryboardBreakdown(partInput, fallbackProvider, {
         deadlineMs,
         maxAttempts: 1,
       });
@@ -2676,6 +2697,10 @@ async function runPlanBuild(
     return { success: false, error: "AI không trả về cảnh nào. Vui lòng thử lại." };
   }
   enforceAffiliateDeliveryDuration(input, breakdown);
+  if (longTotal) {
+    breakdown = mergeLongVideoPart(breakdown, [], 1, 0, longTotal);
+    warnings.push(`Video dài ${longTotal} cảnh: đã viết ${breakdown.segments.length}/${longTotal} cảnh, app đang viết tiếp phần còn lại theo từng lượt.`);
+  }
   if (!Array.isArray(breakdown.character_locks)) breakdown.character_locks = [];
 
   // Deterministic post-model guard: menu names/photo groups win over any
@@ -2695,6 +2720,7 @@ async function runPlanBuild(
   });
   // Realistic AI video of a child: platforms require the AI-content label.
   if (input.cute_kids) labelCuteKidsPosts(breakdown.social_posts, input.cute_kids);
+  if (input.family_drama) labelFamilyDramaPosts(breakdown.social_posts);
   softStep("Giọng bé cưng", warnings, () => enforceCuteKidsVoices(input, breakdown));
   softStep("Chế độ quay sản phẩm", warnings, () => {
     for (const note of enforceProductShootContract(resolveInputProductShoot(input), breakdown)) warnings.push(note);
@@ -2820,7 +2846,7 @@ async function runPlanBuild(
     warnings.push("Một số prompt chưa dựng được, sẽ tạo lại khi bạn duyệt kịch bản.");
   }
 
-  return { success: true, data: { breakdown, analysis, videoPrompt, warnings } };
+  return { success: true, data: { breakdown, analysis, videoPrompt, warnings, ...(longTotal ? { long_video_total: longTotal } : {}) } };
 }
 
 /** Phase A — its own request and time budget. */
@@ -3248,6 +3274,64 @@ export async function repairExportFindings(params: {
     return {
       success: false,
       error: `Sửa lỗi export thất bại: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/**
+ * Long video, next part: write the next (up to five) clips of a story that was
+ * started by buildStoryboardPlan with long_video_total. Each call has its own
+ * server budget; the browser calls it until the breakdown has every clip.
+ * The clips are written by the targeted segment writer from placeholders that
+ * carry the previous clip's end state, then the same deterministic guards as a
+ * repaired breakdown run over the whole story.
+ */
+export async function extendStoryboardPlan(params: {
+  input: StoryboardGenerationInput;
+  breakdown: StoryboardGenerationOutput;
+  analysis: StoryboardAnalysis;
+  provider?: AIProvider;
+  totalSegments: number;
+}): Promise<ActionResult<{ breakdown: StoryboardGenerationOutput; videoPrompt: string; written: number; remaining: number }>> {
+  const provider = params.provider ?? "gemini";
+  try {
+    const input = normalizePlanInput(params.input);
+    const total = Math.max(1, Math.min(60, Math.round(params.totalSegments)));
+    const range = nextLongVideoRange(params.breakdown, total);
+    if (!range) {
+      return { success: true, data: { breakdown: params.breakdown, videoPrompt: assemblePlanPrompts(input, params.breakdown, params.analysis, provider), written: 0, remaining: 0 } };
+    }
+    const candidate = structuredClone(params.breakdown);
+    candidate.segments = [...candidate.segments, ...stubSegments(candidate, input, range.from, range.to, total)];
+    const batch = await repairStoryboardSegments({
+      input: { ...input, resolved_context: params.breakdown.context_ir ?? input.resolved_context },
+      breakdown: candidate,
+      segmentNumbers: Array.from({ length: range.to - range.from + 1 }, (_, i) => range.from + i),
+      characterNames: [],
+      findings: longVideoFindings(input, range.from, range.to, total),
+      round: 1,
+      provider,
+      timing: { deadlineMs: Date.now() + PLAN_GENERATION_BUDGET_MS - 30_000, maxAttempts: 2 },
+    });
+    let breakdown = mergeLongVideoPart(structuredClone(params.breakdown), batch.segments as never, range.from, range.to, total);
+    const written = breakdown.segments.length - params.breakdown.segments.length;
+    if (written > 0) {
+      normalizeRepairCandidate(input, breakdown, params.analysis);
+      breakdown = mergeLongVideoPart(breakdown, [], 1, 0, total);
+    }
+    return {
+      success: true,
+      data: {
+        breakdown,
+        videoPrompt: assemblePlanPrompts(input, breakdown, params.analysis, provider),
+        written,
+        remaining: Math.max(0, total - breakdown.segments.length),
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: `Viết tiếp video dài thất bại: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }

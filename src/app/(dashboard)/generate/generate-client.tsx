@@ -40,6 +40,7 @@ import { ImageUploader, type UploadedImage } from "@/components/ui/image-uploade
 import {
   prepareStoryboardPlan,
   buildStoryboardPlan,
+  extendStoryboardPlan,
   type StoryboardPlanPrep,
   analyzeAffiliateProduct,
   analyzeOutfitImages,
@@ -59,6 +60,8 @@ import { WritersRoom } from "./writers-room";
 import { LocationBlueprintEditor } from "./location-blueprint-editor";
 import { SetDirectionPanel } from "./set-direction";
 import { CuteKidsCard } from "./cute-kids-card";
+import { FamilyDramaCard } from "./family-drama-card";
+import { familyDramaCast, familyDramaRoomSeed, familyDramaStoryIdea, RELATION_LABEL, type FamilyDramaConfig } from "@/lib/family/family-drama";
 import { LocationPresetPanel, roomImages } from "./location-presets";
 import {
   emptyLibrary,
@@ -1039,6 +1042,10 @@ const SEGMENT_OPTIONS = [
   { value: "6", label: "6 (~60s)" },
   { value: "7", label: "7 (~70s)" },
   { value: "10", label: "10 (~100s)" },
+  // Long videos are written in parts (first 8 clips, then 5 per request).
+  { value: "12", label: "12 (~2 phút)" },
+  { value: "15", label: "15 (~2 phút 30)" },
+  { value: "18", label: "18 (~3 phút)" },
 ];
 
 // FEATURE FLAG — the frame-mode ("keyframes per shot") UI. false = HIDE both the
@@ -1672,6 +1679,8 @@ function ProjectWorkspace() {
   // optional photo, a fresh writers' room seed and the one-click build flag.
   const [cuteKids, setCuteKids] = useState<CuteKidsConfig | null>(null);
   const [cuteKidsPhoto, setCuteKidsPhoto] = useState<UploadedImage[]>([]);
+  // "Chuyện nhà": an educational family drama (couples / in-laws), 6–18 clips.
+  const [familyDrama, setFamilyDrama] = useState<FamilyDramaConfig | null>(null);
   const [roomSeed, setRoomSeed] = useState<{ key: number; idea: string } | null>(null);
   const [autoGenerate, setAutoGenerate] = useState(false);
   const [voiceOverEnabled, setVoiceOverEnabled] = useState(false);
@@ -2584,6 +2593,7 @@ function ProjectWorkspace() {
       camera_profile_custom: cameraProfileCustom.trim() || undefined,
       product_placements: productPlacementsForInput.length > 0 ? productPlacementsForInput : undefined,
       cute_kids: cuteKids ?? undefined,
+      family_drama: familyDrama ?? undefined,
       product_shoot: productShootActive
         ? {
             presence: productPresence,
@@ -2750,19 +2760,78 @@ function ProjectWorkspace() {
         return;
       }
 
-      planCacheRef.current.set(planFingerprint, structuredClone(plan.data));
+      // Long video (2–3 minutes): the first request wrote the first part; write
+      // the rest here, five clips per request, each with its own server budget.
+      const planData = await extendLongPlan(input, plan.data);
+
+      planCacheRef.current.set(planFingerprint, structuredClone(planData));
 
       // Keep inputs + the generated script, then let the user REVIEW & EDIT it
       // before we spend any image generations (catch wrong gender / dialogue /
       // action while it's still cheap text).
       setGenInput(input);
-      setGenAnalysis(plan.data.analysis);
-      setDraft(plan.data.breakdown);
-      setPlanWarnings([...payloadWarnings, ...plan.data.warnings]);
+      setGenAnalysis(planData.analysis);
+      setDraft(planData.breakdown);
+      setPlanWarnings([...payloadWarnings, ...planData.warnings]);
       setPhase("script");
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
       setPhase("input");
+    }
+  };
+
+  // Long video written in parts: call extendStoryboardPlan until every clip is
+  // written (stops after two calls in a row that add nothing).
+  async function extendLongPlan<T extends { breakdown: StoryboardGenerationOutput; analysis: Parameters<typeof extendStoryboardPlan>[0]["analysis"]; videoPrompt: string; warnings: string[]; long_video_total?: number }>(
+    input: StoryboardGenerationInput,
+    data: T
+  ): Promise<T> {
+    const total = data.long_video_total ?? 0;
+    let current = data;
+    let stalls = 0;
+    while (total && current.breakdown.segments.length < total && stalls < 2) {
+      const done = current.breakdown.segments.length;
+      setProgressPercent(Math.min(96, 45 + Math.round((done / total) * 50)));
+      setProgressMessage(
+        lang === "vi"
+          ? `Video dài: đã viết ${done}/${total} cảnh — đang viết tiếp cảnh ${done + 1}–${Math.min(total, done + 5)}…`
+          : `Long video: ${done}/${total} clips written — writing clips ${done + 1}–${Math.min(total, done + 5)}…`
+      );
+      const next = await extendStoryboardPlan({ input, breakdown: current.breakdown, analysis: current.analysis, provider, totalSegments: total });
+      if (!next.success) {
+        stalls++;
+        current = { ...current, warnings: [...current.warnings, next.error] };
+        continue;
+      }
+      stalls = next.data.written > 0 ? 0 : stalls + 1;
+      current = { ...current, breakdown: next.data.breakdown, videoPrompt: next.data.videoPrompt };
+    }
+    if (total && current.breakdown.segments.length < total) {
+      current = {
+        ...current,
+        warnings: [
+          ...current.warnings,
+          `⚠️ Mới viết được ${current.breakdown.segments.length}/${total} cảnh. Bấm "Viết tiếp các cảnh còn lại" ở trang duyệt kịch bản để viết nốt.`,
+        ],
+      };
+    } else if (total) {
+      current = { ...current, warnings: [...current.warnings.filter((w) => !/^Video dài \d+ cảnh: đã viết/.test(w)), `Video dài ${total} cảnh: đã viết đủ ${total}/${total} cảnh.`] };
+    }
+    return current;
+  }
+
+  // Script page: finish a long video whose parts stopped early.
+  const [extendingDraft, setExtendingDraft] = useState(false);
+  const continueLongDraft = async () => {
+    if (!draft || !genInput || !genAnalysis || extendingDraft) return;
+    const total = genInput.segment_count ?? draft.segments.length;
+    setExtendingDraft(true);
+    try {
+      const extended = await extendLongPlan(genInput, { breakdown: draft, analysis: genAnalysis, videoPrompt: "", warnings: [], long_video_total: total });
+      setDraft(extended.breakdown);
+      setPlanWarnings((current) => [...current, ...extended.warnings]);
+    } finally {
+      setExtendingDraft(false);
     }
   };
 
@@ -3783,6 +3852,19 @@ function ProjectWorkspace() {
             <CardTitle className="flex items-center gap-2 text-base">
               <Film className="h-4 w-4" /> {lang === "vi" ? "Các cảnh" : "Scenes"} ({draft.segments.length})
             </CardTitle>
+            {genInput && (genInput.segment_count ?? 0) > draft.segments.length ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
+                <span>
+                  {lang === "vi"
+                    ? `Video dài: mới có ${draft.segments.length}/${genInput.segment_count} cảnh.`
+                    : `Long video: ${draft.segments.length}/${genInput.segment_count} clips written.`}
+                </span>
+                <Button size="sm" variant="outline" onClick={continueLongDraft} disabled={extendingDraft} className="gap-1.5">
+                  {extendingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  {lang === "vi" ? "Viết tiếp các cảnh còn lại" : "Write the remaining clips"}
+                </Button>
+              </div>
+            ) : null}
           </CardHeader>
           <CardContent className="space-y-4">
             {draft.segments.map((s, i) => (
@@ -4948,6 +5030,44 @@ function ProjectWorkspace() {
     setAspectRatio("9:16");
     setCuteKids(config);
     setCuteKidsPhoto(kidPhoto.slice(0, 1));
+    setFamilyDrama(null);
+  };
+
+  // "Chuyện nhà" card → the form: a family drama, the lesson's cast locked from
+  // text, 6–18 clips (long videos are written in parts), dialogue on, the
+  // narrator only for the awakening at the end, vertical 9:16.
+  const applyFamilyDrama = (config: FamilyDramaConfig) => {
+    changeGenre("drama");
+    if (isStylizedCharacterRepresentation(characterRepresentation)) setCharacterRepresentation("auto");
+    setStoryIdea(familyDramaStoryIdea(config));
+    setScriptTreatment("polish");
+    setCharacters(familyDramaCast(config).map((member) => ({
+      name: member.name,
+      role: member.label,
+      appearance: member.appearance,
+      bodyType: "standard" as const,
+      isChild: member.isChild,
+      images: [],
+      makeup: "auto" as const,
+    })));
+    setSegmentCount(config.shots);
+    const familyCamera: DirectingProfileId[] = config.filming === "phone" ? ["everyday_naturalism", "handheld_vlog"] : ["cinematic_drama", "everyday_naturalism"];
+    setDirectingProfiles(familyCamera);
+    setDirectingProfile(familyCamera[0]!);
+    setCharacterDialogueEnabled(true);
+    setVoiceOverEnabled(config.narrator);
+    setAspectRatio("9:16");
+    setFamilyDrama(config);
+    setCuteKids(null);
+  };
+  const buildFamilyDrama = (config: FamilyDramaConfig) => {
+    applyFamilyDrama(config);
+    setAutoGenerate(true);
+  };
+  const openFamilyDramaRoom = (config: FamilyDramaConfig) => {
+    applyFamilyDrama(config);
+    setRoomSeed((prev) => ({ key: (prev?.key ?? 0) + 1, idea: familyDramaRoomSeed(config) }));
+    setShowWritersRoom(true);
   };
   const buildCuteKids = (config: CuteKidsConfig, kidPhoto: UploadedImage[]) => {
     applyCuteKids(config, kidPhoto);
@@ -5187,6 +5307,7 @@ function ProjectWorkspace() {
                 />
               )}
               <CuteKidsCard lang={lang} provider={scriptProvider} onBuild={buildCuteKids} onOpenRoom={openCuteKidsRoom} />
+              <FamilyDramaCard lang={lang} onBuild={buildFamilyDrama} onOpenRoom={openFamilyDramaRoom} />
               <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-primary">
                   <BookOpen className="h-4 w-4" />
@@ -5249,6 +5370,18 @@ function ProjectWorkspace() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("storyIdea")}</label>
+                {familyDrama && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-400/50 bg-amber-500/[0.06] px-3 py-1.5 text-xs">
+                    <span>
+                      🏠 {lang === "vi"
+                        ? `Chế độ Chuyện nhà: ${RELATION_LABEL[familyDrama.relation].vi}${familyDrama.lesson ? ` · 📚 ${familyDrama.lesson.title}` : ""} · ${familyDrama.shots} shot (${Math.floor((familyDrama.shots * 10) / 60)} phút${(familyDrama.shots * 10) % 60 ? ` ${(familyDrama.shots * 10) % 60} giây` : ""}) — hook → cao trào → bài học → tỉnh thức, nhãn AI khi đăng.`
+                        : `Family drama mode: ${RELATION_LABEL[familyDrama.relation].en}, ${familyDrama.shots} clips.`}
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={() => setFamilyDrama(null)}>
+                      {lang === "vi" ? "Tắt" : "Off"}
+                    </Button>
+                  </div>
+                )}
                 {cuteKids && (
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-pink-400/50 bg-pink-500/[0.06] px-3 py-1.5 text-xs">
                     <span>

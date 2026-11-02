@@ -6,6 +6,7 @@ export {
   generateStoryboardPlan,
   prepareStoryboardPlan,
   buildStoryboardPlan,
+  extendStoryboardPlan,
   generateBoardImage,
   finalizeScript,
   repairExportFindings,

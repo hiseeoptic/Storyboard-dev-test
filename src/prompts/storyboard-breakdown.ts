@@ -39,6 +39,8 @@ import { compileCookingRecipeDigest } from "@/lib/cooking";
 import { compileProductIRDigest } from "@/lib/product-ir";
 import { productPlacementDirective } from "@/lib/product-placement";
 import { cuteKidsDirective } from "@/lib/kids/cute-kids";
+import { familyDramaDirective } from "@/lib/family/family-drama";
+import { longVideoFirstPartDirective } from "@/lib/storyboard/long-video";
 import { outfitNamesLowerGarment } from "@/lib/nano-flow/prompt-compaction";
 import { CHILD_SAFE_WORDING_RULE } from "@/lib/kids/child-safe-wording";
 import { AI_LOOK_NEGATIVE, HUMAN_PERFORMANCE_DOCTRINE, performanceDirection } from "@/lib/performance/human-performance";
@@ -853,7 +855,11 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
   const briefBlock = (brief.length
     ? `\nBrief:\n${brief.join("\n")}${closedCastRule}${childWordingRule}${uploadedRule}`
     : `${closedCastRule}${childWordingRule}${uploadedRule}`) + (placementDirective ? `\n\n${placementDirective}` : "");
-  const kidsDirective = cuteKidsDirective(input.cute_kids);
+  const kidsDirective = [
+    cuteKidsDirective(input.cute_kids),
+    familyDramaDirective(input.family_drama),
+    input.long_video_total && input.long_video_total > (input.segment_count ?? 0) ? longVideoFirstPartDirective(input, input.long_video_total, input.segment_count) : "",
+  ].filter(Boolean).join("\n\n");
 
   const actionDramaBlock = actionDramaRequested(input) ? ACTION_DRAMA_DIRECTOR_PROFILE : "";
   const speechDirective = speechModeDirective(input, lang);
@@ -1066,7 +1072,11 @@ export function buildStoryboardUserPrompt(
           : "Feature the product clearly, dramatize the selling points for the target audience, land the key message, and close on the exact CTA above."}`
       : "";
   const storyboardPlacement = productPlacementDirective(input.product_placements, { adGenre: PLACEMENT_AD_GENRES.has(input.genre) });
-  const storyboardKids = cuteKidsDirective(input.cute_kids);
+  const storyboardKids = [
+    cuteKidsDirective(input.cute_kids),
+    familyDramaDirective(input.family_drama),
+    input.long_video_total && input.long_video_total > (input.segment_count ?? 0) ? longVideoFirstPartDirective(input, input.long_video_total, input.segment_count) : "",
+  ].filter(Boolean).join("\n\n");
   const productBriefBlock = `${productBriefBlockBase}${storyboardPlacement ? `\n\n${storyboardPlacement}` : ""}${storyboardKids ? `\n\n${storyboardKids}` : ""}`;
 
   // Story / film brief — for narrative (non-ad) genres.
@@ -1570,8 +1580,12 @@ export function buildStoryboardRepairUserPrompt(params: {
     world_context: breakdown.world_context,
     scene_bible: breakdown.scene_bible,
     character_locks: breakdown.character_locks,
+    // The structured places: every clip at a location reuses its blueprint.
+    ...(breakdown.location_blueprints?.length ? { location_blueprints: breakdown.location_blueprints } : {}),
     product_dna: breakdown.product_dna,
   };
+  // A family drama keeps its four-movement contract in every rewrite / long-video part.
+  const familyContract = familyDramaDirective(input.family_drama);
   const targetCharacterSet = new Set(
     characterNames.map((name) => name.trim().toLowerCase())
   );
@@ -1596,7 +1610,7 @@ The deterministic Layer A+B validator rejected only the listed storyboard segmen
 
 IMMUTABLE PROJECT AUTHORITY:
 ${JSON.stringify(lockedProject)}
-
+${familyContract ? `\n${familyContract}\n` : ""}
 DETERMINISTIC VALIDATOR REPORT:
 ${JSON.stringify(report)}
 

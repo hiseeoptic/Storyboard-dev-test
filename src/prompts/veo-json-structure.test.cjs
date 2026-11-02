@@ -1189,3 +1189,26 @@ test("an incomplete voice drops the whole numeric clause before the locked fallb
   assert.doesNotMatch(voice, /approximately,|145–,|, ,/);
   assert.match(voice, /^Northern Vietnamese accent; adult male timbre, calm; /);
 });
+
+test("family drama contract reaches the writer and the storyboard; part 1 of a long video says so", () => {
+  const { findFamilyLesson } = require("../lib/family/family-drama.ts");
+  const lesson = findFamilyLesson("couple_gentle_startup_01");
+  const input = {
+    story_idea: "Vợ chồng cãi nhau vì bát đũa",
+    genre: "drama",
+    style: "cinematic",
+    scene_count: 15,
+    segment_count: 15,
+    dialogue_language: "Vietnamese",
+    family_drama: { request: "", relation: "couple", lessonId: lesson.id, lesson, names: {}, dialect: "north", filming: "cinematic", shots: 15, narrator: true, tone: "drama" },
+  };
+  for (const prompt of [buildScriptWriterUserPrompt(input), buildStoryboardUserPrompt(input)]) {
+    assert.match(prompt, /FAMILY LESSON DRAMA \(HARD\)/);
+    assert.match(prompt, /clips 9–13 = BÀI HỌC/);
+    assert.doesNotMatch(prompt, /LONG VIDEO — PART 1/, "the full-story script is not a part");
+  }
+  const part1 = buildStoryboardUserPrompt({ ...input, segment_count: 8, long_video_total: 15 });
+  assert.match(part1, /LONG VIDEO — PART 1 OF A 15-CLIP STORY/);
+  assert.match(part1, /writes ONLY clips 1–8/);
+  assert.match(part1, /Produce EXACTLY 8 segments/);
+});
