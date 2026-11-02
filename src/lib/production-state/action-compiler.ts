@@ -247,7 +247,8 @@ export function compileAtomicActions(
     // even when the ledger did not list the contact ("rests her right hand on the
     // box rim" listed only Na herself). A contact with oneself is no contact.
     const manipulates = contactVerb || CONTACT_VERB_MORE.test(verb);
-    if (manipulates) {
+    // Structured contacts from the planner are the authority: no text guessing on top.
+    if (manipulates && !change.declared_contact_entity_ids) {
       if (externalObjectId && !contactEntityIds.includes(externalObjectId)) contactEntityIds.push(externalObjectId);
       for (const mentioned of mentionedObjects(verb, registry)) {
         if (!contactEntityIds.includes(mentioned)) contactEntityIds.push(mentioned);

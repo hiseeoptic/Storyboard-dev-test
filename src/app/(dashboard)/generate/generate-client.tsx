@@ -56,6 +56,7 @@ import type { TopicCategory } from "@/services/topics";
 import { buildVeoJson, genreAmbientAudio } from "@/prompts";
 import { CharacterStudio } from "./character-studio";
 import { WritersRoom } from "./writers-room";
+import { LocationBlueprintEditor } from "./location-blueprint-editor";
 import { SetDirectionPanel } from "./set-direction";
 import { CuteKidsCard } from "./cute-kids-card";
 import { LocationPresetPanel, roomImages } from "./location-presets";
@@ -3768,6 +3769,13 @@ function ProjectWorkspace() {
             </CardContent>
           </Card>
         )}
+
+        {/* Location blueprints (Phòng biên tập): the structured source of every place */}
+        <LocationBlueprintEditor
+          draft={draft}
+          lang={lang}
+          onChange={(blueprints) => setDraft((d) => (d ? { ...d, location_blueprints: blueprints } : d))}
+        />
 
         {/* Segments */}
         <Card>

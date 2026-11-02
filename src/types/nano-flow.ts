@@ -124,6 +124,9 @@ export interface NanoFlowVideoRefSelector extends NanoFlowRefSelector {
 export interface NanoFlowBeat {
   beat?: string;
   camera?: string;
+  /** Structured shot size / move (planner fields; absent in older projects). */
+  shot_size?: "ECU" | "CU" | "MS" | "WS";
+  move?: "hold" | "push_in" | "pull_back" | "pan" | "track" | "tilt";
 }
 
 export interface NanoFlowScriptAuthority {

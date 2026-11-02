@@ -577,6 +577,10 @@ export type MarketingRole = "hook" | "problem" | "solution" | "body" | "cta";
 export interface ShotBeat {
   beat: string; // short action description
   camera: string; // camera note, e.g. [CLOSE] slow push-in
+  /** Structured shot size of this framing (the camera rule reads this first). */
+  shot_size?: "ECU" | "CU" | "MS" | "WS";
+  /** Structured camera move INTO this framing. */
+  move?: "hold" | "push_in" | "pull_back" | "pan" | "track" | "tilt";
 }
 
 /**
@@ -667,6 +671,10 @@ export interface SegmentEntityState {
 
 export interface SegmentStateChange {
   entity_id: string;
+  /** Structured: the hand that performs this change ("none" for a passive process). */
+  hand?: "left_hand" | "right_hand" | "both_hands" | "none";
+  /** Structured: stable ids of every entity a hand touches in this change. */
+  touches?: string[];
   /** Intrinsic physical condition before/after (temperature, fullness,
    * integrity, open/closed…). Never encode location, contact or possession. */
   from: string;

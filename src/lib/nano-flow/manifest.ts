@@ -2426,7 +2426,12 @@ export function buildNanoFlowManifest(
       // Do not expose a second legacy copy for an extension to append again.
       dialogue: null,
       voice: null,
-      beats: (seg.beats ?? []).map((b) => ({ beat: b.beat, camera: b.camera })),
+      beats: (seg.beats ?? []).map((b) => ({
+        beat: b.beat,
+        camera: b.camera,
+        ...(b.shot_size ? { shot_size: b.shot_size } : {}),
+        ...(b.move ? { move: b.move } : {}),
+      })),
       wardrobe_change: Object.keys(wardrobeChange).length ? wardrobeChange : null,
       // Store the SLIM authority; the full canonical shot state is available once
       // at manifest.production_state.shots[index] (no per-shot duplication).

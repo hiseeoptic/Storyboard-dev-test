@@ -258,6 +258,15 @@ export function compileLegacyPhysicalShot(
     change.contact_entity_ids = hasContactAction ? [change.entity_id] : [];
     change.duration_s = null;
     change.physical_conditions = [];
+    // The planner's structured hand / touches win over the text inference.
+    if (change.declared_body_part !== undefined) change.body_part = change.declared_body_part;
+    if (change.declared_contact_entity_ids) {
+      change.contact_entity_ids = [...new Set([
+        ...change.declared_contact_entity_ids,
+        ...(change.declared_body_part !== null && (holderChanged || change.declared_contact_entity_ids.length) ? [change.entity_id] : []),
+      ])];
+    }
+    if (change.declared_both_hands) change.physical_conditions.push("uses both hands");
   }
 
   // A boundary-proven sit→stand is not creative invention: the body must shift

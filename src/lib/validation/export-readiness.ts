@@ -49,7 +49,7 @@ export function validateExportReadiness(
   const prompts = validatePromptExports(manifest);
   // Script supervisor (02/11/2026): world key, fixed set, prop plan, camera
   // rule. Its high findings are the ones the export gate blocks on.
-  const continuity = superviseContinuity(manifest);
+  const continuity = superviseContinuity(manifest, breakdown);
   return buildReport(
     [
       ...source.findings,

@@ -335,3 +335,101 @@ export function plannerBlueprintFor(
   const bp = normalizeLocationBlueprint(raw, { propNames });
   return bp && bp.fixed_elements.length ? bp : null;
 }
+
+// ── Editor helpers (Phòng biên tập: the user reviews / edits each place) ──────
+
+export type FrameX = "" | "left" | "centre" | "right";
+export type FrameDepth = "" | "foreground" | "midground" | "background";
+
+/** "left background" → { x: "left", depth: "background" }; free text → both "". */
+export function splitFrameZone(zone: string): { x: FrameX; depth: FrameDepth } {
+  const z = normalizeFrameZone(zone);
+  const x = (/\b(left|centre|right)\b/.exec(z)?.[1] ?? "") as FrameX;
+  const depth = (/\b(foreground|midground|background)\b/.exec(z)?.[1] ?? "") as FrameDepth;
+  return { x, depth };
+}
+
+export function joinFrameZone(x: FrameX, depth: FrameDepth): string {
+  return [x, depth].filter(Boolean).join(" ");
+}
+
+interface EditorBreakdown {
+  location_blueprints?: unknown;
+  character_locks?: Array<{ name?: string }>;
+  scene_bible?: { backdrop?: string; lighting?: string };
+  segments?: Array<{
+    location_id?: string | null;
+    environment_ref?: string | null;
+    first_frame_prompt?: string;
+    title?: string;
+    state_ledger?: { start?: Array<{ entity_id?: string }>; end?: Array<{ entity_id?: string }>; changes?: Array<{ entity_id?: string }> };
+  }>;
+}
+
+/** The places the segments are filmed at, in first-use order (no "custom"). */
+export function editorLocations(breakdown: EditorBreakdown): string[] {
+  const out: string[] = [];
+  for (const segment of breakdown.segments ?? []) {
+    const id = str(segment.location_id) || str(segment.environment_ref);
+    if (id && id !== "custom" && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/**
+ * The blueprint the editor shows for a place, as stored — NOT normalised, so a
+ * row being typed (empty name) or a prop the user is warned about stays on
+ * screen. The export path normalises it.
+ */
+export function editorBlueprint(breakdown: EditorBreakdown, locationId: string): LocationBlueprint | null {
+  const raw = Array.isArray(breakdown.location_blueprints)
+    ? breakdown.location_blueprints.find((b) => isObj(b) && str(b.location_id ?? b.id) === locationId)
+    : undefined;
+  if (!isObj(raw)) return null;
+  const elements: BlueprintElement[] = (Array.isArray(raw.fixed_elements) ? raw.fixed_elements : []).map((item) => {
+    if (typeof item === "string") return elementFrom(item) ?? { name: item, frame_zone: "", relation: "" };
+    const o = isObj(item) ? item : {};
+    return {
+      name: typeof o.name === "string" ? o.name : "",
+      frame_zone: typeof o.frame_zone === "string" ? o.frame_zone : "",
+      relation: typeof o.relation === "string" ? o.relation : "",
+    };
+  });
+  const kindRaw = lower(raw.kind);
+  return {
+    location_id: locationId,
+    name: typeof raw.name === "string" ? raw.name : "",
+    kind: (KINDS as string[]).includes(kindRaw) ? (kindRaw as BlueprintKind) : inferKind(`${str(raw.name)} ${str(raw.master_view)}`),
+    master_view: typeof raw.master_view === "string" ? raw.master_view : "",
+    anchor: elements[0]?.name ?? str(raw.anchor),
+    fixed_elements: elements,
+    light: typeof raw.light === "string" ? raw.light : "",
+    source: raw.source === "derived" ? "derived" : "planner",
+  };
+}
+
+/**
+ * A first draft for a place that has no blueprint yet, built from the script's
+ * own prose (first start state at that place + scene-bible backdrop). It is
+ * marked "planner" because the user reviews and saves it as the authority.
+ */
+export function seedBlueprint(breakdown: EditorBreakdown, locationId: string): LocationBlueprint {
+  const segment = (breakdown.segments ?? []).find((s) => (str(s.location_id) || str(s.environment_ref)) === locationId);
+  const derived = blueprintFromProse({
+    locationId,
+    name: locationId.replace(/[_-]+/g, " "),
+    setting: str(segment?.first_frame_prompt),
+    scenery: str(breakdown.scene_bible?.backdrop),
+    lighting: str(breakdown.scene_bible?.lighting),
+    propNames: ledgerPropNames(breakdown),
+  });
+  return { ...derived, source: "planner" };
+}
+
+/** Replace (or add) one place's blueprint, keeping the others as they are. */
+export function upsertBlueprint(list: unknown, blueprint: LocationBlueprint): LocationBlueprint[] {
+  const current = (Array.isArray(list) ? list : []).filter(isObj) as unknown as LocationBlueprint[];
+  const at = current.findIndex((b) => str(b.location_id) === blueprint.location_id);
+  const next = { ...blueprint, anchor: blueprint.fixed_elements[0]?.name ?? blueprint.anchor, source: "planner" as const };
+  return at >= 0 ? current.map((b, i) => (i === at ? next : b)) : [...current, next];
+}

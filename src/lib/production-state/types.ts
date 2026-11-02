@@ -225,6 +225,12 @@ export interface ProductionStateChange {
   contact_entity_ids?: string[];
   duration_s?: number | null;
   physical_conditions?: string[];
+  /** Structured hand written by the planner (state_ledger change "hand"); wins over inference. */
+  declared_body_part?: LimbId | null;
+  /** The planner said "both_hands". */
+  declared_both_hands?: boolean;
+  /** Structured contacts written by the planner (state_ledger change "touches"); wins over inference. */
+  declared_contact_entity_ids?: string[];
 }
 
 export interface AtomicAction {

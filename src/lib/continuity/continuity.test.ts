@@ -368,3 +368,114 @@ test("continuity end frames (opt-in): only shots where a hand moves a prop get a
   const forced = buildNanoFlowManifest(bd, { veoClips: [CLIPS[0], CLIPS[0]] as never, continuityEndFrames: true, frameModeOverrides: { 1: "start" } });
   assert.equal(forced.shots[0]!.frame_mode, "start");
 });
+
+test("structured camera fields: shot_size / move are read before the camera text and follow the rewrite", async () => {
+  const { normalizeBeatCameraFields, normalizeShotSize, normalizeCameraMove } = await import("./camera.ts");
+  assert.equal(normalizeShotSize("wide"), "WS");
+  assert.equal(normalizeShotSize("Medium close-up"), "CU");
+  assert.equal(normalizeShotSize("?"), null);
+  assert.equal(normalizeCameraMove("Push-in"), "push_in");
+  assert.equal(normalizeCameraMove("dolly out"), "pull_back");
+  // The prose says nothing about size; the structured fields do.
+  const beats = [
+    { beat: "a", camera: "handheld: Lan at the counter", shot_size: "MS", move: "hold" },
+    { beat: "b", camera: "handheld: on her hands", shot_size: "CU", move: "push_in" },
+    { beat: "c", camera: "handheld: both of them", shot_size: "MS", move: "pull_back" },
+  ];
+  assert.deepEqual(analyzeCameraPath(beats).sizes, ["MS", "CU", "MS"]);
+  const fixed = enforceCameraContinuity(beats);
+  assert.equal(fixed.changed, true);
+  assert.deepEqual(fixed.beats.map((b) => [b.shot_size, b.move]), [["MS", "hold"], ["MS", "hold"], ["MS", "hold"]]);
+  // Same size but a structured push_in then pull_back is still two directions.
+  assert.equal(analyzeCameraPath([{ camera: "x", shot_size: "MS" }, { camera: "y", shot_size: "MS", move: "push_in" }, { camera: "z", shot_size: "MS", move: "pull_back" }]).turns, 1);
+  const breakdown = { segments: [{ beats: [{ beat: "a", camera: "x", shot_size: "close up", move: "zoom in" }, { beat: "b", camera: "y", shot_size: "??", move: "??" }] }] };
+  normalizeBeatCameraFields(breakdown);
+  assert.deepEqual(breakdown.segments[0]!.beats, [{ beat: "a", camera: "x", shot_size: "CU", move: "push_in" }, { beat: "b", camera: "y" }]);
+});
+
+test("structured hand / touches in the state ledger win over guessing from the verb", async () => {
+  const { buildProductionState } = await import("../production-state/normalizer.ts");
+  const state = buildProductionState({
+    total_duration_seconds: 10,
+    character_locks: [{ name: "Lan" }],
+    segments: [{
+      segment_number: 1,
+      duration_seconds: 10,
+      characters_in_scene: ["Lan"],
+      location_id: "night_market",
+      state_ledger: {
+        start: [{ entity_id: "Lan", state: "standing", position: "at the counter" }, { entity_id: "paper_cup", state: "full", position: "on the counter" }, { entity_id: "serving_tray", state: "empty", position: "counter, right end" }],
+        // The verb names no hand and no tray contact; the structured fields do.
+        changes: [{ entity_id: "paper_cup", from: "full", action: "Lan moves the cup over", to: "full", caused_by: "Lan", from_position: "on the counter", to_position: "on the serving tray", hand: "left_hand", touches: ["paper_cup", "serving_tray"] }],
+        end: [{ entity_id: "Lan", state: "standing", position: "at the counter" }, { entity_id: "paper_cup", state: "full", position: "on the serving tray" }, { entity_id: "serving_tray", state: "holds the cup", position: "counter, right end" }],
+      },
+    }],
+  } as never);
+  const change = state.shots[0]!.changes[0]!;
+  assert.equal(change.body_part, "left_hand");
+  const action = state.shots[0]!.actions[0]!;
+  assert.equal(action.body_part, "left_hand");
+  const ids = new Map(state.registry.map((r) => [r.display_name, r.entity_id]));
+  assert.deepEqual([...action.contact_entity_ids].sort(), [ids.get("paper_cup"), ids.get("serving_tray")].sort());
+});
+
+test("script supervisor cross-checks each start state with its place's blueprint (CONT-010) and asks for structured hands (CONT-011)", () => {
+  const breakdown = twoPlaceBreakdown(true) as unknown as { segments: Array<Record<string, unknown>> };
+  breakdown.segments[0]!.first_frame_prompt = "Lan stands at the noodle stall counter; the plastic stools are on the right of the frame.";
+  breakdown.segments[1]!.first_frame_prompt = "Lan sits and looks out.";
+  const m = buildNanoFlowManifest(breakdown as never, { veoClips: CLIPS as never });
+  const report = superviseContinuity(m, breakdown as never);
+  const cont10 = report.findings.filter((f) => f.code === "CONT-010").map((f) => `${f.segment_number}:${f.message}`);
+  assert.ok(cont10.some((f) => f.startsWith("1:") && /plastic stools" ở bên phải/.test(f)), cont10.join(" | "));
+  assert.ok(cont10.some((f) => f.startsWith("2:") && /không nhắc đồ cố định/.test(f)), cont10.join(" | "));
+  assert.ok(report.findings.filter((f) => f.code === "CONT-010").every((f) => f.severity === "medium"));
+});
+
+test("CONT-011: a hand change on a prop without structured hand/touches is flagged in a structured project", () => {
+  const withLedger = (structured: boolean) => ({
+    ...twoPlaceBreakdown(true),
+    segments: [{
+      segment_number: 1, duration_seconds: 10, marketing_role: "hook", first_frame_prompt: "Lan at the noodle stall counter", full_prompt: "x", motion_prompt: "x",
+      characters_in_scene: ["Lan"], location_id: "night_market", environment_ref: "night_market", beats: [{ beat: "a", camera: "[MS] medium of Lan" }],
+      state_ledger: {
+        start: [{ entity_id: "paper_cup", state: "full", position: "on the stall counter" }],
+        changes: [{
+          entity_id: "paper_cup", from: "full", action: "Lan slides the cup with her right hand onto the tray", to: "full", caused_by: "Lan", from_position: "on the stall counter", to_position: "on the serving tray",
+          ...(structured ? { hand: "right_hand", touches: ["paper_cup"] } : {}),
+        }],
+        end: [{ entity_id: "paper_cup", state: "full", position: "on the serving tray" }],
+      },
+    }],
+    total_duration_seconds: 10,
+  }) as unknown as Parameters<typeof buildNanoFlowManifest>[0];
+  const codes = (structured: boolean) => superviseContinuity(buildNanoFlowManifest(withLedger(structured), { veoClips: [CLIPS[0]] as never })).findings.map((f) => f.code);
+  assert.ok(codes(false).includes("CONT-011"));
+  assert.ok(!codes(true).includes("CONT-011"));
+});
+
+test("Phòng biên tập helpers: list places, seed from the script, edit without losing a row being typed", async () => {
+  const B = await import("./blueprint.ts");
+  const draft = {
+    character_locks: [{ name: "Lan" }],
+    scene_bible: { backdrop: "Small bakery: long glass counter, bread shelves on the back wall, a round café table by the window", lighting: "Morning sun from the front window" },
+    segments: [
+      { segment_number: 1, location_id: "bakery", first_frame_prompt: "Lan behind the glass counter", state_ledger: { start: [{ entity_id: "bread_basket" }], changes: [], end: [] } },
+      { segment_number: 2, location_id: "custom" },
+      { segment_number: 3, environment_ref: "bakery" },
+    ],
+  };
+  assert.deepEqual(B.editorLocations(draft), ["bakery"]);
+  assert.equal(B.editorBlueprint(draft, "bakery"), null);
+  const seeded = B.seedBlueprint(draft, "bakery");
+  assert.equal(seeded.source, "planner", "the reviewed draft becomes the authority");
+  assert.ok(seeded.fixed_elements.length >= 2);
+  const list = B.upsertBlueprint(undefined, seeded);
+  const withRow = B.upsertBlueprint(list, { ...seeded, fixed_elements: [...seeded.fixed_elements, { name: "", frame_zone: "", relation: "" }] });
+  const shown = B.editorBlueprint({ ...draft, location_blueprints: withRow }, "bakery")!;
+  assert.equal(shown.fixed_elements.at(-1)!.name, "", "an empty row the user is filling stays on screen");
+  assert.deepEqual(B.splitFrameZone("left background"), { x: "left", depth: "background" });
+  assert.equal(B.joinFrameZone("right", ""), "right");
+  // The export path still cleans it (empty rows and props are dropped).
+  const exported = B.normalizeLocationBlueprint(withRow[0], { propNames: B.ledgerPropNames(draft) })!;
+  assert.ok(exported.fixed_elements.every((e) => e.name.trim()));
+});

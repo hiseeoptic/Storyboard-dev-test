@@ -15,6 +15,9 @@
 //                     frame edge (the easiest place to slide out of frame)
 //   CONT-008 medium — the shot's place name is a script sentence
 //   CONT-009 medium — a location has no planner blueprint (derived from prose)
+//   CONT-010 medium — a shot's written start state ignores or contradicts its
+//                     place's blueprint (no fixed element named / wrong side)
+//   CONT-011 medium — a hand change on a prop has no structured hand/touches
 // High findings block the export until they are fixed (see export gate).
 // ============================================================
 import type { NanoFlowManifest } from "@/types/nano-flow";
@@ -50,7 +53,31 @@ export interface ContinuityReport {
 }
 
 /** Check a manifest that went through applyContinuityContract (or not — then CONT-004 says so). */
-export function superviseContinuity(manifest: NanoFlowManifest): ContinuityReport {
+/** The script source the supervisor cross-checks against the blueprints (optional). */
+export interface ContinuitySource {
+  segments?: Array<{ segment_number?: number; location_id?: string | null; environment_ref?: string | null; first_frame_prompt?: string }>;
+}
+
+const SIDE_WORDS: Record<"left" | "right", RegExp> = {
+  left: /\b(?:left|left-hand)\b|(?:^|\s)(?:bên trái|phía trái|trái)(?=\s|$|[,.;])/iu,
+  right: /\b(?:right|right-hand)\b|(?:^|\s)(?:bên phải|phía phải|phải)(?=\s|$|[,.;])/iu,
+};
+
+function singularHead(name: string): string {
+  const word = name.toLocaleLowerCase().trim().split(/\s+/).pop() ?? "";
+  if (/(?:x|ch|sh|ss)es$/.test(word)) return word.slice(0, -2);
+  if (/[^s]s$/.test(word)) return word.slice(0, -1);
+  return word;
+}
+
+function mentions(text: string, name: string): boolean {
+  const t = text.toLocaleLowerCase();
+  const full = name.toLocaleLowerCase().trim();
+  const head = singularHead(name);
+  return (full.length > 2 && t.includes(full)) || (head.length >= 3 && new RegExp(`(?<!\\p{L})${head.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:e?s)?(?!\\p{L})`, "iu").test(t));
+}
+
+export function superviseContinuity(manifest: NanoFlowManifest, source: ContinuitySource = {}): ContinuityReport {
   const findings: SemanticFinding[] = [];
   const keys = manifest.continuity?.world_keys ?? {};
   const rows = new Map((manifest.continuity?.log ?? []).map((row) => [row.shot_id, { ...row, findings: [] as string[] }]));
@@ -182,6 +209,72 @@ export function superviseContinuity(manifest: NanoFlowManifest): ContinuityRepor
       }, shot.shot_id);
     }
   });
+
+  // CONT-010 — each shot's written start state agrees with its place's
+  // planner blueprint: it names the place's fixed elements, and never puts one
+  // on the other side of the frame than the blueprint does.
+  const shotIdBySegment = new Map(manifest.shots.map((shot, i) => [shot.index ?? i + 1, shot.shot_id]));
+  for (const [i, segment] of (source.segments ?? []).entries()) {
+    const loc = String(segment.location_id || segment.environment_ref || "").trim();
+    const blueprint = blueprints[loc];
+    const text = String(segment.first_frame_prompt ?? "");
+    if (!blueprint || blueprint.source !== "planner" || !text.trim()) continue;
+    const number = segment.segment_number ?? i + 1;
+    const shotId = shotIdBySegment.get(number);
+    const named = blueprint.fixed_elements.filter((e) => mentions(text, e.name));
+    if (named.length === 0) {
+      add({
+        code: "CONT-010",
+        severity: "medium",
+        scope: "segment",
+        segment_number: number,
+        message: `Mô tả mở đầu của cảnh không nhắc đồ cố định nào của "${blueprint.name}" (${blueprint.fixed_elements.slice(0, 3).map((e) => e.name).join(", ")}…) — dễ bị vẽ lại khác bối cảnh.`,
+        evidence: `${loc} — FIX: name the anchor (${blueprint.anchor}) and the nearby fixed elements in first_frame_prompt with the blueprint's words and positions.`,
+      }, shotId);
+    }
+    for (const element of named) {
+      const side = /^left\b/.test(element.frame_zone) ? "left" : /^right\b/.test(element.frame_zone) ? "right" : "";
+      if (!side) continue;
+      const opposite = side === "left" ? "right" : "left";
+      const clause = text.split(/[.;,]|\bwhile\b|\band\b/i).find((c) => mentions(c, element.name) && SIDE_WORDS[opposite].test(c) && !SIDE_WORDS[side].test(c));
+      if (!clause) continue;
+      add({
+        code: "CONT-010",
+        severity: "medium",
+        scope: "segment",
+        segment_number: number,
+        message: `Mô tả mở đầu đặt "${element.name}" ở bên ${opposite === "left" ? "trái" : "phải"}, nhưng bản thiết kế "${blueprint.name}" ghi bên ${side === "left" ? "trái" : "phải"} (${element.frame_zone}).`,
+        evidence: `"${clause.trim()}" — FIX: use the blueprint's side for ${element.name}.`,
+      }, shotId);
+    }
+  }
+
+  // CONT-011 — in a project written with the structured schema (planner
+  // blueprints present), every hand change on a prop declares its hand and
+  // what it touches instead of leaving the app to guess from the verb.
+  const structured = Object.values(blueprints).some((b) => b.source === "planner");
+  if (structured) {
+    const registry = manifest.production_state?.registry ?? [];
+    const kindOf = new Map(registry.map((r) => [r.entity_id, r.kind]));
+    const shotIdByProduction = new Map(manifest.shots.map((shot) => [shot.state_authority?.production_shot_id ?? "", shot.shot_id]));
+    for (const production of manifest.production_state?.shots ?? []) {
+      for (const change of production.changes ?? []) {
+        const kind = kindOf.get(change.entity_id);
+        if (kind !== "object" && kind !== "product") continue;
+        const handDriven = /\b(?:hand|hands|fingers?|palm)\b/i.test(`${change.action} ${change.caused_by}`) || Boolean(change.from_holder_entity_id || change.to_holder_entity_id);
+        if (!handDriven || (change.declared_body_part !== undefined && change.declared_contact_entity_ids)) continue;
+        const label = (registry.find((r) => r.entity_id === change.entity_id)?.display_name ?? change.entity_id).replace(/_/g, " ");
+        add({
+          code: "CONT-011",
+          severity: "medium",
+          scope: "segment",
+          segment_number: production.segment_number,
+          message: `Thay đổi của "${label}" chưa ghi "hand" và "touches" có cấu trúc trong sổ trạng thái — app đang phải đoán tay và vật chạm từ câu chữ.`,
+          evidence: `${change.entity_id} — FIX: add "hand" (left_hand | right_hand | both_hands) and "touches" (entity ids) to this state_ledger change.`,
+        }, shotIdByProduction.get(production.shot_id));
+      }
+    }
+  }
 
   return { findings, log: [...rows.values()] };
 }

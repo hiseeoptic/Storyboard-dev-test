@@ -16,9 +16,64 @@
 
 export type ShotSize = "ECU" | "CU" | "MS" | "WS";
 
+export type CameraMove = "hold" | "push_in" | "pull_back" | "pan" | "track" | "tilt";
+
 export interface CameraBeat {
   beat?: string;
   camera?: string;
+  /** Structured fields written by the planner; read before the camera text. */
+  shot_size?: string;
+  move?: string;
+}
+
+const SIZES = new Set<ShotSize>(["ECU", "CU", "MS", "WS"]);
+const MOVES = new Set<CameraMove>(["hold", "push_in", "pull_back", "pan", "track", "tilt"]);
+
+/** "wide"/"WIDE"/"ws" → "WS"; unknown → null. */
+export function normalizeShotSize(value: unknown): ShotSize | null {
+  const v = String(value ?? "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+  if (SIZES.has(v as ShotSize)) return v as ShotSize;
+  if (/^(?:EXTREME_CLOSE(?:_UP)?|MACRO|INSERT|XCU)$/.test(v)) return "ECU";
+  if (/^(?:CLOSE(?:_UP)?|MCU|MEDIUM_CLOSE(?:_UP)?)$/.test(v)) return "CU";
+  if (/^(?:MEDIUM(?:_SHOT)?|MID|TWO_SHOT|MEDIUM_WIDE|MWS|COWBOY)$/.test(v)) return "MS";
+  if (/^(?:WIDE(?:_SHOT)?|FULL(?:_SHOT)?|LONG(?:_SHOT)?|ESTABLISHING|EST|LS)$/.test(v)) return "WS";
+  return null;
+}
+
+/** "push-in"/"Push In"/"dolly in" → "push_in"; unknown → null. */
+export function normalizeCameraMove(value: unknown): CameraMove | null {
+  const v = String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (MOVES.has(v as CameraMove)) return v as CameraMove;
+  if (/^(?:static|locked|locked_off|none|still)$/.test(v)) return "hold";
+  if (/^(?:dolly_in|zoom_in|push|move_in)$/.test(v)) return "push_in";
+  if (/^(?:dolly_out|zoom_out|pull_out|pullback|pull|move_out|reveal)$/.test(v)) return "pull_back";
+  if (/^(?:orbit|arc|lateral|truck|follow)$/.test(v)) return "track";
+  return null;
+}
+
+/** The beat's size: the structured field, else read from its camera text. */
+export function beatShotSize(beat: CameraBeat | undefined): ShotSize {
+  return normalizeShotSize(beat?.shot_size) ?? shotSizeOf(String(beat?.camera ?? ""));
+}
+
+/** Clean the planner's structured camera fields on every beat (unknown values dropped). */
+export function normalizeBeatCameraFields<T extends { segments?: Array<{ beats?: CameraBeat[] }> }>(breakdown: T): T {
+  for (const segment of breakdown.segments ?? []) {
+    for (const beat of segment.beats ?? []) {
+      if (!beat) continue;
+      if (beat.shot_size !== undefined) {
+        const size = normalizeShotSize(beat.shot_size);
+        if (size) beat.shot_size = size;
+        else delete beat.shot_size;
+      }
+      if (beat.move !== undefined) {
+        const move = normalizeCameraMove(beat.move);
+        if (move) beat.move = move;
+        else delete beat.move;
+      }
+    }
+  }
+  return breakdown;
 }
 
 const RANK: Record<ShotSize, number> = { ECU: 0, CU: 1, MS: 2, WS: 3 };
@@ -51,8 +106,9 @@ export interface CameraPathAnalysis {
 export const CAMERA_HOLD_MARK = "HOLD the opening";
 
 export function analyzeCameraPath(beats: CameraBeat[] | undefined): CameraPathAnalysis {
-  const list = (beats ?? []).filter((b) => (b?.camera || "").trim());
-  const sizes = list.map((b) => shotSizeOf(String(b.camera)));
+  const list = (beats ?? []).filter((b) => (b?.camera || "").trim() || normalizeShotSize(b?.shot_size));
+  // Structured shot_size first; the camera text only when the planner gave none.
+  const sizes = list.map((b) => beatShotSize(b));
   let turns = 0;
   let direction = 0;
   let rewidens = false;
@@ -62,12 +118,15 @@ export function analyzeCameraPath(beats: CameraBeat[] | undefined): CameraPathAn
     if (rank > tightest) rewidens = true;
     tightest = Math.min(tightest, rank);
     if (i === 0) continue;
-    const step = Math.sign(rank - RANK[sizes[i - 1]!]);
+    // Size change decides the direction; at the same size a structured
+    // push_in / pull_back still counts as a move in that direction.
+    const move = normalizeCameraMove(list[i]!.move);
+    const step = Math.sign(rank - RANK[sizes[i - 1]!]) || (move === "push_in" ? -1 : move === "pull_back" ? 1 : 0);
     if (step === 0) continue;
     if (direction !== 0 && step !== direction) turns++;
     direction = step;
   }
-  const locked = list.slice(1).some((b) => String(b.camera).includes(CAMERA_HOLD_MARK));
+  const locked = list.slice(1).some((b) => String(b.camera ?? "").includes(CAMERA_HOLD_MARK));
   return { sizes, turns, rewidens, locked };
 }
 
@@ -103,7 +162,7 @@ export function enforceCameraContinuity(beats: CameraBeat[] | undefined): { beat
     return { beats: list, changed: false, before: analysis.sizes, after: analysis.sizes };
   }
   const first = String(list[0]?.camera || "");
-  const openingSize = shotSizeOf(first);
+  const openingSize = beatShotSize(list[0]);
   const openingCode = CODE.exec(first)?.[1] ?? "";
   const next = list.map((beat, index) => {
     if (index === 0 || !(beat?.camera || "").trim()) return beat;
@@ -124,7 +183,13 @@ export function enforceCameraContinuity(beats: CameraBeat[] | undefined): { beat
       .join("; ");
     const prefix = code ? openingCode || code : grammar;
     const hold = `${CAMERA_HOLD_MARK} ${SIZE_LABEL[openingSize]} framing from the same camera position and height (no push-in, no pull-back, no reframing; a gentle handheld breath at most)`;
-    return { ...beat, camera: `${prefix}${hold}${kept ? `; ${kept}` : ""}`.replace(/\.\.$/, ".") };
+    return {
+      ...beat,
+      camera: `${prefix}${hold}${kept ? `; ${kept}` : ""}`.replace(/\.\.$/, "."),
+      // The structured fields follow the rewrite.
+      ...(beat.shot_size !== undefined || list.some((b) => b?.shot_size !== undefined) ? { shot_size: openingSize } : {}),
+      ...(beat.move !== undefined || list.some((b) => b?.move !== undefined) ? { move: "hold" } : {}),
+    };
   });
   return { beats: next, changed: true, before: analysis.sizes, after: analyzeCameraPath(next).sizes };
 }

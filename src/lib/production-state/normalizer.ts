@@ -259,6 +259,25 @@ export function buildProductionState(breakdown: LegacyBreakdown): ProductionStat
       : {}),
     ...(change.to_orientation !== undefined ? { to_orientation: change.to_orientation } : {}),
     ...(change.trace !== undefined ? { trace: clean(change.trace) } : {}),
+    // Structured hand / contacts from the planner (additive; absent in older ledgers).
+    ...(change.hand === "left_hand" || change.hand === "right_hand"
+      ? { declared_body_part: change.hand }
+      : change.hand === "both_hands"
+        ? { declared_body_part: "right_hand" as const, declared_both_hands: true }
+        : change.hand === "none"
+          ? { declared_body_part: null }
+          : {}),
+    ...(Array.isArray(change.touches)
+      ? {
+          declared_contact_entity_ids: [
+            ...new Set(
+              change.touches
+                .map((touched) => sourceToEntry.get(key(clean(touched)))?.entity_id)
+                .filter((id): id is string => Boolean(id))
+            ),
+          ],
+        }
+      : {}),
   });
 
   const shots: ShotState[] = [];
