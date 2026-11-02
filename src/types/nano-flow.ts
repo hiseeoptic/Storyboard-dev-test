@@ -17,6 +17,7 @@ import type {
   ProductionState,
   SpatialGraphState,
 } from "@/lib/production-state/types";
+import type { NanoFlowContinuity } from "@/lib/continuity/types";
 
 export const NANO_FLOW_MANIFEST_VERSION = "1.0" as const;
 
@@ -339,6 +340,9 @@ export interface NanoFlowManifest {
   shots: NanoFlowShot[];
   /** Full additive canonical state. Legacy extension versions may ignore it. */
   production_state?: ProductionState;
+  /** World key per location + script-supervisor continuity log (additive;
+   * older extensions ignore it — the same text is already inside the prompts). */
+  continuity?: NanoFlowContinuity;
   /** Non-blocking QA snapshot attached at export time. The extension may ignore
    * it; users can export immediately without hiding unresolved findings. */
   export_qa?: {

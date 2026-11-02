@@ -97,6 +97,7 @@ import { buildSpeechManifestContract } from "@/lib/storyboard/anonymous-narratio
 import {
   validateExportReadiness,
   assessSoftExportPolicy,
+  assessContinuityExportGate,
   calculateRepairImprovement,
   validateStoryboardSemantics,
   formatSemanticReport,
@@ -1410,6 +1411,45 @@ function blockingFindingCount(report: SemanticValidationReport | null | undefine
   ).length;
 }
 
+/** Identity of the current continuity blockers: an override applies to exactly this set. */
+function continuityGateSignature(report: SemanticValidationReport | null | undefined): string {
+  return assessContinuityExportGate(report).findings
+    .map((finding) => [finding.code, finding.segment_number ?? "", finding.message].join("|"))
+    .sort()
+    .join("\n");
+}
+
+/** Script-supervisor log as a plain text file for the ZIP. */
+function continuityLogText(manifest: { continuity?: { world_keys: Record<string, string>; log: Array<{ shot_index: number; location_id: string; camera_path: string; camera_locked: boolean; moves: string[]; touched: string[]; stays: string[]; new_elements: string[]; repairs: string[]; findings: string[] }> } }): string {
+  const c = manifest.continuity;
+  if (!c) return "";
+  const lines: string[] = [
+    "SỔ LIÊN TỤC — THƯ KÝ TRƯỜNG QUAY (continuity log)",
+    "World Key được dán y nguyên vào ảnh bối cảnh, mọi keyframe và mọi video của cùng bối cảnh.",
+    "",
+  ];
+  for (const [loc, key] of Object.entries(c.world_keys)) lines.push(`== ${loc} ==`, key, "");
+  for (const row of c.log) {
+    lines.push(`--- SHOT ${String(row.shot_index).padStart(2, "0")} · ${row.location_id} ---`);
+    lines.push(`Máy quay: ${row.camera_path || "—"}${row.camera_locked ? " (đã khóa khung mở đầu: không dí cận rồi kéo rộng lại)" : ""}`);
+    lines.push(`Đạo cụ di chuyển: ${row.moves.length ? "" : "không có"}`);
+    for (const m of row.moves) lines.push(`  • ${m}`);
+    if (row.touched.length) {
+      lines.push("Chạm nhưng không di chuyển:");
+      for (const t of row.touched) lines.push(`  • ${t}`);
+    }
+    lines.push(`Đứng yên cả clip: ${row.stays.join(", ") || "—"}`);
+    if (row.new_elements.length) lines.push(`Yếu tố mới so với shot trước: ${row.new_elements.join(", ")}`);
+    if (row.repairs.length) {
+      lines.push("Đã tự sửa trong sổ trạng thái:");
+      for (const r of row.repairs) lines.push(`  • ${r}`);
+    }
+    lines.push(row.findings.length ? `Lỗi còn lại: ${row.findings.join(" | ")}` : "Lỗi còn lại: không");
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
 function exportRepairSignature(report: SemanticValidationReport | null | undefined): string {
   return (report?.findings ?? [])
     .filter((finding) => finding.severity === "critical" || finding.severity === "high")
@@ -1454,6 +1494,9 @@ function ProjectWorkspace() {
   const [exportRepairTarget, setExportRepairTarget] = useState<number | "all" | null>(null);
   const [exportRepairProgress, setExportRepairProgress] = useState<ExportRepairProgress | null>(null);
   const [attemptedExportRepairSignatures, setAttemptedExportRepairSignatures] = useState<string[]>([]);
+  // Explicit "export anyway" for the current continuity blockers only; a new
+  // set of blockers (after a repair or regeneration) locks the export again.
+  const [continuityOverrideSignature, setContinuityOverrideSignature] = useState<string | null>(null);
   // Browser-page-only cache: identical inputs reuse the finished text plan
   // instead of paying for the script + Context IR + storyboard calls again.
   const planCacheRef = useRef(new StoryboardPlanCache<CachedStoryboardPlan>(3));
@@ -3219,6 +3262,13 @@ function ProjectWorkspace() {
       setExportAttempted(true);
       return null;
     }
+    // Hard continuity gate: script-supervisor high findings lock the export
+    // until they are repaired or the user explicitly exports anyway.
+    const continuitySignature = continuityGateSignature(exportBundle.report);
+    if (assessContinuityExportGate(exportBundle.report, continuitySignature === continuityOverrideSignature).blocked) {
+      setExportAttempted(true);
+      return null;
+    }
     // Soft export gate: semantic/continuity findings travel with the manifest
     // as QA evidence but never strand a valid JSON/ZIP/Extension payload.
     // A successful warning-bearing export is an allowed amber QA state, not a
@@ -3359,6 +3409,8 @@ function ProjectWorkspace() {
         `${safeTitle || "storyboard"}.nanoflow.json`,
         JSON.stringify(cleanManifest, null, 2)
       );
+      const continuityLog = continuityLogText(cleanManifest);
+      if (continuityLog) zip.file("continuity_log.txt", continuityLog);
 
       // Frames (board) + clean keyframes (Veo first-frame)
       for (const seg of result.breakdown.segments) {
@@ -3980,7 +4032,10 @@ function ProjectWorkspace() {
       ),
     ].sort((a, b) => a - b);
     const softExportPolicy = assessSoftExportPolicy(exportReport, !!exportBundle?.manifest);
-    const exportReady = softExportPolicy.can_export;
+    const continuitySignature = continuityGateSignature(exportReport);
+    const continuityGate = assessContinuityExportGate(exportReport, continuitySignature === continuityOverrideSignature);
+    const continuityLog = exportBundle?.manifest?.continuity?.log ?? [];
+    const exportReady = softExportPolicy.can_export && !continuityGate.blocked;
     const exportClean = softExportPolicy.status === "clean";
     const currentRepairAlreadyAttempted = attemptedExportRepairSignatures.includes(
       exportRepairSignature(exportReport)
@@ -4105,9 +4160,13 @@ function ProjectWorkspace() {
               <div className={`space-y-3 rounded-md border p-3 text-xs ${exportAttempted ? "border-red-400 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-950/40 dark:text-red-100" : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"}`}>
                 <div>
                   <p className="font-semibold">
-                    {lang === "vi"
-                      ? "Export vẫn mở. Bạn có thể sửa để tăng chất lượng hoặc xuất ngay kèm cảnh báo."
-                      : "Export remains available. Repair to improve quality or export now with warnings."}
+                    {continuityGate.blocked
+                      ? lang === "vi"
+                        ? "Export đang bị khóa vì còn lỗi liên tục (ô đỏ bên dưới). Các lỗi khác chỉ là cảnh báo."
+                        : "Export is locked by continuity issues (red box below). Other findings are warnings only."
+                      : lang === "vi"
+                        ? "Export vẫn mở. Bạn có thể sửa để tăng chất lượng hoặc xuất ngay kèm cảnh báo."
+                        : "Export remains available. Repair to improve quality or export now with warnings."}
                   </p>
                   <p className="mt-1 text-[11px] opacity-80">
                     {lang === "vi"
@@ -4200,6 +4259,68 @@ function ProjectWorkspace() {
                 </div>
               </div>
             )}
+            {continuityGate.findings.length > 0 ? (
+              <div className={`space-y-2 rounded-md border p-3 text-xs ${continuityGate.blocked ? "border-red-400 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-950/40 dark:text-red-100" : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"}`}>
+                <p className="font-semibold">
+                  {continuityGate.blocked
+                    ? lang === "vi"
+                      ? `🎬 Thư ký trường quay đang khóa xuất: còn ${continuityGate.findings.length} lỗi liên tục (đồ đạc / máy quay / World Key). Bấm "Sửa tại chỗ" ở trên để AI sửa đúng cảnh đó.`
+                      : `🎬 The script supervisor locks the export: ${continuityGate.findings.length} continuity issue(s) remain. Use the repair buttons above.`
+                    : lang === "vi"
+                      ? "Bạn đã chọn vẫn xuất với các lỗi liên tục dưới đây — clip có thể bị xê dịch đồ đạc."
+                      : "You chose to export with the continuity issues below — props may drift."}
+                </p>
+                <ul className="list-disc space-y-0.5 pl-4">
+                  {continuityGate.findings.map((finding, index) => (
+                    <li key={`${finding.code}-${finding.segment_number ?? "p"}-${index}`}>
+                      <span className="font-semibold">{finding.code}</span>
+                      {finding.segment_number ? ` · ${lang === "vi" ? "Cảnh" : "Scene"} ${finding.segment_number}` : ""}
+                      {` — ${finding.message}`}
+                    </li>
+                  ))}
+                </ul>
+                {continuityGate.blocked ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (window.confirm(lang === "vi"
+                        ? "Vẫn xuất khi còn lỗi liên tục? Clip có thể bị xê dịch bàn ghế / đồ vật như trước."
+                        : "Export anyway with continuity issues? Props may drift in the clips.")) {
+                        setContinuityOverrideSignature(continuitySignature);
+                        setExportAttempted(false);
+                      }
+                    }}
+                    className="gap-1.5"
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    {lang === "vi" ? "Vẫn xuất (tôi chịu rủi ro)" : "Export anyway"}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {continuityLog.length > 0 ? (
+              <details className="rounded-md border border-emerald-300/60 bg-white/60 p-2 text-xs dark:border-emerald-700/60 dark:bg-black/10">
+                <summary className="cursor-pointer font-semibold">
+                  {lang === "vi" ? "📋 Sổ liên tục — thư ký trường quay (World Key, đạo cụ, máy quay từng shot)" : "📋 Continuity log — script supervisor"}
+                </summary>
+                <div className="mt-2 max-h-80 space-y-2 overflow-auto">
+                  {continuityLog.map((row) => (
+                    <div key={row.shot_id} className="rounded border border-current/10 p-2">
+                      <p className="font-semibold">
+                        SHOT {String(row.shot_index).padStart(2, "0")} · {lang === "vi" ? "máy quay" : "camera"} {row.camera_path || "—"}
+                        {row.camera_locked ? (lang === "vi" ? " · đã khóa khung mở đầu" : " · opening framing held") : ""}
+                      </p>
+                      {row.moves.map((line, i) => <p key={`m${i}`}>↪ {line}</p>)}
+                      {row.touched.map((line, i) => <p key={`t${i}`}>✋ {line}</p>)}
+                      <p className="opacity-80">{lang === "vi" ? "Đứng yên" : "Stays put"}: {row.stays.join(", ") || "—"}</p>
+                      {row.new_elements.length ? <p className="opacity-80">{lang === "vi" ? "Yếu tố mới" : "New elements"}: {row.new_elements.join(", ")}</p> : null}
+                      {row.repairs.map((line, i) => <p key={`r${i}`} className="text-emerald-700 dark:text-emerald-300">✔ {line}</p>)}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Button onClick={pushNanoToExtension} disabled={!exportReady || exportRepairTarget !== null} className="gap-2">
                 {nanoPushed ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />}

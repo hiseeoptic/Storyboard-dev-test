@@ -75,13 +75,131 @@ export function landmarkList(scenery: string, setting = ""): string[] {
 
 const stripArticle = (s: string) => s.replace(/^(?:a|an|the)\s+/i, "");
 
+// ── Fallback for a scenery written as ONE long comma list ──────────────────
+// "Warm modern Vietnamese living room in beige…: beige sofa behind the family,
+// low wooden table at the rug edge, cream rug, sunlit window, woven rattan
+// basket, and one small leafy plant; uncluttered play area." The clause split
+// above keeps whole ';' sentences only, so the first clause (a 20-word list) was
+// dropped and this room got NO map: every shot re-imagined where the table
+// stands and the table slid when the camera widened again (02/11/2026 report).
+const OWN_POSITION =
+  /\s+((?:behind|beside|by|near|next\s+to|against|above|below|under(?:neath)?|in\s+front\s+of|in\s+the\s+corner|at\s+the|on\s+the|along|opposite|facing|across\s+from)\b.*)$/i;
+/** A described zone ("uncluttered play area"), not a thing that can stand somewhere. */
+const NOT_PLACEABLE = /\b(?:area|space|zone|atmosphere|feel|vibe|look|corner)$/i;
+/** The surface the story's props stand on is the best anchor indoors. */
+const SURFACE_ANCHOR = /\b(?:table|desk|counter|kitchen\s+island|island|bar|workbench)\b/i;
+/** Small containers/objects that sit on the main surface, not in a room corner. */
+const SURFACE_ITEM = /\b(?:baskets?|trays?|boxe?s?|bowls?|books?|toys?|cards?|jars?\s+of|candles?|teapot|vase)\b/i;
+const LEADING_COUNT = /^(?:a|an|the|one|two|three|four|several|some|single)\s+/i;
+
+export interface LooseLandmark {
+  item: string;
+  /** The scenery's own position words ("behind the family"), "" when none. */
+  position: string;
+}
+
+/**
+ * Every comma/semicolon/"and" part of the scenery (else the setting) as a
+ * landmark, its own position words kept apart. Used only when
+ * {@link landmarkList} finds fewer than two landmarks.
+ */
+export function looseLandmarkList(scenery: string, setting = ""): LooseLandmark[] {
+  const parse = (text: string): LooseLandmark[] => {
+    const body = text.includes(":") ? text.slice(text.indexOf(":") + 1) : text;
+    const seen = new Set<string>();
+    const out: LooseLandmark[] = [];
+    for (const raw of body.split(/\s*(?:;|,|\.\s|\band\b)\s*/i)) {
+      let part = raw.replace(/[.\s]+$/, "").trim();
+      while (LEADING_COUNT.test(part)) part = part.replace(LEADING_COUNT, "");
+      const own = OWN_POSITION.exec(part);
+      const item = (own ? part.slice(0, own.index) : part).trim();
+      const position = own?.[1]?.trim() ?? "";
+      const thing = ANCHOR.test(item) || WALL.test(item) || FLOOR_PIECE.test(item) || OVERHEAD.test(item) || UNDERFOOT.test(item) || TABLETOP.test(item) || SURFACE_ITEM.test(item);
+      if (item.length <= 2 || !/\p{L}/u.test(item) || item.split(/\s+/).length > 8) continue;
+      if (NOT_A_THING.test(item) || NOT_PLACEABLE.test(item)) continue;
+      // The place itself ("warm modern Vietnamese living room"), not a landmark.
+      if ((INTERIOR.test(item) || EXTERIOR.test(item)) && !thing) continue;
+      const k = item.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({ item, position });
+    }
+    return out;
+  };
+  const fromScenery = parse(scenery);
+  return fromScenery.length >= 2 ? fromScenery : parse(setting);
+}
+
+/** {@link buildSetMap} for a scenery that only lists its landmarks in one sentence. */
+function buildLooseSetMap(params: { setting: string; scenery: string }): SetMap | null {
+  const items = looseLandmarkList(params.scenery, params.setting);
+  if (items.length < 2) return null;
+  const head = params.setting.split(/\bwith\b|[,.;:—]/i)[0] ?? "";
+  const ext = head.search(EXTERIOR);
+  const int = head.search(INTERIOR);
+  const exterior = ext >= 0
+    ? int < 0 || ext < int
+    : int < 0 && !INTERIOR.test(params.setting) && EXTERIOR.test(params.scenery);
+  if (exterior) {
+    // Outdoors the regular map already handles positions written next to the
+    // item ("vendor cart by the gate" → as described).
+    const list = items.map((i) => (i.position ? `${i.item} ${i.position}` : i.item)).join(", ");
+    const items2 = landmarkList(`Landmarks: ${list}.`, params.setting);
+    return items2.length >= 2 ? buildSetMap({ setting: params.setting, scenery: `Landmarks: ${list}.` }) : null;
+  }
+  const anchorEntry =
+    items.find((i) => SURFACE_ANCHOR.test(i.item) && !OVERHEAD.test(i.item)) ??
+    items.find((i) => ANCHOR.test(i.item) && !OVERHEAD.test(i.item));
+  const anchor = anchorEntry ? `the ${stripArticle(anchorEntry.item)}` : "the main furniture";
+  const anchorNoun = anchorEntry
+    ? (anchorEntry.item.match(SURFACE_ANCHOR)?.[0] ?? anchorEntry.item.match(ANCHOR)?.[0] ?? "furniture").toLowerCase()
+    : "furniture";
+  const wallSlots = [`back wall, centred behind the ${anchorNoun}`, "back wall, right of centre", "left side wall", "back wall, left of centre"];
+  const floorSlots = ["back-left corner, standing on the floor", "back-right corner, standing on the floor", "left edge of the room, mid-ground", "right edge of the room, mid-ground"];
+  const topSlots = [`right end of the ${anchorNoun}`, `left end of the ${anchorNoun}`];
+  let wall = 0;
+  let floor = 0;
+  let top = 0;
+  const placements: SetMapPlacement[] = [];
+  for (const entry of items) {
+    if (entry === anchorEntry) continue;
+    const { item } = entry;
+    if (entry.position) placements.push({ item, position: entry.position });
+    else if (OVERHEAD.test(item)) placements.push({ item, position: `hanging above the ${anchorNoun}` });
+    else if (anchorEntry && (TABLETOP.test(item) || SURFACE_ITEM.test(item))) placements.push({ item, position: topSlots[Math.min(top++, topSlots.length - 1)]! });
+    else if (ANCHOR.test(item)) placements.push({ item, position: `against the back wall, behind the ${anchorNoun}` });
+    else if (FLOOR_PIECE.test(item) && !/\bwall\b/i.test(item)) placements.push({ item, position: floorSlots[Math.min(floor++, floorSlots.length - 1)]! });
+    else if (UNDERFOOT.test(item) && !WALL.test(item)) placements.push({ item, position: "underfoot across the room" });
+    else if (WALL.test(item)) placements.push({ item, position: wallSlots[Math.min(wall++, wallSlots.length - 1)]! });
+    else placements.push({ item, position: floorSlots[Math.min(floor++, floorSlots.length - 1)]! });
+  }
+  if (placements.length === 0) return null;
+  const layout =
+    `${cap(anchor)} stands in the middle ground${anchorEntry?.position ? `, ${anchorEntry.position}` : ""}` +
+    `${/table|desk|counter|bar|bench|sofa|couch|bed|island/.test(anchorNoun) ? `, its long side parallel to the back wall` : ""}.`;
+  const list = placements.map((p) => `${p.item} — ${p.position}`).join("; ");
+  const text =
+    `SET MAP (fixed; identical in the establishing image and in every shot, described from the master camera side): ${layout} Landmarks: ${list}. ` +
+    "Every landmark keeps exactly this position, size and count in every shot — never moved, mirrored, duplicated, removed or added to fill a vertical frame.";
+  const leftItems = placements.filter((p) => /\bleft\b/.test(p.position)).map((p) => p.item);
+  const rightItems = placements.filter((p) => /\bright\b/.test(p.position)).map((p) => p.item);
+  const centreItems = placements.filter((p) => /\bcentre|centred\b/.test(p.position)).map((p) => p.item);
+  const sides = [
+    leftItems.length ? `a subject on the left of ${anchor} has the left part of the view behind them (${leftItems.join(", ")})` : "",
+    rightItems.length ? `a subject on the right has the right part behind them (${rightItems.join(", ")})` : "",
+    centreItems.length ? `${centreItems.join(", ")} stays centred behind ${anchor}` : "",
+  ].filter(Boolean).join("; ");
+  return { anchor, exterior: false, placements, text, sides };
+}
+
 /**
  * Build the fixed map for one location from its scenery/setting text. Returns
  * null when the text names fewer than two landmarks (nothing to keep in place).
  */
 export function buildSetMap(params: { setting: string; scenery: string }): SetMap | null {
   const items = landmarkList(params.scenery, params.setting);
-  if (items.length < 2) return null;
+  // Fewer than two whole-clause landmarks: read the scenery's one-sentence list.
+  if (items.length < 2) return buildLooseSetMap(params);
   // The setting's head ("Small warm restaurant with …") decides inside/outside;
   // a "street-facing window" in the scenery does not make a café an exterior.
   const head = params.setting.split(/\bwith\b|[,.;:—]/i)[0] ?? "";

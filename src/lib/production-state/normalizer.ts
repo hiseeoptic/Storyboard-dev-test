@@ -105,7 +105,7 @@ function holderChanged(before: unknown, after: unknown): boolean {
   return Boolean(a && b && a !== b);
 }
 
-function snapshotDifference(
+export function snapshotDifference(
   before: ProductionEntitySnapshot,
   after: ProductionEntitySnapshot
 ): Record<string, { previous_end: unknown; current_start: unknown }> {

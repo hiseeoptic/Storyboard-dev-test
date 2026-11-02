@@ -40,6 +40,9 @@ import {
   type BoardPlacementContract,
 } from "./board-image-validator.ts";
 import { keyframeReferenceBinding } from "./prompt-compaction.ts";
+import { withCameraContinuity } from "../continuity/camera.ts";
+import { repairProductionStateContinuity, describeLedgerRepair } from "../continuity/ledger-repair.ts";
+import { applyContinuityContract } from "../continuity/contract.ts";
 import {
   decideFrameMode,
   type FrameMode,
@@ -1578,6 +1581,10 @@ export function buildNanoFlowManifest(
   breakdown: StoryboardGenerationOutput,
   opts: BuildNanoFlowManifestOptions = {}
 ): NanoFlowManifest {
+  // Camera continuity (02/11/2026): a take that pushes in and widens back out
+  // holds its opening framing instead — the re-widen is where the video model
+  // re-draws the room and the furniture drifts. Same rule as buildVeoJson.
+  breakdown = withCameraContinuity(breakdown);
   // Remove "no added decor / geographically unspecified / no new light
   // fixtures" clauses from every set description before anything is built
   // from them: they make the location plate, keyframes and clips look bare.
@@ -1585,7 +1592,17 @@ export function buildNanoFlowManifest(
   const segments = breakdown.segments ?? [];
   // Additive compatibility path: normalized server output already carries this;
   // saved/legacy breakdowns are compiled locally without rewriting old fields.
-  const productionState = breakdown.production_state ?? buildProductionState(breakdown);
+  const sourceProductionState = breakdown.production_state ?? buildProductionState(breakdown);
+  // Deterministic ledger fixes (wrong actor/holder, a holder written as a
+  // sentence, a lap counted as a hand) on the canonical copy; the saved
+  // breakdown is untouched. Every prompt below is built from the repaired copy.
+  const continuityRepair = repairProductionStateContinuity(sourceProductionState, {
+    physicsMode:
+      breakdown.context_ir?.layers?.world_context?.physics_mode ||
+      breakdown.context_ir?.layers?.motion_continuity?.physics_mode,
+    intentionalExceptions: breakdown.context_ir?.layers?.world_context?.intentional_exceptions ?? [],
+  });
+  const productionState = continuityRepair.state;
   const title = breakdown.title || "Untitled";
   const persistentPropEntries = productionState.registry.filter(
     (entry) => entry.kind === "object" || entry.kind === "product"
@@ -2444,7 +2461,19 @@ export function buildNanoFlowManifest(
     shots,
     production_state: productionState,
   };
+  // Continuity contract (world key per location, prop plan per shot, camera
+  // rule, named negatives) + the script-supervisor log. Additive keys only.
+  const photoLocations = new Set<string>();
+  segments.forEach((seg, i) => {
+    const loc = (seg.location_id ?? seg.environment_ref ?? "").trim();
+    if (loc && (boardImageByIndex.get(seg.segment_number || i + 1) ?? fallbackBoardImage)) photoLocations.add(loc);
+  });
+  const repairsByShot = new Map<string, string[]>();
+  for (const repair of continuityRepair.repairs) {
+    repairsByShot.set(repair.shot_id, [...(repairsByShot.get(repair.shot_id) ?? []), describeLedgerRepair(repair, productionState.registry)]);
+  }
+  const continued = applyContinuityContract(manifest, { setMaps: setMapByLocation, repairsByShot, photoLocations });
   // A cast with a child: the last net for wording video models refuse next to
   // a child (kisses, waists, thighs, "nude"…), over every prompt and state text.
-  return castHasChild(breakdown.character_locks, opts.cuteKids) ? childSafeDeep(manifest) : manifest;
+  return castHasChild(breakdown.character_locks, opts.cuteKids) ? childSafeDeep(continued) : continued;
 }

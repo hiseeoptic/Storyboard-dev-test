@@ -1,6 +1,7 @@
 import type { StoryboardGenerationOutput } from "@/types";
 import type { NanoFlowManifest } from "@/types/nano-flow";
 import { validatePromptExports } from "./prompt-validator.ts";
+import { superviseContinuity } from "../continuity/supervisor.ts";
 import {
   buildReport,
   type SemanticFinding,
@@ -46,11 +47,15 @@ export function validateExportReadiness(
 ): SemanticValidationReport {
   const source = validateStoryboardSemantics(breakdown);
   const prompts = validatePromptExports(manifest);
+  // Script supervisor (02/11/2026): world key, fixed set, prop plan, camera
+  // rule. Its high findings are the ones the export gate blocks on.
+  const continuity = superviseContinuity(manifest);
   return buildReport(
     [
       ...source.findings,
       ...productionStateExportFindings(manifest),
       ...prompts.findings,
+      ...continuity.findings,
     ],
     "export readiness gate"
   );

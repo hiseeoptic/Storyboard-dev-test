@@ -38,3 +38,26 @@ export function calculateRepairImprovement(before: number, after: number): {
     percent: safeBefore === 0 ? 100 : Math.round((fixed / safeBefore) * 100),
   };
 }
+
+export interface ContinuityExportGate {
+  /** True while a CONT-* high/critical finding remains and the user has not overridden it. */
+  blocked: boolean;
+  findings: SemanticValidationReport["findings"];
+}
+
+/**
+ * Hard continuity gate (02/11/2026, "siết chặt hơn nữa"): the script
+ * supervisor's high findings (no fixed set, camera widening back, a prop moving
+ * by itself, a missing world key) lock JSON / Extension / ZIP until they are
+ * repaired. Every other finding keeps the soft policy above. The user can still
+ * export on purpose with an explicit override.
+ */
+export function assessContinuityExportGate(
+  report: SemanticValidationReport | null | undefined,
+  overridden = false
+): ContinuityExportGate {
+  const findings = (report?.findings ?? []).filter(
+    (finding) => finding.code.startsWith("CONT-") && (finding.severity === "critical" || finding.severity === "high")
+  );
+  return { blocked: findings.length > 0 && !overridden, findings };
+}

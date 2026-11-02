@@ -76,6 +76,101 @@ function resolveSubject(text: string, registry: ProductionRegistryEntry[]): stri
   return candidates[0]?.entity_id ?? null;
 }
 
+const POSSESSIVE_AFTER = /^\s*(?:['’]s\b|['’](?=\s))/u;
+
+function nameIndex(text: string, name: string, allowPossessive: boolean): number {
+  const hay = lower(text);
+  const needle = lower(name);
+  if (!needle) return -1;
+  let from = 0;
+  while (from <= hay.length) {
+    const at = hay.indexOf(needle, from);
+    if (at < 0) return -1;
+    const before = at === 0 ? "" : hay[at - 1]!;
+    const after = hay.slice(at + needle.length);
+    const wholeWord = !/\p{L}/u.test(before) && !/^\p{L}/u.test(after);
+    if (wholeWord && (allowPossessive || !POSSESSIVE_AFTER.test(after))) return at;
+    from = at + 1;
+  }
+  return -1;
+}
+
+/**
+ * The character who performs a clause: the FIRST character named in it, as a
+ * whole word, ignoring owners ("releases it beside Mẹ's phone" names Mẹ as the
+ * phone's owner, not as the actor). The older longest-name rule made Mẹ the
+ * actor of Bố's release, so the phone ended "held by Mẹ" inside the basket and
+ * that wrong holder travelled through every later shot (02/11/2026).
+ */
+export function resolveLeadSubject(
+  text: string,
+  registry: ProductionRegistryEntry[],
+  allowPossessive = false
+): string | null {
+  let best: { id: string; at: number; length: number } | null = null;
+  for (const entry of registry) {
+    if (entry.kind !== "character") continue;
+    for (const name of [entry.display_name, entry.source_ref, ...entry.aliases]) {
+      if (!name) continue;
+      const at = nameIndex(text, name, allowPossessive);
+      if (at < 0) continue;
+      if (!best || at < best.at || (at === best.at && name.length > best.length)) {
+        best = { id: entry.entity_id, at, length: name.length };
+      }
+    }
+  }
+  return best?.id ?? null;
+}
+
+/** Manipulation verbs the first contact list missed ("gathers the cards", "rests her hand on the box rim"). */
+const CONTACT_VERB_MORE =
+  /\b(?:gather(?:s|ed|ing)?|transfer(?:s|red|ring)?|carr(?:y|ies|ied|ying)|mov(?:e|es|ed|ing)|slid(?:e|es|ing)|stack(?:s|ed|ing)?|rest(?:s|ed|ing)?\s+(?:[\p{L}'’]+\s+){0,3}(?:hand|palm|fingers?)|put(?:s|ting)?|tak(?:e|es|ing)|took|remov(?:e|es|ed|ing)|hand(?:s|ed)?\s+over|giv(?:e|es|ing)|gave|drop(?:s|ped|ping)?|insert(?:s|ed|ing)?|tuck(?:s|ed|ing)?|grab(?:s|bed|bing)?|collect(?:s|ed|ing)?|scoop(?:s|ed|ing)?|pat(?:s|ted|ting)?|hold(?:s|ing)?|held|squeez(?:e|es|ed|ing)|lay(?:s|ing)?|laid|arrang(?:e|es|ed|ing)|straighten(?:s|ed|ing)?)\b|(?:^|\s)(?:gom|chuyển|xếp|bỏ|lấy|cất|đưa|ôm|giữ|đặt tay)(?=\s|$)/iu;
+
+const humanName = (value: string) => lower(value).replace(/^(?:obj|prop|product)_/, "").replace(/_/g, " ").trim();
+
+/**
+ * Objects a clause names ("the box rim" → the paper box): the full name, an
+ * alias, or the last word of the name when only one object ends with it.
+ */
+export function mentionedObjects(text: string, registry: ProductionRegistryEntry[]): string[] {
+  const objects = registry.filter((entry) => entry.kind === "object" || entry.kind === "product");
+  const found = new Set<string>();
+  for (const entry of objects) {
+    const names = [entry.display_name, entry.source_ref, ...entry.aliases].filter((n): n is string => Boolean(n)).map(humanName);
+    if (names.some((name) => name && nameIndex(text, name, true) >= 0)) found.add(entry.entity_id);
+  }
+  const heads = new Map<string, string[]>();
+  for (const entry of objects) {
+    const head = humanName(entry.display_name).split(/\s+/).pop() ?? "";
+    if (head.length < 3) continue;
+    heads.set(head, [...(heads.get(head) ?? []), entry.entity_id]);
+  }
+  for (const [head, ids] of heads) {
+    if (ids.length !== 1) continue;
+    const singular = head.replace(/s$/, "");
+    if (headAlone(text, head) || (singular.length >= 3 && headAlone(text, singular))) found.add(ids[0]!);
+  }
+  return [...found];
+}
+
+/** Words that may follow a bare object noun: its parts ("box rim") or grammar ("the box and…"). */
+const AFTER_HEAD = /^(?:rim|edge|lid|side|sides|corner|top|bottom|handle|wall|walls|base|front|back|end|opening|surface|and|or|with|on|in|into|onto|from|to|of|beside|while|as|then|so|but|at|by|for|again|down|up|over|under|near|that|which|without|until|before|after|toward|towards|against|behind|across|through|around|is|stays|remains)$/iu;
+
+/** "the box rim" names the box; "the castle card" does not name the cushion castle. */
+function headAlone(text: string, head: string): boolean {
+  const hay = lower(text);
+  let from = 0;
+  while (from <= hay.length) {
+    const at = nameIndex(hay.slice(from), head, true);
+    if (at < 0) return false;
+    const end = from + at + head.length;
+    const next = /^\s+([\p{L}'’-]+)/u.exec(hay.slice(end))?.[1];
+    if (!next || AFTER_HEAD.test(next)) return true;
+    from = from + at + 1;
+  }
+  return false;
+}
+
 function placementFor(
   placements: EntityPlacementState[],
   entityId: string | null
@@ -115,10 +210,21 @@ export function compileAtomicActions(
   const inferredShare = missingCount > 0
     ? Math.max(0, shotDuration - declaredTotal) / missingCount
     : 0;
+  // Subject of the first part of each change: a continuation clause ("…,
+  // releases it beside Mẹ's phone") keeps the actor of the clause it continues.
+  const firstPartSubject = new Map<number, string | null>();
   shot.actions = candidates.map((candidate, index): AtomicAction => {
     const { change, changeIndex, verb, partIndex, partCount } = candidate;
     const evidence = clean(`${change.caused_by} ${verb}`);
-    const subject = resolveSubject(`${verb} ${change.caused_by}`, registry);
+    const changedCharacter = registry.find((entry) => entry.entity_id === change.entity_id && entry.kind === "character");
+    const selfNamed = changedCharacter && resolveLeadSubject(verb, [changedCharacter], true) ? changedCharacter.entity_id : null;
+    const subject =
+      selfNamed ??
+      resolveLeadSubject(verb, registry) ??
+      (partIndex > 0 ? firstPartSubject.get(changeIndex) ?? null : null) ??
+      resolveLeadSubject(change.caused_by, registry, true) ??
+      resolveSubject(`${verb} ${change.caused_by}`, registry);
+    if (partIndex === 0) firstPartSubject.set(changeIndex, subject);
     const fromPlacement = placementFor(shot.start_snapshot.placements, subject);
     const toPlacement = placementFor(shot.end_snapshot.placements, subject);
     const minimum = minimumDuration(verb);
@@ -136,6 +242,19 @@ export function compileAtomicActions(
     const contactEntityIds = [...(change.contact_entity_ids ?? [])];
     if (contactVerb && externalObjectId && !contactEntityIds.includes(externalObjectId)) {
       contactEntityIds.push(externalObjectId);
+    }
+    // A hand that gathers, carries, rests on or removes a named prop touches it,
+    // even when the ledger did not list the contact ("rests her right hand on the
+    // box rim" listed only Na herself). A contact with oneself is no contact.
+    const manipulates = contactVerb || CONTACT_VERB_MORE.test(verb);
+    if (manipulates) {
+      if (externalObjectId && !contactEntityIds.includes(externalObjectId)) contactEntityIds.push(externalObjectId);
+      for (const mentioned of mentionedObjects(verb, registry)) {
+        if (!contactEntityIds.includes(mentioned)) contactEntityIds.push(mentioned);
+      }
+    }
+    if (subject && contactEntityIds.length > 1 && contactEntityIds.includes(subject)) {
+      contactEntityIds.splice(contactEntityIds.indexOf(subject), 1);
     }
     return {
       action_id: `${shot.shot_id}_action_${String(index + 1).padStart(3, "0")}`,
