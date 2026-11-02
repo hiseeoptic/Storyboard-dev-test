@@ -140,6 +140,9 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
         properties: {
           beat: STRING_SCHEMA,
           camera: STRING_SCHEMA,
+          // Structured camera fields read by the one-direction camera rule.
+          shot_size: STRING_SCHEMA,
+          move: STRING_SCHEMA,
         },
         required: ["beat", "camera"],
       },
@@ -224,6 +227,9 @@ const SEGMENT_ITEM_SCHEMA: Record<string, unknown> = {
               from_orientation: STRING_SCHEMA,
               to_orientation: STRING_SCHEMA,
               trace: STRING_SCHEMA,
+              // Structured hand / contacts (win over guessing from the verb).
+              hand: STRING_SCHEMA,
+              touches: STRING_ARRAY_SCHEMA,
             },
             required: ["entity_id", "from", "action", "to", "caused_by"],
           },
@@ -510,6 +516,34 @@ const STORYBOARD_RESPONSE_SCHEMA: Record<string, unknown> = {
         film_grain: STRING_SCHEMA,
       },
       required: ["lens", "lighting", "backdrop", "color_grade"],
+    },
+    // One structured blueprint per location (world key, set map, fixed set).
+    location_blueprints: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          location_id: STRING_SCHEMA,
+          name: STRING_SCHEMA,
+          kind: STRING_SCHEMA,
+          master_view: STRING_SCHEMA,
+          anchor: STRING_SCHEMA,
+          fixed_elements: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                name: STRING_SCHEMA,
+                frame_zone: STRING_SCHEMA,
+                relation: STRING_SCHEMA,
+              },
+              required: ["name", "frame_zone"],
+            },
+          },
+          light: STRING_SCHEMA,
+        },
+        required: ["location_id", "name", "anchor", "fixed_elements"],
+      },
     },
     product_dna: STRING_SCHEMA,
     segments: {
