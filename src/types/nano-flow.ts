@@ -227,6 +227,9 @@ export interface NanoFlowShot {
   /** Explicit execution mode for extensions. Kept in addition to the optional
    * end prompt so a user-forced two-frame shot cannot be silently collapsed. */
   frame_mode?: "start" | "start_end";
+  /** The END keyframe was added by the continuity option (a hand moves a prop in
+   * this shot): the extension pins the video start → end with it. */
+  continuity_end_frame?: boolean;
   /** STEP A2 (optional, clean keyframe mode) — prompt for the END keyframe of a
    * "transform" shot. When present the extension generates a second image
    * (start + end) and drives Veo in start_end_frame mode (interpolate

@@ -14,11 +14,14 @@
 // Everything here is ADDED to the existing prompts (new keys + appended
 // negatives); no existing block is removed or rewritten.
 // ============================================================
-import { buildSetMap, landmarkList, looseLandmarkList, type SetMap } from "../environment/set-map.ts";
+import type { SetMap } from "../environment/set-map.ts";
+import { blueprintFromProse, junkPlaceName, resolveLocationBlueprints } from "./blueprint.ts";
 import type { ProductionRegistryEntry, ProductionState, ShotState } from "../production-state/types.ts";
 import type { NanoFlowManifest } from "@/types/nano-flow";
 import { analyzeCameraPath, cameraContinuityRule, sizePath } from "./camera.ts";
-import type { ContinuityLogRow, NanoFlowContinuity, PropMove, PropStay, PropTouch, ShotPropPlan } from "./types.ts";
+import type { ContinuityLogRow, LocationBlueprint, NanoFlowContinuity, PropMove, PropStay, PropTouch, ShotPropPlan } from "./types.ts";
+
+export { junkPlaceName } from "./blueprint.ts";
 
 type Json = Record<string, unknown>;
 
@@ -43,10 +46,6 @@ function firstClause(text: string, max = 120): string {
   return clause.length > max ? `${clause.slice(0, max).replace(/\s+\S*$/, "")}` : clause;
 }
 
-function headNoun(label: string): string {
-  return lower(label).split(/\s+/).pop()?.replace(/s$/, "") ?? "";
-}
-
 export interface WorldKeyInput {
   locationId: string;
   name: string;
@@ -58,66 +57,75 @@ export interface WorldKeyInput {
   hasLocationPhoto: boolean;
   /** Story props (registry objects) — never listed as fixed set pieces. */
   propLabels: string[];
+  /** The structured blueprint of the place; derived from the prose when absent. */
+  blueprint?: LocationBlueprint;
 }
 
 export interface WorldKey {
   location_id: string;
   text: string;
-  /** Fixed set pieces in map order (anchor first). */
+  /** Fixed set pieces in blueprint order (anchor first). */
   fixed_set: string[];
   anchor: string;
 }
 
-/** The fixed pieces of a place: its set map (anchor first), else its landmark list. */
-function fixedPieces(input: WorldKeyInput): Array<{ item: string; position: string }> {
-  const propHeads = new Set(input.propLabels.map(headNoun).filter((h) => h.length >= 3));
-  const isProp = (item: string) => propHeads.has(headNoun(item));
-  const out: Array<{ item: string; position: string }> = [];
-  const map = input.setMap;
-  if (map) {
-    const anchor = map.anchor.replace(/^the\s+/i, "");
-    const anchorPosition = /stands in the middle ground([^.]*)\./i.exec(map.text)?.[1]?.replace(/^,\s*/, "").replace(/,\s*its long side parallel to the back wall/i, "").trim();
-    if (anchor && anchor !== "main furniture" && !isProp(anchor)) {
-      out.push({ item: anchor, position: `middle ground${anchorPosition ? `, ${anchorPosition}` : ""}` });
-    }
-    for (const p of map.placements) {
-      if (isProp(p.item)) continue;
-      out.push({ item: p.item, position: p.position === "as described" ? "" : p.position });
-    }
-    return out;
-  }
-  const loose = looseLandmarkList(input.scenery, input.setting);
-  const items = loose.length >= 2 ? loose : landmarkList(input.scenery, input.setting).map((item) => ({ item, position: "" }));
-  return items.filter((i) => !isProp(i.item));
-}
+const KIND_LABEL: Record<LocationBlueprint["kind"], string> = {
+  interior: "interior",
+  exterior: "exterior",
+  vehicle: "vehicle interior",
+  other: "set",
+};
 
 /**
- * One WORLD KEY per location: place, fixed set with positions, light, camera
- * side. Deterministic, so every prompt of the place carries the same text.
+ * The WORLD KEY of one place, compiled from its structured blueprint (any kind
+ * of place). Deterministic, so every prompt of the place carries the same text.
  */
-export function buildWorldKey(input: WorldKeyInput): WorldKey {
-  const pieces = fixedPieces(input);
-  const palette = input.scenery.includes(":") ? input.scenery.slice(0, input.scenery.indexOf(":")) : firstClause(input.scenery || input.setting, 160);
-  const place = [input.name, palette && lower(palette) !== lower(input.name) ? palette : ""].filter(Boolean).join(" — ").replace(/\s+/g, " ").slice(0, 220);
-  const fixedLine = input.hasLocationPhoto
-    ? "FIXED SET — exactly as in the attached location photo: every wall, opening and piece of furniture keeps its photo position, size and count; nothing in it moves."
-    : pieces.length
-      ? `FIXED SET — ${pieces.map((p) => (p.position ? `${p.item}: ${p.position}` : p.item)).join("; ")}. These pieces never move, turn, slide, resize, duplicate or disappear; nobody moves them.`
-      : "FIXED SET — exactly as the establishing image shows it; no piece of furniture or architecture moves, resizes or disappears.";
-  const light = firstClause(input.lighting, 140);
+export function worldKeyFromBlueprint(
+  blueprint: LocationBlueprint,
+  options: { hasLocationPhoto?: boolean; look?: string } = {}
+): WorldKey {
+  const elements = blueprint.fixed_elements;
+  const where = (e: LocationBlueprint["fixed_elements"][number]) => [e.frame_zone, e.relation].filter(Boolean).join(", ");
+  const listed = elements.map((e) => (where(e) ? `${e.name}: ${where(e)}` : e.name)).join("; ");
+  const fixedLine = options.hasLocationPhoto
+    ? `FIXED SET — exactly as in the attached location photo${elements.length ? ` (${elements.map((e) => e.name).join(", ")})` : ""}: every wall, opening, piece of furniture and landmark keeps its photo position, size and count; nothing in it moves.`
+    : elements.length
+      ? `FIXED SET (seen from the master view) — ${listed}. These never move, turn, slide, resize, duplicate or disappear; nobody moves them.`
+      : "FIXED SET — exactly as the establishing image shows it; no furniture, architecture or landmark moves, resizes or disappears.";
+  const look = str(options.look);
   const text = [
-    `WORLD KEY · ${input.name || input.locationId} (identical in the establishing image, every keyframe and every video of this place; only the cast, their action and the camera change):`,
-    `PLACE — ${place}.`,
+    `WORLD KEY · ${blueprint.name || blueprint.location_id} (identical in the establishing image, every keyframe and every video of this place; only the cast, their action and the camera change):`,
+    `PLACE — ${blueprint.name} (${KIND_LABEL[blueprint.kind]})${look && lower(look) !== lower(blueprint.name) ? ` — ${look}` : ""}.`,
+    `MASTER VIEW — ${blueprint.master_view}.`,
     fixedLine,
-    light ? `LIGHT — ${light}; same direction and colour in every shot of this place.` : "",
-    "CAMERA SIDE — always the establishing image's side of the room; a closer framing only crops this view, it never re-draws or re-arranges it.",
+    blueprint.light ? `LIGHT — ${blueprint.light}; same direction and colour in every shot of this place.` : "",
+    "CAMERA SIDE — every shot stays on the master view's side; a closer framing only crops this view, it never re-draws or re-arranges it.",
   ].filter(Boolean).join("\n");
   return {
-    location_id: input.locationId,
+    location_id: blueprint.location_id,
     text,
-    fixed_set: pieces.map((p) => p.item),
-    anchor: pieces[0]?.item ?? "",
+    fixed_set: options.hasLocationPhoto && !elements.length ? [] : elements.map((e) => e.name),
+    anchor: blueprint.anchor || elements[0]?.name || "",
   };
+}
+
+/** The look words of a scenery ("Warm modern … in beige, cream and green: …" → its head). */
+function lookOf(scenery: string, setting: string): string {
+  return (scenery.includes(":") ? scenery.slice(0, scenery.indexOf(":")) : firstClause(scenery || setting, 160)).replace(/\s+/g, " ").slice(0, 200);
+}
+
+/** World key from prose inputs: the blueprint when given, else one derived from the prose. */
+export function buildWorldKey(input: WorldKeyInput): WorldKey {
+  const blueprint = input.blueprint ?? blueprintFromProse({
+    locationId: input.locationId,
+    name: input.name,
+    setting: input.setting,
+    scenery: input.scenery,
+    lighting: input.lighting,
+    propNames: input.propLabels,
+    setMap: input.setMap,
+  });
+  return worldKeyFromBlueprint(blueprint, { hasLocationPhoto: input.hasLocationPhoto, look: lookOf(input.scenery, input.setting) });
 }
 
 function positionsDiffer(a: string, b: string): boolean {
@@ -257,16 +265,6 @@ export function withWorldKeyInJsonPrompt(prompt: string | undefined, worldKey: s
   }
 }
 
-/** A background name that is a script sentence, not a place name. */
-export function junkPlaceName(name: string): boolean {
-  const n = str(name);
-  if (!n) return true;
-  return /^(?:same|continue|continues|continuing|as\s+before|as\s+in|back\s+to|still|again|return)\b/i.test(n) ||
-    /\b(?:as|from|of|the|and|to|with)$/i.test(n) ||
-    /[.!?]$/.test(n) ||
-    n.split(/\s+/).length > 9;
-}
-
 function locationParams(manifest: NanoFlowManifest): Map<string, { name: string; setting: string; scenery: string; lighting: string; photo: boolean; sheet: Json }> {
   const out = new Map<string, { name: string; setting: string; scenery: string; lighting: string; photo: boolean; sheet: Json }>();
   for (const env of manifest.assets?.environments ?? []) {
@@ -305,6 +303,8 @@ export interface ApplyContinuityOptions {
   repairsByShot?: Map<string, string[]>;
   /** Locations whose shots carry an uploaded location photo. */
   photoLocations?: Set<string>;
+  /** The structured blueprint of every location (planner-written or derived). */
+  blueprints?: Map<string, LocationBlueprint>;
 }
 
 const FOREGROUND_EDGE = /\b(?:in the foreground|foreground|at the frame edge|frame edge|edge of (?:the )?frame|bottom edge|lower edge|front edge)\b/i;
@@ -333,24 +333,29 @@ export function applyContinuityContract<T extends NanoFlowManifest>(manifest: T,
   const locations = locationParams(out);
   const worldKeys = new Map<string, WorldKey>();
   const propLabels = registry.filter((r) => r.kind === "object" || r.kind === "product").map((r) => propLabel(r));
+  // One structured blueprint per location: the builder's, else the one this
+  // manifest already carries, else derived from the location prose.
+  const carried = new Map(Object.entries(out.continuity?.blueprints ?? {}));
+  const blueprints = options.blueprints ?? (carried.size
+    ? carried
+    : resolveLocationBlueprints({
+        locations: [...locations].map(([id, loc]) => ({ id, name: loc.name, setting: loc.setting, scenery: loc.scenery, lighting: loc.lighting })),
+        propNames: propLabels,
+        ...(options.setMaps ? { setMaps: options.setMaps } : {}),
+      }));
   for (const [id, loc] of locations) {
-    const setMap = options.setMaps?.has(id) ? options.setMaps.get(id) ?? null : buildSetMap({ setting: loc.setting, scenery: loc.scenery });
-    worldKeys.set(id, buildWorldKey({
-      locationId: id,
-      name: loc.name,
-      setting: loc.setting,
-      scenery: loc.scenery,
-      lighting: loc.lighting,
-      setMap: loc.photo || options.photoLocations?.has(id) ? null : setMap,
-      hasLocationPhoto: loc.photo || Boolean(options.photoLocations?.has(id)),
-      propLabels,
-    }));
+    const photo = loc.photo || Boolean(options.photoLocations?.has(id));
+    const blueprint = blueprints.get(id) ?? blueprintFromProse({ locationId: id, name: loc.name, setting: loc.setting, scenery: loc.scenery, lighting: loc.lighting, propNames: propLabels });
+    blueprints.set(id, blueprint);
+    if (blueprint.name && !junkPlaceName(blueprint.name)) loc.name = blueprint.name;
+    worldKeys.set(id, worldKeyFromBlueprint(blueprint, { hasLocationPhoto: photo, look: lookOf(loc.scenery, loc.setting) }));
   }
 
   // Establishing image(s): the same key, first.
   for (const env of out.assets?.environments ?? []) {
     const cleanName = locations.get(env.id)?.name;
-    if (cleanName && cleanName !== env.name && junkPlaceName(env.name ?? "")) env.name = cleanName;
+    const plannerName = blueprints.get(env.id)?.source === "planner" ? blueprints.get(env.id)?.name : "";
+    if (cleanName && cleanName !== env.name && (plannerName || junkPlaceName(env.name ?? ""))) env.name = cleanName;
     const key = worldKeys.get(env.id)?.text;
     if (!key) continue;
     env.location_sheet_prompt = withWorldKeyInJsonPrompt(env.location_sheet_prompt, key);
@@ -435,6 +440,7 @@ export function applyContinuityContract<T extends NanoFlowManifest>(manifest: T,
       location_id: loc,
       camera_path: sizePath(camera.sizes),
       camera_locked: camera.locked,
+      ...(shot.continuity_end_frame === true ? { end_frame: true } : {}),
       moves: lines.moves,
       touched: lines.touched,
       stays: plan.stays.map((s) => s.label),
@@ -447,6 +453,7 @@ export function applyContinuityContract<T extends NanoFlowManifest>(manifest: T,
   const continuity: NanoFlowContinuity = {
     version: "1.0",
     world_keys: Object.fromEntries([...worldKeys].map(([id, key]) => [id, key.text])),
+    blueprints: Object.fromEntries(blueprints),
     log,
   };
   (out as NanoFlowManifest).continuity = continuity;

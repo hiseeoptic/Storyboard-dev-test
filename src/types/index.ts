@@ -810,6 +810,11 @@ export interface StoryboardGenerationOutput {
   character_locks: CharacterLock[];
   /** Style fingerprint (lens/lighting/backdrop/grade) reused VERBATIM everywhere. */
   scene_bible?: SceneBible;
+  /** One structured blueprint per location (any kind of place): fixed elements
+   * with their master-view zone, anchor, master view and light. The world key,
+   * set map and fixed-set locks are compiled from it. Additive; older projects
+   * omit it and get a blueprint derived from their setting prose. */
+  location_blueprints?: import("@/lib/continuity/types").LocationBlueprint[];
   /** Verbatim forensic DNA of the hero product (with RGB hex), if any. */
   product_dna?: string;
   segments: VideoSegment[];

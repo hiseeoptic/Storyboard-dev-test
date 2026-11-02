@@ -182,13 +182,36 @@ function handFromShot(shot: ProductionState["shots"][number], objectId: string, 
  */
 export function repairProductionStateContinuity(
   input: ProductionState,
-  options: PhysicalValidationOptions = {}
+  options: PhysicalValidationOptions & {
+    /** Fixed elements of the location blueprints (tables, shelves, benches…): a prop placed on/in one is not in a hand. */
+    surfaceNames?: string[];
+  } = {}
 ): { state: ProductionState; repairs: LedgerRepair[] } {
   const state = JSON.parse(JSON.stringify(input)) as ProductionState;
   const repairs: LedgerRepair[] = [];
   const registry = state.registry ?? [];
   const byId = new Map(registry.map((entry) => [entry.entity_id, entry]));
   const isCharacter = (id: string | null | undefined) => Boolean(id && byId.get(id)?.kind === "character");
+  // Structural surfaces/containers: every story object of the registry plus the
+  // fixed elements of the place, so "inside the rattan basket", "on the bench"
+  // or "in the cart" are recognised for any place — the word list below only
+  // covers prose that names neither.
+  const singular = (word: string) => (/(?:x|ch|sh|ss)es$/.test(word) ? word.slice(0, -2) : /[^s]s$/.test(word) ? word.slice(0, -1) : word);
+  const surfaceHeads = new Set(
+    [
+      ...registry.filter((r) => r.kind === "object" || r.kind === "product").map((r) => r.display_name),
+      ...(options.surfaceNames ?? []),
+    ]
+      .map((name) => singular(lower(name).replace(/^(?:obj|prop|product)_/, "").replace(/_/g, " ").trim().split(/\s+/).pop() ?? ""))
+      .filter((head) => head.length >= 3)
+  );
+  const PLACE_WORD = /\b(?:in|inside|into|on|onto|atop|beside|next to|against|under|underneath|at)\b/i;
+  const placedOnSomething = (position: string, self: string) => {
+    if (IN_OR_ON_SOMETHING.test(position)) return true;
+    if (!PLACE_WORD.test(position)) return false;
+    const selfHead = singular(lower(byId.get(self)?.display_name ?? "").replace(/_/g, " ").split(/\s+/).pop() ?? "");
+    return lower(position).split(/[^\p{L}\p{N}]+/u).map(singular).some((word) => word !== selfHead && surfaceHeads.has(word));
+  };
 
   // A holder written as a sentence ("Na holds castle card in left hand") is that
   // character's hand, not a new entity.
@@ -211,7 +234,7 @@ export function repairProductionStateContinuity(
           continue;
         }
         const position = field === "to_holder_entity_id" ? change.to_position ?? "" : change.from_position ?? "";
-        if (isCharacter(holder) && IN_OR_ON_SOMETHING.test(position) && !HELD_WORDS.test(position) && !mentionsName(position, byId.get(holder))) {
+        if (isCharacter(holder) && placedOnSomething(position, change.entity_id) && !HELD_WORDS.test(position) && !mentionsName(position, byId.get(holder))) {
           change[field] = null;
           repairs.push({ shot_id: shot.shot_id, entity_id: change.entity_id, where: "change", kind: "holder_but_inside_container", before: holder, after: null });
         }
@@ -235,7 +258,7 @@ export function repairProductionStateContinuity(
         if (!isCharacter(holder)) continue;
         const holderEntry = byId.get(holder);
         const position = entity.position ?? "";
-        if (IN_OR_ON_SOMETHING.test(position) && !HELD_WORDS.test(position) && !mentionsName(position, holderEntry)) {
+        if (placedOnSomething(position, entity.entity_id) && !HELD_WORDS.test(position) && !mentionsName(position, holderEntry)) {
           unlinkHold(snapshot, holder, entity.entity_id);
           entity.holder_entity_id = null;
           if (!snapshot.supports.some((s) => s.active && s.supported_entity_id === entity.entity_id)) {

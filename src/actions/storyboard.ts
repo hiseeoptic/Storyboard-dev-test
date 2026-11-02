@@ -55,6 +55,7 @@ import {
   enforceSingleDialogueClock,
 } from "@/lib/timeline-contract";
 import { normalizeProductionContracts } from "@/lib/storyboard/production-normalizer";
+import { ledgerPropNames, normalizeBreakdownBlueprints } from "@/lib/continuity/blueprint";
 import {
   bindOnScreenSpeakersToCameraBeats,
   normalizeSegmentAudioAuthority,
@@ -1973,6 +1974,7 @@ function normalizeRepairCandidate(
   synchronizeContinuityContracts(breakdown);
   normalizeSegmentAudioAuthority(breakdown);
   normalizeProductionContracts(breakdown);
+  normalizeBreakdownBlueprints(breakdown, ledgerPropNames(breakdown));
   enforceChildSafeWording(input, breakdown);
 
   for (const segment of breakdown.segments) {
@@ -2704,6 +2706,7 @@ async function runPlanBuild(
   softStep("Đồng bộ continuity", warnings, () => synchronizeContinuityContracts(breakdown));
   softStep("Âm học theo bối cảnh", warnings, () => normalizeSegmentAudioAuthority(breakdown));
   softStep("Production contracts", warnings, () => normalizeProductionContracts(breakdown));
+  softStep("Bản thiết kế bối cảnh", warnings, () => normalizeBreakdownBlueprints(breakdown, ledgerPropNames(breakdown)));
 
   const referencedCharacterNames = uploadedCharacterNameSet(input);
   for (const lock of breakdown.character_locks) {

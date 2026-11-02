@@ -14,6 +14,7 @@
 //   CONT-007 medium — a prop that must stay put sits in the foreground / at the
 //                     frame edge (the easiest place to slide out of frame)
 //   CONT-008 medium — the shot's place name is a script sentence
+//   CONT-009 medium — a location has no planner blueprint (derived from prose)
 // High findings block the export until they are fixed (see export gate).
 // ============================================================
 import type { NanoFlowManifest } from "@/types/nano-flow";
@@ -59,14 +60,26 @@ export function superviseContinuity(manifest: NanoFlowManifest): ContinuityRepor
     if (row) row.findings.push(`${finding.code}: ${finding.message}`);
   };
 
+  const blueprints = manifest.continuity?.blueprints ?? {};
   for (const env of manifest.assets?.environments ?? []) {
     const key = keys[env.id] ?? "";
-    if (!env.image && /FIXED SET — exactly as the establishing image shows it/.test(key)) {
+    const blueprint = blueprints[env.id];
+    if (blueprint?.source === "derived" && !env.image && !/attached location photo/.test(key)) {
+      add({
+        code: "CONT-009",
+        severity: "medium",
+        scope: "project",
+        message: `Bối cảnh "${blueprint.name}" chưa có bản thiết kế bối cảnh từ AI lập kịch bản; hệ thống tự dựng từ câu mô tả (${blueprint.fixed_elements.length} đồ cố định). Tạo lại kịch bản để có bản thiết kế đầy đủ vị trí trong khung.`,
+        evidence: `${env.id} — FIX: write location_blueprints for this location_id (name, kind, master_view, anchor, 3–8 fixed_elements with frame_zone and relation, light).`,
+      });
+    }
+    const tooThin = blueprint ? blueprint.fixed_elements.length < 2 : /FIXED SET — exactly as the establishing image shows it/.test(key);
+    if (!env.image && !/attached location photo/.test(key) && tooThin) {
       add({
         code: "CONT-001",
         severity: "high",
         scope: "project",
-        message: `Bối cảnh "${env.name}" chưa có bản đồ cố định: mô tả bối cảnh không nêu được ít nhất 2 đồ vật/vị trí, cũng không có ảnh bối cảnh tải lên.`,
+        message: `Bối cảnh "${env.name}" chưa có bản đồ cố định: bản thiết kế bối cảnh có dưới 2 đồ cố định có vị trí, và không có ảnh bối cảnh tải lên.`,
         evidence: `${env.id} — FIX: rewrite the location's scenery as a list of at least two fixed pieces with positions (e.g. "low wooden table at the rug edge; beige sofa against the back wall").`,
       });
     }

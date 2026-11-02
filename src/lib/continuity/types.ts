@@ -41,6 +41,8 @@ export interface ContinuityLogRow {
   camera_path: string;
   /** The rule held the opening framing because the plan widened back. */
   camera_locked: boolean;
+  /** The shot ends on a continuity END keyframe (first + last frame video). */
+  end_frame?: boolean;
   moves: string[];
   touched: string[];
   stays: string[];
@@ -53,6 +55,41 @@ export interface NanoFlowContinuity {
   version: "1.0";
   /** One WORLD KEY per location, pasted word for word into its prompts. */
   world_keys: Record<string, string>;
+  /** The structured blueprint each world key was compiled from. */
+  blueprints?: Record<string, LocationBlueprint>;
   /** Script-supervisor continuity log, one row per shot. */
   log: ContinuityLogRow[];
+}
+
+// ── Location blueprint — the structured, location-agnostic source of a place ──
+// Written once per location by the planner (any place: a room, a street, a
+// beach, a car, a shop…), normalised by the app, and the ONLY input of the
+// world key, the set map and the fixed-set locks. Old projects without it get a
+// blueprint derived from their setting/scenery prose.
+
+export type BlueprintKind = "interior" | "exterior" | "vehicle" | "other";
+
+export interface BlueprintElement {
+  /** One fixed piece: furniture, architecture, terrain or landmark. */
+  name: string;
+  /** Where it is in the master view: "left|centre|right" + "foreground|midground|background". */
+  frame_zone: string;
+  /** Where it is relative to the anchor or another element ("against the wall behind the counter"). */
+  relation: string;
+}
+
+export interface LocationBlueprint {
+  location_id: string;
+  /** Short place name (never a script sentence). */
+  name: string;
+  kind: BlueprintKind;
+  /** Where the master camera stands and what it looks at. */
+  master_view: string;
+  /** The main surface / route the action happens on or around; always fixed_elements[0]. */
+  anchor: string;
+  fixed_elements: BlueprintElement[];
+  /** Light source and its direction in the master view. */
+  light: string;
+  /** "planner" = written by the planner; "derived" = rebuilt from prose for an older project. */
+  source: "planner" | "derived";
 }

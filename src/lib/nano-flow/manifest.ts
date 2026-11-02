@@ -42,7 +42,8 @@ import {
 import { keyframeReferenceBinding } from "./prompt-compaction.ts";
 import { withCameraContinuity } from "../continuity/camera.ts";
 import { repairProductionStateContinuity, describeLedgerRepair } from "../continuity/ledger-repair.ts";
-import { applyContinuityContract } from "../continuity/contract.ts";
+import { applyContinuityContract, shotPropPlan } from "../continuity/contract.ts";
+import { junkPlaceName, resolveLocationBlueprints, setMapFromBlueprint } from "../continuity/blueprint.ts";
 import {
   decideFrameMode,
   type FrameMode,
@@ -154,6 +155,14 @@ export interface BuildNanoFlowManifestOptions {
    * A per-shot frameModeOverride always wins over this default.
    */
   frameModeDefault?: "single" | "auto" | "double";
+  /**
+   * Continuity end frames (opt-in, 02/11/2026): a shot in which a hand moves or
+   * changes a prop also gets an END keyframe of its end state, and the video is
+   * pinned start → end (Veo first + last frame), so the prop's final place is
+   * fixed by an image rather than left to the video model. Independent of the
+   * hidden frame-mode controls; a per-shot "start" override still wins.
+   */
+  continuityEndFrames?: boolean;
 }
 
 /** Copy `obj` with `key: value` placed right after the first of `after` that exists. */
@@ -1601,6 +1610,9 @@ export function buildNanoFlowManifest(
       breakdown.context_ir?.layers?.world_context?.physics_mode ||
       breakdown.context_ir?.layers?.motion_continuity?.physics_mode,
     intentionalExceptions: breakdown.context_ir?.layers?.world_context?.intentional_exceptions ?? [],
+    surfaceNames: (Array.isArray(breakdown.location_blueprints) ? breakdown.location_blueprints : []).flatMap((blueprint) =>
+      Array.isArray(blueprint?.fixed_elements) ? blueprint.fixed_elements.map((element) => String(element?.name ?? "")) : []
+    ),
   });
   const productionState = continuityRepair.state;
   const title = breakdown.title || "Untitled";
@@ -1939,6 +1951,35 @@ export function buildNanoFlowManifest(
   // every keyframe/video there, so a new camera angle cannot move a landmark.
   const setMapByLocation = new Map<string, SetMap | null>();
   for (const [loc, bg] of lockedBgByLocation) setMapByLocation.set(loc, buildSetMap(bg));
+  // Structured location blueprints (any kind of place): the planner's where it
+  // wrote one — its set map then comes from that structure, not from parsing
+  // prose — otherwise derived from the prose so every place still has one.
+  const blueprintPropNames = persistentPropEntries.map((entry) => entry.display_name);
+  const blueprintByLocation = resolveLocationBlueprints({
+    planner: breakdown.location_blueprints,
+    locations: environments.map((env) => {
+      const locked = lockedBgByLocation.get(env.id);
+      const firstClip = (opts.veoClips ?? []).find((_, i) => ((segments[i]?.location_id ?? segments[i]?.environment_ref ?? "").trim() === env.id));
+      return {
+        id: env.id,
+        name: env.name,
+        setting: (locked?.setting || "").trim() || env.name,
+        scenery: (locked?.scenery || "").trim(),
+        lighting: clipStr(clipObj(firstClip?.background_lock).lighting),
+      };
+    }),
+    propNames: blueprintPropNames,
+    setMaps: setMapByLocation,
+  });
+  for (const [loc, blueprint] of blueprintByLocation) {
+    if (blueprint.source !== "planner") continue;
+    const plannerMap = setMapFromBlueprint(blueprint);
+    if (plannerMap) setMapByLocation.set(loc, plannerMap);
+  }
+  for (const env of environments) {
+    const blueprint = blueprintByLocation.get(env.id);
+    if (blueprint && blueprint.name && (blueprint.source === "planner" || junkPlaceName(env.name))) env.name = blueprint.name;
+  }
   for (const env of environments) {
     const locked = lockedBgByLocation.get(env.id);
     const setting = (locked?.setting || "").trim() || env.name;
@@ -1958,6 +1999,7 @@ export function buildNanoFlowManifest(
         const map = setMapByLocation.get(env.id) ?? buildSetMap({ setting, scenery });
         env.location_sheet_prompt = JSON.stringify({
           ...sheet,
+          ...(env.name && sheet.location_name !== env.name ? { location_name: env.name } : {}),
           ...(map ? { set_map: map.text } : {}),
           ...(tableDressing ? { table_dressing: tableDressing } : {}),
           camera_position: LOCATION_MASTER_SIDE,
@@ -2216,7 +2258,11 @@ export function buildNanoFlowManifest(
     // manual override always wins over the project default. §6.2.
     const frameModeDefault = opts.frameModeDefault ?? "single";
     const shotOverride = opts.frameModeOverrides?.[index];
-    const frameMode: FrameMode =
+    const continuityEndFrame =
+      opts.continuityEndFrames === true &&
+      shotOverride !== "start" &&
+      shotPropPlan(productionState.shots[i]!, productionState.registry).moves.length > 0;
+    const policyFrameMode: FrameMode =
       shotOverride === "start"
         ? "start"
         : shotOverride === "start_end"
@@ -2232,6 +2278,7 @@ export function buildNanoFlowManifest(
                   hasDialogue,
                   override: shotOverride,
                 });
+    const frameMode: FrameMode = continuityEndFrame ? "start_end" : policyFrameMode;
     // ── Cross-shot continuity chain: when THIS shot continues the previous one
     //    (same location AND continuity_mode "continuous"), tell the extension to
     //    build this shot's keyframe FROM the previous shot's last frame (its END
@@ -2334,6 +2381,7 @@ export function buildNanoFlowManifest(
         ? { end_storyboard_prompt: withCandidMoment(withKidPerformance(phoneLookPrompt(withOutfitContract(buildKeyframePrompt({ moment: "end", ...keyframeArgs }), outfitContract, shotMakeup, shotDressing))), inScene.length > 0) }
         : {}),
       frame_mode: useCleanKeyframe ? frameMode : "start",
+      ...(useCleanKeyframe && continuityEndFrame ? { continuity_end_frame: true } : {}),
       continuity_mode: shotContinuity,
       // Seamless story flow: chain this shot's keyframe from the previous shot's
       // last frame. Present only for a truly continuous same-location shot;
@@ -2472,7 +2520,7 @@ export function buildNanoFlowManifest(
   for (const repair of continuityRepair.repairs) {
     repairsByShot.set(repair.shot_id, [...(repairsByShot.get(repair.shot_id) ?? []), describeLedgerRepair(repair, productionState.registry)]);
   }
-  const continued = applyContinuityContract(manifest, { setMaps: setMapByLocation, repairsByShot, photoLocations });
+  const continued = applyContinuityContract(manifest, { setMaps: setMapByLocation, repairsByShot, photoLocations, blueprints: blueprintByLocation });
   // A cast with a child: the last net for wording video models refuse next to
   // a child (kisses, waists, thighs, "nude"…), over every prompt and state text.
   return castHasChild(breakdown.character_locks, opts.cuteKids) ? childSafeDeep(continued) : continued;

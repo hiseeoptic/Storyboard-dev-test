@@ -1420,7 +1420,7 @@ function continuityGateSignature(report: SemanticValidationReport | null | undef
 }
 
 /** Script-supervisor log as a plain text file for the ZIP. */
-function continuityLogText(manifest: { continuity?: { world_keys: Record<string, string>; log: Array<{ shot_index: number; location_id: string; camera_path: string; camera_locked: boolean; moves: string[]; touched: string[]; stays: string[]; new_elements: string[]; repairs: string[]; findings: string[] }> } }): string {
+function continuityLogText(manifest: { continuity?: { world_keys: Record<string, string>; log: Array<{ shot_index: number; location_id: string; camera_path: string; camera_locked: boolean; end_frame?: boolean; moves: string[]; touched: string[]; stays: string[]; new_elements: string[]; repairs: string[]; findings: string[] }> } }): string {
   const c = manifest.continuity;
   if (!c) return "";
   const lines: string[] = [
@@ -1432,6 +1432,7 @@ function continuityLogText(manifest: { continuity?: { world_keys: Record<string,
   for (const row of c.log) {
     lines.push(`--- SHOT ${String(row.shot_index).padStart(2, "0")} · ${row.location_id} ---`);
     lines.push(`Máy quay: ${row.camera_path || "—"}${row.camera_locked ? " (đã khóa khung mở đầu: không dí cận rồi kéo rộng lại)" : ""}`);
+    if (row.end_frame) lines.push("Khung cuối: có — video quay từ khung đầu đến khung cuối để đồ vật dừng đúng chỗ");
     lines.push(`Đạo cụ di chuyển: ${row.moves.length ? "" : "không có"}`);
     for (const m of row.moves) lines.push(`  • ${m}`);
     if (row.touched.length) {
@@ -1497,6 +1498,9 @@ function ProjectWorkspace() {
   // Explicit "export anyway" for the current continuity blockers only; a new
   // set of blockers (after a repair or regeneration) locks the export again.
   const [continuityOverrideSignature, setContinuityOverrideSignature] = useState<string | null>(null);
+  // Continuity end frames (opt-in): shots where a hand moves a prop get an END
+  // keyframe and a start → end video, pinning where the prop ends up.
+  const [continuityEndFrames, setContinuityEndFrames] = useState(false);
   // Browser-page-only cache: identical inputs reuse the finished text plan
   // instead of paying for the script + Context IR + storyboard calls again.
   const planCacheRef = useRef(new StoryboardPlanCache<CachedStoryboardPlan>(3));
@@ -3205,6 +3209,7 @@ function ProjectWorkspace() {
       // app is HARD-LOCKED to a single keyframe: ignore any stale state so a
       // two-frame shot can never leak. Flip the flag to restore both.
       frameModeDefault: SHOW_FRAME_MODE_CONTROLS ? frameModeDefault : "single",
+      continuityEndFrames,
       frameModeOverrides: SHOW_FRAME_MODE_CONTROLS ? frameModeOverrides : {},
       // Hidden frame controls mean the production path is genuinely single and
       // independent per shot. Do not leak stale local-storage chain overrides.
@@ -3255,7 +3260,7 @@ function ProjectWorkspace() {
     }
     // exportCheckVersion intentionally forces a free deterministic re-check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, genInput, characters, frameModeDefault, frameModeOverrides, chainModeOverrides, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion]);
+  }, [result, genInput, characters, frameModeDefault, frameModeOverrides, chainModeOverrides, thumbnailAspectRatio, effectiveCharacterRepresentation, exportCheckVersion, continuityEndFrames]);
 
   const cleanManifestForExport = () => {
     if (!exportBundle?.manifest) {
@@ -4299,6 +4304,19 @@ function ProjectWorkspace() {
                 ) : null}
               </div>
             ) : null}
+            <label className="flex items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={continuityEndFrames}
+                onChange={(event) => setContinuityEndFrames(event.target.checked)}
+              />
+              <span>
+                {lang === "vi"
+                  ? "🎞️ Khung cuối cho shot có đồ di chuyển (thử nghiệm): tạo thêm 1 ảnh trạng thái cuối và quay video từ khung đầu → khung cuối, để đồ vật dừng đúng chỗ. Tốn thêm 1 ảnh mỗi shot đó; shot có thoại có thể kém khớp môi hơn."
+                  : "🎞️ End frame for shots where a prop moves (experimental): one extra end-state image and a start → end video so the prop ends in the right place. Costs one extra image per such shot; lip-sync in dialogue shots may be weaker."}
+              </span>
+            </label>
             {continuityLog.length > 0 ? (
               <details className="rounded-md border border-emerald-300/60 bg-white/60 p-2 text-xs dark:border-emerald-700/60 dark:bg-black/10">
                 <summary className="cursor-pointer font-semibold">
@@ -4310,6 +4328,7 @@ function ProjectWorkspace() {
                       <p className="font-semibold">
                         SHOT {String(row.shot_index).padStart(2, "0")} · {lang === "vi" ? "máy quay" : "camera"} {row.camera_path || "—"}
                         {row.camera_locked ? (lang === "vi" ? " · đã khóa khung mở đầu" : " · opening framing held") : ""}
+                        {row.end_frame ? (lang === "vi" ? " · có khung cuối" : " · end frame") : ""}
                       </p>
                       {row.moves.map((line, i) => <p key={`m${i}`}>↪ {line}</p>)}
                       {row.touched.map((line, i) => <p key={`t${i}`}>✋ {line}</p>)}
