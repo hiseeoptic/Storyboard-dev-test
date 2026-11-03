@@ -29,6 +29,7 @@ CORE RULES:
 - If evidence is absent, write "unspecified" and record an assumption instead of silently defaulting. This applies to story FACTS (what happens, who, when, which place); it does NOT apply to the look of a place.
 - setting_request is the user's explicit set direction. A "USER SET REQUEST" names where the story takes place — keep that place (a named real street, district, landmark or city keeps its real, recognisable architecture and details) unless the approved script places a scene elsewhere. A "SET STYLE" decides the architecture, furniture, materials, palette, set dressing and practical lights of every location without an uploaded photo.
 - cute_kids_reel (when present) is a wholesome family reel starring a young child: the place is a real lived-in Vietnamese home or everyday place, the reality mode is documentary when filming is the parent's smartphone, and child safety comes first (no danger, no undressing, no make-up on the child).
+- office_drama (when present) is an educational workplace-culture drama for managers and employees: a real contemporary Vietnamese workplace of the given type, generic signage (no real company or brand), realistic acting, at most three locations reused across the story, no violence; the reality mode is cinematic realism (documentary when filming is a smartphone).
 - family_drama (when present) is an educational family drama for adults (couples / mother-in-law & daughter-in-law / sister-in-law): a real lived-in Vietnamese home, contemporary era, realistic acting, at most three locations reused across the story, no violence; the reality mode is cinematic realism (documentary when filming is a smartphone).
 - ${PRODUCTION_DESIGN_DOCTRINE} Write that design into layers.environment (setting, scenery/materials, light motivation) for every location without an uploaded photo, and record it as a production-design decision.
 - REQUIRED TEMPORAL AUTHORITY: layers.temporal.time_of_day must not be a bare placeholder. Prefer an explicit script/setting/lighting cue; when no clock-time cue exists, declare "continuity-neutral daytime (source does not specify clock time)" and record that bounded assumption. Never change an explicit morning/afternoon/evening/night cue.
@@ -62,6 +63,9 @@ export function buildContextAnalysisUserPrompt(input: StoryboardGenerationInput)
       : null,
     family_drama: input.family_drama
       ? { relation: input.family_drama.relation, clips: input.family_drama.shots, filming: input.family_drama.filming === "phone" ? "family smartphone look" : "intimate cinematic drama", dialect: input.family_drama.dialect, tone: input.family_drama.tone }
+      : null,
+    office_drama: input.office_drama
+      ? { workplace: input.office_drama.workplace, clips: input.office_drama.shots, filming: input.office_drama.filming === "phone" ? "handheld smartphone look" : "realistic corporate-training drama", dialect: input.office_drama.dialect, tone: input.office_drama.tone }
       : null,
     tone: input.tone ?? null,
     speech_mode: speechMode,

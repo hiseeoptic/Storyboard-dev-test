@@ -1190,6 +1190,29 @@ test("an incomplete voice drops the whole numeric clause before the locked fallb
   assert.match(voice, /^Northern Vietnamese accent; adult male timbre, calm; /);
 });
 
+test("workplace drama contract reaches the writer and the storyboard; part 1 of a long video says so", () => {
+  const { findOfficeLesson } = require("../lib/workplace/office-drama.ts");
+  const lesson = findOfficeLesson("off_gy_01");
+  const input = {
+    story_idea: "Trưởng phòng chê nhân viên trước cả phòng",
+    genre: "drama",
+    style: "cinematic",
+    scene_count: 12,
+    segment_count: 12,
+    dialogue_language: "Vietnamese",
+    office_drama: { request: "", lessonId: lesson.id, lesson, names: {}, workplace: "office", dialect: "north", filming: "cinematic", shots: 12, narrator: true, tone: "drama" },
+  };
+  for (const prompt of [buildScriptWriterUserPrompt(input), buildStoryboardUserPrompt(input)]) {
+    assert.match(prompt, /WORKPLACE CULTURE DRAMA \(HARD\)/);
+    assert.match(prompt, /clips 7–10 = BÀI HỌC/);
+    assert.doesNotMatch(prompt, /FAMILY LESSON DRAMA/, "no family contract without a family config");
+    assert.doesNotMatch(prompt, /LONG VIDEO — PART 1/);
+  }
+  const part1 = buildStoryboardUserPrompt({ ...input, segment_count: 8, long_video_total: 12 });
+  assert.match(part1, /LONG VIDEO — PART 1 OF A 12-CLIP STORY/);
+  assert.match(part1, /leads into clip 9 \(BÀI HỌC/);
+});
+
 test("family drama contract reaches the writer and the storyboard; part 1 of a long video says so", () => {
   const { findFamilyLesson } = require("../lib/family/family-drama.ts");
   const lesson = findFamilyLesson("couple_gentle_startup_01");

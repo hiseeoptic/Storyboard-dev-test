@@ -303,6 +303,8 @@ export interface StoryboardGenerationInput {
   cute_kids?: import("@/lib/kids/cute-kids").CuteKidsConfig;
   /** "Chuyện nhà": an educational family drama (couples / in-laws), 6–18 clips. */
   family_drama?: import("@/lib/family/family-drama").FamilyDramaConfig;
+  /** "Chuyện công sở": an educational workplace-culture drama (managers / employees), 6–18 clips. */
+  office_drama?: import("@/lib/workplace/office-drama").OfficeDramaConfig;
   /** Internal: the whole clip count of a long video written in parts (set by the server for part 1). */
   long_video_total?: number;
   affiliate_video_style?: import("@/lib/product-ir").AffiliateVideoStyle;

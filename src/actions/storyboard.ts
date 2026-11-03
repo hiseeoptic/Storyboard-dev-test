@@ -57,6 +57,7 @@ import {
 import { normalizeProductionContracts } from "@/lib/storyboard/production-normalizer";
 import { ledgerPropNames, normalizeBreakdownBlueprints } from "@/lib/continuity/blueprint";
 import { labelFamilyDramaPosts, normalizeFamilyDrama, withLibraryFamilyLesson } from "@/lib/family/family-drama";
+import { labelOfficeDramaPosts, normalizeOfficeDrama, withLibraryOfficeLesson } from "@/lib/workplace/office-drama";
 import {
   LONG_FIRST_PART,
   longVideoFindings,
@@ -1977,6 +1978,7 @@ function normalizeRepairCandidate(
   enforceProductPlacements(input.product_placements, breakdown);
   if (input.cute_kids) labelCuteKidsPosts(breakdown.social_posts, input.cute_kids);
   if (input.family_drama) labelFamilyDramaPosts(breakdown.social_posts);
+  if (input.office_drama) labelOfficeDramaPosts(breakdown.social_posts);
   enforceCuteKidsVoices(input, breakdown);
   bindOnScreenSpeakersToCameraBeats(breakdown);
   enforceSingleDialogueClock(breakdown);
@@ -2416,6 +2418,8 @@ function normalizePlanInput(input: StoryboardGenerationInput): StoryboardGenerat
   if (input.cute_kids) input = { ...input, cute_kids: normalizeCuteKids(withLibraryLesson(input.cute_kids)) };
   // "Chuyện nhà": the family drama config is clamped; a picked lesson comes from the library.
   if (input.family_drama) input = { ...input, family_drama: normalizeFamilyDrama(withLibraryFamilyLesson(input.family_drama)) };
+  // "Chuyện công sở": the workplace drama config is clamped; a picked case comes from the library.
+  if (input.office_drama) input = { ...input, office_drama: normalizeOfficeDrama(withLibraryOfficeLesson(input.office_drama)) };
   const shootPresence = resolveInputProductShoot(input)?.presence;
   if (shootPresence === "product_only" || shootPresence === "hands_only") {
     const narrate = input.voice_over_enabled === true || input.character_dialogue_enabled !== false;
@@ -2721,6 +2725,7 @@ async function runPlanBuild(
   // Realistic AI video of a child: platforms require the AI-content label.
   if (input.cute_kids) labelCuteKidsPosts(breakdown.social_posts, input.cute_kids);
   if (input.family_drama) labelFamilyDramaPosts(breakdown.social_posts);
+  if (input.office_drama) labelOfficeDramaPosts(breakdown.social_posts);
   softStep("Giọng bé cưng", warnings, () => enforceCuteKidsVoices(input, breakdown));
   softStep("Chế độ quay sản phẩm", warnings, () => {
     for (const note of enforceProductShootContract(resolveInputProductShoot(input), breakdown)) warnings.push(note);

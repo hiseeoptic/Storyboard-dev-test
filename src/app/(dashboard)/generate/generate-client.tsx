@@ -62,6 +62,8 @@ import { SetDirectionPanel } from "./set-direction";
 import { CuteKidsCard } from "./cute-kids-card";
 import { FamilyDramaCard } from "./family-drama-card";
 import { familyDramaCast, familyDramaRoomSeed, familyDramaStoryIdea, RELATION_LABEL, type FamilyDramaConfig } from "@/lib/family/family-drama";
+import { OfficeDramaCard } from "./office-drama-card";
+import { officeDramaCast, officeDramaRoomSeed, officeDramaStoryIdea, AUDIENCE_LABEL, type OfficeDramaConfig } from "@/lib/workplace/office-drama";
 import { LocationPresetPanel, roomImages } from "./location-presets";
 import {
   emptyLibrary,
@@ -1681,6 +1683,8 @@ function ProjectWorkspace() {
   const [cuteKidsPhoto, setCuteKidsPhoto] = useState<UploadedImage[]>([]);
   // "Chuyện nhà": an educational family drama (couples / in-laws), 6–18 clips.
   const [familyDrama, setFamilyDrama] = useState<FamilyDramaConfig | null>(null);
+  // "Chuyện công sở": an educational workplace-culture drama (managers / employees), 6–18 clips.
+  const [officeDrama, setOfficeDrama] = useState<OfficeDramaConfig | null>(null);
   const [roomSeed, setRoomSeed] = useState<{ key: number; idea: string } | null>(null);
   const [autoGenerate, setAutoGenerate] = useState(false);
   const [voiceOverEnabled, setVoiceOverEnabled] = useState(false);
@@ -2594,6 +2598,7 @@ function ProjectWorkspace() {
       product_placements: productPlacementsForInput.length > 0 ? productPlacementsForInput : undefined,
       cute_kids: cuteKids ?? undefined,
       family_drama: familyDrama ?? undefined,
+      office_drama: officeDrama ?? undefined,
       product_shoot: productShootActive
         ? {
             presence: productPresence,
@@ -5031,6 +5036,7 @@ function ProjectWorkspace() {
     setCuteKids(config);
     setCuteKidsPhoto(kidPhoto.slice(0, 1));
     setFamilyDrama(null);
+    setOfficeDrama(null);
   };
 
   // "Chuyện nhà" card → the form: a family drama, the lesson's cast locked from
@@ -5059,6 +5065,7 @@ function ProjectWorkspace() {
     setAspectRatio("9:16");
     setFamilyDrama(config);
     setCuteKids(null);
+    setOfficeDrama(null);
   };
   const buildFamilyDrama = (config: FamilyDramaConfig) => {
     applyFamilyDrama(config);
@@ -5067,6 +5074,44 @@ function ProjectWorkspace() {
   const openFamilyDramaRoom = (config: FamilyDramaConfig) => {
     applyFamilyDrama(config);
     setRoomSeed((prev) => ({ key: (prev?.key ?? 0) + 1, idea: familyDramaRoomSeed(config) }));
+    setShowWritersRoom(true);
+  };
+
+  // "Chuyện công sở" card → the form: a workplace training drama, the case's
+  // cast locked from text, 6–18 clips (long videos are written in parts),
+  // dialogue on, the narrator only for the awakening, vertical 9:16.
+  const applyOfficeDrama = (config: OfficeDramaConfig) => {
+    changeGenre("drama");
+    if (isStylizedCharacterRepresentation(characterRepresentation)) setCharacterRepresentation("auto");
+    setStoryIdea(officeDramaStoryIdea(config));
+    setScriptTreatment("polish");
+    setCharacters(officeDramaCast(config).map((member) => ({
+      name: member.name,
+      role: member.label,
+      appearance: member.appearance,
+      bodyType: "standard" as const,
+      isChild: false,
+      images: [],
+      makeup: "auto" as const,
+    })));
+    setSegmentCount(config.shots);
+    const officeCamera: DirectingProfileId[] = config.filming === "phone" ? ["everyday_naturalism", "handheld_vlog"] : ["cinematic_drama", "everyday_naturalism"];
+    setDirectingProfiles(officeCamera);
+    setDirectingProfile(officeCamera[0]!);
+    setCharacterDialogueEnabled(true);
+    setVoiceOverEnabled(config.narrator);
+    setAspectRatio("9:16");
+    setOfficeDrama(config);
+    setFamilyDrama(null);
+    setCuteKids(null);
+  };
+  const buildOfficeDrama = (config: OfficeDramaConfig) => {
+    applyOfficeDrama(config);
+    setAutoGenerate(true);
+  };
+  const openOfficeDramaRoom = (config: OfficeDramaConfig) => {
+    applyOfficeDrama(config);
+    setRoomSeed((prev) => ({ key: (prev?.key ?? 0) + 1, idea: officeDramaRoomSeed(config) }));
     setShowWritersRoom(true);
   };
   const buildCuteKids = (config: CuteKidsConfig, kidPhoto: UploadedImage[]) => {
@@ -5308,6 +5353,7 @@ function ProjectWorkspace() {
               )}
               <CuteKidsCard lang={lang} provider={scriptProvider} onBuild={buildCuteKids} onOpenRoom={openCuteKidsRoom} />
               <FamilyDramaCard lang={lang} onBuild={buildFamilyDrama} onOpenRoom={openFamilyDramaRoom} />
+              <OfficeDramaCard lang={lang} onBuild={buildOfficeDrama} onOpenRoom={openOfficeDramaRoom} />
               <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-primary">
                   <BookOpen className="h-4 w-4" />
@@ -5370,6 +5416,18 @@ function ProjectWorkspace() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("storyIdea")}</label>
+                {officeDrama && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-sky-400/50 bg-sky-500/[0.06] px-3 py-1.5 text-xs">
+                    <span>
+                      💼 {lang === "vi"
+                        ? `Chế độ Chuyện công sở${officeDrama.lesson ? `: 📚 ${officeDrama.lesson.title} (${AUDIENCE_LABEL[officeDrama.lesson.audience].vi})` : ""} · ${officeDrama.shots} shot (${Math.floor((officeDrama.shots * 10) / 60)} phút${(officeDrama.shots * 10) % 60 ? ` ${(officeDrama.shots * 10) % 60} giây` : ""}) — hook → cao trào → bài học → tỉnh thức, nhãn AI khi đăng.`
+                        : `Workplace drama mode${officeDrama.lesson ? `: ${officeDrama.lesson.title}` : ""}, ${officeDrama.shots} clips.`}
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={() => setOfficeDrama(null)}>
+                      {lang === "vi" ? "Tắt" : "Off"}
+                    </Button>
+                  </div>
+                )}
                 {familyDrama && (
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-400/50 bg-amber-500/[0.06] px-3 py-1.5 text-xs">
                     <span>

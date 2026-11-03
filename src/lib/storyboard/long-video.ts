@@ -10,6 +10,10 @@
 // ============================================================
 import type { StoryboardGenerationInput, StoryboardGenerationOutput, VideoSegment } from "@/types";
 import { familyActPlan, familyLessonOf, normalizeFamilyDrama } from "../family/family-drama.ts";
+import { normalizeOfficeDrama, officeActPlan, officeLessonOf } from "../workplace/office-drama.ts";
+
+/** The drama configs a long video can follow ("Chuyện nhà", "Chuyện công sở"). */
+type DramaInput = Pick<StoryboardGenerationInput, "family_drama" | "office_drama">;
 
 /** Videos up to this many clips are still written in ONE request, exactly as before. */
 export const LONG_THRESHOLD = 10;
@@ -23,7 +27,7 @@ export function longVideoTotal(input: Pick<StoryboardGenerationInput, "segment_c
 }
 
 /** What one clip must do in the whole story (family drama act plan when there is one). */
-export function clipPurpose(input: Pick<StoryboardGenerationInput, "family_drama">, clip: number, total: number): string {
+export function clipPurpose(input: DramaInput, clip: number, total: number): string {
   const family = normalizeFamilyDrama(input.family_drama);
   if (family) {
     const slot = familyActPlan(total).find((s) => clip >= s.from && clip <= s.to);
@@ -39,12 +43,28 @@ export function clipPurpose(input: Pick<StoryboardGenerationInput, "family_drama
       return `${slot.label_vi.toUpperCase()} (clips ${slot.from}–${slot.to}) — ${slot.purpose_en}.${detail}`;
     }
   }
+  // "Chuyện công sở": the same four movements, with the workplace case.
+  const office = normalizeOfficeDrama(input.office_drama);
+  if (office) {
+    const slot = officeActPlan(total).find((s) => clip >= s.from && clip <= s.to);
+    const lesson = officeLessonOf(office);
+    if (slot) {
+      const detail =
+        slot.act === "lesson" && lesson ? ` The practice to act out: ${lesson.lesson}.`
+          : slot.act === "awakening" && lesson ? ` The awakening: ${lesson.awakening}.`
+            : slot.act === "climax" && lesson ? ` The climax: ${lesson.climax}.`
+              : slot.act === "turning" && lesson ? ` The turning point: ${lesson.turning}.`
+                : slot.act === "rising" && lesson ? ` The escalation: ${lesson.conflict}.`
+                  : "";
+      return `${slot.label_vi.toUpperCase()} (clips ${slot.from}–${slot.to}) — ${slot.purpose_en}.${detail}`;
+    }
+  }
   if (clip === total) return "the final clip: the story's resolution and closing image";
   return "continue the approved script beat by beat";
 }
 
 /** Extra instruction for the FIRST request of a long video. */
-export function longVideoFirstPartDirective(input: Pick<StoryboardGenerationInput, "family_drama">, total: number, written = LONG_FIRST_PART): string {
+export function longVideoFirstPartDirective(input: DramaInput, total: number, written = LONG_FIRST_PART): string {
   return [
     `LONG VIDEO — PART 1 OF A ${total}-CLIP STORY (≈ ${total * 10} s): the approved story has ${total} clips of 10 s. This request writes ONLY clips 1–${written}; the remaining clips are written in later requests that continue from clip ${written}'s end state.`,
     `- Do NOT compress the whole story into ${written} clips and do NOT end it: clip ${written} ends mid-story and leads into clip ${written + 1} (${clipPurpose(input, written + 1, total)}).`,
@@ -63,7 +83,7 @@ export function nextLongVideoRange(breakdown: Pick<StoryboardGenerationOutput, "
 /** Placeholder segments for the range; the targeted segment writer fills them in. */
 export function stubSegments(
   breakdown: StoryboardGenerationOutput,
-  input: Pick<StoryboardGenerationInput, "family_drama">,
+  input: DramaInput,
   from: number,
   to: number,
   total: number
@@ -94,7 +114,7 @@ export function stubSegments(
 }
 
 /** The "write these clips" findings handed to the targeted segment writer. */
-export function longVideoFindings(input: Pick<StoryboardGenerationInput, "family_drama">, from: number, to: number, total: number) {
+export function longVideoFindings(input: DramaInput, from: number, to: number, total: number) {
   return Array.from({ length: to - from + 1 }, (_, i) => {
     const n = from + i;
     return {
