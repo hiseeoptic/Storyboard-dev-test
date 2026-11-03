@@ -55,6 +55,8 @@ export interface FamilyLesson {
   roles: FamilyRole[];
   /** Default place (any place works; the blueprint is built from the story). */
   place: string;
+  /** Library shelf inside the relation (e.g. "cham_chau"); used by the card's theme chips. */
+  theme?: string;
 }
 
 export const RELATION_LABEL: Record<FamilyRelation, { vi: string; en: string; emoji: string }> = {

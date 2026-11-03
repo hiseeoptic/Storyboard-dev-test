@@ -8,7 +8,7 @@
 // Every story runs HOOK → leo thang → CAO TRÀO → bước ngoặt + BÀI HỌC → TỈNH THỨC.
 // ============================================================
 import { useEffect, useMemo, useState } from "react";
-import { PenLine, Zap } from "lucide-react";
+import { Dices, PenLine, RotateCcw, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,7 +26,10 @@ import {
   familyLessonOf,
   familyLessonsFor,
   familyRequestFromLesson,
+  familyThemeLabel,
+  familyThemesFor,
   normalizeFamilyDrama,
+  pickUnusedFamilyLesson,
   searchFamilyLessons,
   type FamilyDramaConfig,
   type FamilyLesson,
@@ -35,6 +38,21 @@ import {
 
 type Lang = "vi" | "en";
 const STORAGE_KEY = "afFamilyDrama.v1";
+/** Lessons this creator has already built (kept in this browser only). */
+const USED_KEY = "afFamilyDrama.used.v1";
+
+function loadUsed(): string[] {
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(USED_KEY) ?? "[]");
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveUsed(ids: string[]) {
+  try { window.localStorage.setItem(USED_KEY, JSON.stringify(ids)); } catch { /* quota / private mode */ }
+}
 
 function loadConfig(): FamilyDramaConfig {
   try {
@@ -78,7 +96,14 @@ export function FamilyDramaCard(props: {
   const [config, setConfig] = useState<FamilyDramaConfig>(DEFAULT_FAMILY_DRAMA);
   const [query, setQuery] = useState("");
   const [showBasis, setShowBasis] = useState(false);
-  useEffect(() => setConfig(loadConfig()), []);
+  const [theme, setTheme] = useState("");
+  const [hideUsed, setHideUsed] = useState(false);
+  const [used, setUsed] = useState<string[]>([]);
+  const [shelfDone, setShelfDone] = useState(false);
+  useEffect(() => {
+    setConfig(loadConfig());
+    setUsed(loadUsed());
+  }, []);
   const update = (patch: Partial<FamilyDramaConfig>) =>
     setConfig((prev) => {
       const next = { ...prev, ...patch };
@@ -87,14 +112,38 @@ export function FamilyDramaCard(props: {
     });
 
   const lesson = familyLessonOf(config);
-  const lessons = useMemo(
-    () => (query.trim() ? searchFamilyLessons(query, config.relation) : familyLessonsFor(config.relation)),
-    [query, config.relation]
-  );
+  const themes = useMemo(() => familyThemesFor(config.relation), [config.relation]);
+  const usedSet = useMemo(() => new Set(used), [used]);
+  const shelf = useMemo(() => familyLessonsFor(config.relation, theme || null), [config.relation, theme]);
+  const lessons = useMemo(() => {
+    const found = query.trim() ? searchFamilyLessons(query, config.relation).filter((l) => !theme || l.theme === theme) : shelf;
+    return hideUsed ? found.filter((l) => !usedSet.has(l.id)) : found;
+  }, [query, config.relation, theme, shelf, hideUsed, usedSet]);
+  const usedOnShelf = shelf.filter((l) => usedSet.has(l.id)).length;
   const cast = familyDramaCast(config);
   const plan = familyActPlan(config.shots);
-  const pickLesson = (picked: FamilyLesson) =>
+  const pickLesson = (picked: FamilyLesson) => {
+    setShelfDone(false);
     update({ lessonId: picked.id, lesson: picked, relation: picked.relation, request: familyRequestFromLesson(picked) });
+  };
+  const pickNextUnused = () => {
+    const next = pickUnusedFamilyLesson(shelf, used);
+    if (next) pickLesson(next);
+    else setShelfDone(true);
+  };
+  const markUsed = () => {
+    if (!lesson || usedSet.has(lesson.id)) return;
+    const next = [...used, lesson.id];
+    setUsed(next);
+    saveUsed(next);
+  };
+  const resetShelf = () => {
+    const onShelf = new Set(shelf.map((l) => l.id));
+    const next = used.filter((id) => !onShelf.has(id));
+    setUsed(next);
+    saveUsed(next);
+    setShelfDone(false);
+  };
   const ready = config.request.trim().length > 0 || Boolean(lesson);
   const shotOptions = Array.from({ length: FAMILY_MAX_SHOTS - FAMILY_MIN_SHOTS + 1 }, (_, i) => FAMILY_MIN_SHOTS + i).map((n) => ({
     value: String(n),
@@ -121,15 +170,58 @@ export function FamilyDramaCard(props: {
         <div className="space-y-3">
           <div className="flex flex-wrap gap-1.5">
             {FAMILY_RELATIONS.map((relation: FamilyRelation) => (
-              <Chip key={relation} active={config.relation === relation} onClick={() => update({ relation, lessonId: undefined, lesson: undefined })}>
+              <Chip
+                key={relation}
+                active={config.relation === relation}
+                onClick={() => {
+                  setTheme("");
+                  setShelfDone(false);
+                  update({ relation, lessonId: undefined, lesson: undefined });
+                }}
+              >
                 {RELATION_LABEL[relation].emoji} {vi ? RELATION_LABEL[relation].vi : RELATION_LABEL[relation].en}
               </Chip>
             ))}
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-medium">{vi ? "Kho bài học" : "Lesson library"} ({lessons.length})</label>
-            <Input className="h-8 text-xs" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={vi ? "Tìm: tiền, chăm cháu, Tết, im lặng…" : "Search…"} />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-xs font-medium">
+                {vi ? "Kho bài học" : "Lesson library"} ({lessons.length}){" "}
+                <span className="font-normal text-muted-foreground">
+                  · {vi ? `đã làm ${usedOnShelf}/${shelf.length}` : `made ${usedOnShelf}/${shelf.length}`}
+                </span>
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={pickNextUnused} title={vi ? "Chọn ngẫu nhiên một bài bạn chưa làm trong mục đang xem" : "Pick a lesson you have not made yet"}>
+                  <Dices className="h-3.5 w-3.5" />
+                  {vi ? "Bài chưa làm" : "Next unused"}
+                </Button>
+                <Chip active={hideUsed} onClick={() => setHideUsed((v) => !v)}>{vi ? "Ẩn bài đã làm" : "Hide made"}</Chip>
+              </div>
+            </div>
+            {themes.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                <Chip active={!theme} onClick={() => { setTheme(""); setShelfDone(false); }}>
+                  {vi ? "Tất cả" : "All"} ({familyLessonsFor(config.relation).length})
+                </Chip>
+                {themes.map((t) => (
+                  <Chip key={t.id} active={theme === t.id} onClick={() => { setTheme(t.id); setShelfDone(false); }}>
+                    {t.label} ({t.count})
+                  </Chip>
+                ))}
+              </div>
+            ) : null}
+            {shelfDone ? (
+              <p className="flex flex-wrap items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-2 text-[11px]">
+                🎉 {vi ? "Bạn đã làm hết các bài trong mục này." : "You have made every lesson on this shelf."}
+                <button type="button" className="inline-flex items-center gap-1 underline" onClick={resetShelf}>
+                  <RotateCcw className="h-3 w-3" />
+                  {vi ? "Làm lại từ đầu" : "Start over"}
+                </button>
+              </p>
+            ) : null}
+            <Input className="h-8 text-xs" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={vi ? "Tìm: tiền, chăm cháu, ở cữ, Tết, điện thoại, im lặng…" : "Search…"} />
             <div className="grid max-h-64 gap-1.5 overflow-auto sm:grid-cols-2">
               {lessons.map((item) => (
                 <button
@@ -142,6 +234,7 @@ export function FamilyDramaCard(props: {
                   )}
                 >
                   <span className="font-medium">{item.title}</span>
+                  {usedSet.has(item.id) ? <span className="ml-1 text-[10px] text-emerald-600 dark:text-emerald-400">✓ {vi ? "đã làm" : "made"}</span> : null}
                   <span className="mt-0.5 block text-muted-foreground">{item.hook}</span>
                   <span className="mt-0.5 block text-[11px] text-amber-700 dark:text-amber-300">⚠ {item.pattern} → ✓ {item.method}</span>
                 </button>
@@ -152,6 +245,7 @@ export function FamilyDramaCard(props: {
           {lesson ? (
             <div className="space-y-1 rounded-md border bg-background/60 p-2 text-xs">
               <p className="font-semibold">📚 {lesson.title}</p>
+              {familyThemeLabel(lesson) ? <p className="text-[11px] text-muted-foreground">{familyThemeLabel(lesson)}</p> : null}
               <p><b>{vi ? "Câu chốt:" : "Takeaway:"}</b> {lesson.takeaway}</p>
               <button type="button" className="text-[11px] underline opacity-80" onClick={() => setShowBasis((v) => !v)}>
                 {showBasis ? (vi ? "Ẩn căn cứ nghiên cứu" : "Hide research") : (vi ? "Xem căn cứ nghiên cứu" : "Show research")}
@@ -228,11 +322,11 @@ export function FamilyDramaCard(props: {
           </p>
 
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" disabled={!ready} onClick={() => onBuild(config)}>
+            <Button size="sm" disabled={!ready} onClick={() => { markUsed(); onBuild(config); }}>
               <Zap className="h-4 w-4" />
               {vi ? "Tạo video ngay" : "Build video"}
             </Button>
-            <Button size="sm" variant="outline" disabled={!ready} onClick={() => onOpenRoom(config)}>
+            <Button size="sm" variant="outline" disabled={!ready} onClick={() => { markUsed(); onOpenRoom(config); }}>
               <PenLine className="h-4 w-4" />
               {vi ? "Mở phòng biên kịch" : "Writers' room"}
             </Button>

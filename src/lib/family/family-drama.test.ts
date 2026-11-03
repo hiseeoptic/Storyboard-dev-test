@@ -10,9 +10,13 @@ import {
   familyDramaRoomSeed,
   familyDramaStoryIdea,
   familyLessonsFor,
+  familyThemeLabel,
+  familyThemesFor,
   findFamilyLesson,
   normalizeFamilyDrama,
+  pickUnusedFamilyLesson,
   searchFamilyLessons,
+  MIL_THEMES,
   withLibraryFamilyLesson,
   type FamilyDramaConfig,
 } from "./family-drama.ts";
@@ -28,12 +32,14 @@ import {
   stubSegments,
 } from "../storyboard/long-video.ts";
 
-test("the library: 30 complete lessons — 12 couples, 10 mother/daughter-in-law, 8 sister-in-law", () => {
-  assert.equal(FAMILY_LESSONS.length, 30);
+test("the library: 220 complete lessons — 12 couples, 200 mother/daughter-in-law, 8 sister-in-law", () => {
+  assert.equal(FAMILY_LESSONS.length, 220);
   assert.equal(familyLessonsFor("couple").length, 12);
-  assert.equal(familyLessonsFor("mil_dil").length, 10);
+  assert.equal(familyLessonsFor("mil_dil").length, 200);
   assert.equal(familyLessonsFor("sil").length, 8);
-  assert.equal(new Set(FAMILY_LESSONS.map((l) => l.id)).size, 30, "unique ids");
+  assert.equal(new Set(FAMILY_LESSONS.map((l) => l.id)).size, 220, "unique ids");
+  assert.equal(new Set(FAMILY_LESSONS.map((l) => l.title)).size, 220, "unique titles");
+  assert.equal(new Set(FAMILY_LESSONS.map((l) => l.hook)).size, 220, "unique hooks");
   for (const l of FAMILY_LESSONS) {
     for (const field of ["title", "hook", "situation", "conflict", "climax", "turning", "lesson", "awakening", "takeaway", "pattern", "method", "basis", "place"] as const) {
       assert.ok(l[field].trim().length > 10, `${l.id}.${field}`);
@@ -47,6 +53,55 @@ test("the library: 30 complete lessons — 12 couples, 10 mother/daughter-in-law
     // No hotline numbers or invented figures in the research notes.
     assert.doesNotMatch(l.basis, /\b1[89]00\b|\bhotline\b/i, l.id);
   }
+});
+
+test("the in-law shelves: every lesson has a theme, every theme is stocked, the first 10 lessons are kept", () => {
+  const mil = familyLessonsFor("mil_dil");
+  const themeIds = new Set(MIL_THEMES.map((t) => t.id));
+  for (const l of mil) assert.ok(l.theme && themeIds.has(l.theme as never), `${l.id} has a library theme`);
+  const shelves = familyThemesFor("mil_dil");
+  assert.deepEqual(shelves.map((t) => t.id), MIL_THEMES.map((t) => t.id), "all 12 shelves, in order");
+  assert.equal(shelves.reduce((n, t) => n + t.count, 0), 200);
+  for (const t of shelves) assert.ok(t.count >= 12, `${t.id} holds at least 12 lessons`);
+  for (const t of shelves) assert.equal(familyLessonsFor("mil_dil", t.id).length, t.count);
+  // The list is grouped by shelf.
+  const order = mil.map((l) => MIL_THEMES.findIndex((t) => t.id === l.theme));
+  assert.deepEqual(order, [...order].sort((a, b) => a - b));
+  // The first 10 hand-written lessons are still there, unchanged apart from their shelf.
+  const original = findFamilyLesson("mil_childcare_01")!;
+  assert.equal(original.theme, "cham_chau");
+  assert.equal(original.title, "Bà cho cháu ăn bột sớm");
+  assert.equal(findFamilyLesson("mil_gratitude_10")?.theme, "tuoi_gia");
+  assert.equal(familyThemeLabel(original), "👶 Chăm cháu & nuôi dạy cháu");
+  assert.deepEqual(familyThemesFor("couple"), [], "couples have no shelves yet");
+  assert.equal(familyLessonsFor("couple", null).length, 12);
+});
+
+test("next unused lesson: never one already made; undefined when the shelf is done", () => {
+  const shelf = familyLessonsFor("mil_dil", "tien");
+  const used = shelf.slice(0, shelf.length - 2).map((l) => l.id);
+  const left = new Set(shelf.slice(-2).map((l) => l.id));
+  for (const r of [0, 0.49, 0.5, 0.999999]) {
+    const pick = pickUnusedFamilyLesson(shelf, used, () => r)!;
+    assert.ok(left.has(pick.id), `random ${r} picks one of the two left`);
+  }
+  assert.equal(pickUnusedFamilyLesson(shelf, shelf.map((l) => l.id)), undefined);
+  assert.equal(pickUnusedFamilyLesson([], []), undefined);
+  assert.equal(pickUnusedFamilyLesson(shelf, [], () => 0)?.id, shelf[0]!.id);
+});
+
+test("search reaches the shelf label and the hook", () => {
+  const tet = searchFamilyLessons("Tết giỗ", "mil_dil");
+  assert.ok(tet.length >= 16, "the festival shelf is found through its label");
+  assert.ok(searchFamilyLessons("điều hòa", "mil_dil").some((l) => l.id === "mil_oc2_05"), "words in the hook are searched");
+  assert.ok(searchFamilyLessons("ma xa hoi", "mil_dil").every((l) => l.relation === "mil_dil"));
+});
+
+test("a client lesson snapshot keeps its shelf", () => {
+  const picked = findFamilyLesson("mil_td_04")!;
+  const normalized = normalizeFamilyDrama({ relation: "mil_dil", lessonId: picked.id, lesson: picked, shots: 12 })!;
+  assert.equal(normalized.lesson?.theme, "thoi_dai");
+  assert.equal(normalized.lesson?.title, picked.title);
 });
 
 test("search and lookup", () => {

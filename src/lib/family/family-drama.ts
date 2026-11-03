@@ -13,10 +13,18 @@ import { RELATION_LABEL, ROLE_LABEL, type FamilyLesson, type FamilyRelation, typ
 import { COUPLE_LESSONS } from "./lessons/couple.ts";
 import { IN_LAW_LESSONS } from "./lessons/in-laws.ts";
 import { SIBLING_IN_LAW_LESSONS } from "./lessons/siblings-in-law.ts";
+import { milLibrary } from "./lessons/mil/index.ts";
+import { MIL_THEMES } from "./techniques.ts";
 
 export { RELATION_LABEL, ROLE_LABEL, type FamilyLesson, type FamilyRelation, type FamilyRole } from "./lesson-types.ts";
 
-export const FAMILY_LESSONS: FamilyLesson[] = [...COUPLE_LESSONS, ...IN_LAW_LESSONS, ...SIBLING_IN_LAW_LESSONS];
+export { MIL_THEMES, type MilTheme } from "./techniques.ts";
+
+// The mother-in-law shelf is the first 10 lessons + the themed library (≈200).
+export const FAMILY_LESSONS: FamilyLesson[] = [...COUPLE_LESSONS, ...milLibrary(IN_LAW_LESSONS), ...SIBLING_IN_LAW_LESSONS];
+
+/** Library shelves per relation (only the in-law library is shelved so far). */
+export const FAMILY_THEMES: Partial<Record<FamilyRelation, ReadonlyArray<{ id: string; label: string }>>> = { mil_dil: MIL_THEMES };
 
 const BY_ID = new Map(FAMILY_LESSONS.map((l) => [l.id, l]));
 export const FAMILY_RELATIONS: readonly FamilyRelation[] = ["couple", "mil_dil", "sil"];
@@ -26,8 +34,31 @@ export function findFamilyLesson(id: string | undefined | null): FamilyLesson | 
   return id ? BY_ID.get(id) : undefined;
 }
 
-export function familyLessonsFor(relation: FamilyRelation): FamilyLesson[] {
-  return FAMILY_LESSONS.filter((l) => l.relation === relation);
+export function familyLessonsFor(relation: FamilyRelation, theme?: string | null): FamilyLesson[] {
+  return FAMILY_LESSONS.filter((l) => l.relation === relation && (!theme || l.theme === theme));
+}
+
+/** The shelves of a relation with how many lessons each holds (empty when it has none). */
+export function familyThemesFor(relation: FamilyRelation): Array<{ id: string; label: string; count: number }> {
+  const pool = familyLessonsFor(relation);
+  return (FAMILY_THEMES[relation] ?? []).map((t) => ({ ...t, count: pool.filter((l) => l.theme === t.id).length })).filter((t) => t.count > 0);
+}
+
+/** The label of a lesson's shelf ("" when it has none). */
+export function familyThemeLabel(lesson: Pick<FamilyLesson, "relation" | "theme">): string {
+  return FAMILY_THEMES[lesson.relation]?.find((t) => t.id === lesson.theme)?.label ?? "";
+}
+
+/**
+ * A lesson the creator has not made yet, at random, from `pool`. Returns
+ * undefined when every lesson in the pool is already used (the card then
+ * offers to start the shelf over).
+ */
+export function pickUnusedFamilyLesson(pool: readonly FamilyLesson[], used: Iterable<string>, random: () => number = Math.random): FamilyLesson | undefined {
+  const done = new Set(used);
+  const fresh = pool.filter((l) => !done.has(l.id));
+  if (!fresh.length) return undefined;
+  return fresh[Math.min(fresh.length - 1, Math.floor(random() * fresh.length))];
 }
 
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
@@ -37,7 +68,7 @@ export function searchFamilyLessons(query: string, relation?: FamilyRelation): F
   const words = fold(query).split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const pool = FAMILY_LESSONS.filter((l) => !relation || l.relation === relation);
-  const text = (l: FamilyLesson) => fold(`${l.title} ${l.situation} ${l.pattern} ${l.method} ${l.takeaway}`);
+  const text = (l: FamilyLesson) => fold(`${l.title} ${l.hook} ${l.situation} ${l.pattern} ${l.method} ${l.takeaway} ${familyThemeLabel(l)}`);
   const hits = pool.filter((l) => words.every((w) => text(l).includes(w)));
   const inTitle = (l: FamilyLesson) => words.every((w) => fold(l.title).includes(w));
   return [...hits.filter(inTitle), ...hits.filter((l) => !inTitle(l))];
@@ -307,6 +338,7 @@ function lessonSnapshot(raw: unknown, lessonId: unknown): FamilyLesson | undefin
     basis: clip(r.basis, 600),
     roles: [...new Set(roles)],
     place: clip(r.place, 160),
+    ...(clip(r.theme, 40) ? { theme: clip(r.theme, 40) } : {}),
   };
   const required = [lesson.title, lesson.hook, lesson.situation, lesson.conflict, lesson.climax, lesson.turning, lesson.lesson, lesson.awakening, lesson.takeaway, lesson.method];
   return required.every(Boolean) ? lesson : undefined;
