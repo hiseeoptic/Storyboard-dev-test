@@ -64,6 +64,8 @@ import { FamilyDramaCard } from "./family-drama-card";
 import { familyDramaCast, familyDramaRoomSeed, familyDramaStoryIdea, RELATION_LABEL, type FamilyDramaConfig } from "@/lib/family/family-drama";
 import { OfficeDramaCard } from "./office-drama-card";
 import { officeDramaCast, officeDramaRoomSeed, officeDramaStoryIdea, AUDIENCE_LABEL, type OfficeDramaConfig } from "@/lib/workplace/office-drama";
+import { QuoteStoryCard } from "./quote-story-card";
+import { quoteRoomSeed, quoteStoryCast, quoteStoryIdea, type QuoteStoryConfig } from "@/lib/quotes/quote-story";
 import { LocationPresetPanel, roomImages } from "./location-presets";
 import {
   emptyLibrary,
@@ -1685,6 +1687,8 @@ function ProjectWorkspace() {
   const [familyDrama, setFamilyDrama] = useState<FamilyDramaConfig | null>(null);
   // "Chuyện công sở": an educational workplace-culture drama (managers / employees), 6–18 clips.
   const [officeDrama, setOfficeDrama] = useState<OfficeDramaConfig | null>(null);
+  // "Lời xưa – Chuyện nay": one timeless saying told as a short modern story, 4–12 clips.
+  const [quoteStory, setQuoteStory] = useState<QuoteStoryConfig | null>(null);
   const [roomSeed, setRoomSeed] = useState<{ key: number; idea: string } | null>(null);
   const [autoGenerate, setAutoGenerate] = useState(false);
   const [voiceOverEnabled, setVoiceOverEnabled] = useState(false);
@@ -2599,6 +2603,7 @@ function ProjectWorkspace() {
       cute_kids: cuteKids ?? undefined,
       family_drama: familyDrama ?? undefined,
       office_drama: officeDrama ?? undefined,
+      quote_story: quoteStory ?? undefined,
       product_shoot: productShootActive
         ? {
             presence: productPresence,
@@ -5037,6 +5042,7 @@ function ProjectWorkspace() {
     setCuteKidsPhoto(kidPhoto.slice(0, 1));
     setFamilyDrama(null);
     setOfficeDrama(null);
+    setQuoteStory(null);
   };
 
   // "Chuyện nhà" card → the form: a family drama, the lesson's cast locked from
@@ -5066,6 +5072,7 @@ function ProjectWorkspace() {
     setFamilyDrama(config);
     setCuteKids(null);
     setOfficeDrama(null);
+    setQuoteStory(null);
   };
   const buildFamilyDrama = (config: FamilyDramaConfig) => {
     applyFamilyDrama(config);
@@ -5104,6 +5111,7 @@ function ProjectWorkspace() {
     setOfficeDrama(config);
     setFamilyDrama(null);
     setCuteKids(null);
+    setQuoteStory(null);
   };
   const buildOfficeDrama = (config: OfficeDramaConfig) => {
     applyOfficeDrama(config);
@@ -5112,6 +5120,45 @@ function ProjectWorkspace() {
   const openOfficeDramaRoom = (config: OfficeDramaConfig) => {
     applyOfficeDrama(config);
     setRoomSeed((prev) => ({ key: (prev?.key ?? 0) + 1, idea: officeDramaRoomSeed(config) }));
+    setShowWritersRoom(true);
+  };
+
+  // "Lời xưa – Chuyện nay" card → the form: a short story drama, the cast
+  // locked from text, 4–12 clips, dialogue on; the voice-over is on when a
+  // narrator or the main character's inner voice speaks the saying; 9:16.
+  const applyQuoteStory = (config: QuoteStoryConfig) => {
+    changeGenre("drama");
+    if (isStylizedCharacterRepresentation(characterRepresentation)) setCharacterRepresentation("auto");
+    setStoryIdea(quoteStoryIdea(config));
+    setScriptTreatment("polish");
+    setCharacters(quoteStoryCast(config).map((member) => ({
+      name: member.name,
+      role: member.label,
+      appearance: member.appearance,
+      bodyType: "standard" as const,
+      isChild: member.isChild,
+      images: [],
+      makeup: "auto" as const,
+    })));
+    setSegmentCount(config.shots);
+    const quoteCamera: DirectingProfileId[] = config.filming === "phone" ? ["everyday_naturalism", "handheld_vlog"] : ["cinematic_drama", "everyday_naturalism"];
+    setDirectingProfiles(quoteCamera);
+    setDirectingProfile(quoteCamera[0]!);
+    setCharacterDialogueEnabled(true);
+    setVoiceOverEnabled(config.voice !== "elder");
+    setAspectRatio("9:16");
+    setQuoteStory(config);
+    setOfficeDrama(null);
+    setFamilyDrama(null);
+    setCuteKids(null);
+  };
+  const buildQuoteStory = (config: QuoteStoryConfig) => {
+    applyQuoteStory(config);
+    setAutoGenerate(true);
+  };
+  const openQuoteStoryRoom = (config: QuoteStoryConfig) => {
+    applyQuoteStory(config);
+    setRoomSeed((prev) => ({ key: (prev?.key ?? 0) + 1, idea: quoteRoomSeed(config) }));
     setShowWritersRoom(true);
   };
   const buildCuteKids = (config: CuteKidsConfig, kidPhoto: UploadedImage[]) => {
@@ -5354,6 +5401,7 @@ function ProjectWorkspace() {
               <CuteKidsCard lang={lang} provider={scriptProvider} onBuild={buildCuteKids} onOpenRoom={openCuteKidsRoom} />
               <FamilyDramaCard lang={lang} onBuild={buildFamilyDrama} onOpenRoom={openFamilyDramaRoom} />
               <OfficeDramaCard lang={lang} onBuild={buildOfficeDrama} onOpenRoom={openOfficeDramaRoom} />
+              <QuoteStoryCard lang={lang} onBuild={buildQuoteStory} onOpenRoom={openQuoteStoryRoom} />
               <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-primary">
                   <BookOpen className="h-4 w-4" />
@@ -5416,6 +5464,18 @@ function ProjectWorkspace() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("storyIdea")}</label>
+                {quoteStory && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-violet-400/50 bg-violet-500/[0.06] px-3 py-1.5 text-xs">
+                    <span>
+                      📜 {lang === "vi"
+                        ? `Chế độ Lời xưa – Chuyện nay${quoteStory.quote ? `: “${quoteStory.quote.text}” — ${quoteStory.quote.verification === "misattributed" ? `thường bị gán cho ${quoteStory.quote.author}` : quoteStory.quote.author || quoteStory.quote.source}` : ""} · ${quoteStory.shots} shot (${quoteStory.shots * 10} giây) — câu nói đọc nguyên văn, không chữ trên hình, nhãn AI khi đăng.`
+                        : `Saying story mode${quoteStory.quote ? `: ${quoteStory.quote.text}` : ""}, ${quoteStory.shots} clips.`}
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={() => setQuoteStory(null)}>
+                      {lang === "vi" ? "Tắt" : "Off"}
+                    </Button>
+                  </div>
+                )}
                 {officeDrama && (
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-sky-400/50 bg-sky-500/[0.06] px-3 py-1.5 text-xs">
                     <span>

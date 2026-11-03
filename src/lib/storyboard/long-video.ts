@@ -11,9 +11,10 @@
 import type { StoryboardGenerationInput, StoryboardGenerationOutput, VideoSegment } from "@/types";
 import { familyActPlan, familyLessonOf, normalizeFamilyDrama } from "../family/family-drama.ts";
 import { normalizeOfficeDrama, officeActPlan, officeLessonOf } from "../workplace/office-drama.ts";
+import { normalizeQuoteStory, quoteActPlan, quoteOf } from "../quotes/quote-story.ts";
 
 /** The drama configs a long video can follow ("Chuyện nhà", "Chuyện công sở"). */
-type DramaInput = Pick<StoryboardGenerationInput, "family_drama" | "office_drama">;
+type DramaInput = Pick<StoryboardGenerationInput, "family_drama" | "office_drama" | "quote_story">;
 
 /** Videos up to this many clips are still written in ONE request, exactly as before. */
 export const LONG_THRESHOLD = 10;
@@ -56,6 +57,21 @@ export function clipPurpose(input: DramaInput, clip: number, total: number): str
               : slot.act === "turning" && lesson ? ` The turning point: ${lesson.turning}.`
                 : slot.act === "rising" && lesson ? ` The escalation: ${lesson.conflict}.`
                   : "";
+      return `${slot.label_vi.toUpperCase()} (clips ${slot.from}–${slot.to}) — ${slot.purpose_en}.${detail}`;
+    }
+  }
+  // "Lời xưa – Chuyện nay": the saying's six beats.
+  const quote = normalizeQuoteStory(input.quote_story);
+  if (quote) {
+    const entry = quoteOf(quote);
+    const slot = quoteActPlan(total, entry).find((s) => clip >= s.from && clip <= s.to);
+    if (slot) {
+      const detail =
+        slot.act === "saying" && entry ? ` Speak the saying VERBATIM: «${entry.text}».`
+          : slot.act === "awakening" && entry ? ` The awakening: ${entry.awakening}.`
+            : slot.act === "turning" && entry ? ` The turning point: ${entry.turning}.`
+              : slot.act === "rising" && entry ? ` The mistake: ${entry.mistake}.`
+                : "";
       return `${slot.label_vi.toUpperCase()} (clips ${slot.from}–${slot.to}) — ${slot.purpose_en}.${detail}`;
     }
   }

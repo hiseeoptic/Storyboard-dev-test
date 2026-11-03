@@ -23,7 +23,8 @@
     "test:cute-kids": "node --experimental-strip-types --test src/lib/kids/cute-kids.test.ts src/lib/kids/child-safe-wording.test.ts src/lib/kids/parenting-lessons.test.ts",
     "test:continuity": "node --experimental-strip-types --test src/lib/continuity/continuity.test.ts",
     "test:family": "node --experimental-strip-types --test src/lib/family/family-drama.test.ts",
-    "test:office": "node --experimental-strip-types --test src/lib/workplace/office-drama.test.ts"
+    "test:office": "node --experimental-strip-types --test src/lib/workplace/office-drama.test.ts",
+    "test:quotes": "node --experimental-strip-types --test src/lib/quotes/quote-story.test.ts"
   },
   "dependencies": {
     "next": "^15.1.0",

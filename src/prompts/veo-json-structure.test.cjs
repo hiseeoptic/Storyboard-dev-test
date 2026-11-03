@@ -1190,6 +1190,26 @@ test("an incomplete voice drops the whole numeric clause before the locked fallb
   assert.match(voice, /^Northern Vietnamese accent; adult male timbre, calm; /);
 });
 
+test("saying story contract reaches the writer and the storyboard with the verbatim saying", () => {
+  const { findQuote } = require("../lib/quotes/quote-story.ts");
+  const quote = findQuote("vn_02");
+  const input = {
+    story_idea: "Cô gái học lái xe",
+    genre: "drama",
+    style: "cinematic",
+    scene_count: 6,
+    segment_count: 6,
+    dialogue_language: "Vietnamese",
+    quote_story: { request: "", quoteId: quote.id, quote, names: {}, voice: "narrator", dialect: "north", filming: "cinematic", shots: 6, tone: "warm" },
+  };
+  for (const prompt of [buildScriptWriterUserPrompt(input), buildStoryboardUserPrompt(input)]) {
+    assert.match(prompt, /TIMELESS SAYING STORY \(HARD\)/);
+    assert.match(prompt, /SPEAK IT VERBATIM in clip 5: «Có công mài sắt, có ngày nên kim\.»/);
+    assert.match(prompt, /NO TEXT ON SCREEN/);
+    assert.doesNotMatch(prompt, /WORKPLACE CULTURE DRAMA|FAMILY LESSON DRAMA/, "only the chosen mode's contract");
+  }
+});
+
 test("workplace drama contract reaches the writer and the storyboard; part 1 of a long video says so", () => {
   const { findOfficeLesson } = require("../lib/workplace/office-drama.ts");
   const lesson = findOfficeLesson("off_gy_01");

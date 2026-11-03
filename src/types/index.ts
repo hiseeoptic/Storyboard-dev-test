@@ -305,6 +305,8 @@ export interface StoryboardGenerationInput {
   family_drama?: import("@/lib/family/family-drama").FamilyDramaConfig;
   /** "Chuyện công sở": an educational workplace-culture drama (managers / employees), 6–18 clips. */
   office_drama?: import("@/lib/workplace/office-drama").OfficeDramaConfig;
+  /** "Lời xưa – Chuyện nay": one timeless saying told as a short modern story, 4–12 clips. */
+  quote_story?: import("@/lib/quotes/quote-story").QuoteStoryConfig;
   /** Internal: the whole clip count of a long video written in parts (set by the server for part 1). */
   long_video_total?: number;
   affiliate_video_style?: import("@/lib/product-ir").AffiliateVideoStyle;

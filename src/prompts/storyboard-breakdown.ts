@@ -41,6 +41,7 @@ import { productPlacementDirective } from "@/lib/product-placement";
 import { cuteKidsDirective } from "@/lib/kids/cute-kids";
 import { familyDramaDirective } from "@/lib/family/family-drama";
 import { officeDramaDirective } from "@/lib/workplace/office-drama";
+import { quoteStoryDirective } from "@/lib/quotes/quote-story";
 import { longVideoFirstPartDirective } from "@/lib/storyboard/long-video";
 import { outfitNamesLowerGarment } from "@/lib/nano-flow/prompt-compaction";
 import { CHILD_SAFE_WORDING_RULE } from "@/lib/kids/child-safe-wording";
@@ -860,6 +861,7 @@ export function buildScriptWriterUserPrompt(input: StoryboardGenerationInput): s
     cuteKidsDirective(input.cute_kids),
     familyDramaDirective(input.family_drama),
     officeDramaDirective(input.office_drama),
+    quoteStoryDirective(input.quote_story),
     input.long_video_total && input.long_video_total > (input.segment_count ?? 0) ? longVideoFirstPartDirective(input, input.long_video_total, input.segment_count) : "",
   ].filter(Boolean).join("\n\n");
 
@@ -1078,6 +1080,7 @@ export function buildStoryboardUserPrompt(
     cuteKidsDirective(input.cute_kids),
     familyDramaDirective(input.family_drama),
     officeDramaDirective(input.office_drama),
+    quoteStoryDirective(input.quote_story),
     input.long_video_total && input.long_video_total > (input.segment_count ?? 0) ? longVideoFirstPartDirective(input, input.long_video_total, input.segment_count) : "",
   ].filter(Boolean).join("\n\n");
   const productBriefBlock = `${productBriefBlockBase}${storyboardPlacement ? `\n\n${storyboardPlacement}` : ""}${storyboardKids ? `\n\n${storyboardKids}` : ""}`;
@@ -1591,6 +1594,8 @@ export function buildStoryboardRepairUserPrompt(params: {
   const familyContract = familyDramaDirective(input.family_drama);
   // A workplace drama keeps its contract in every rewrite / long-video part too.
   const officeContract = officeDramaDirective(input.office_drama);
+  // A saying story keeps its verbatim-saying contract in every rewrite / long-video part too.
+  const quoteContract = quoteStoryDirective(input.quote_story);
   const targetCharacterSet = new Set(
     characterNames.map((name) => name.trim().toLowerCase())
   );
@@ -1615,7 +1620,7 @@ The deterministic Layer A+B validator rejected only the listed storyboard segmen
 
 IMMUTABLE PROJECT AUTHORITY:
 ${JSON.stringify(lockedProject)}
-${familyContract ? `\n${familyContract}\n` : ""}${officeContract ? `\n${officeContract}\n` : ""}
+${familyContract ? `\n${familyContract}\n` : ""}${officeContract ? `\n${officeContract}\n` : ""}${quoteContract ? `\n${quoteContract}\n` : ""}
 DETERMINISTIC VALIDATOR REPORT:
 ${JSON.stringify(report)}
 
