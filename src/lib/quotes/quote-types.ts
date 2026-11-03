@@ -10,7 +10,8 @@
 // the saying; the name appears only in the narration / caption.
 // ============================================================
 
-export type QuoteRegion = "viet_nam" | "trung_hoa" | "chau_au" | "my" | "the_gioi";
+/** Where the saying comes from; "doanh_nhan" is the shelf of billionaires, entrepreneurs and speakers (any country). */
+export type QuoteRegion = "viet_nam" | "trung_hoa" | "chau_au" | "my" | "the_gioi" | "doanh_nhan";
 
 export type QuoteKind = "tuc_ngu" | "ca_dao" | "thanh_ngu" | "danh_ngon" | "kinh_dien";
 
@@ -37,7 +38,8 @@ export type QuoteTheme =
   | "thoi_gian"
   | "lanh_dao"
   | "song_dep"
-  | "gia_dinh";
+  | "gia_dinh"
+  | "kinh_doanh";
 
 export type QuoteRole = "main" | "elder" | "parent" | "child" | "friend" | "colleague" | "boss" | "teacher";
 
@@ -86,6 +88,7 @@ export const REGION_LABEL: Record<QuoteRegion, { vi: string; en: string }> = {
   chau_au: { vi: "🏛️ Châu Âu", en: "Europe" },
   my: { vi: "🗽 Mỹ", en: "America" },
   the_gioi: { vi: "🌏 Thế giới", en: "World" },
+  doanh_nhan: { vi: "💼 Tỉ phú, doanh nhân & diễn giả", en: "Business leaders & speakers" },
 };
 
 export const KIND_LABEL: Record<QuoteKind, string> = {
@@ -121,6 +124,7 @@ export const QUOTE_THEMES: Array<{ id: QuoteTheme; label: string }> = [
   { id: "lanh_dao", label: "👑 Lãnh đạo & trách nhiệm" },
   { id: "song_dep", label: "🌿 Sống đẹp & giản dị" },
   { id: "gia_dinh", label: "🏡 Gia đình & dạy con" },
+  { id: "kinh_doanh", label: "💰 Kinh doanh & tiền bạc" },
 ];
 
 export const QUOTE_ROLE_LABEL: Record<QuoteRole, string> = {

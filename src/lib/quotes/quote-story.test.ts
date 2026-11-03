@@ -27,13 +27,13 @@ import {
 } from "./quote-story.ts";
 import { clipPurpose } from "../storyboard/long-video.ts";
 
-test("the library: 112 sourced sayings from Việt Nam, Trung Hoa, Châu Âu, Mỹ and the world", () => {
-  assert.equal(QUOTE_LIBRARY.length, 112);
+test("the library: 136 sourced sayings from Việt Nam, Trung Hoa, Châu Âu, Mỹ, the world and business leaders", () => {
+  assert.equal(QUOTE_LIBRARY.length, 136);
   for (const field of ["id", "text", "hook"] as const) {
     assert.equal(new Set(QUOTE_LIBRARY.map((q) => q[field])).size, QUOTE_LIBRARY.length, `unique ${field}s`);
   }
   const { regions, themes, formats } = quoteCounts();
-  assert.deepEqual(regions.map((r) => [r.id, r.count]), [["viet_nam", 40], ["trung_hoa", 24], ["chau_au", 20], ["my", 20], ["the_gioi", 8]]);
+  assert.deepEqual(regions.map((r) => [r.id, r.count]), [["viet_nam", 40], ["trung_hoa", 24], ["chau_au", 20], ["my", 20], ["the_gioi", 8], ["doanh_nhan", 24]]);
   for (const t of themes) assert.ok(t.count >= 3, `${t.id} has sayings`);
   assert.ok(formats.find((f) => f.id === "rethink")!.count >= 12, "enough \"Nghĩ lại cho đúng\" stories");
   const themeIds = new Set(QUOTE_THEMES.map((t) => t.id));
@@ -67,6 +67,23 @@ test("well-known corrections are stated, not repeated", () => {
   const franklin = findQuote("us_03")!;
   assert.match(franklin.misread!, /Tuân Tử/);
   assert.equal(findQuote("vn_38")!.verification, "paraphrase", "the diary line's exact wording is unverified");
+});
+
+test("business leaders and speakers: sourced lines, famous fakes corrected, no endorsement", () => {
+  const shelf = quotesFor({ region: "doanh_nhan" });
+  assert.equal(shelf.length, 24);
+  assert.ok(shelf.some((q) => q.author === "Warren Buffett" && /1986/.test(q.source)));
+  const horses = findQuote("dn_13")!;
+  assert.equal(horses.verification, "misattributed");
+  assert.match(horses.misread!, /Không có bằng chứng Henry Ford/);
+  assert.match(findQuote("dn_24")!.misread!, /Alan Kay/);
+  assert.match(findQuote("dn_03")!.source, /Benjamin Graham/, "Buffett's own credit to Graham is kept");
+  assert.equal(findQuote("dn_10")!.verification, "paraphrase", "Jack Ma's line is told in many wordings");
+  for (const q of shelf) assert.ok(q.gender && Object.keys(q.gender).length >= 1, `${q.id} states who is who`);
+  const d = quoteStoryDirective({ ...DEFAULT_QUOTE_STORY, quoteId: "dn_01", quote: findQuote("dn_01") });
+  assert.match(d, /REAL BUSINESS FIGURE: never imply that Warren Buffett endorses/);
+  assert.match(d, /no financial advice/);
+  assert.doesNotMatch(quoteStoryDirective({ ...DEFAULT_QUOTE_STORY, quoteId: "vn_02", quote: findQuote("vn_02") }), /REAL BUSINESS FIGURE/);
 });
 
 test("search, filters and the next unused saying", () => {

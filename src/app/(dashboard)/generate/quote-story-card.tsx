@@ -186,7 +186,7 @@ export function QuoteStoryCard(props: {
           <p className="text-sm font-medium">📜 {vi ? "Lời xưa – Chuyện nay — câu nói bất hủ thành phim ngắn (40 giây – 2 phút)" : "Timeless sayings as short stories"}</p>
           <p className="text-xs text-muted-foreground">
             {vi
-              ? "Tục ngữ, ca dao Việt Nam · kinh điển Trung Hoa · danh nhân Châu Âu, Mỹ · trí tuệ thế giới. Mỗi câu có xuất xứ và nhãn độ tin cậy; câu hay bị gán sai được làm thành video \"Nghĩ lại cho đúng\". Không dựng hình danh nhân, không viết chữ lên hình."
+              ? "Tục ngữ, ca dao Việt Nam · kinh điển Trung Hoa · danh nhân Châu Âu, Mỹ · trí tuệ thế giới · tỉ phú, doanh nhân, diễn giả. Mỗi câu có xuất xứ và nhãn độ tin cậy; câu hay bị gán sai được làm thành video \"Nghĩ lại cho đúng\". Không dựng hình danh nhân, không viết chữ lên hình."
               : "Proverbs, classics and great minds — sourced, with a correction format for misattributed lines."}
           </p>
         </div>

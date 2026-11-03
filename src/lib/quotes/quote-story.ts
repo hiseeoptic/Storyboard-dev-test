@@ -28,6 +28,7 @@ import { VIETNAM_QUOTES } from "./lessons/viet-nam.ts";
 import { CHINA_QUOTES } from "./lessons/trung-hoa.ts";
 import { EUROPE_QUOTES } from "./lessons/chau-au.ts";
 import { AMERICA_QUOTES, WORLD_QUOTES } from "./lessons/my-the-gioi.ts";
+import { BUSINESS_QUOTES } from "./lessons/doanh-nhan.ts";
 
 export {
   FORMAT_LABEL,
@@ -43,10 +44,10 @@ export {
   type QuoteTheme,
 } from "./quote-types.ts";
 
-export const QUOTE_LIBRARY: QuoteEntry[] = [...VIETNAM_QUOTES, ...CHINA_QUOTES, ...EUROPE_QUOTES, ...AMERICA_QUOTES, ...WORLD_QUOTES];
+export const QUOTE_LIBRARY: QuoteEntry[] = [...VIETNAM_QUOTES, ...CHINA_QUOTES, ...EUROPE_QUOTES, ...AMERICA_QUOTES, ...WORLD_QUOTES, ...BUSINESS_QUOTES];
 
 const BY_ID = new Map(QUOTE_LIBRARY.map((q) => [q.id, q]));
-export const QUOTE_REGIONS: readonly QuoteRegion[] = ["viet_nam", "trung_hoa", "chau_au", "my", "the_gioi"];
+export const QUOTE_REGIONS: readonly QuoteRegion[] = ["viet_nam", "trung_hoa", "chau_au", "my", "the_gioi", "doanh_nhan"];
 export const QUOTE_FORMATS: readonly QuoteFormat[] = ["story", "rethink"];
 export const QUOTE_ROLES: readonly QuoteRole[] = ["main", "elder", "parent", "child", "friend", "colleague", "boss", "teacher"];
 
@@ -404,6 +405,9 @@ export function quoteStoryDirective(raw: QuoteStoryConfig | null | undefined): s
     `- ${voiceRule}`,
     `- CLIP PLAN: ${plan.map((s) => `${range(s)} = ${s.label_vi.toUpperCase()} — ${s.purpose_en}`).join(" · ")}. One clear beat per clip; each clip ends on a state that leads into the next.`,
     `- NEVER SHOW THE AUTHOR: no actor, portrait, statue, AI likeness or imitated voice of ${q?.author ? q.author : "any real historical or famous person"} — ordinary present-day Vietnamese people live the story; the author exists only as a name in the spoken attribution.`,
+    ...(q?.region === "doanh_nhan"
+      ? [`- REAL BUSINESS FIGURE: never imply that ${q.author} endorses this video, a product, a brand or an investment; no real company logos or products; no financial advice — the story is about everyday life and character.`]
+      : []),
     "- NO TEXT ON SCREEN: do not render the saying or any words as text in the video (AI text, especially Vietnamese diacritics, is unreliable). In the saying clip(s) hold a calm composition with clean negative space (sky, a wall, window light, a table top) where the editor will add the caption.",
     "- SHOW, DON'T PREACH: the saying is the only \"lesson line\"; nobody lectures or explains it at length; after it, the change is shown in actions and short natural dialogue.",
     `- DIALOGUE: natural spoken Vietnamese with the right address terms for each relation (cháu/ông bà, con/bố mẹ, anh/chị/em, thầy/cô–em)${config.dialect === "south" ? "; Southern accent and particles (\"dạ\", \"nha\", \"hông\")" : "; Northern accent (\"dạ\", \"vâng ạ\")"}. At most three short turns per 10-second clip; leave room for silence.`,
