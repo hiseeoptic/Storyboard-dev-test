@@ -43,6 +43,30 @@ export type QuoteTheme =
 
 export type QuoteRole = "main" | "elder" | "parent" | "child" | "friend" | "colleague" | "boss" | "teacher";
 
+/** Who said it, by field — the card's "Lĩnh vực" filter. */
+export type QuoteField =
+  | "dan_gian"
+  | "triet_gia"
+  | "khoa_hoc"
+  | "van_nghe"
+  | "doanh_nhan"
+  | "lich_su"
+  | "giao_duc"
+  | "tam_linh"
+  | "the_thao";
+
+export const FIELD_LABEL: Record<QuoteField, string> = {
+  dan_gian: "🌾 Dân gian",
+  triet_gia: "🏛️ Triết gia & nhà tư tưởng",
+  khoa_hoc: "🔬 Nhà khoa học & phát minh",
+  van_nghe: "✍️ Nhà văn, nhà thơ & nghệ sĩ",
+  doanh_nhan: "💼 Doanh nhân & nhà quản trị",
+  lich_su: "🏯 Danh nhân lịch sử & nhà hoạt động",
+  giao_duc: "🎓 Nhà giáo dục, diễn giả & tâm lý học",
+  tam_linh: "🪷 Tôn giáo & tâm linh",
+  the_thao: "🏅 Thể thao & khám phá",
+};
+
 export interface QuoteEntry {
   id: string;
   region: QuoteRegion;
@@ -80,6 +104,14 @@ export interface QuoteEntry {
   place: string;
   /** Who each role is when the story text alone is ambiguous. */
   gender?: Partial<Record<QuoteRole, "female" | "male">>;
+  /**
+   * Reference-library entries carry no written story: one line of story idea
+   * instead, and the script writer builds the six beats from it (the story
+   * fields above are then empty strings).
+   */
+  seed?: string;
+  /** Who said it, by field (derived from the author when not set). */
+  field?: QuoteField;
 }
 
 export const REGION_LABEL: Record<QuoteRegion, { vi: string; en: string }> = {
@@ -187,5 +219,56 @@ export function quotesOf(region: QuoteRegion, list: CompactQuote[]): QuoteEntry[
     roles: q.roles ?? ["main", "elder"],
     place: q.place ?? "một khu phố Việt Nam hiện đại",
     ...(q.gender ? { gender: { ...q.gender } } : {}),
+  }));
+}
+
+/** A reference-library entry: the saying, its source and meaning, and one line of story idea. */
+export interface SeedQuote {
+  id: string;
+  kind: QuoteKind;
+  ver: QuoteVerification;
+  format?: QuoteFormat;
+  theme: QuoteTheme;
+  field: QuoteField;
+  text: string;
+  original?: string;
+  author?: string;
+  source: string;
+  meaning: string;
+  misread?: string;
+  /** One line: the modern everyday story this saying answers. */
+  seed: string;
+  takeaway?: string;
+  roles?: QuoteRole[];
+  gender?: Partial<Record<QuoteRole, "female" | "male">>;
+  place?: string;
+}
+
+export function seedsOf(region: QuoteRegion, list: SeedQuote[]): QuoteEntry[] {
+  return list.map((q) => ({
+    id: q.id,
+    region,
+    kind: q.kind,
+    verification: q.ver,
+    format: q.format ?? (q.ver === "misattributed" ? "rethink" : "story"),
+    theme: q.theme,
+    text: q.text,
+    ...(q.original ? { original: q.original } : {}),
+    author: q.author ?? "",
+    source: q.source,
+    meaning: q.meaning,
+    ...(q.misread ? { misread: q.misread } : {}),
+    hook: "",
+    situation: "",
+    mistake: "",
+    turning: "",
+    awakening: "",
+    takeaway: q.takeaway ?? q.meaning,
+    questions: [],
+    roles: q.roles ?? ["main", "friend"],
+    place: q.place ?? "một khu phố Việt Nam hiện đại",
+    ...(q.gender ? { gender: { ...q.gender } } : {}),
+    seed: q.seed,
+    field: q.field,
   }));
 }

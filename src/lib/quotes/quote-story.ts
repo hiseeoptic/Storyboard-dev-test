@@ -12,6 +12,7 @@
 
 import { labelAiSocialPosts } from "../kids/cute-kids.ts";
 import {
+  FIELD_LABEL,
   FORMAT_LABEL,
   KIND_LABEL,
   QUOTE_ROLE_LABEL,
@@ -19,6 +20,7 @@ import {
   REGION_LABEL,
   VERIFICATION_LABEL,
   type QuoteEntry,
+  type QuoteField,
   type QuoteFormat,
   type QuoteRegion,
   type QuoteRole,
@@ -29,8 +31,14 @@ import { CHINA_QUOTES } from "./lessons/trung-hoa.ts";
 import { EUROPE_QUOTES } from "./lessons/chau-au.ts";
 import { AMERICA_QUOTES, WORLD_QUOTES } from "./lessons/my-the-gioi.ts";
 import { BUSINESS_QUOTES } from "./lessons/doanh-nhan.ts";
+import { CHINA_SEEDS, VIETNAM_SEEDS } from "./lessons/seeds-dong-a.ts";
+import { EUROPE_SEEDS } from "./lessons/seeds-chau-au.ts";
+import { AMERICA_SEEDS } from "./lessons/seeds-my.ts";
+import { WORLD_SEEDS } from "./lessons/seeds-the-gioi.ts";
+import { BUSINESS_SEEDS } from "./lessons/seeds-doanh-nhan.ts";
 
 export {
+  FIELD_LABEL,
   FORMAT_LABEL,
   KIND_LABEL,
   QUOTE_ROLE_LABEL,
@@ -38,26 +46,136 @@ export {
   REGION_LABEL,
   VERIFICATION_LABEL,
   type QuoteEntry,
+  type QuoteField,
   type QuoteFormat,
   type QuoteRegion,
   type QuoteRole,
   type QuoteTheme,
 } from "./quote-types.ts";
 
-export const QUOTE_LIBRARY: QuoteEntry[] = [...VIETNAM_QUOTES, ...CHINA_QUOTES, ...EUROPE_QUOTES, ...AMERICA_QUOTES, ...WORLD_QUOTES, ...BUSINESS_QUOTES];
+/** Full-story entries (written six beats) first, then the reference library (one-line story idea each). */
+export const QUOTE_LIBRARY: QuoteEntry[] = [
+  ...VIETNAM_QUOTES,
+  ...CHINA_QUOTES,
+  ...EUROPE_QUOTES,
+  ...AMERICA_QUOTES,
+  ...WORLD_QUOTES,
+  ...BUSINESS_QUOTES,
+  ...VIETNAM_SEEDS,
+  ...CHINA_SEEDS,
+  ...EUROPE_SEEDS,
+  ...AMERICA_SEEDS,
+  ...WORLD_SEEDS,
+  ...BUSINESS_SEEDS,
+];
 
 const BY_ID = new Map(QUOTE_LIBRARY.map((q) => [q.id, q]));
 export const QUOTE_REGIONS: readonly QuoteRegion[] = ["viet_nam", "trung_hoa", "chau_au", "my", "the_gioi", "doanh_nhan"];
 export const QUOTE_FORMATS: readonly QuoteFormat[] = ["story", "rethink"];
 export const QUOTE_ROLES: readonly QuoteRole[] = ["main", "elder", "parent", "child", "friend", "colleague", "boss", "teacher"];
+export const QUOTE_FIELDS: readonly QuoteField[] = ["dan_gian", "triet_gia", "khoa_hoc", "van_nghe", "doanh_nhan", "lich_su", "giao_duc", "tam_linh", "the_thao"];
+
+/** A reference-library entry: the saying, its source and a one-line story idea (the script writer builds the beats). */
+export function isSeedOnly(q: Pick<QuoteEntry, "hook" | "seed">): boolean {
+  return !q.hook && Boolean(q.seed);
+}
+
+/** The field of each author in the full-story entries (the reference entries carry their own `field`). */
+export const QUOTE_AUTHOR_FIELD: Readonly<Record<string, QuoteField>> = {
+  // Việt Nam
+  "Nguyễn Trãi": "lich_su",
+  "Trần Nhân Tông": "lich_su",
+  "Trần Hưng Đạo": "lich_su",
+  "Thân Nhân Trung": "lich_su",
+  "Phan Châu Trinh": "lich_su",
+  "Đặng Thùy Trâm": "lich_su",
+  "Nguyễn Du": "van_nghe",
+  "Nguyễn Đình Chiểu": "van_nghe",
+  "Nguyễn Bỉnh Khiêm": "van_nghe",
+  // Trung Hoa
+  "Khổng Tử": "triet_gia",
+  "Lão Tử": "triet_gia",
+  "Tuân Tử": "triet_gia",
+  "Mạnh Tử": "triet_gia",
+  "Tôn Tử": "triet_gia",
+  "Trang Tử": "triet_gia",
+  "Hàn Phi Tử": "triet_gia",
+  "Sách Đại học": "triet_gia",
+  "Phạm Trọng Yêm": "lich_su",
+  "Gia Cát Lượng": "lich_su",
+  "Lỗ Tấn": "van_nghe",
+  // Châu Âu
+  Socrates: "triet_gia",
+  Aristotle: "triet_gia",
+  Heraclitus: "triet_gia",
+  Seneca: "triet_gia",
+  "Marcus Aurelius": "triet_gia",
+  Epictetus: "triet_gia",
+  Cicero: "triet_gia",
+  Voltaire: "triet_gia",
+  "William Shakespeare": "van_nghe",
+  "Johann Wolfgang von Goethe": "van_nghe",
+  "Winston Churchill": "lich_su",
+  "Albert Einstein": "khoa_hoc",
+  "Isaac Newton": "khoa_hoc",
+  "Charles Darwin": "khoa_hoc",
+  // Mỹ & thế giới
+  "Benjamin Franklin": "lich_su",
+  "Abraham Lincoln": "lich_su",
+  "Thomas Jefferson": "lich_su",
+  "Theodore Roosevelt": "lich_su",
+  "Franklin D. Roosevelt": "lich_su",
+  "Martin Luther King Jr.": "lich_su",
+  "Nelson Mandela": "lich_su",
+  "Mahatma Gandhi": "lich_su",
+  "Booker T. Washington": "giao_duc",
+  "Mark Twain": "van_nghe",
+  "Ralph Waldo Emerson": "van_nghe",
+  "Henry David Thoreau": "van_nghe",
+  "Maya Angelou": "van_nghe",
+  "Kahlil Gibran": "van_nghe",
+  "Walt Disney": "van_nghe",
+  "Thomas Edison": "khoa_hoc",
+  "Đức Phật": "tam_linh",
+  // Doanh nhân & diễn giả
+  "Steve Jobs": "doanh_nhan",
+  "Warren Buffett": "doanh_nhan",
+  "Charlie Munger": "doanh_nhan",
+  "Bill Gates": "doanh_nhan",
+  "Jeff Bezos": "doanh_nhan",
+  "Henry Ford": "doanh_nhan",
+  "Andrew Carnegie": "doanh_nhan",
+  "Sam Walton": "doanh_nhan",
+  "Richard Branson": "doanh_nhan",
+  "Ray Dalio": "doanh_nhan",
+  "Satya Nadella": "doanh_nhan",
+  "Jack Ma (Mã Vân)": "doanh_nhan",
+  "Inamori Kazuo": "doanh_nhan",
+  "Peter Drucker": "doanh_nhan",
+  "Dale Carnegie": "giao_duc",
+  "Napoleon Hill": "giao_duc",
+  "Simon Sinek": "giao_duc",
+  "Brené Brown": "giao_duc",
+};
+
+/** Who said it, by field: the entry's own field, else its author's; folk sayings are "Dân gian". */
+export function quoteField(q: Pick<QuoteEntry, "field" | "author" | "verification">): QuoteField {
+  if (q.field) return q.field;
+  if (q.verification === "folk" || !q.author) return "dan_gian";
+  return QUOTE_AUTHOR_FIELD[q.author] ?? "triet_gia";
+}
 
 export function findQuote(id: string | undefined | null): QuoteEntry | undefined {
   return id ? BY_ID.get(id) : undefined;
 }
 
-export function quotesFor(filter: { region?: string | null; theme?: string | null; format?: string | null } = {}): QuoteEntry[] {
+export function quotesFor(filter: { region?: string | null; theme?: string | null; format?: string | null; field?: string | null } = {}): QuoteEntry[] {
   return QUOTE_LIBRARY.filter(
-    (q) => (!filter.region || q.region === filter.region) && (!filter.theme || q.theme === filter.theme) && (!filter.format || q.format === filter.format)
+    (q) =>
+      (!filter.region || q.region === filter.region) &&
+      (!filter.theme || q.theme === filter.theme) &&
+      (!filter.format || q.format === filter.format) &&
+      (!filter.field || quoteField(q) === filter.field)
   );
 }
 
@@ -70,6 +188,7 @@ export function quoteCounts(pool: readonly QuoteEntry[] = QUOTE_LIBRARY) {
     regions: QUOTE_REGIONS.map((id) => ({ id, label: REGION_LABEL[id].vi, count: pool.filter((q) => q.region === id).length })),
     themes: QUOTE_THEMES.map((t) => ({ ...t, count: pool.filter((q) => q.theme === t.id).length })),
     formats: QUOTE_FORMATS.map((id) => ({ id, label: FORMAT_LABEL[id].vi, count: pool.filter((q) => q.format === id).length })),
+    fields: QUOTE_FIELDS.map((id) => ({ id, label: FIELD_LABEL[id], count: pool.filter((q) => quoteField(q) === id).length })),
   };
 }
 
@@ -80,7 +199,7 @@ export function searchQuotes(query: string, pool: readonly QuoteEntry[] = QUOTE_
   const words = fold(query).split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const text = (q: QuoteEntry) =>
-    fold(`${q.text} ${q.author} ${q.source} ${q.original ?? ""} ${q.meaning} ${q.hook} ${q.situation} ${q.takeaway} ${quoteThemeLabel(q)} ${REGION_LABEL[q.region].vi} ${KIND_LABEL[q.kind]}`);
+    fold(`${q.text} ${q.author} ${q.source} ${q.original ?? ""} ${q.meaning} ${q.hook} ${q.situation} ${q.seed ?? ""} ${q.takeaway} ${quoteThemeLabel(q)} ${REGION_LABEL[q.region].vi} ${KIND_LABEL[q.kind]} ${FIELD_LABEL[quoteField(q)]}`);
   const hits = pool.filter((q) => words.every((w) => text(q).includes(w)));
   const head = (q: QuoteEntry) => words.every((w) => fold(`${q.text} ${q.author}`).includes(w));
   return [...hits.filter(head), ...hits.filter((q) => !head(q))];
@@ -134,10 +253,9 @@ export function quoteStudyCard(q: QuoteEntry): string {
     `Xuất xứ: ${quoteOriginLine(q)} · ${REGION_LABEL[q.region].vi} · ${KIND_LABEL[q.kind]} · ${VERIFICATION_LABEL[q.verification].vi}`,
     `Ý nghĩa: ${q.meaning}`,
     q.misread ? `${q.verification === "misattributed" ? "Sự thật về nguồn gốc" : "Hiểu cho đúng"}: ${q.misread}` : "",
-    `Chuyện hôm nay: ${q.situation}`,
+    `${q.situation ? "Chuyện hôm nay" : "Gợi ý câu chuyện"}: ${q.situation || q.seed || ""}`,
     `Thông điệp: ${q.takeaway}`,
-    "Câu hỏi suy ngẫm:",
-    ...q.questions.map((x, i) => `${i + 1}. ${x}`),
+    ...(q.questions.length ? ["Câu hỏi suy ngẫm:", ...q.questions.map((x, i) => `${i + 1}. ${x}`)] : []),
   ].filter(Boolean).join("\n");
 }
 
@@ -262,8 +380,8 @@ const GENDER_CUES: Partial<Record<QuoteRole, { female: RegExp; male: RegExp }>> 
 };
 
 /** Gender of each role in an entry: the earliest cue in the story text wins; else the role's default. */
-export function quoteRoleGenders(q: Pick<QuoteEntry, "roles" | "hook" | "situation" | "mistake" | "turning" | "awakening" | "gender">): Partial<Record<QuoteRole, Gender>> {
-  const text = `${q.hook} ${q.situation} ${q.mistake} ${q.turning} ${q.awakening}`;
+export function quoteRoleGenders(q: Pick<QuoteEntry, "roles" | "hook" | "situation" | "mistake" | "turning" | "awakening" | "gender" | "seed">): Partial<Record<QuoteRole, Gender>> {
+  const text = `${q.hook} ${q.situation} ${q.mistake} ${q.turning} ${q.awakening} ${q.seed ?? ""}`;
   const out: Partial<Record<QuoteRole, Gender>> = {};
   for (const role of q.roles) {
     const cues = GENDER_CUES[role];
@@ -323,11 +441,9 @@ function briefVi(q: QuoteEntry): string[] {
     `Xuất xứ: ${quoteOriginLine(q)} (${VERIFICATION_LABEL[q.verification].vi})`,
     `Ý nghĩa: ${q.meaning}`,
     q.misread ? `${q.verification === "misattributed" ? "Sự thật về nguồn gốc" : "Hiểu cho đúng"}: ${q.misread}` : "",
-    `Hook: ${q.hook}`,
-    `Tình huống: ${q.situation}`,
-    `Sai lầm: ${q.mistake}`,
-    `Bước ngoặt: ${q.turning}`,
-    `Tỉnh thức: ${q.awakening}`,
+    ...(isSeedOnly(q)
+      ? [`Gợi ý câu chuyện: ${q.seed}`, "(Kịch bản tự dựng đủ các nhịp: Hook → Sai lầm → Bước ngoặt → Lời xưa → Áp dụng → Tỉnh thức từ gợi ý này.)"]
+      : [`Hook: ${q.hook}`, `Tình huống: ${q.situation}`, `Sai lầm: ${q.mistake}`, `Bước ngoặt: ${q.turning}`, `Tỉnh thức: ${q.awakening}`]),
     `Thông điệp: ${q.takeaway}`,
   ].filter(Boolean);
 }
@@ -399,7 +515,9 @@ export function quoteStoryDirective(raw: QuoteStoryConfig | null | undefined): s
             : q.format === "rethink"
               ? ["- THINK-AGAIN FORMAT: the hook/mistake clips show the saying used the wrong way; the saying clip gives its right reading (as written above); the change at the end follows the right reading."]
               : []),
-          `- THE STORY: HOOK: ${q.hook} SITUATION: ${q.situation} MISTAKE: ${q.mistake}. TURNING POINT: ${q.turning}. AFTER THE SAYING: ${q.awakening}. Modern reading (for the closing image, not a lecture): "${q.takeaway}"`,
+          isSeedOnly(q)
+            ? `- THE STORY (write it from this idea): ${q.seed} Build every beat of the clip plan from it — an ordinary present-day Vietnamese setting (${q.place}), a sympathetic mistake that grows, one concrete turning point, the saying, then visible actions and a warm final image. Keep the cast to the roles above; invent no famous person. Modern reading (for the closing image, not a lecture): "${q.takeaway}"`
+            : `- THE STORY: HOOK: ${q.hook} SITUATION: ${q.situation} MISTAKE: ${q.mistake}. TURNING POINT: ${q.turning}. AFTER THE SAYING: ${q.awakening}. Modern reading (for the closing image, not a lecture): "${q.takeaway}"`,
         ]
       : ["- THE SAYING comes from the request: speak it verbatim exactly as the request writes it, with the attribution the request gives; if the request gives no reliable source, attribute it to no one (\"người xưa có câu\")."]),
     `- ${voiceRule}`,
@@ -471,8 +589,11 @@ function quoteSnapshot(raw: unknown, quoteId: unknown): QuoteEntry | undefined {
     ...(r.gender && typeof r.gender === "object"
       ? { gender: Object.fromEntries(Object.entries(r.gender as Record<string, unknown>).filter(([k, v]) => QUOTE_ROLES.includes(k as QuoteRole) && (v === "female" || v === "male"))) as QuoteEntry["gender"] }
       : {}),
+    ...(clip(r.seed, 400) ? { seed: clip(r.seed, 400) } : {}),
+    ...(QUOTE_FIELDS.includes(r.field as QuoteField) ? { field: r.field as QuoteField } : {}),
   };
-  return [entry.text, entry.source, entry.hook, entry.situation, entry.mistake, entry.turning, entry.awakening].every(Boolean) ? entry : undefined;
+  const story = isSeedOnly(entry) || [entry.hook, entry.situation, entry.mistake, entry.turning, entry.awakening].every(Boolean);
+  return entry.text && entry.source && story ? entry : undefined;
 }
 
 export function normalizeQuoteStory(raw: unknown): QuoteStoryConfig | undefined {

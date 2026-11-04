@@ -1,0 +1,46 @@
+// Lời xưa – Chuyện nay — reference library (seed entries): tỉ phú, doanh nhân
+// và diễn giả. Same rule as the business shelf: no endorsement, no logos, no
+// financial advice — the story is about everyday life and character. Data only.
+
+import { seedsOf } from "../quote-types.ts";
+
+export const BUSINESS_SEEDS = seedsOf("doanh_nhan", [
+  { id: "s_dn_01", kind: "danh_ngon", ver: "source", theme: "khiem_ton", field: "doanh_nhan",
+    text: "Chỉ khi đang ngủ, người ta mới không mắc sai lầm.", original: "\"Only while sleeping one makes no mistakes.\"", author: "Ingvar Kamprad", source: "Bản Testament of a Furniture Dealer (1976), nhà sáng lập IKEA viết cho nhân viên",
+    meaning: "Ai làm việc cũng có lúc sai; sợ sai đến mức không dám làm mới là sai lầm lớn.",
+    seed: "Cô nhân viên mới không dám đề xuất gì vì sợ sai, đến khi chị quản lý kể về lần mình làm hỏng cả một đơn hàng.", roles: ["main", "boss"], gender: { main: "female", boss: "female" } },
+  { id: "s_dn_02", kind: "danh_ngon", ver: "source", format: "rethink", theme: "lanh_dao", field: "doanh_nhan",
+    text: "Hãy đi nhanh và phá vỡ mọi thứ.", original: "\"Move fast and break things.\"", author: "Mark Zuckerberg", source: "Khẩu hiệu nội bộ thời đầu của Facebook; năm 2014 được chính ông đổi thành \"Move fast with stable infrastructure\"",
+    meaning: "Dám thử nhanh để học nhanh.",
+    misread: "Câu này không có nghĩa là cứ làm ẩu, mặc kệ hậu quả. Chính người nói đã đổi khẩu hiệu năm 2014 thành \"đi nhanh trên nền tảng vững chắc\" — nhanh mà vẫn phải giữ an toàn cho người dùng và đồng đội.",
+    seed: "Cậu trưởng nhóm trẻ đẩy nhóm làm thật nhanh, bỏ qua kiểm tra, đến khi một lỗi nhỏ làm hỏng đơn hàng của khách quen.", roles: ["main", "colleague", "boss"], gender: { main: "male" } },
+  { id: "s_dn_03", kind: "danh_ngon", ver: "source", theme: "kien_tri", field: "doanh_nhan",
+    text: "Tôi chúc các bạn được nếm trải thật nhiều đau đớn và gian khổ.", original: "\"I wish upon you ample doses of pain and suffering.\"", author: "Jensen Huang", source: "Buổi nói chuyện View From The Top tại Trường Kinh doanh Stanford, tháng 3/2024",
+    meaning: "Bản lĩnh được rèn qua khó khăn; đừng sợ vất vả, vì nó làm nên con người.",
+    seed: "Cậu sinh viên than trời vì việc làm thêm vất vả, đến khi người cha kể những năm ông bán hàng rong nuôi cả nhà.", roles: ["main", "parent"], gender: { main: "male", parent: "male" } },
+  { id: "s_dn_04", kind: "danh_ngon", ver: "source", theme: "song_dep", field: "doanh_nhan",
+    text: "Thiết kế không chỉ là trông thế nào, cảm thấy thế nào. Thiết kế là cách nó vận hành.", original: "\"Design is not just what it looks like and feels like. Design is how it works.\"", author: "Steve Jobs", source: "Phỏng vấn của Rob Walker, tạp chí The New York Times Magazine, tháng 11/2003",
+    meaning: "Đẹp phải đi cùng tiện dụng; hình thức phục vụ cách sử dụng.",
+    seed: "Cô chủ tiệm bánh thiết kế hộp quà thật đẹp nhưng khó mở, đến khi bà cụ khách quen không tự mở được.", roles: ["main", "elder"], gender: { main: "female", elder: "female" } },
+  { id: "s_dn_05", kind: "danh_ngon", ver: "paraphrase", theme: "gia_dinh", field: "doanh_nhan",
+    text: "Tuần này con đã thất bại điều gì?", original: "\"What did you fail at this week?\"", author: "Sara Blakely", source: "Diễn đạt lại từ câu chuyện bà kể nhiều lần: bố bà hỏi các con câu này mỗi bữa tối",
+    meaning: "Coi thất bại là bằng chứng của sự cố gắng, không phải điều đáng xấu hổ.",
+    seed: "Cô bé giấu bài kiểm tra điểm kém, đến khi bố hỏi \"tuần này con đã thử điều gì mà chưa thành?\" và kể chuyện thất bại của chính ông.", roles: ["child", "parent"], gender: { child: "female", parent: "male" } },
+  { id: "s_dn_06", kind: "danh_ngon", ver: "source", theme: "kinh_doanh", field: "doanh_nhan",
+    text: "Chỉ khi thủy triều rút, bạn mới biết ai đang bơi mà không mặc gì.", original: "\"You only find out who is swimming naked when the tide goes out.\"", author: "Warren Buffett", source: "Thư gửi cổ đông Berkshire Hathaway năm 2001",
+    meaning: "Lúc thuận lợi ai cũng có vẻ ổn; khó khăn mới lộ ra ai chuẩn bị kỹ, ai liều lĩnh.",
+    seed: "Hai chủ tiệm cùng khu: một người vay nhiều để mở rộng khi đông khách, người kia để dành phòng khi — đến mùa vắng khách mới thấy khác biệt.", roles: ["main", "friend"], gender: { main: "male", friend: "female" } },
+  { id: "s_dn_07", kind: "danh_ngon", ver: "source", theme: "thoi_gian", field: "doanh_nhan",
+    text: "Chúng ta luôn đánh giá quá cao thay đổi trong hai năm tới và đánh giá quá thấp thay đổi trong mười năm tới.", original: "\"We always overestimate the change that will occur in the next two years and underestimate the change that will occur in the next ten.\"", author: "Bill Gates", source: "Sách Con đường phía trước (The Road Ahead, 1995)",
+    meaning: "Kiên nhẫn với việc lâu dài; thay đổi lớn đến chậm nhưng chắc.",
+    seed: "Cô gái học ngoại ngữ ba tháng thấy chưa tiến bộ định bỏ, rồi người dì kể chuyện mình học đều mười năm và đổi đời.", roles: ["main", "elder"], gender: { main: "female", elder: "female" } },
+  { id: "s_dn_08", kind: "danh_ngon", ver: "source", theme: "loi_noi", field: "giao_duc",
+    text: "Kẻ ngốc nào cũng có thể chỉ trích, lên án và phàn nàn — và hầu hết kẻ ngốc đều làm vậy.", original: "\"Any fool can criticize, condemn and complain — and most fools do.\"", author: "Dale Carnegie", source: "Sách Đắc nhân tâm (How to Win Friends and Influence People, 1936)",
+    meaning: "Chê bai thì dễ; hiểu và góp ý xây dựng mới cần bản lĩnh.",
+    seed: "Anh trưởng phòng quen chê bai mọi bản báo cáo, đến khi thử khen một điểm tốt trước rồi mới góp ý.", roles: ["boss", "colleague"], gender: { boss: "male" } },
+  { id: "s_dn_09", kind: "danh_ngon", ver: "misattributed", theme: "lanh_dao", field: "doanh_nhan",
+    text: "Cái gì đo được thì quản lý được.", original: "\"What gets measured gets managed.\"", author: "Peter Drucker", source: "Viện Drucker cho biết không tìm thấy câu này trong tác phẩm của ông",
+    meaning: "Ý tưởng có phần đúng: đo lường giúp thấy rõ vấn đề — nhưng chỉ đo con số thì dễ quên những điều quan trọng không đếm được.",
+    misread: "Câu này hay được gán cho Peter Drucker, nhưng Viện Drucker cho biết không tìm thấy nó trong tác phẩm của ông. Và đo sai thứ thì người ta sẽ chạy theo con số thay vì chất lượng.",
+    seed: "Cửa hàng chỉ thưởng theo số đơn bán ra, nhân viên ép khách mua, đến khi khách quen bỏ đi và chủ tiệm đổi cách đánh giá.", roles: ["boss", "colleague"], gender: { boss: "female", colleague: "male" } },
+]);

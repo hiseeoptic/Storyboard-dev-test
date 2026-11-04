@@ -18,20 +18,24 @@ import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_QUOTE_STORY,
+  FIELD_LABEL,
   FORMAT_LABEL,
   KIND_LABEL,
   QUOTE_DEFAULT_SHOTS,
+  QUOTE_FIELDS,
   QUOTE_FORMATS,
   QUOTE_MAX_SHOTS,
   QUOTE_MIN_SHOTS,
   QUOTE_REGIONS,
   REGION_LABEL,
   VERIFICATION_LABEL,
+  isSeedOnly,
   normalizeQuoteStory,
   pickUnusedQuote,
   quoteActPlan,
   quoteCaption,
   quoteCounts,
+  quoteField,
   quoteOf,
   quoteOriginLine,
   quoteRequestFromEntry,
@@ -113,6 +117,7 @@ export function QuoteStoryCard(props: {
   const [region, setRegion] = useState("");
   const [theme, setTheme] = useState("");
   const [format, setFormat] = useState("");
+  const [field, setField] = useState("");
   const [hideUsed, setHideUsed] = useState(false);
   const [used, setUsed] = useState<string[]>([]);
   const [shelfDone, setShelfDone] = useState(false);
@@ -131,7 +136,7 @@ export function QuoteStoryCard(props: {
   const entry = quoteOf(config);
   const counts = useMemo(() => quoteCounts(), []);
   const usedSet = useMemo(() => new Set(used), [used]);
-  const shelf = useMemo(() => quotesFor({ region: region || null, theme: theme || null, format: format || null }), [region, theme, format]);
+  const shelf = useMemo(() => quotesFor({ region: region || null, theme: theme || null, format: format || null, field: field || null }), [region, theme, format, field]);
   const entries = useMemo(() => {
     const found = query.trim() ? searchQuotes(query, shelf) : shelf;
     return hideUsed ? found.filter((q) => !usedSet.has(q.id)) : found;
@@ -186,7 +191,7 @@ export function QuoteStoryCard(props: {
           <p className="text-sm font-medium">📜 {vi ? "Lời xưa – Chuyện nay — câu nói bất hủ thành phim ngắn (40 giây – 2 phút)" : "Timeless sayings as short stories"}</p>
           <p className="text-xs text-muted-foreground">
             {vi
-              ? "Tục ngữ, ca dao Việt Nam · kinh điển Trung Hoa · danh nhân Châu Âu, Mỹ · trí tuệ thế giới · tỉ phú, doanh nhân, diễn giả. Mỗi câu có xuất xứ và nhãn độ tin cậy; câu hay bị gán sai được làm thành video \"Nghĩ lại cho đúng\". Không dựng hình danh nhân, không viết chữ lên hình."
+              ? "Tục ngữ, ca dao Việt Nam · kinh điển Trung Hoa · triết gia, nhà văn, nhà khoa học Châu Âu, Mỹ · trí tuệ thế giới · tỉ phú, doanh nhân, diễn giả. Mỗi câu có xuất xứ và nhãn độ tin cậy; câu hay bị gán sai được làm thành video \"Nghĩ lại cho đúng\". Câu có 💡 kèm gợi ý cốt truyện để biên kịch tự dựng; các câu còn lại đã viết sẵn kịch bản. Không dựng hình danh nhân, không viết chữ lên hình."
               : "Proverbs, classics and great minds — sourced, with a correction format for misattributed lines."}
           </p>
         </div>
@@ -202,6 +207,14 @@ export function QuoteStoryCard(props: {
             {QUOTE_REGIONS.map((r) => (
               <Chip key={r} active={region === r} onClick={() => { setRegion(r); resetFilter(); }}>
                 {vi ? REGION_LABEL[r].vi : REGION_LABEL[r].en} ({counts.regions.find((x) => x.id === r)?.count ?? 0})
+              </Chip>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <Chip active={!field} onClick={() => { setField(""); resetFilter(); }}>{vi ? "Mọi lĩnh vực" : "All fields"}</Chip>
+            {QUOTE_FIELDS.map((f) => (
+              <Chip key={f} active={field === f} onClick={() => { setField(f); resetFilter(); }}>
+                {FIELD_LABEL[f]} ({counts.fields.find((x) => x.id === f)?.count ?? 0})
               </Chip>
             ))}
           </div>
@@ -245,7 +258,7 @@ export function QuoteStoryCard(props: {
                 </button>
               </p>
             ) : null}
-            <Input className="h-8 text-xs" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={vi ? "Tìm: Khổng Tử, kiên trì, lời nói, Seneca, ca dao, biết ơn…" : "Search…"} />
+            <Input className="h-8 text-xs" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={vi ? "Tìm: Khổng Tử, Marie Curie, kiên trì, lời nói, nhà khoa học, ca dao, biết ơn…" : "Search…"} />
             <div className="grid max-h-64 gap-1.5 overflow-auto sm:grid-cols-2">
               {entries.map((item) => (
                 <button
@@ -260,7 +273,9 @@ export function QuoteStoryCard(props: {
                   <span className="font-medium">“{item.text}”</span>
                   {usedSet.has(item.id) ? <span className="ml-1 text-[10px] text-emerald-600 dark:text-emerald-400">✓ {vi ? "đã làm" : "made"}</span> : null}
                   <span className="mt-0.5 block text-muted-foreground">— {item.verification === "misattributed" ? (vi ? `thường bị gán cho ${item.author}` : `often credited to ${item.author}`) : item.author || item.source} · {VERIFICATION_LABEL[item.verification].vi}</span>
-                  <span className="mt-0.5 block text-[11px] text-violet-700 dark:text-violet-300">{FORMAT_LABEL[item.format].vi} · {item.hook}</span>
+                  <span className="mt-0.5 block text-[11px] text-violet-700 dark:text-violet-300">
+                    {FORMAT_LABEL[item.format].vi} · {isSeedOnly(item) ? `💡 ${item.seed}` : item.hook}
+                  </span>
                 </button>
               ))}
             </div>
@@ -271,16 +286,24 @@ export function QuoteStoryCard(props: {
               <p className="font-semibold">📜 “{entry.text}”</p>
               {entry.original ? <p className="text-[11px] text-muted-foreground">{vi ? "Nguyên văn:" : "Original:"} {entry.original}</p> : null}
               <p className="text-[11px]">
-                <b>{vi ? "Xuất xứ:" : "Source:"}</b> {quoteOriginLine(entry)} · {REGION_LABEL[entry.region].vi} · {KIND_LABEL[entry.kind]} · {VERIFICATION_LABEL[entry.verification].vi} · {quoteThemeLabel(entry)}
+                <b>{vi ? "Xuất xứ:" : "Source:"}</b> {quoteOriginLine(entry)} · {REGION_LABEL[entry.region].vi} · {KIND_LABEL[entry.kind]} · {VERIFICATION_LABEL[entry.verification].vi} · {quoteThemeLabel(entry)} · {FIELD_LABEL[quoteField(entry)]}
               </p>
               <p><b>{vi ? "Ý nghĩa:" : "Meaning:"}</b> {entry.meaning}</p>
               {entry.misread ? <p className="text-amber-700 dark:text-amber-300"><b>{entry.verification === "misattributed" ? (vi ? "Sự thật về nguồn gốc:" : "True origin:") : (vi ? "Hiểu cho đúng:" : "Read it right:")}</b> {entry.misread}</p> : null}
-              <div>
-                <b>{vi ? "Câu hỏi suy ngẫm:" : "Questions:"}</b>
-                <ol className="ml-4 list-decimal">
-                  {entry.questions.map((q) => <li key={q}>{q}</li>)}
-                </ol>
-              </div>
+              {isSeedOnly(entry) ? (
+                <p className="text-violet-700 dark:text-violet-300">
+                  <b>💡 {vi ? "Gợi ý câu chuyện:" : "Story idea:"}</b> {entry.seed}{" "}
+                  <span className="text-muted-foreground">{vi ? "(biên kịch tự dựng đủ các nhịp từ gợi ý này — bạn có thể sửa ở ô bên dưới)" : "(the writer builds the beats from it)"}</span>
+                </p>
+              ) : null}
+              {entry.questions.length ? (
+                <div>
+                  <b>{vi ? "Câu hỏi suy ngẫm:" : "Questions:"}</b>
+                  <ol className="ml-4 list-decimal">
+                    {entry.questions.map((q) => <li key={q}>{q}</li>)}
+                  </ol>
+                </div>
+              ) : null}
               <div className="flex flex-wrap items-center gap-3">
                 <button type="button" className="inline-flex items-center gap-1 text-[11px] underline opacity-80" onClick={() => copy("caption")}>
                   <ClipboardCopy className="h-3 w-3" />

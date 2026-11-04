@@ -2,17 +2,23 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_QUOTE_STORY,
+  FIELD_LABEL,
+  QUOTE_AUTHOR_FIELD,
+  QUOTE_FIELDS,
   QUOTE_LIBRARY,
   QUOTE_MAX_SHOTS,
   QUOTE_MIN_SHOTS,
   QUOTE_REGIONS,
   QUOTE_THEMES,
   findQuote,
+  isSeedOnly,
   normalizeQuoteStory,
   pickUnusedQuote,
   quoteActPlan,
   quoteCaption,
   quoteCounts,
+  quoteField,
+  quoteRequestFromEntry,
   quoteRoleGenders,
   quoteRoomSeed,
   quoteSpokenAttribution,
@@ -27,23 +33,44 @@ import {
 } from "./quote-story.ts";
 import { clipPurpose } from "../storyboard/long-video.ts";
 
-test("the library: 136 sourced sayings from Việt Nam, Trung Hoa, Châu Âu, Mỹ, the world and business leaders", () => {
-  assert.equal(QUOTE_LIBRARY.length, 136);
-  for (const field of ["id", "text", "hook"] as const) {
-    assert.equal(new Set(QUOTE_LIBRARY.map((q) => q[field])).size, QUOTE_LIBRARY.length, `unique ${field}s`);
+const FULL = QUOTE_LIBRARY.filter((q) => !isSeedOnly(q));
+const SEEDS = QUOTE_LIBRARY.filter(isSeedOnly);
+
+test("the library: 284 sourced sayings — 136 full stories and 148 reference entries — from Việt Nam, Trung Hoa, Châu Âu, Mỹ, the world and business leaders", () => {
+  assert.equal(QUOTE_LIBRARY.length, 284);
+  assert.equal(FULL.length, 136);
+  assert.equal(SEEDS.length, 148);
+  for (const field of ["id", "text"] as const) {
+    assert.equal(new Set(QUOTE_LIBRARY.map((q) => q[field].toLowerCase())).size, QUOTE_LIBRARY.length, `unique ${field}s`);
   }
+  assert.equal(new Set(FULL.map((q) => q.hook)).size, FULL.length, "unique hooks");
+  assert.equal(new Set(SEEDS.map((q) => q.seed)).size, SEEDS.length, "unique story ideas");
   const { regions, themes, formats } = quoteCounts();
-  assert.deepEqual(regions.map((r) => [r.id, r.count]), [["viet_nam", 40], ["trung_hoa", 24], ["chau_au", 20], ["my", 20], ["the_gioi", 8], ["doanh_nhan", 24]]);
-  for (const t of themes) assert.ok(t.count >= 3, `${t.id} has sayings`);
-  assert.ok(formats.find((f) => f.id === "rethink")!.count >= 12, "enough \"Nghĩ lại cho đúng\" stories");
+  assert.deepEqual(quoteCounts(FULL).regions.map((r) => [r.id, r.count]), [["viet_nam", 40], ["trung_hoa", 24], ["chau_au", 20], ["my", 20], ["the_gioi", 8], ["doanh_nhan", 24]]);
+  assert.deepEqual(quoteCounts(SEEDS).regions.map((r) => [r.id, r.count]), [["viet_nam", 24], ["trung_hoa", 27], ["chau_au", 47], ["my", 28], ["the_gioi", 13], ["doanh_nhan", 9]]);
+  assert.deepEqual(regions.map((r) => [r.id, r.count]), [["viet_nam", 64], ["trung_hoa", 51], ["chau_au", 67], ["my", 48], ["the_gioi", 21], ["doanh_nhan", 33]]);
+  for (const t of themes) assert.ok(t.count >= 5, `${t.id} has sayings`);
+  assert.ok(formats.find((f) => f.id === "rethink")!.count >= 40, "enough \"Nghĩ lại cho đúng\" stories");
   const themeIds = new Set(QUOTE_THEMES.map((t) => t.id));
   for (const q of QUOTE_LIBRARY) {
     assert.ok(QUOTE_REGIONS.includes(q.region) && themeIds.has(q.theme), q.id);
-    for (const field of ["text", "source", "meaning", "hook", "situation", "mistake", "turning", "awakening", "takeaway", "place"] as const) {
+    for (const field of ["text", "source", "meaning", "takeaway", "place"] as const) {
       assert.ok(q[field].trim().length > 5, `${q.id}.${field}`);
     }
+    if (isSeedOnly(q)) {
+      // Reference entries: one line of story idea, its own field, no written beats.
+      assert.match(q.id, /^s_/, q.id);
+      assert.ok((q.seed ?? "").trim().length > 30, `${q.id}.seed`);
+      assert.ok(q.field && QUOTE_FIELDS.includes(q.field), `${q.id}.field`);
+      for (const field of ["hook", "situation", "mistake", "turning", "awakening"] as const) assert.equal(q[field], "", `${q.id}.${field}`);
+      assert.equal(q.questions.length, 0, q.id);
+    } else {
+      for (const field of ["hook", "situation", "mistake", "turning", "awakening"] as const) {
+        assert.ok(q[field].trim().length > 5, `${q.id}.${field}`);
+      }
+      assert.equal(q.questions.length, 2, q.id);
+    }
     assert.ok(q.takeaway.split(/\s+/).length <= 30, `${q.id} takeaway is one short line`);
-    assert.equal(q.questions.length, 2, q.id);
     for (const x of q.questions) assert.match(x, /\?$/, q.id);
     assert.ok(q.roles.length >= 2, `${q.id} has at least two people`);
     // Every named saying has an author and a source; folk sayings have no author.
@@ -71,7 +98,7 @@ test("well-known corrections are stated, not repeated", () => {
 
 test("business leaders and speakers: sourced lines, famous fakes corrected, no endorsement", () => {
   const shelf = quotesFor({ region: "doanh_nhan" });
-  assert.equal(shelf.length, 24);
+  assert.equal(shelf.length, 33);
   assert.ok(shelf.some((q) => q.author === "Warren Buffett" && /1986/.test(q.source)));
   const horses = findQuote("dn_13")!;
   assert.equal(horses.verification, "misattributed");
@@ -92,7 +119,7 @@ test("search, filters and the next unused saying", () => {
   assert.ok(searchQuotes("ca dao").length >= 5, "the kind label is searchable");
   assert.equal(searchQuotes("  ").length, 0);
   const china = quotesFor({ region: "trung_hoa" });
-  assert.equal(china.length, 24);
+  assert.equal(china.length, 51);
   assert.ok(quotesFor({ region: "chau_au", format: "rethink" }).every((q) => q.region === "chau_au" && q.format === "rethink"));
   const used = china.slice(1).map((q) => q.id);
   assert.equal(pickUnusedQuote(china, used, () => 0.7)?.id, china[0]!.id);
@@ -188,4 +215,79 @@ test("long videos follow the saying plan", () => {
   assert.match(clipPurpose(input, 1, 12), /^HOOK/);
   assert.match(clipPurpose(input, 7, 12), /^LỜI XƯA .*Speak the saying VERBATIM: «Điều mình không muốn/);
   assert.match(clipPurpose(input, 12, 12), /^TỈNH THỨC/);
+});
+
+test("fields: who said it — every author has one field; filters and counts by field", () => {
+  for (const q of FULL) {
+    if (q.author && q.verification !== "folk") assert.ok(QUOTE_AUTHOR_FIELD[q.author], `${q.author} (${q.id}) has a field`);
+  }
+  const byAuthor = new Map<string, Set<string>>();
+  for (const q of QUOTE_LIBRARY) {
+    if (!q.author) continue;
+    byAuthor.set(q.author, (byAuthor.get(q.author) ?? new Set()).add(quoteField(q)));
+  }
+  for (const [author, fields] of byAuthor) assert.equal(fields.size, 1, `${author} is in one field: ${[...fields].join(", ")}`);
+  assert.ok(byAuthor.size >= 120, "more than 120 named people and works");
+  assert.equal(quoteField(findQuote("vn_02")!), "dan_gian");
+  assert.equal(quoteField(findQuote("tq_01")!), "triet_gia");
+  assert.equal(quoteField(findQuote("dn_01")!), "doanh_nhan");
+  assert.equal(quoteField(findQuote("s_eu_36")!), "khoa_hoc");
+  const { fields } = quoteCounts();
+  assert.deepEqual(fields.map((f) => f.id), [...QUOTE_FIELDS]);
+  for (const f of fields) assert.ok(f.count >= 3, `${f.id} has sayings`);
+  assert.equal(fields.reduce((n, f) => n + f.count, 0), QUOTE_LIBRARY.length, "every saying is in exactly one field");
+  const scientists = quotesFor({ field: "khoa_hoc" });
+  assert.ok(scientists.length >= 20 && scientists.every((q) => quoteField(q) === "khoa_hoc"));
+  assert.ok(scientists.some((q) => q.author === "Marie Curie") && scientists.some((q) => q.author === "Alan Turing"));
+  assert.ok(quotesFor({ region: "my", field: "the_thao" }).some((q) => q.author === "Michael Jordan"));
+  assert.ok(searchQuotes("nha khoa hoc curie").some((q) => q.author === "Marie Curie"), "the field label is searchable");
+  assert.ok(searchQuotes("tieu nhan").some((q) => q.id === "s_tq_01"), "reference entries are searchable");
+  assert.equal(FIELD_LABEL.the_thao, "🏅 Thể thao & khám phá");
+});
+
+test("reference entries: well-known corrections carry the true origin", () => {
+  assert.match(findQuote("s_eu_26")!.misread!, /Evelyn Beatrice Hall/);
+  assert.match(findQuote("s_eu_22")!.misread!, /không có trong tác phẩm/);
+  assert.match(findQuote("s_eu_32")!.misread!, /Viện Viktor Frankl/);
+  assert.match(findQuote("s_us_26")!.source, /Henry Stanley Haskins/);
+  assert.match(findQuote("s_us_27")!.source, /H\. Jackson Brown/);
+  assert.match(findQuote("s_us_12")!.source, /Sharon Begley/);
+  assert.match(findQuote("s_tg_09")!.source, /Nicholas Klein/);
+  assert.match(findQuote("s_tg_13")!.misread!, /chưa rõ/);
+  assert.equal(findQuote("s_eu_17")!.format, "rethink", "\"what does not kill us\" is re-read, not glorified");
+  assert.equal(findQuote("s_dn_02")!.format, "rethink");
+  for (const q of SEEDS.filter((x) => x.verification === "misattributed")) {
+    assert.ok((q.misread ?? "").length > 60, `${q.id} explains the true origin`);
+    assert.match(quoteCaption(q), /⚠️ Thường bị gán cho /, `${q.id} caption warns`);
+  }
+});
+
+test("a reference entry becomes a video: the writer builds the beats from the story idea", () => {
+  const seed = findQuote("s_tq_01")!;
+  assert.equal(isSeedOnly(seed), true);
+  assert.equal(isSeedOnly(findQuote("tq_01")!), false);
+  const cfg: QuoteStoryConfig = { ...DEFAULT_QUOTE_STORY, quoteId: seed.id, quote: seed, shots: 6 };
+  const brief = quoteRequestFromEntry(seed);
+  assert.match(brief, /Gợi ý câu chuyện: /);
+  assert.doesNotMatch(brief, /Hook: |Tình huống: /, "no empty story lines");
+  const d = quoteStoryDirective(cfg);
+  assert.match(d, /THE STORY \(write it from this idea\): /);
+  assert.ok(d.includes(seed.seed!), "the idea is in the contract");
+  assert.doesNotMatch(d, /HOOK: {1,2}SITUATION/, "no empty beats");
+  assert.match(d, /SPEAK IT VERBATIM in clip 5: «Người quân tử đòi hỏi ở mình/);
+  const card = quoteStudyCard(seed);
+  assert.match(card, /Gợi ý câu chuyện: /);
+  assert.doesNotMatch(card, /Câu hỏi suy ngẫm/);
+  // The server keeps a seed snapshot and the library still wins.
+  const n = normalizeQuoteStory({ ...cfg })!;
+  assert.equal(n.quote?.seed, seed.seed);
+  assert.equal(n.quote?.field, seed.field);
+  assert.equal(withLibraryQuote({ ...cfg, quote: { ...seed, text: "Bịa ra" } }).quote?.text, seed.text);
+  // Gender comes from the idea when it names the person.
+  assert.equal(quoteRoleGenders(findQuote("s_us_13")!).main, "male");
+  assert.equal(quoteRoleGenders(findQuote("s_tg_04")!).main, "female");
+  // Long videos: no empty beat details.
+  const input = { quote_story: { ...cfg, shots: 12 } };
+  assert.match(clipPurpose(input, 1, 12), /The story idea: /);
+  for (let i = 1; i <= 12; i++) assert.doesNotMatch(clipPurpose(input, i, 12), /: \.$|: $/, `clip ${i}`);
 });

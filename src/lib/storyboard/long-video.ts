@@ -68,10 +68,11 @@ export function clipPurpose(input: DramaInput, clip: number, total: number): str
     if (slot) {
       const detail =
         slot.act === "saying" && entry ? ` Speak the saying VERBATIM: «${entry.text}».`
-          : slot.act === "awakening" && entry ? ` The awakening: ${entry.awakening}.`
-            : slot.act === "turning" && entry ? ` The turning point: ${entry.turning}.`
-              : slot.act === "rising" && entry ? ` The mistake: ${entry.mistake}.`
-                : "";
+          : slot.act === "awakening" && entry?.awakening ? ` The awakening: ${entry.awakening}.`
+            : slot.act === "turning" && entry?.turning ? ` The turning point: ${entry.turning}.`
+              : slot.act === "rising" && entry?.mistake ? ` The mistake: ${entry.mistake}.`
+                : (slot.act === "hook" || slot.act === "rising") && entry?.seed && !entry.hook ? ` The story idea: ${entry.seed}`
+                  : "";
       return `${slot.label_vi.toUpperCase()} (clips ${slot.from}–${slot.to}) — ${slot.purpose_en}.${detail}`;
     }
   }
