@@ -36,10 +36,10 @@ import { clipPurpose } from "../storyboard/long-video.ts";
 const FULL = QUOTE_LIBRARY.filter((q) => !isSeedOnly(q));
 const SEEDS = QUOTE_LIBRARY.filter(isSeedOnly);
 
-test("the library: 336 sourced sayings — 136 full stories and 200 reference entries — from Việt Nam, Trung Hoa, Châu Âu, Mỹ, the world and business leaders", () => {
-  assert.equal(QUOTE_LIBRARY.length, 336);
+test("the library: 421 sourced sayings — 136 full stories and 285 reference entries — from Việt Nam, Trung Hoa, Châu Âu, Mỹ, the world and business leaders", () => {
+  assert.equal(QUOTE_LIBRARY.length, 421);
   assert.equal(FULL.length, 136);
-  assert.equal(SEEDS.length, 200);
+  assert.equal(SEEDS.length, 285);
   for (const field of ["id", "text"] as const) {
     assert.equal(new Set(QUOTE_LIBRARY.map((q) => q[field].toLowerCase())).size, QUOTE_LIBRARY.length, `unique ${field}s`);
   }
@@ -47,8 +47,8 @@ test("the library: 336 sourced sayings — 136 full stories and 200 reference en
   assert.equal(new Set(SEEDS.map((q) => q.seed)).size, SEEDS.length, "unique story ideas");
   const { regions, themes, formats } = quoteCounts();
   assert.deepEqual(quoteCounts(FULL).regions.map((r) => [r.id, r.count]), [["viet_nam", 40], ["trung_hoa", 24], ["chau_au", 20], ["my", 20], ["the_gioi", 8], ["doanh_nhan", 24]]);
-  assert.deepEqual(quoteCounts(SEEDS).regions.map((r) => [r.id, r.count]), [["viet_nam", 24], ["trung_hoa", 27], ["chau_au", 47], ["my", 28], ["the_gioi", 13], ["doanh_nhan", 61]]);
-  assert.deepEqual(regions.map((r) => [r.id, r.count]), [["viet_nam", 64], ["trung_hoa", 51], ["chau_au", 67], ["my", 48], ["the_gioi", 21], ["doanh_nhan", 85]]);
+  assert.deepEqual(quoteCounts(SEEDS).regions.map((r) => [r.id, r.count]), [["viet_nam", 24], ["trung_hoa", 27], ["chau_au", 50], ["my", 43], ["the_gioi", 20], ["doanh_nhan", 121]]);
+  assert.deepEqual(regions.map((r) => [r.id, r.count]), [["viet_nam", 64], ["trung_hoa", 51], ["chau_au", 70], ["my", 63], ["the_gioi", 28], ["doanh_nhan", 145]]);
   for (const t of themes) assert.ok(t.count >= 5, `${t.id} has sayings`);
   assert.ok(formats.find((f) => f.id === "rethink")!.count >= 40, "enough \"Nghĩ lại cho đúng\" stories");
   const themeIds = new Set(QUOTE_THEMES.map((t) => t.id));
@@ -98,7 +98,7 @@ test("well-known corrections are stated, not repeated", () => {
 
 test("business leaders and speakers: sourced lines, famous fakes corrected, no endorsement", () => {
   const shelf = quotesFor({ region: "doanh_nhan" });
-  assert.equal(shelf.length, 85);
+  assert.equal(shelf.length, 145);
   assert.ok(shelf.some((q) => q.author === "Warren Buffett" && /1986/.test(q.source)));
   const horses = findQuote("dn_13")!;
   assert.equal(horses.verification, "misattributed");
@@ -314,4 +314,34 @@ test("business shelf, part 2: several sourced sayings per person, viral fakes co
   const d = quoteStoryDirective({ ...DEFAULT_QUOTE_STORY, quoteId: "s_dn_17", quote: findQuote("s_dn_17") });
   assert.match(d, /REAL BUSINESS FIGURE: never imply that Warren Buffett endorses/);
   assert.match(d, /THE STORY \(write it from this idea\)/);
+});
+
+test("part 3: trainers and speakers in depth, Asian founders, more great minds — and their fakes corrected", () => {
+  const sourced = (author: string) => QUOTE_LIBRARY.filter((q) => q.author === author && q.verification !== "misattributed").length;
+  for (const [author, n] of [["Napoleon Hill", 11], ["Dale Carnegie", 13], ["Stephen R. Covey", 9], ["Benjamin Franklin", 10], ["Inamori Kazuo", 7], ["Sam Walton", 6], ["Jeff Bezos", 7], ["Albert Einstein", 5], ["James Clear", 2], ["Jensen Huang", 3]] as const) {
+    assert.ok(sourced(author) >= n, `${author}: ${sourced(author)} sayings`);
+  }
+  const corrections: Array<[string, RegExp]> = [
+    ["s_dn_85", /Trung tâm Theodore Roosevelt/],
+    ["s_dn_88", /George Herbert/],
+    ["s_dn_105", /Edwin R\. Fisher/],
+    ["s_dn_107", /Warren Bennis/],
+    ["s_dn_108", /Tony Gaskins/],
+    ["s_us_34", /không tìm thấy/],
+    ["s_us_35", /1962/],
+    ["s_us_39", /Muriel Strode/],
+    ["s_us_42", /Red Sanders/],
+    ["s_tg_15", /Isidore/],
+    ["s_tg_16", /Quỹ Nelson Mandela/],
+  ];
+  for (const [id, truth] of corrections) {
+    const q = findQuote(id)!;
+    assert.equal(q.verification, "misattributed", id);
+    assert.match(q.misread!, truth, id);
+  }
+  for (const id of ["s_dn_69", "s_dn_119", "s_tg_18", "s_tg_19"]) assert.equal(findQuote(id)!.format, "rethink", `${id} is re-read, not taken literally`);
+  assert.ok(quotesFor({ field: "the_thao" }).length >= 6);
+  assert.ok(quotesFor({ field: "giao_duc" }).length >= 60, "speakers, trainers and educators");
+  assert.match(findQuote("s_dn_101")!.original!, /十年来我天天思考的都是失败/);
+  assert.equal(quoteSpokenAttribution(findQuote("s_tg_19")!), "Haruki Murakami kể đó là câu thần chú của một vận động viên marathon");
 });
