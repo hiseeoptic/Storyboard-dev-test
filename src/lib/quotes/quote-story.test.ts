@@ -36,10 +36,10 @@ import { clipPurpose } from "../storyboard/long-video.ts";
 const FULL = QUOTE_LIBRARY.filter((q) => !isSeedOnly(q));
 const SEEDS = QUOTE_LIBRARY.filter(isSeedOnly);
 
-test("the library: 284 sourced sayings — 136 full stories and 148 reference entries — from Việt Nam, Trung Hoa, Châu Âu, Mỹ, the world and business leaders", () => {
-  assert.equal(QUOTE_LIBRARY.length, 284);
+test("the library: 336 sourced sayings — 136 full stories and 200 reference entries — from Việt Nam, Trung Hoa, Châu Âu, Mỹ, the world and business leaders", () => {
+  assert.equal(QUOTE_LIBRARY.length, 336);
   assert.equal(FULL.length, 136);
-  assert.equal(SEEDS.length, 148);
+  assert.equal(SEEDS.length, 200);
   for (const field of ["id", "text"] as const) {
     assert.equal(new Set(QUOTE_LIBRARY.map((q) => q[field].toLowerCase())).size, QUOTE_LIBRARY.length, `unique ${field}s`);
   }
@@ -47,8 +47,8 @@ test("the library: 284 sourced sayings — 136 full stories and 148 reference en
   assert.equal(new Set(SEEDS.map((q) => q.seed)).size, SEEDS.length, "unique story ideas");
   const { regions, themes, formats } = quoteCounts();
   assert.deepEqual(quoteCounts(FULL).regions.map((r) => [r.id, r.count]), [["viet_nam", 40], ["trung_hoa", 24], ["chau_au", 20], ["my", 20], ["the_gioi", 8], ["doanh_nhan", 24]]);
-  assert.deepEqual(quoteCounts(SEEDS).regions.map((r) => [r.id, r.count]), [["viet_nam", 24], ["trung_hoa", 27], ["chau_au", 47], ["my", 28], ["the_gioi", 13], ["doanh_nhan", 9]]);
-  assert.deepEqual(regions.map((r) => [r.id, r.count]), [["viet_nam", 64], ["trung_hoa", 51], ["chau_au", 67], ["my", 48], ["the_gioi", 21], ["doanh_nhan", 33]]);
+  assert.deepEqual(quoteCounts(SEEDS).regions.map((r) => [r.id, r.count]), [["viet_nam", 24], ["trung_hoa", 27], ["chau_au", 47], ["my", 28], ["the_gioi", 13], ["doanh_nhan", 61]]);
+  assert.deepEqual(regions.map((r) => [r.id, r.count]), [["viet_nam", 64], ["trung_hoa", 51], ["chau_au", 67], ["my", 48], ["the_gioi", 21], ["doanh_nhan", 85]]);
   for (const t of themes) assert.ok(t.count >= 5, `${t.id} has sayings`);
   assert.ok(formats.find((f) => f.id === "rethink")!.count >= 40, "enough \"Nghĩ lại cho đúng\" stories");
   const themeIds = new Set(QUOTE_THEMES.map((t) => t.id));
@@ -98,7 +98,7 @@ test("well-known corrections are stated, not repeated", () => {
 
 test("business leaders and speakers: sourced lines, famous fakes corrected, no endorsement", () => {
   const shelf = quotesFor({ region: "doanh_nhan" });
-  assert.equal(shelf.length, 33);
+  assert.equal(shelf.length, 85);
   assert.ok(shelf.some((q) => q.author === "Warren Buffett" && /1986/.test(q.source)));
   const horses = findQuote("dn_13")!;
   assert.equal(horses.verification, "misattributed");
@@ -290,4 +290,28 @@ test("a reference entry becomes a video: the writer builds the beats from the st
   const input = { quote_story: { ...cfg, shots: 12 } };
   assert.match(clipPurpose(input, 1, 12), /The story idea: /);
   for (let i = 1; i <= 12; i++) assert.doesNotMatch(clipPurpose(input, i, 12), /: \.$|: $/, `clip ${i}`);
+});
+
+test("business shelf, part 2: several sourced sayings per person, viral fakes corrected", () => {
+  const shelf = quotesFor({ region: "doanh_nhan" });
+  const per = new Map<string, number>();
+  for (const q of QUOTE_LIBRARY) if (q.verification !== "misattributed") per.set(q.author, (per.get(q.author) ?? 0) + 1);
+  assert.ok(shelf.filter((q) => q.verification !== "misattributed").length >= 70);
+  for (const [author, n] of [["Steve Jobs", 7], ["Bill Gates", 4], ["Warren Buffett", 5], ["Jeff Bezos", 5], ["Inamori Kazuo", 4], ["Sam Walton", 4], ["Dale Carnegie", 5], ["Stephen R. Covey", 3], ["Peter Drucker", 2], ["Charlie Munger", 3]] as const) {
+    assert.ok((per.get(author) ?? 0) >= n, `${author}: ${per.get(author)} sayings`);
+  }
+  const business = new Set(shelf.map((q) => q.author));
+  assert.ok([...per].filter(([author, n]) => business.has(author) && n >= 3).length >= 10, "at least ten business figures with three or more sayings");
+  assert.match(findQuote("s_dn_15")!.source, /Charles J\. Sykes/);
+  assert.match(findQuote("s_dn_16")!.misread!, /Clarence Bleicher/);
+  assert.match(findQuote("s_dn_41")!.misread!, /1947/);
+  assert.match(findQuote("s_dn_42")!.misread!, /chính ông đã nói .*2015/);
+  assert.match(findQuote("s_dn_43")!.source, /Nicolas Chamfort/);
+  assert.equal(quoteField(findQuote("s_dn_43")!), "van_nghe", "Mark Twain stays a writer even on the business shelf");
+  for (const q of ["s_dn_27", "s_dn_60"]) assert.equal(findQuote(q)!.format, "rethink", `${q} is re-read, not taken literally`);
+  assert.match(findQuote("s_dn_31")!.original!, /마누라와 자식 빼고 다 바꿔라/);
+  assert.equal(findQuote("s_dn_34")!.theme, "biet_on");
+  const d = quoteStoryDirective({ ...DEFAULT_QUOTE_STORY, quoteId: "s_dn_17", quote: findQuote("s_dn_17") });
+  assert.match(d, /REAL BUSINESS FIGURE: never imply that Warren Buffett endorses/);
+  assert.match(d, /THE STORY \(write it from this idea\)/);
 });

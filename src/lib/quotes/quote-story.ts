@@ -36,6 +36,7 @@ import { EUROPE_SEEDS } from "./lessons/seeds-chau-au.ts";
 import { AMERICA_SEEDS } from "./lessons/seeds-my.ts";
 import { WORLD_SEEDS } from "./lessons/seeds-the-gioi.ts";
 import { BUSINESS_SEEDS } from "./lessons/seeds-doanh-nhan.ts";
+import { BUSINESS_SEEDS_2 } from "./lessons/seeds-doanh-nhan-2.ts";
 
 export {
   FIELD_LABEL,
@@ -67,6 +68,7 @@ export const QUOTE_LIBRARY: QuoteEntry[] = [
   ...AMERICA_SEEDS,
   ...WORLD_SEEDS,
   ...BUSINESS_SEEDS,
+  ...BUSINESS_SEEDS_2,
 ];
 
 const BY_ID = new Map(QUOTE_LIBRARY.map((q) => [q.id, q]));
