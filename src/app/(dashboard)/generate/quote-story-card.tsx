@@ -49,6 +49,8 @@ import {
   type QuoteVoice,
 } from "@/lib/quotes/quote-story";
 
+import { AdvancedOptions, StickyActions } from "./simple-launcher";
+
 type Lang = "vi" | "en";
 const STORAGE_KEY = "afQuoteStory.v1";
 /** Sayings this creator has already built (kept in this browser only). */
@@ -108,10 +110,13 @@ export function QuoteStoryCard(props: {
   lang: Lang;
   onBuild: (config: QuoteStoryConfig) => void;
   onOpenRoom: (config: QuoteStoryConfig) => void;
+  /** Simple layout: the card is the whole step — open, settings folded, build button pinned. */
+  compact?: boolean;
 }) {
   const { lang, onBuild, onOpenRoom } = props;
+  const compact = props.compact === true;
   const vi = lang === "vi";
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(compact);
   const [config, setConfig] = useState<QuoteStoryConfig>(DEFAULT_QUOTE_STORY);
   const [query, setQuery] = useState("");
   const [region, setRegion] = useState("");
@@ -145,6 +150,13 @@ export function QuoteStoryCard(props: {
   const cast = quoteStoryCast(config);
   const plan = quoteActPlan(config.shots, entry);
   const ready = config.request.trim().length > 0 || Boolean(entry);
+  // One line for the folded settings and the pinned build bar.
+  const settingsSummary = [
+    `${config.shots} shot · ${config.shots * 10}s`,
+    config.tone === "warm" ? (vi ? "ấm áp" : "warm") : (vi ? "nhiều cảm xúc" : "emotional"),
+    config.dialect === "north" ? (vi ? "giọng Bắc" : "Northern") : (vi ? "giọng Nam" : "Southern"),
+    config.filming === "phone" ? (vi ? "quay điện thoại" : "phone") : (vi ? "điện ảnh" : "cinematic"),
+  ].join(" · ");
   const shotOptions = Array.from({ length: QUOTE_MAX_SHOTS - QUOTE_MIN_SHOTS + 1 }, (_, i) => QUOTE_MIN_SHOTS + i).map((n) => ({
     value: String(n),
     label: `${n} shot · ${duration(n)}${n === QUOTE_DEFAULT_SHOTS ? (vi ? " (gợi ý)" : " (recommended)") : ""}`,
@@ -195,12 +207,14 @@ export function QuoteStoryCard(props: {
               : "Proverbs, classics and great minds — sourced, with a correction format for misattributed lines."}
           </p>
         </div>
-        <Button size="sm" variant={open ? "outline" : "default"} onClick={() => setOpen((v) => !v)}>
-          {open ? (vi ? "Thu gọn" : "Close") : (vi ? "Mở" : "Open")}
-        </Button>
+        {!compact && (
+          <Button size="sm" variant={open ? "outline" : "default"} onClick={() => setOpen((v) => !v)}>
+            {open ? (vi ? "Thu gọn" : "Close") : (vi ? "Mở" : "Open")}
+          </Button>
+        )}
       </div>
 
-      {open && (
+      {(open || compact) && (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-1.5">
             <Chip active={!region} onClick={() => { setRegion(""); resetFilter(); }}>{vi ? "Mọi nơi" : "Everywhere"} ({counts.regions.reduce((n, r) => n + r.count, 0)})</Chip>
@@ -329,6 +343,7 @@ export function QuoteStoryCard(props: {
             />
           </div>
 
+          <AdvancedOptions simple={compact} lang={lang} summary={settingsSummary}>
           <div className="space-y-1.5">
             <label className="text-xs font-medium">{vi ? "Ai nói câu ấy" : "Who speaks the saying"}</label>
             <div className="flex flex-wrap gap-1.5">
@@ -382,6 +397,7 @@ export function QuoteStoryCard(props: {
               </div>
             </div>
           </div>
+          </AdvancedOptions>
 
           <p className="text-[11px] text-muted-foreground">
             {vi
@@ -389,7 +405,7 @@ export function QuoteStoryCard(props: {
               : "The saying is spoken verbatim with its source; no likeness of real people; posts carry an AI label."}
           </p>
 
-          <div className="flex flex-wrap gap-2">
+          <StickyActions simple={compact} summary={ready ? settingsSummary : vi ? "Chọn một mục trong kho ở trên hoặc tự gõ để bắt đầu." : "Pick from the library above or type to start."}>
             <Button size="sm" disabled={!ready} onClick={() => { markUsed(); onBuild(config); }}>
               <Zap className="h-4 w-4" />
               {vi ? "Tạo video ngay" : "Build video"}
@@ -398,7 +414,7 @@ export function QuoteStoryCard(props: {
               <PenLine className="h-4 w-4" />
               {vi ? "Mở phòng biên kịch" : "Writers' room"}
             </Button>
-          </div>
+          </StickyActions>
         </div>
       )}
     </div>

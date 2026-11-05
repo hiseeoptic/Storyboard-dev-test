@@ -42,6 +42,8 @@ import {
   type OfficeLesson,
 } from "@/lib/workplace/office-drama";
 
+import { AdvancedOptions, StickyActions } from "./simple-launcher";
+
 type Lang = "vi" | "en";
 const STORAGE_KEY = "afOfficeDrama.v1";
 /** Cases this creator has already built (kept in this browser only). */
@@ -95,10 +97,13 @@ export function OfficeDramaCard(props: {
   lang: Lang;
   onBuild: (config: OfficeDramaConfig) => void;
   onOpenRoom: (config: OfficeDramaConfig) => void;
+  /** Simple layout: the card is the whole step — open, settings folded, build button pinned. */
+  compact?: boolean;
 }) {
   const { lang, onBuild, onOpenRoom } = props;
+  const compact = props.compact === true;
   const vi = lang === "vi";
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(compact);
   const [config, setConfig] = useState<OfficeDramaConfig>(DEFAULT_OFFICE_DRAMA);
   const [query, setQuery] = useState("");
   const [theme, setTheme] = useState("");
@@ -131,6 +136,13 @@ export function OfficeDramaCard(props: {
   const cast = officeDramaCast(config);
   const plan = officeActPlan(config.shots);
   const ready = config.request.trim().length > 0 || Boolean(lesson);
+  // One line for the folded settings and the pinned build bar.
+  const settingsSummary = [
+    `${config.shots} shot · ${config.shots * 10}s`,
+    config.tone === "warm" ? (vi ? "ấm áp" : "warm") : (vi ? "nhiều cảm xúc" : "emotional"),
+    config.dialect === "north" ? (vi ? "giọng Bắc" : "Northern") : (vi ? "giọng Nam" : "Southern"),
+    config.filming === "phone" ? (vi ? "quay điện thoại" : "phone") : (vi ? "điện ảnh" : "cinematic"),
+  ].join(" · ");
   const shotOptions = Array.from({ length: OFFICE_MAX_SHOTS - OFFICE_MIN_SHOTS + 1 }, (_, i) => OFFICE_MIN_SHOTS + i).map((n) => ({
     value: String(n),
     label: `${n} shot · ${duration(n)}${n === OFFICE_DEFAULT_SHOTS ? (vi ? " (gợi ý)" : " (recommended)") : ""}`,
@@ -180,12 +192,14 @@ export function OfficeDramaCard(props: {
               : "Training cases for managers and employees. Hook → rising → climax → lesson → awakening, research-based practices."}
           </p>
         </div>
-        <Button size="sm" variant={open ? "outline" : "default"} onClick={() => setOpen((v) => !v)}>
-          {open ? (vi ? "Thu gọn" : "Close") : (vi ? "Mở" : "Open")}
-        </Button>
+        {!compact && (
+          <Button size="sm" variant={open ? "outline" : "default"} onClick={() => setOpen((v) => !v)}>
+            {open ? (vi ? "Thu gọn" : "Close") : (vi ? "Mở" : "Open")}
+          </Button>
+        )}
       </div>
 
-      {open && (
+      {(open || compact) && (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-1.5">
             <Chip active={!audience} onClick={() => { setAudience(""); setShelfDone(false); }}>{vi ? "Mọi đối tượng" : "Everyone"}</Chip>
@@ -284,6 +298,7 @@ export function OfficeDramaCard(props: {
             />
           </div>
 
+          <AdvancedOptions simple={compact} lang={lang} summary={settingsSummary}>
           <div className="space-y-1.5">
             <label className="text-xs font-medium">{vi ? "Nơi làm việc" : "Workplace"}</label>
             <div className="flex flex-wrap gap-1.5">
@@ -342,6 +357,7 @@ export function OfficeDramaCard(props: {
               </div>
             </div>
           </div>
+          </AdvancedOptions>
 
           <p className="text-[11px] text-muted-foreground">
             {vi
@@ -349,7 +365,7 @@ export function OfficeDramaCard(props: {
               : "No real company names, no violence, harassment never shown explicitly; posts carry an AI label."}
           </p>
 
-          <div className="flex flex-wrap gap-2">
+          <StickyActions simple={compact} summary={ready ? settingsSummary : vi ? "Chọn một mục trong kho ở trên hoặc tự gõ để bắt đầu." : "Pick from the library above or type to start."}>
             <Button size="sm" disabled={!ready} onClick={() => { markUsed(); onBuild(config); }}>
               <Zap className="h-4 w-4" />
               {vi ? "Tạo video ngay" : "Build video"}
@@ -358,7 +374,7 @@ export function OfficeDramaCard(props: {
               <PenLine className="h-4 w-4" />
               {vi ? "Mở phòng biên kịch" : "Writers' room"}
             </Button>
-          </div>
+          </StickyActions>
         </div>
       )}
     </div>

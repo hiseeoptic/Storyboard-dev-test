@@ -36,6 +36,8 @@ import {
   type FamilyRelation,
 } from "@/lib/family/family-drama";
 
+import { AdvancedOptions, StickyActions } from "./simple-launcher";
+
 type Lang = "vi" | "en";
 const STORAGE_KEY = "afFamilyDrama.v1";
 /** Lessons this creator has already built (kept in this browser only). */
@@ -89,10 +91,13 @@ export function FamilyDramaCard(props: {
   lang: Lang;
   onBuild: (config: FamilyDramaConfig) => void;
   onOpenRoom: (config: FamilyDramaConfig) => void;
+  /** Simple layout: the card is the whole step — open, settings folded, build button pinned. */
+  compact?: boolean;
 }) {
   const { lang, onBuild, onOpenRoom } = props;
+  const compact = props.compact === true;
   const vi = lang === "vi";
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(compact);
   const [config, setConfig] = useState<FamilyDramaConfig>(DEFAULT_FAMILY_DRAMA);
   const [query, setQuery] = useState("");
   const [showBasis, setShowBasis] = useState(false);
@@ -145,6 +150,13 @@ export function FamilyDramaCard(props: {
     setShelfDone(false);
   };
   const ready = config.request.trim().length > 0 || Boolean(lesson);
+  // One line for the folded settings and the pinned build bar.
+  const settingsSummary = [
+    `${config.shots} shot · ${config.shots * 10}s`,
+    config.tone === "warm" ? (vi ? "ấm áp" : "warm") : (vi ? "nhiều cảm xúc" : "emotional"),
+    config.dialect === "north" ? (vi ? "giọng Bắc" : "Northern") : (vi ? "giọng Nam" : "Southern"),
+    config.filming === "phone" ? (vi ? "quay điện thoại" : "phone") : (vi ? "điện ảnh" : "cinematic"),
+  ].join(" · ");
   const shotOptions = Array.from({ length: FAMILY_MAX_SHOTS - FAMILY_MIN_SHOTS + 1 }, (_, i) => FAMILY_MIN_SHOTS + i).map((n) => ({
     value: String(n),
     label: `${n} shot · ${duration(n)}${n === 15 ? (vi ? " (gợi ý)" : " (recommended)") : ""}`,
@@ -161,12 +173,14 @@ export function FamilyDramaCard(props: {
               : "Couples · in-laws. Hook → rising → climax → lesson → awakening, research-based lessons."}
           </p>
         </div>
-        <Button size="sm" variant={open ? "outline" : "default"} onClick={() => setOpen((v) => !v)}>
-          {open ? (vi ? "Thu gọn" : "Close") : (vi ? "Mở" : "Open")}
-        </Button>
+        {!compact && (
+          <Button size="sm" variant={open ? "outline" : "default"} onClick={() => setOpen((v) => !v)}>
+            {open ? (vi ? "Thu gọn" : "Close") : (vi ? "Mở" : "Open")}
+          </Button>
+        )}
       </div>
 
-      {open && (
+      {(open || compact) && (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-1.5">
             {FAMILY_RELATIONS.map((relation: FamilyRelation) => (
@@ -265,6 +279,7 @@ export function FamilyDramaCard(props: {
             />
           </div>
 
+          <AdvancedOptions simple={compact} lang={lang} summary={settingsSummary}>
           <div className="grid gap-2 sm:grid-cols-2">
             {cast.map((member) => (
               <label key={member.role} className="space-y-1 text-xs">
@@ -314,6 +329,7 @@ export function FamilyDramaCard(props: {
               </div>
             </div>
           </div>
+          </AdvancedOptions>
 
           <p className="text-[11px] text-muted-foreground">
             {vi
@@ -321,7 +337,7 @@ export function FamilyDramaCard(props: {
               : "Long videos are written in parts (8, then 5 clips per request). No violence, no villain; posts carry an AI label."}
           </p>
 
-          <div className="flex flex-wrap gap-2">
+          <StickyActions simple={compact} summary={ready ? settingsSummary : vi ? "Chọn một mục trong kho ở trên hoặc tự gõ để bắt đầu." : "Pick from the library above or type to start."}>
             <Button size="sm" disabled={!ready} onClick={() => { markUsed(); onBuild(config); }}>
               <Zap className="h-4 w-4" />
               {vi ? "Tạo video ngay" : "Build video"}
@@ -330,7 +346,7 @@ export function FamilyDramaCard(props: {
               <PenLine className="h-4 w-4" />
               {vi ? "Mở phòng biên kịch" : "Writers' room"}
             </Button>
-          </div>
+          </StickyActions>
         </div>
       )}
     </div>

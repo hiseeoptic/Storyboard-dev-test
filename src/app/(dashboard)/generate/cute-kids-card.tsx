@@ -40,6 +40,7 @@ import {
 } from "@/lib/kids/cute-kids";
 import { LESSON_PILLARS, PILLAR_GROUPS, type LessonPillar, type ParentingLesson } from "@/lib/kids/lesson-pillars";
 import { TEEN_TOPIC_LABEL_VI, teenSafetyViolations } from "@/lib/kids/teen-safety";
+import { AdvancedOptions, StickyActions } from "./simple-launcher";
 import { WHINE_LEVELS, WHINE_LEVEL_LABEL, WHINY_GROUPS, hasWhinyBrief, whinySceneBriefVi, whinyShotPlanVi, type WhinyGroup, type WhinyScene } from "@/lib/kids/whiny/whiny-perform";
 
 /** The lesson library is big: it loads only when the "Dạy con" panel opens. */
@@ -144,10 +145,13 @@ export function CuteKidsCard(props: {
   provider: AIProvider;
   onBuild: (config: CuteKidsConfig, kidPhoto: UploadedImage[]) => void;
   onOpenRoom: (config: CuteKidsConfig, kidPhoto: UploadedImage[]) => void;
+  /** Simple layout: the card is the whole step — open, advanced settings folded, build button pinned. */
+  compact?: boolean;
 }) {
   const { lang, provider, onBuild, onOpenRoom } = props;
+  const compact = props.compact === true;
   const vi = lang === "vi";
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(compact);
   const [config, setConfig] = useState<CuteKidsConfig>(DEFAULT_CUTE_KIDS);
   const [kidPhoto, setKidPhoto] = useState<UploadedImage[]>([]);
   const [ideas, setIdeas] = useState<EpisodeIdea[]>([]);
@@ -264,6 +268,14 @@ export function CuteKidsCard(props: {
     try { window.localStorage.setItem(USED_LESSONS_KEY, JSON.stringify(next)); } catch { /* quota */ }
   };
   const ready = config.request.trim().length > 0;
+  // One line for the folded settings and the pinned build bar.
+  const settingsSummary = [
+    `${config.kidName || "Bé Na"} (${config.kidGender === "girl" ? (vi ? "bé gái" : "girl") : (vi ? "bé trai" : "boy")} ${AGE_LABEL[config.kidAge][lang]})`,
+    config.family.map((m) => { const chip = FAMILY_CHIPS.find((c) => c.id === m); return chip ? (vi ? chip.vi(config.dialect === "south") : chip.en).replace(/^\S+\s/, "") : ""; }).filter(Boolean).join(", "),
+    `${config.shots} shot · ${config.shots * 10}s`,
+    config.filming === "phone" ? (vi ? "quay điện thoại" : "phone") : (vi ? "điện ảnh" : "cinematic"),
+    config.dialect === "north" ? (vi ? "giọng Bắc" : "Northern") : (vi ? "giọng Nam" : "Southern"),
+  ].filter(Boolean).join(" · ");
   const askIdeas = async () => {
     setLoadingIdeas(true);
     setError("");
@@ -284,12 +296,14 @@ export function CuteKidsCard(props: {
               : "Type the situation → the app builds the family, age-true lines, a parent's-phone look, 9:16."}
           </p>
         </div>
-        <Button size="sm" variant={open ? "outline" : "default"} onClick={() => setOpen((v) => !v)}>
-          {open ? (vi ? "Thu gọn" : "Close") : (vi ? "Mở" : "Open")}
-        </Button>
+        {!compact && (
+          <Button size="sm" variant={open ? "outline" : "default"} onClick={() => setOpen((v) => !v)}>
+            {open ? (vi ? "Thu gọn" : "Close") : (vi ? "Mở" : "Open")}
+          </Button>
+        )}
       </div>
 
-      {open && (
+      {(open || compact) && (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-1.5">
             <Chip active={!teach} onClick={() => update({ goal: "fun" })}>😂 {vi ? "Giải trí" : "Fun"}</Chip>
@@ -511,6 +525,7 @@ export function CuteKidsCard(props: {
                   : `Teen (13–15) reels skip these topics: ${teenBlocked.join(", ")}. Left as is, the request is replaced by a safe everyday situation when sent.`}
               </p>
             )}
+            <AdvancedOptions simple={compact} lang={lang} title={vi ? "🎞️ Kiểu video có sẵn" : "🎞️ Ready-made formats"} summary={vi ? `${VIRAL_FORMATS.length} kiểu — bấm để điền ví dụ` : undefined}>
             <div className="flex flex-wrap gap-1.5">
               {VIRAL_FORMATS.map((f) => (
                 <Chip key={f.id} active={config.format === f.id} title={FORMAT_EXAMPLE[f.id]} onClick={() => update({ format: config.format === f.id ? "auto" : f.id, ...(config.request.trim() ? {} : { request: FORMAT_EXAMPLE[f.id] ?? "" }) })}>
@@ -518,8 +533,10 @@ export function CuteKidsCard(props: {
                 </Chip>
               ))}
             </div>
+            </AdvancedOptions>
           </div>
 
+          <AdvancedOptions simple={compact} lang={lang} summary={settingsSummary}>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label className="text-xs font-medium">{vi ? "Tên bé" : "Kid's name"}</label>
@@ -620,8 +637,9 @@ export function CuteKidsCard(props: {
                 : "No photo → the app creates one fixed AI kid. Only use a photo of your own child or with the parents' consent. Captions get an AI-generated label."}
             </p>
           </div>
+          </AdvancedOptions>
 
-          <div className="flex flex-wrap gap-2">
+          <StickyActions simple={compact} summary={ready ? settingsSummary : vi ? "Chọn một tình huống ở trên hoặc gõ yêu cầu để bắt đầu." : "Pick a scene or type a request to start."}>
             <Button size="sm" disabled={!ready} onClick={() => { markUsed(); onBuild(config, kidPhoto); }}>
               <Zap className="h-4 w-4" />
               {vi ? "Tạo video ngay" : "Build video"}
@@ -634,7 +652,7 @@ export function CuteKidsCard(props: {
               {loadingIdeas ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lightbulb className="h-4 w-4" />}
               {ideas.length ? (vi ? "10 ý tưởng khác" : "10 more ideas") : (vi ? "Gợi ý 10 tập" : "10 episode ideas")}
             </Button>
-          </div>
+          </StickyActions>
           {error && <p className="text-xs text-destructive">⚠️ {error}</p>}
           {ideas.length > 0 && (
             <div className="grid gap-1.5 sm:grid-cols-2">

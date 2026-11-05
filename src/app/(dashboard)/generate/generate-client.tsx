@@ -65,6 +65,7 @@ import { familyDramaCast, familyDramaRoomSeed, familyDramaStoryIdea, RELATION_LA
 import { OfficeDramaCard } from "./office-drama-card";
 import { officeDramaCast, officeDramaRoomSeed, officeDramaStoryIdea, AUDIENCE_LABEL, type OfficeDramaConfig } from "@/lib/workplace/office-drama";
 import { QuoteStoryCard } from "./quote-story-card";
+import { AdvancedOptions, ClassicUiBanner, VideoKindBar, VideoKindLauncher, useSimpleUi, type VideoKind } from "./simple-launcher";
 import { quoteRoomSeed, quoteStoryCast, quoteStoryIdea, type QuoteStoryConfig } from "@/lib/quotes/quote-story";
 import { LocationPresetPanel, roomImages } from "./location-presets";
 import {
@@ -728,9 +729,9 @@ const GENRE_OPTIONS: Record<Lang, { value: string; label: string }[]> = {
     { value: "advertising", label: "🎬 Quảng cáo / TVC" },
     { value: "product_demo", label: "🎬 Demo / Giới thiệu sản phẩm" },
     { value: "brand_film", label: "🎬 Phim thương hiệu" },
-    { value: "luxury", label: "🎬 Luxury brand film (cao cấp)" },
+    { value: "luxury", label: "🎬 Phim thương hiệu xa xỉ (luxury)" },
     { value: "promo", label: "🎬 Khuyến mãi / Sale" },
-    { value: "unboxing", label: "🎬 Unboxing / Trải nghiệm" },
+    { value: "unboxing", label: "🎬 Đập hộp / Trải nghiệm (unboxing)" },
     // ── Thể loại phim / câu chuyện ──
     { value: "drama", label: "🎭 Chính kịch" },
     { value: "action", label: "🎭 Hành động" },
@@ -1720,6 +1721,10 @@ function ProjectWorkspace() {
   const [ambienceEnabled, setAmbienceEnabled] = useState(true);
   const [foleyEnabled, setFoleyEnabled] = useState(true);
   const [genre, setGenre] = useState("advertising");
+  // Simple layout (default): pick a kind of video first, see only what it needs.
+  const ui = useSimpleUi();
+  const simpleUi = ui.simple;
+  const videoKind = ui.kind;
   const activeGenreProfile = genreProductionProfile(genre as Genre);
   const filteredToneOptions = TONE_OPTIONS[lang].filter((option) =>
     activeGenreProfile.allowed_dialogue_styles.includes(
@@ -5172,6 +5177,13 @@ function ProjectWorkspace() {
   };
 
   const canNext = step === 0 ? storyIdea.trim().length > 0 : true;
+  // Simple layout: an ad starts in an ad genre; your own idea does not start as a TVC.
+  const pickVideoKind = (kind: VideoKind) => {
+    ui.setKind(kind);
+    if (kind === "ad" && !AD_GENRES.has(genre)) changeGenre("advertising");
+    if (kind === "free" && AD_GENRES.has(genre)) changeGenre("drama");
+  };
+  const showKind = (kind: VideoKind) => !simpleUi || videoKind === kind;
 
   // ─── Admin Modal (hidden double-click trigger) ───────────────────
   const adminModal = showAdmin && (
@@ -5372,6 +5384,16 @@ function ProjectWorkspace() {
           {/* ── Step 1: Story ─────────────────────────────────────── */}
           {step === 0 && (
             <>
+              {simpleUi ? (
+                videoKind ? (
+                  <VideoKindBar lang={lang} kind={videoKind} onBack={() => ui.setKind("")} onClassic={() => ui.setSimple(false)} />
+                ) : (
+                  <VideoKindLauncher lang={lang} onPick={pickVideoKind} onClassic={() => ui.setSimple(false)} />
+                )
+              ) : (
+                <ClassicUiBanner lang={lang} onSimple={() => ui.setSimple(true)} />
+              )}
+              {showKind("free") && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/40 bg-primary/[0.06] p-3">
                 <div className="space-y-0.5">
                   <p className="text-sm font-medium">
@@ -5388,6 +5410,7 @@ function ProjectWorkspace() {
                   {lang === "vi" ? "Mở phòng biên kịch" : "Open"}
                 </Button>
               </div>
+              )}
               {showWritersRoom && (
                 <WritersRoom
                   key={roomSeed ? `seed-${roomSeed.key}` : "room"}
@@ -5398,10 +5421,11 @@ function ProjectWorkspace() {
                   seedIdea={roomSeed?.idea}
                 />
               )}
-              <CuteKidsCard lang={lang} provider={scriptProvider} onBuild={buildCuteKids} onOpenRoom={openCuteKidsRoom} />
-              <FamilyDramaCard lang={lang} onBuild={buildFamilyDrama} onOpenRoom={openFamilyDramaRoom} />
-              <OfficeDramaCard lang={lang} onBuild={buildOfficeDrama} onOpenRoom={openOfficeDramaRoom} />
-              <QuoteStoryCard lang={lang} onBuild={buildQuoteStory} onOpenRoom={openQuoteStoryRoom} />
+              {showKind("kids") && <CuteKidsCard lang={lang} provider={scriptProvider} onBuild={buildCuteKids} onOpenRoom={openCuteKidsRoom} compact={simpleUi} />}
+              {showKind("family") && <FamilyDramaCard lang={lang} onBuild={buildFamilyDrama} onOpenRoom={openFamilyDramaRoom} compact={simpleUi} />}
+              {showKind("office") && <OfficeDramaCard lang={lang} onBuild={buildOfficeDrama} onOpenRoom={openOfficeDramaRoom} compact={simpleUi} />}
+              {showKind("quote") && <QuoteStoryCard lang={lang} onBuild={buildQuoteStory} onOpenRoom={openQuoteStoryRoom} compact={simpleUi} />}
+              {(!simpleUi || (videoKind === "free" && topicCats.length > 0)) && (
               <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-primary">
                   <BookOpen className="h-4 w-4" />
@@ -5451,9 +5475,10 @@ function ProjectWorkspace() {
                     </div>
                   </>
                 ) : topicError ? (
-                  <p className="text-xs text-destructive">
-                    {lang === "vi" ? "⚠️ Không tải được kho chủ đề: " : "⚠️ Topic library failed: "}
-                    {topicError}
+                  <p className="text-xs text-muted-foreground" title={topicError}>
+                    {lang === "vi"
+                      ? "Kho chủ đề hiện chưa kết nối được — bạn vẫn gõ ý tưởng bên dưới như bình thường."
+                      : "The topic library is not connected right now — you can still type your idea below."}
                   </p>
                 ) : (
                   <p className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -5462,6 +5487,8 @@ function ProjectWorkspace() {
                   </p>
                 )}
               </div>
+              )}
+              {(!simpleUi || videoKind === "ad" || videoKind === "free") && (<>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{L("storyIdea")}</label>
                 {quoteStory && (
@@ -5519,6 +5546,7 @@ function ProjectWorkspace() {
                   rows={4}
                   className="resize-none"
                 />
+                <AdvancedOptions simple={simpleUi} lang={lang} title={lang === "vi" ? "Cách viết kịch bản, lời nói, tỉ lệ thumbnail" : "Script handling, speech, thumbnail"}>
                 <div className="grid gap-3 pt-1 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">
@@ -5573,7 +5601,7 @@ function ProjectWorkspace() {
                           />
                           <span>
                             <span className="block text-xs font-medium">
-                              {lang === "vi" ? "Giọng dẫn / Voice-over" : "Narrator / Voice-over"}
+                              {lang === "vi" ? "Giọng dẫn (đọc ngoài hình)" : "Narrator / Voice-over"}
                             </span>
                             <span className="mt-0.5 block text-[11px] text-muted-foreground">
                               {lang === "vi" ? "Giọng kể ngoài hình, không lip-sync." : "Off-screen narration without lip-sync."}
@@ -5744,6 +5772,7 @@ function ProjectWorkspace() {
                     </p>
                   </div>
                 </div>
+                </AdvancedOptions>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -5763,6 +5792,7 @@ function ProjectWorkspace() {
                   )}
                 </div>
               </div>
+              <AdvancedOptions simple={simpleUi} lang={lang} title={lang === "vi" ? "🎨 Màu phim" : "🎨 Colour look"}>
               {/* Màu / Look phim — tông màu áp cho cả video (trục riêng với chất liệu + cách quay). */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">
@@ -5816,6 +5846,7 @@ function ProjectWorkspace() {
                 </p>
               </div>
               )}
+              </AdvancedOptions>
               {productShootActive && (
                 <ProductShootPanel
                   lang={lang}
@@ -5852,6 +5883,7 @@ function ProjectWorkspace() {
                   />
                 </div>
               )}
+              <AdvancedOptions simple={simpleUi} lang={lang} title={lang === "vi" ? "🎥 Phong cách quay và lời thoại" : "🎥 Camera and dialogue style"}>
               <div className="space-y-2 rounded-lg border p-3">
                 <label className="text-sm font-medium">
                   {lang === "vi" ? "Phong cách quay và camera" : "Camera and directing style"}
@@ -5902,6 +5934,7 @@ function ProjectWorkspace() {
                   </p>
                 </div>
               )}
+              </AdvancedOptions>
 
               {/* Brief — topic (numerology/health) vs product (ad) vs story */}
               {TOPIC_GENRES.has(genre) ? (
@@ -6151,6 +6184,7 @@ function ProjectWorkspace() {
                   </div>
                 </div>
               )}
+              </>)}
             </>
           )}
 
@@ -7479,7 +7513,8 @@ function ProjectWorkspace() {
           )}
 
           {/* ── Navigation ───────────────────────────────────────── */}
-          <div className="flex justify-between pt-2">
+          {/* Simple layout: no step buttons while the creator is still choosing a kind of video. */}
+          <div className={cn("flex justify-between pt-2", simpleUi && step === 0 && !videoKind && "hidden")}>
             <Button variant="outline" onClick={() => setStep((s) => s - 1)} disabled={step === 0} className="gap-1">
               <ChevronLeft className="h-4 w-4" /> {L("back")}
             </Button>
