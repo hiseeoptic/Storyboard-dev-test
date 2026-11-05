@@ -11,6 +11,7 @@
 import { CHILD_SAFE_WORDING_RULE } from "./child-safe-wording.ts";
 import { TEEN_SAFETY_RULE, teenSafeRequest, teenSafetyViolations } from "./teen-safety.ts";
 import { LESSON_PILLARS, pillarLabel, type LessonPillar, type ParentingLesson } from "./lesson-pillars.ts";
+import { WHINE_LEVELS, sceneFields, sceneOf, whinyDirectiveLines, whinyPostLine, whinyRoomLinesVi, type WhineLevel, type WhinyScene } from "./whiny/whiny-perform.ts";
 
 export type KidAge = "toddler" | "young" | "school" | "middle" | "preteen" | "teen";
 export const KID_AGES: readonly KidAge[] = ["toddler", "young", "school", "middle", "preteen", "teen"];
@@ -48,6 +49,11 @@ export interface CuteKidsConfig {
   takeaway?: "narrator" | "parent";
   /** Teach mode: show an ineffective way first, then the good way (A/B). */
   abFormat?: boolean;
+  /** Fun mode: a scene from the "Na nhõng nhẽo" library and its snapshot (the server swaps in the library's version). */
+  sceneId?: string;
+  scene?: WhinyScene;
+  /** How big the whiny cry gets: mè nheo, khóc nhè, or ăn vạ lăn ra (default: the scene's level, else khóc nhè). */
+  whine?: WhineLevel;
 }
 
 export const DEFAULT_CUTE_KIDS: CuteKidsConfig = {
@@ -184,6 +190,17 @@ export const VIRAL_FORMATS: ViralFormat[] = [
     beats: "the kid insists on dressing alone → walks out in a wild but adorable combination → defends every choice with total confidence → the parent gives in" },
   { id: "misunderstanding", label_vi: "Hiểu lầm lời người lớn", keywords: kw("hiểu lầm|hiểu nhầm|nghe nhầm"),
     beats: "a parent says an idiom or adult phrase → the kid takes it literally and acts on it → the result is absurd and cute → the parent explains, the kid has a cheeky answer" },
+  // "Na nhõng nhẽo" formats (appended: the earlier formats keep their detection order).
+  { id: "caught", label_vi: "Bắt quả tang – đòi méc mẹ", keywords: kw("ăn vụng|bắt quả tang|méc|mách|lén|vụng trộm"),
+    beats: "a grown-up does something \"forbidden\" on the sly (eats on the sly, plays a game, stays up late) → the kid catches them, points and announces it → the grown-up denies, the kid threatens to tell (\"Mẹ ơiii!\") with a big whiny pretend cry and a peek → the grown-up \"buys silence\" (a small cooled bite, a turn, a cuddle) → instant silence, a busy chewing face, and a final shared look when the other parent walks in" },
+  { id: "me_too", label_vi: "\"Con cũng muốn!\" – đòi y như người lớn", keywords: kw("cũng muốn|cũng đòi|đòi giống|y như|bắt chước đòi"),
+    beats: "a grown-up does or has something grown-up (coffee, shaving, a face mask, high heels) → the kid wants the exact same → told it is for grown-ups, a whiny protest → a clever kid-sized version (warm milk in a little cup, foam and a spoon) → the kid copies the grown-up with total seriousness" },
+  { id: "fairness", label_vi: "\"Không công bằng!\" – bị thiệt", keywords: kw("không công bằng|phần to|nhiều hơn|chia|thiệt|bằng nhau"),
+    beats: "something is shared (cake, a seat, a turn) → the kid measures and decides it is unfair → a whiny cry with the \"evidence\" held up → a grown-up re-shares in a fair, funny way → the kid still picks the best bit and grins" },
+  { id: "attention", label_vi: "Đòi được chú ý", keywords: kw("họp online|xem bóng đá|chơi game|mải|không ai để ý|chú ý"),
+    beats: "a grown-up is busy (a meeting, football, a phone call) → the kid tries to get noticed, louder and louder → a whiny cry when ignored → the grown-up turns and gives the kid a small role in what they are doing → the kid does it with total seriousness" },
+  { id: "bedtime", label_vi: "Câu giờ đi ngủ", keywords: kw("đi ngủ|giờ ngủ|không chịu ngủ|câu giờ|kể chuyện|ru ngủ"),
+    beats: "lights out → the kid finds one more reason (water, a story, the lost teddy) → whiny protest when told no → a parent answers with a sleepy, funny trick → the kid falls asleep mid-protest" },
 ];
 
 export function detectFormat(request: string): ViralFormat | undefined {
@@ -741,6 +758,7 @@ export function cuteKidsDirective(raw: CuteKidsConfig | null | undefined): strin
       : `- VOICE of ${kid.name} (character_locks.voice): a high, sweet, real child's voice${traits.includes("sweet_whiny") ? " with a sing-song nũng nịu delivery — drawn-out vowels, playful pitch rises" : ""}${traits.includes("fake_cry") ? ", theatrical \"huhu\" sniffles that snap into giggles" : ""}; never adult-sounding.`,
     `- ${parentsPlayAlong(config.dialect)}`,
     ...parentingDirective(config, kid.name),
+    ...whinyDirectiveLines(config, kid.name, girl, older),
     `- Parents and family talk naturally and warmly in full everyday sentences that carry the scene; the comedy comes from ${kid.name}.`,
     ...(familyWithLesson(config).includes("baby") ? [`- ${BABY_CARE_RULE}`] : []),
     ...(familyWithLesson(config).some((m) => m === "sibling" || m === "friend")
@@ -770,6 +788,7 @@ export function cuteKidsRoomSeed(config: CuteKidsConfig): string {
     `Bé nói đúng tuổi: mỗi câu tối đa ${age.maxWords} từ; bố mẹ nói tự nhiên. Quay kiểu ${config.filming === "phone" ? "điện thoại gia đình" : "điện ảnh"}, giọng ${config.dialect === "north" ? "miền Bắc" : "miền Nam"}.`,
     "Nội dung gia đình lành mạnh, an toàn cho trẻ: không nguy hiểm, không dọa hay làm bé khóc thật, bé mặc đồ ở nhà bình thường. Bố mẹ thể hiện tình cảm bằng ôm vai, nắm tay.",
     familyWithLesson(config).includes("baby") ? "Em bé luôn được bế hoặc ở ngay cạnh người lớn đang chăm (nắm tay, ru, cười nói với em), em có phản ứng trong cảnh và có mặt ở kết — không để em ngồi một mình hay bị bỏ quên." : "",
+    ...whinyRoomLinesVi(config, isOlderKid(config.kidAge)),
   ].join("\n");
 }
 
@@ -804,6 +823,14 @@ export function labelCuteKidsPosts(posts: SocialPostsLike | undefined | null, ra
     ].filter(Boolean).join("\n");
     const add = (s: string | undefined) => (s && s.includes("Nhà mình xử lý tình huống này") ? s : [s?.trim(), tip].filter(Boolean).join("\n\n"));
     const tags = (list: string[] | undefined) => [...new Set([...(list ?? []), "#dạycon", "#nuôidạycon"])];
+    if (posts.tiktok) posts.tiktok = { ...posts.tiktok, caption: add(posts.tiktok.caption), hashtags: tags(posts.tiktok.hashtags) };
+    if (posts.youtube_shorts) posts.youtube_shorts = { ...posts.youtube_shorts, description: add(posts.youtube_shorts.description), hashtags: tags(posts.youtube_shorts.hashtags) };
+    if (posts.facebook_reel) posts.facebook_reel = { ...posts.facebook_reel, caption: add(posts.facebook_reel.caption), hashtags: tags(posts.facebook_reel.hashtags) };
+  }
+  if (config && sceneOf(config)) {
+    const line = whinyPostLine(config.kidName);
+    const add = (s: string | undefined) => (s && s.includes(line) ? s : [s?.trim(), line].filter(Boolean).join("\n\n"));
+    const tags = (list: string[] | undefined) => [...new Set([...(list ?? []), "#bécưng", "#nhõngnhẽo"])];
     if (posts.tiktok) posts.tiktok = { ...posts.tiktok, caption: add(posts.tiktok.caption), hashtags: tags(posts.tiktok.hashtags) };
     if (posts.youtube_shorts) posts.youtube_shorts = { ...posts.youtube_shorts, description: add(posts.youtube_shorts.description), hashtags: tags(posts.youtube_shorts.hashtags) };
     if (posts.facebook_reel) posts.facebook_reel = { ...posts.facebook_reel, caption: add(posts.facebook_reel.caption), hashtags: tags(posts.facebook_reel.hashtags) };
@@ -878,6 +905,8 @@ export function normalizeCuteKids(raw: unknown): CuteKidsConfig | undefined {
     ...lessonFields(r.lesson, r.lessonId),
     takeaway: pick(r.takeaway, ["narrator", "parent"] as const, "narrator"),
     abFormat: r.abFormat === true,
+    ...sceneFields(r.scene, r.sceneId),
+    ...(WHINE_LEVELS.includes(r.whine as WhineLevel) ? { whine: r.whine as WhineLevel } : {}),
   };
 }
 

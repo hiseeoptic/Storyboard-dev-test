@@ -24,7 +24,8 @@
     "test:continuity": "node --experimental-strip-types --test src/lib/continuity/continuity.test.ts",
     "test:family": "node --experimental-strip-types --test src/lib/family/family-drama.test.ts",
     "test:office": "node --experimental-strip-types --test src/lib/workplace/office-drama.test.ts",
-    "test:quotes": "node --experimental-strip-types --test src/lib/quotes/quote-story.test.ts"
+    "test:quotes": "node --experimental-strip-types --test src/lib/quotes/quote-story.test.ts",
+    "test:whiny": "node --experimental-strip-types --test src/lib/kids/whiny/whiny.test.ts"
   },
   "dependencies": {
     "next": "^15.1.0",

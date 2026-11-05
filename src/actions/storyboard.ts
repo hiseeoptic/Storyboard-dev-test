@@ -43,6 +43,7 @@ import { enforceProductShootContract, productShootSubject } from "@/lib/product-
 import { enforceProductPlacements, outfitCostume, placementItems } from "@/lib/product-placement";
 import { cuteKidsVoice, isAdultKinName, labelCuteKidsPosts, normalizeCuteKids, resolveKidLock } from "@/lib/kids/cute-kids";
 import { withLibraryLesson } from "@/lib/kids/parenting-lessons";
+import { withLibraryScene } from "@/lib/kids/whiny/whiny-scenes";
 import { castHasChild, childSafeDeep } from "@/lib/kids/child-safe-wording";
 import {
   REFERENCE_CHARACTER_ANTI_PLASTIC,
@@ -2417,7 +2418,7 @@ function normalizePlanInput(input: StoryboardGenerationInput): StoryboardGenerat
   // "Bé cưng viral": the client config is clamped to known values; anything
   // unknown is dropped.
   // A picked parenting lesson is taken from the library (the client sends a snapshot).
-  if (input.cute_kids) input = { ...input, cute_kids: normalizeCuteKids(withLibraryLesson(input.cute_kids)) };
+  if (input.cute_kids) input = { ...input, cute_kids: normalizeCuteKids(withLibraryScene(withLibraryLesson(input.cute_kids))) };
   // "Chuyện nhà": the family drama config is clamped; a picked lesson comes from the library.
   if (input.family_drama) input = { ...input, family_drama: normalizeFamilyDrama(withLibraryFamilyLesson(input.family_drama)) };
   // "Chuyện công sở": the workplace drama config is clamped; a picked case comes from the library.

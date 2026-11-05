@@ -40,15 +40,30 @@ import {
 } from "@/lib/kids/cute-kids";
 import { LESSON_PILLARS, PILLAR_GROUPS, type LessonPillar, type ParentingLesson } from "@/lib/kids/lesson-pillars";
 import { TEEN_TOPIC_LABEL_VI, teenSafetyViolations } from "@/lib/kids/teen-safety";
+import { WHINE_LEVELS, WHINE_LEVEL_LABEL, WHINY_GROUPS, hasWhinyBrief, whinySceneBriefVi, whinyShotPlanVi, type WhinyGroup, type WhinyScene } from "@/lib/kids/whiny/whiny-perform";
 
 /** The lesson library is big: it loads only when the "Dạy con" panel opens. */
 type LessonLibrary = typeof import("@/lib/kids/parenting-lessons");
+/** The "Na nhõng nhẽo" scene library loads only when the fun panel is open. */
+type WhinyLibrary = typeof import("@/lib/kids/whiny/whiny-scenes");
 
 type Lang = "vi" | "en";
 
 const STORAGE_KEY = "storyboard.cuteKids.v1";
 /** Lessons already turned into videos (series memory, this browser only). */
 const USED_LESSONS_KEY = "storyboard.cuteKids.usedLessons";
+/** Whiny scenes already turned into videos (this browser only). */
+const USED_SCENES_KEY = "storyboard.cuteKids.usedScenes";
+
+function loadUsedScenes(): string[] {
+  try {
+    const raw = window.localStorage.getItem(USED_SCENES_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 function loadUsedLessons(): string[] {
   try {
@@ -83,6 +98,11 @@ const FORMAT_EXAMPLE: Record<string, string> = {
   why: "Bé hỏi bố 'tại sao' liên tục cho đến khi bố hết câu trả lời",
   outfit_pick: "Bé tự chọn đồ đi học: váy công chúa, ủng mưa và mũ bảo hiểm",
   misunderstanding: "Mẹ bảo 'mẹ đang dở tay', bé chạy đi tìm xem tay mẹ dở chỗ nào",
+  caught: "Bố lén ăn vụng trong bếp, bé bắt gặp, dọa méc mẹ rồi khóc nhè, bố đút cho một miếng thế là bé im re",
+  me_too: "Bố uống cà phê, bé cũng đòi uống, ăn vạ đến khi bố pha cho cốc sữa ấm gọi là \"cà phê của bé\"",
+  fairness: "Mẹ chia bánh, miếng của bé nhỏ hơn của anh, bé mếu máo đòi chia lại",
+  attention: "Mẹ đang họp online, bé chen vào màn hình nhõng nhẽo đòi mẹ chơi cùng",
+  bedtime: "Đến giờ ngủ bé đòi uống nước lần thứ ba, đòi thêm truyện, mè nheo mãi không chịu ngủ",
 };
 
 function loadConfig(): CuteKidsConfig {
@@ -135,7 +155,8 @@ export function CuteKidsCard(props: {
   const [error, setError] = useState("");
 
   const [usedLessons, setUsedLessons] = useState<string[]>([]);
-  useEffect(() => { setConfig(loadConfig()); setUsedLessons(loadUsedLessons()); }, []);
+  const [usedScenes, setUsedScenes] = useState<string[]>([]);
+  useEffect(() => { setConfig(loadConfig()); setUsedLessons(loadUsedLessons()); setUsedScenes(loadUsedScenes()); }, []);
   const update = (patch: Partial<CuteKidsConfig>) =>
     setConfig((prev) => {
       const next = { ...prev, ...patch };
@@ -163,6 +184,44 @@ export function CuteKidsCard(props: {
     const found = library.findLesson(config.lessonId);
     setConfig((prev) => (prev.lessonId === config.lessonId ? { ...prev, lessonId: found?.id, lesson: found } : prev));
   }, [library, config.lessonId, config.lesson?.id]);
+  // Fun mode: the "Na nhõng nhẽo" scene library.
+  const [whiny, setWhiny] = useState<WhinyLibrary | null>(null);
+  const [sceneGroup, setSceneGroup] = useState<WhinyGroup | "">("");
+  const [sceneQuery, setSceneQuery] = useState("");
+  useEffect(() => {
+    if (!open || teach || whiny) return;
+    let alive = true;
+    import("@/lib/kids/whiny/whiny-scenes").then((mod) => { if (alive) setWhiny(mod); }).catch(() => { /* offline — retried on the next open */ });
+    return () => { alive = false; };
+  }, [open, teach, whiny]);
+  const sceneSearching = sceneQuery.trim().length > 1;
+  const scenes = whiny ? (sceneSearching ? whiny.searchScenes(sceneQuery).slice(0, 60) : whiny.scenesFor(sceneGroup || null)) : [];
+  const pickedScene: WhinyScene | undefined = config.scene?.id === config.sceneId ? config.scene : undefined;
+  const briefOf = (scene: WhinyScene, patch: Partial<CuteKidsConfig> = {}) =>
+    whinySceneBriefVi(scene, { kidName: patch.kidName ?? config.kidName, dialect: patch.dialect ?? config.dialect, shots: patch.shots ?? config.shots, level: "whine" in patch ? patch.whine : config.whine });
+  // Picking a scene: Na at 4–5, the scene's cast joins the family, its clip count and format, the whiny traits on.
+  const pickScene = (scene: WhinyScene) =>
+    update(config.sceneId === scene.id
+      ? { sceneId: undefined, scene: undefined }
+      : {
+          sceneId: scene.id,
+          scene,
+          goal: "fun",
+          kidAge: config.kidAge === "toddler" ? "toddler" : "young",
+          family: [...new Set([...config.family, ...scene.cast])],
+          shots: scene.shots,
+          format: scene.format,
+          whine: undefined,
+          traits: [...new Set([...traits, "sweet_whiny", "fake_cry"] as KidTrait[])],
+          request: briefOf(scene, { shots: scene.shots, whine: undefined }),
+        });
+  const setSceneShots = (n: number) =>
+    update(pickedScene && hasWhinyBrief(config.request) ? { shots: n, request: briefOf(pickedScene, { shots: n }) } : { shots: n });
+  const pickFreshScene = () => {
+    const scene = whiny?.pickFreshScene(usedScenes, sceneGroup || null);
+    if (scene) { setSceneQuery(""); pickScene(scene); }
+  };
+  const whineLevel = config.whine ?? pickedScene?.level ?? "medium";
   const searching = query.trim().length > 1;
   const lessons = library ? (searching ? library.searchLessons(query, config.kidAge).slice(0, 40) : library.lessonsFor(pillar, config.kidAge)) : [];
   const picked = config.lesson?.id === config.lessonId ? config.lesson : undefined;
@@ -192,6 +251,12 @@ export function CuteKidsCard(props: {
   };
   // Remember which lessons became videos, so the library shows what is still new.
   const markUsed = () => {
+    const sceneId = !teach ? pickedScene?.id : undefined;
+    if (sceneId && !usedScenes.includes(sceneId)) {
+      const next = [...usedScenes, sceneId];
+      setUsedScenes(next);
+      try { window.localStorage.setItem(USED_SCENES_KEY, JSON.stringify(next)); } catch { /* quota */ }
+    }
     const id = teach ? config.lessonId : undefined;
     if (!id || usedLessons.includes(id)) return;
     const next = [...usedLessons, id];
@@ -343,12 +408,99 @@ export function CuteKidsCard(props: {
             </div>
           )}
 
+          {!teach && (
+            <div className="space-y-2 rounded-md border border-rose-400/50 bg-rose-500/[0.06] p-2.5">
+              <p className="text-xs font-medium">🥺 {vi ? "Kho tình huống nhõng nhẽo" : "Whiny moments library"} <span className="font-normal text-muted-foreground">· {whiny ? whiny.WHINY_SCENES.length : "…"} {vi ? "tình huống" : "scenes"}</span></p>
+              <p className="text-[11px] text-muted-foreground">
+                {vi
+                  ? "Bé 4–5 tuổi bắt quả tang bố ăn vụng đòi méc mẹ, thấy bố ôm mẹ đòi ôm, bị từ chối là khóc nhè ăn vạ… rồi một cú chốt dễ thương (đút miếng ăn là im re, cả nhà ôm nhau). Khóc nhè diễn 4 nhịp như trẻ thật: mặt méo dần → khóc to → hé mắt xem người lớn → được dỗ là nín ngay. Chọn tình huống để điền sẵn yêu cầu, nhân vật và số shot."
+                  : "A 4–5-year-old catches grown-ups, gets jealous, is told no… a four-beat pretend cry and a warm button. Pick a scene to fill the request, cast and clip count."}
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Input value={sceneQuery} onChange={(e) => setSceneQuery(e.target.value)} placeholder={vi ? "🔎 Tìm: ăn vụng, ôm, kem, đi ngủ, cún…" : "🔎 Search scenes…"} className="h-8 max-w-xs text-xs" />
+                <Chip active={false} onClick={pickFreshScene} title={vi ? "Một tình huống chưa làm trong nhóm đang chọn" : "An unused scene in this group"}>🎲 {vi ? "Tình huống chưa làm" : "Unused scene"}</Chip>
+                {whiny && <span className="text-[11px] text-muted-foreground">{vi ? "Đã làm" : "Done"} {usedScenes.filter((id) => whiny.findScene(id)).length}/{whiny.WHINY_SCENES.length}</span>}
+              </div>
+              {!sceneSearching && (
+                <div className="flex flex-wrap gap-1.5">
+                  <Chip active={!sceneGroup} onClick={() => setSceneGroup("")}>{vi ? "Tất cả" : "All"}</Chip>
+                  {WHINY_GROUPS.map((g) => (
+                    <Chip key={g.id} active={sceneGroup === g.id} onClick={() => setSceneGroup(g.id)}>
+                      {g.label} {whiny && <span className="opacity-60">{whiny.scenesFor(g.id).length}</span>}
+                    </Chip>
+                  ))}
+                </div>
+              )}
+              {!whiny ? (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> {vi ? "Đang tải kho tình huống…" : "Loading scenes…"}</p>
+              ) : sceneSearching && !scenes.length ? (
+                <p className="text-xs text-muted-foreground">{vi ? "Không có tình huống nào khớp — thử từ khác." : "No scene matches."}</p>
+              ) : (
+                <div className="grid max-h-[360px] gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2">
+                  {scenes.map((scene) => (
+                    <button
+                      key={scene.id}
+                      type="button"
+                      onClick={() => pickScene(scene)}
+                      aria-pressed={config.sceneId === scene.id}
+                      className={cn(
+                        "rounded-md border bg-background p-2 text-left text-xs transition-colors hover:border-rose-500/60",
+                        config.sceneId === scene.id && "border-rose-600 bg-rose-500/10"
+                      )}
+                    >
+                      <span className="font-medium">{scene.title}</span>
+                      {usedScenes.includes(scene.id) && <span className="ml-1.5 text-[10px] text-emerald-700">✓ {vi ? "đã làm" : "done"}</span>}
+                      <span className="mt-0.5 block text-muted-foreground">{scene.hook}</span>
+                      <span className="mt-0.5 block text-[10px] text-rose-700">{WHINE_LEVEL_LABEL[scene.level].vi} · {scene.shots} shot · {WHINY_GROUPS.find((g) => g.id === scene.group)?.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {pickedScene && (
+                <div className="space-y-1.5 rounded-md border border-rose-500/30 bg-rose-500/[0.06] p-2.5 text-[11px]">
+                  <p><span className="font-semibold text-foreground">{pickedScene.title}</span> · <span className="text-muted-foreground">{pickedScene.place}</span></p>
+                  <p><span className="font-medium text-foreground">🎬 Hook:</span> <span className="text-muted-foreground">{pickedScene.hook}</span></p>
+                  <p><span className="font-medium text-foreground">🥺 {vi ? "Nhõng nhẽo:" : "The whine:"}</span> <span className="text-muted-foreground">{pickedScene.whine}</span></p>
+                  <p><span className="font-medium text-foreground">🎯 {vi ? "Cú chốt:" : "The button:"}</span> <span className="text-muted-foreground">{pickedScene.punch}</span></p>
+                  <p><span className="font-medium text-foreground">💬 {vi ? "Thoại của bé:" : "Kid's lines:"}</span> <span className="text-muted-foreground">{pickedScene.naLines.map((x) => `“${x}”`).join(" · ")}</span></p>
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="font-medium">{vi ? "Số shot:" : "Clips:"}</span>
+                    {[2, 3].map((n) => (
+                      <Chip key={n} active={config.shots === n} onClick={() => setSceneShots(n)}>{n} shot · {n * 10}s{pickedScene.shots === n ? (vi ? " · gợi ý" : " · suggested") : ""}</Chip>
+                    ))}
+                  </div>
+                  <ol className="list-decimal space-y-0.5 pl-4 text-muted-foreground">
+                    {whinyShotPlanVi(pickedScene, config.shots, { kidName: config.kidName, dialect: config.dialect }).map((beat, index) => <li key={index}>{beat.replace(/^Shot \d+ — /, "")}</li>)}
+                  </ol>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-medium">{vi ? "Mức nhõng nhẽo:" : "Whine level:"}</span>
+                {WHINE_LEVELS.map((level) => (
+                  <Chip
+                    key={level}
+                    active={whineLevel === level}
+                    onClick={() => update(pickedScene && hasWhinyBrief(config.request) ? { whine: level, request: briefOf(pickedScene, { whine: level }) } : { whine: level })}
+                    title={WHINE_LEVEL_LABEL[level].hint_vi}
+                  >
+                    {vi ? WHINE_LEVEL_LABEL[level].vi : WHINE_LEVEL_LABEL[level].en}
+                  </Chip>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {vi
+                  ? "Chỉ là ăn vạ cho vui vì một mong muốn dễ thương — không bao giờ khóc vì bị mắng, dọa, sợ hay bị bỏ lại. Đồ ăn đút cho bé là miếng nhỏ, thổi nguội; người lớn thể hiện tình cảm bằng ôm, nắm tay. Ăn vạ lăn ra chỉ ở chỗ mềm (thảm, sofa, đệm)."
+                  : "Always pretend crying over a cute wish; small cooled bites; hugs and hand-holding only; tantrums only on soft surfaces."}
+              </p>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <label className="text-xs font-medium">{vi ? "Yêu cầu của bạn" : "Your request"}</label>
             <Textarea
               value={config.request}
               onChange={(e) => update({ request: e.target.value })}
-              rows={teach && picked ? 10 : 3}
+              rows={teach && picked ? 10 : !teach && pickedScene ? 8 : 3}
               className="resize-none"
               placeholder={vi ? "VD: Bố ôm mẹ trong bếp, bé thấy liền chen vào giữa, phụng phịu đòi bố bế mình trước" : "e.g. Dad hugs Mom in the kitchen, the kid squeezes in between"}
             />
